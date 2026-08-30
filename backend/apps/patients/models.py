@@ -153,7 +153,6 @@ class Appointment(TimestampedUUIDModel):
     class CreatedByType(models.TextChoices):
         PATIENT = "PATIENT", "환자"
         DOCTOR_ORDER = "DOCTOR_ORDER", "의사오더"
-        SYSTEM = "SYSTEM", "시스템"
 
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="appointments")
     case = models.ForeignKey(
