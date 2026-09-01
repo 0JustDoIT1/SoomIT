@@ -18,6 +18,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "django.contrib.postgres",  # ArrayField 등 Postgres 전용 필드용
+    "drf_spectacular",
     # 숨잇 도메인 앱 (v1.5 스키마 51개 테이블, 카테고리 순서대로)
     "apps.common",
     "apps.accounts",
@@ -83,3 +84,12 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'Soom-it API',
+    'VERSION': '1.6.0',
+}
