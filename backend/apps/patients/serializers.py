@@ -1,12 +1,10 @@
 # flutter용
 from rest_framework import serializers
-from .models import PatientAccount, SocialAccount
+
+from .models import Patient, PatientAccount, SocialAccount
 
 
-# 원무과(coordinator)
-from .models import Patient
-
-
+# 원무과(coordinator) - 조회용
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
         model = Patient
@@ -20,4 +18,18 @@ class PatientSerializer(serializers.ModelSerializer):
             "address",
             "created_at",
             "updated_at",
+        ]
+
+
+# 원무과(coordinator) - 신규 등록용
+class PatientCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Patient
+        fields = [
+            "patient_code",
+            "name",
+            "birth_date",
+            "sex",
+            "phone_number",
+            "address",
         ]
