@@ -1,11 +1,9 @@
 # flutter용
 from rest_framework import serializers
-from .models import PatientAccount, SocialAccoun
+from .models import PatientAccount, SocialAccount
 
 
 # 원무과(coordinator)
-from rest_framework import serializers
-
 from .models import Patient
 
 
