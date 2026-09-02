@@ -23,8 +23,24 @@ type PatientCreateForm = {
   address: string;
 };
 
+type PatientUpdateForm = {
+  name: string;
+  birth_date: string;
+  sex: string;
+  phone_number: string;
+  address: string;
+};
+
 const initialCreateForm: PatientCreateForm = {
   patient_code: "",
+  name: "",
+  birth_date: "",
+  sex: "FEMALE",
+  phone_number: "",
+  address: "",
+};
+
+const initialUpdateForm: PatientUpdateForm = {
   name: "",
   birth_date: "",
   sex: "FEMALE",
@@ -43,12 +59,19 @@ export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sexFilter, setSexFilter] = useState("ALL");
 
-  // 신규 환자 등록
+  // 신규 등록
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] =
     useState<PatientCreateForm>(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+
+  // 환자정보 수정
+  const [isUpdateOpen, setIsUpdateOpen] = useState(false);
+  const [updateForm, setUpdateForm] =
+    useState<PatientUpdateForm>(initialUpdateForm);
+  const [updateLoading, setUpdateLoading] = useState(false);
+  const [updateError, setUpdateError] = useState("");
 
   // 환자 목록 조회
   const fetchPatients = async () => {
@@ -81,19 +104,24 @@ export default function PatientsPage() {
   }, []);
 
   // 환자 상세 조회
+  const fetchPatientDetail = async (patientId: string) => {
+    const response = await fetch(
+      `http://127.0.0.1:8000/api/patients/${patientId}/`
+    );
+
+    if (!response.ok) {
+      throw new Error("환자 상세 정보를 불러오지 못했습니다.");
+    }
+
+    return response.json();
+  };
+
   const openPatientDetail = async (patientId: string) => {
     try {
       setDetailLoading(true);
 
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/patients/${patientId}/`
-      );
+      const data = await fetchPatientDetail(patientId);
 
-      if (!response.ok) {
-        throw new Error("환자 상세 정보를 불러오지 못했습니다.");
-      }
-
-      const data = await response.json();
       setSelectedPatient(data);
     } catch (err) {
       alert(
@@ -106,15 +134,16 @@ export default function PatientsPage() {
     }
   };
 
-  // 신규 환자 등록 Drawer 열기
+  // 신규 환자 등록 Drawer
   const openCreateDrawer = () => {
     setSelectedPatient(null);
+    setIsUpdateOpen(false);
+
     setCreateError("");
     setCreateForm(initialCreateForm);
     setIsCreateOpen(true);
   };
 
-  // 신규 환자 등록 Drawer 닫기
   const closeCreateDrawer = () => {
     if (createLoading) return;
 
@@ -124,7 +153,9 @@ export default function PatientsPage() {
   };
 
   // 신규 환자 등록
-  const handleCreatePatient = async (e: FormEvent<HTMLFormElement>) => {
+  const handleCreatePatient = async (
+    e: FormEvent<HTMLFormElement>
+  ) => {
     e.preventDefault();
 
     if (
@@ -162,24 +193,14 @@ export default function PatientsPage() {
       );
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => null);
+        const message = await getApiErrorMessage(
+          response,
+          "환자 등록에 실패했습니다."
+        );
 
-        if (errorData) {
-          const firstError = Object.values(errorData)[0];
-
-          if (Array.isArray(firstError)) {
-            throw new Error(String(firstError[0]));
-          }
-
-          if (typeof firstError === "string") {
-            throw new Error(firstError);
-          }
-        }
-
-        throw new Error("환자 등록에 실패했습니다.");
+        throw new Error(message);
       }
 
-      // 등록 성공 후 목록 다시 조회
       await fetchPatients();
 
       setIsCreateOpen(false);
@@ -195,7 +216,101 @@ export default function PatientsPage() {
     }
   };
 
-  // 성별 한글 표시
+  // 수정 Drawer 열기
+  const openUpdateDrawer = () => {
+    if (!selectedPatient) return;
+
+    setUpdateError("");
+
+    setUpdateForm({
+      name: selectedPatient.name,
+      birth_date: selectedPatient.birth_date,
+      sex: selectedPatient.sex,
+      phone_number: selectedPatient.phone_number,
+      address: selectedPatient.address ?? "",
+    });
+
+    setIsUpdateOpen(true);
+  };
+
+  const closeUpdateDrawer = () => {
+    if (updateLoading) return;
+
+    setIsUpdateOpen(false);
+    setUpdateError("");
+  };
+
+  // 환자정보 수정
+  const handleUpdatePatient = async (
+    e: FormEvent<HTMLFormElement>
+  ) => {
+    e.preventDefault();
+
+    if (!selectedPatient) return;
+
+    if (
+      !updateForm.name.trim() ||
+      !updateForm.birth_date ||
+      !updateForm.sex ||
+      !updateForm.phone_number.trim() ||
+      !updateForm.address.trim()
+    ) {
+      setUpdateError("모든 필수 정보를 입력해주세요.");
+      return;
+    }
+
+    try {
+      setUpdateLoading(true);
+      setUpdateError("");
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/patients/${selectedPatient.id}/`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: updateForm.name.trim(),
+            birth_date: updateForm.birth_date,
+            sex: updateForm.sex,
+            phone_number: updateForm.phone_number.trim(),
+            address: updateForm.address.trim(),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const message = await getApiErrorMessage(
+          response,
+          "환자정보 수정에 실패했습니다."
+        );
+
+        throw new Error(message);
+      }
+
+      // 목록 다시 조회
+      await fetchPatients();
+
+      // 상세정보 다시 조회
+      const updatedPatient = await fetchPatientDetail(
+        selectedPatient.id
+      );
+
+      setSelectedPatient(updatedPatient);
+      setIsUpdateOpen(false);
+    } catch (err) {
+      setUpdateError(
+        err instanceof Error
+          ? err.message
+          : "환자정보 수정 중 오류가 발생했습니다."
+      );
+    } finally {
+      setUpdateLoading(false);
+    }
+  };
+
+  // 성별 표시
   const getSexLabel = (sex: string) => {
     if (sex === "FEMALE") return "여";
     if (sex === "MALE") return "남";
@@ -223,7 +338,6 @@ export default function PatientsPage() {
     });
   }, [patients, searchTerm, sexFilter]);
 
-  // 검색 초기화
   const resetFilters = () => {
     setSearchTerm("");
     setSexFilter("ALL");
@@ -293,14 +407,14 @@ export default function PatientsPage() {
         </div>
       </div>
 
-      {/* 목록 로딩 */}
+      {/* 로딩 */}
       {loading && (
         <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
           환자 정보를 불러오는 중입니다.
         </div>
       )}
 
-      {/* 목록 오류 */}
+      {/* 오류 */}
       {error && (
         <div className="rounded-2xl bg-red-50 p-6 text-sm text-red-600">
           {error}
@@ -310,16 +424,14 @@ export default function PatientsPage() {
       {/* 환자 목록 */}
       {!loading && !error && (
         <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
-          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4">
-            <div>
-              <p className="text-sm font-semibold text-slate-700">
-                환자 목록
-              </p>
+          <div className="border-b border-slate-100 px-5 py-4">
+            <p className="text-sm font-semibold text-slate-700">
+              환자 목록
+            </p>
 
-              <p className="mt-1 text-xs text-slate-400">
-                검색 결과 {filteredPatients.length}명
-              </p>
-            </div>
+            <p className="mt-1 text-xs text-slate-400">
+              검색 결과 {filteredPatients.length}명
+            </p>
           </div>
 
           <div className="overflow-x-auto">
@@ -386,30 +498,36 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {/* 상세 조회 로딩 */}
+      {/* 상세 로딩 */}
       {detailLoading && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/10">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/10">
           <div className="rounded-2xl bg-white px-6 py-4 text-sm text-slate-600 shadow-lg">
             환자 정보를 불러오는 중입니다.
           </div>
         </div>
       )}
 
-      {/* 공통 Drawer 배경 */}
-      {(selectedPatient || isCreateOpen) && (
+      {/* 공통 배경 */}
+      {(selectedPatient || isCreateOpen || isUpdateOpen) && (
         <div
           className="fixed inset-0 z-40 bg-black/20"
           onClick={() => {
+            if (isUpdateOpen) {
+              closeUpdateDrawer();
+              return;
+            }
+
             if (isCreateOpen) {
               closeCreateDrawer();
-            } else {
-              setSelectedPatient(null);
+              return;
             }
+
+            setSelectedPatient(null);
           }}
         />
       )}
 
-      {/* 신규 환자 등록 Drawer */}
+      {/* 신규 등록 Drawer */}
       <div
         className={`fixed right-0 top-0 z-50 h-full w-[440px] bg-white shadow-2xl transition-transform duration-300 ${
           isCreateOpen ? "translate-x-0" : "translate-x-full"
@@ -420,39 +538,16 @@ export default function PatientsPage() {
             onSubmit={handleCreatePatient}
             className="flex h-full flex-col"
           >
-            {/* Header */}
-            <div className="border-b border-slate-100 px-6 py-5">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-pink-500">
-                    New Patient
-                  </p>
+            <DrawerHeader
+              eyebrow="New Patient"
+              title="신규 환자 등록"
+              description="환자의 기본정보를 입력해주세요."
+              onClose={closeCreateDrawer}
+            />
 
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">
-                    신규 환자 등록
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-400">
-                    환자의 기본정보를 입력해주세요.
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={closeCreateDrawer}
-                  className="rounded-full px-3 py-2 text-xl text-slate-400 transition hover:bg-slate-100"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {createError && (
-                <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
-                  {createError}
-                </div>
+                <ErrorMessage message={createError} />
               )}
 
               <div className="space-y-5">
@@ -467,7 +562,7 @@ export default function PatientsPage() {
                       })
                     }
                     placeholder="예: P0003"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                    className={inputClassName}
                   />
                 </FormField>
 
@@ -482,7 +577,7 @@ export default function PatientsPage() {
                       })
                     }
                     placeholder="환자 이름"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                    className={inputClassName}
                   />
                 </FormField>
 
@@ -496,7 +591,7 @@ export default function PatientsPage() {
                         birth_date: e.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-600 outline-none transition focus:border-pink-300"
+                    className={inputClassName}
                   />
                 </FormField>
 
@@ -509,7 +604,7 @@ export default function PatientsPage() {
                         sex: e.target.value,
                       })
                     }
-                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 outline-none transition focus:border-pink-300"
+                    className={inputClassName}
                   >
                     <option value="FEMALE">여</option>
                     <option value="MALE">남</option>
@@ -529,7 +624,7 @@ export default function PatientsPage() {
                       })
                     }
                     placeholder="예: 010-1234-5678"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                    className={inputClassName}
                   />
                 </FormField>
 
@@ -544,35 +639,20 @@ export default function PatientsPage() {
                       })
                     }
                     placeholder="환자 주소"
-                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                    className={inputClassName}
                   />
                 </FormField>
               </div>
-
-              <div className="mt-6 rounded-2xl bg-pink-50/60 p-4 text-xs leading-5 text-slate-500">
-                등록된 환자 정보는 저장 후 환자 목록에 바로 반영됩니다.
-              </div>
             </div>
 
-            {/* Footer */}
-            <div className="flex gap-3 border-t border-slate-100 p-5">
-              <button
-                type="button"
-                onClick={closeCreateDrawer}
-                disabled={createLoading}
-                className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                취소
-              </button>
-
-              <button
-                type="submit"
-                disabled={createLoading}
-                className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {createLoading ? "등록 중..." : "환자 등록"}
-              </button>
-            </div>
+            <DrawerFooter
+              cancelLabel="취소"
+              submitLabel={
+                createLoading ? "등록 중..." : "환자 등록"
+              }
+              loading={createLoading}
+              onCancel={closeCreateDrawer}
+            />
           </form>
         )}
       </div>
@@ -580,41 +660,20 @@ export default function PatientsPage() {
       {/* 환자 상세 Drawer */}
       <div
         className={`fixed right-0 top-0 z-50 h-full w-[420px] bg-white shadow-2xl transition-transform duration-300 ${
-          selectedPatient
+          selectedPatient && !isUpdateOpen
             ? "translate-x-0"
             : "translate-x-full"
         }`}
       >
-        {selectedPatient && (
+        {selectedPatient && !isUpdateOpen && (
           <div className="flex h-full flex-col">
-            {/* Header */}
-            <div className="border-b border-slate-100 px-6 py-5">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-pink-500">
-                    Patient Detail
-                  </p>
+            <DrawerHeader
+              eyebrow="Patient Detail"
+              title={selectedPatient.name}
+              description={selectedPatient.patient_code}
+              onClose={() => setSelectedPatient(null)}
+            />
 
-                  <h2 className="mt-1 text-xl font-bold text-slate-800">
-                    {selectedPatient.name}
-                  </h2>
-
-                  <p className="mt-1 text-sm text-slate-400">
-                    {selectedPatient.patient_code}
-                  </p>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedPatient(null)}
-                  className="rounded-full px-3 py-2 text-xl text-slate-400 transition hover:bg-slate-100"
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
               <div className="rounded-2xl bg-pink-50/70 p-5">
                 <h3 className="mb-4 font-semibold text-slate-700">
@@ -654,14 +713,13 @@ export default function PatientsPage() {
                 </div>
               </div>
 
-              {/* 앱 연결 상태 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-slate-700">
                     앱 연결 상태
                   </h3>
 
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-500">
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
                     연동 예정
                   </span>
                 </div>
@@ -671,7 +729,6 @@ export default function PatientsPage() {
                 </p>
               </div>
 
-              {/* Case 정보 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <h3 className="font-semibold text-slate-700">
                   Case 정보
@@ -682,7 +739,6 @@ export default function PatientsPage() {
                 </p>
               </div>
 
-              {/* 최근 예약 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <h3 className="font-semibold text-slate-700">
                   최근 예약
@@ -694,10 +750,10 @@ export default function PatientsPage() {
               </div>
             </div>
 
-            {/* Footer */}
             <div className="flex gap-3 border-t border-slate-100 p-5">
               <button
                 type="button"
+                onClick={openUpdateDrawer}
                 className="flex-1 rounded-xl border border-pink-200 px-4 py-3 text-sm font-medium text-pink-600 transition hover:bg-pink-50"
               >
                 환자정보 수정
@@ -713,9 +769,139 @@ export default function PatientsPage() {
           </div>
         )}
       </div>
+
+      {/* 환자정보 수정 Drawer */}
+      <div
+        className={`fixed right-0 top-0 z-[60] h-full w-[440px] bg-white shadow-2xl transition-transform duration-300 ${
+          isUpdateOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {isUpdateOpen && selectedPatient && (
+          <form
+            onSubmit={handleUpdatePatient}
+            className="flex h-full flex-col"
+          >
+            <DrawerHeader
+              eyebrow="Edit Patient"
+              title="환자정보 수정"
+              description={`${selectedPatient.name} · ${selectedPatient.patient_code}`}
+              onClose={closeUpdateDrawer}
+            />
+
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              {updateError && (
+                <ErrorMessage message={updateError} />
+              )}
+
+              {/* 환자번호는 수정 불가 */}
+              <div className="mb-5 rounded-2xl bg-slate-50 p-4">
+                <p className="text-xs text-slate-400">
+                  환자번호
+                </p>
+
+                <p className="mt-1 text-sm font-semibold text-slate-700">
+                  {selectedPatient.patient_code}
+                </p>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  환자번호는 수정할 수 없습니다.
+                </p>
+              </div>
+
+              <div className="space-y-5">
+                <FormField label="이름" required>
+                  <input
+                    type="text"
+                    value={updateForm.name}
+                    onChange={(e) =>
+                      setUpdateForm({
+                        ...updateForm,
+                        name: e.target.value,
+                      })
+                    }
+                    className={inputClassName}
+                  />
+                </FormField>
+
+                <FormField label="생년월일" required>
+                  <input
+                    type="date"
+                    value={updateForm.birth_date}
+                    onChange={(e) =>
+                      setUpdateForm({
+                        ...updateForm,
+                        birth_date: e.target.value,
+                      })
+                    }
+                    className={inputClassName}
+                  />
+                </FormField>
+
+                <FormField label="성별" required>
+                  <select
+                    value={updateForm.sex}
+                    onChange={(e) =>
+                      setUpdateForm({
+                        ...updateForm,
+                        sex: e.target.value,
+                      })
+                    }
+                    className={inputClassName}
+                  >
+                    <option value="FEMALE">여</option>
+                    <option value="MALE">남</option>
+                    <option value="OTHER">기타</option>
+                    <option value="UNKNOWN">미상</option>
+                  </select>
+                </FormField>
+
+                <FormField label="연락처" required>
+                  <input
+                    type="text"
+                    value={updateForm.phone_number}
+                    onChange={(e) =>
+                      setUpdateForm({
+                        ...updateForm,
+                        phone_number: e.target.value,
+                      })
+                    }
+                    className={inputClassName}
+                  />
+                </FormField>
+
+                <FormField label="주소" required>
+                  <input
+                    type="text"
+                    value={updateForm.address}
+                    onChange={(e) =>
+                      setUpdateForm({
+                        ...updateForm,
+                        address: e.target.value,
+                      })
+                    }
+                    className={inputClassName}
+                  />
+                </FormField>
+              </div>
+            </div>
+
+            <DrawerFooter
+              cancelLabel="취소"
+              submitLabel={
+                updateLoading ? "저장 중..." : "변경사항 저장"
+              }
+              loading={updateLoading}
+              onCancel={closeUpdateDrawer}
+            />
+          </form>
+        )}
+      </div>
     </div>
   );
 }
+
+const inputClassName =
+  "w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition focus:border-pink-300";
 
 function DetailRow({
   label,
@@ -727,7 +913,6 @@ function DetailRow({
   return (
     <div className="flex justify-between gap-6">
       <span className="text-slate-400">{label}</span>
-
       <span className="text-right font-medium text-slate-700">
         {value}
       </span>
@@ -757,4 +942,111 @@ function FormField({
       {children}
     </div>
   );
+}
+
+function DrawerHeader({
+  eyebrow,
+  title,
+  description,
+  onClose,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  onClose: () => void;
+}) {
+  return (
+    <div className="border-b border-slate-100 px-6 py-5">
+      <div className="flex items-start justify-between">
+        <div>
+          <p className="text-sm font-medium text-pink-500">
+            {eyebrow}
+          </p>
+
+          <h2 className="mt-1 text-xl font-bold text-slate-800">
+            {title}
+          </h2>
+
+          <p className="mt-1 text-sm text-slate-400">
+            {description}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-full px-3 py-2 text-xl text-slate-400 transition hover:bg-slate-100"
+        >
+          ×
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function DrawerFooter({
+  cancelLabel,
+  submitLabel,
+  loading,
+  onCancel,
+}: {
+  cancelLabel: string;
+  submitLabel: string;
+  loading: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex gap-3 border-t border-slate-100 p-5">
+      <button
+        type="button"
+        onClick={onCancel}
+        disabled={loading}
+        className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {cancelLabel}
+      </button>
+
+      <button
+        type="submit"
+        disabled={loading}
+        className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        {submitLabel}
+      </button>
+    </div>
+  );
+}
+
+function ErrorMessage({
+  message,
+}: {
+  message: string;
+}) {
+  return (
+    <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+      {message}
+    </div>
+  );
+}
+
+async function getApiErrorMessage(
+  response: Response,
+  fallback: string
+) {
+  try {
+    const errorData = await response.json();
+    const firstError = Object.values(errorData)[0];
+
+    if (Array.isArray(firstError)) {
+      return String(firstError[0]);
+    }
+
+    if (typeof firstError === "string") {
+      return firstError;
+    }
+
+    return fallback;
+  } catch {
+    return fallback;
+  }
 }
