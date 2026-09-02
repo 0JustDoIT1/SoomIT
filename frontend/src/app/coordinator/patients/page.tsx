@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Patient = {
   id: string;
@@ -14,6 +14,24 @@ type Patient = {
   updated_at: string;
 };
 
+type PatientCreateForm = {
+  patient_code: string;
+  name: string;
+  birth_date: string;
+  sex: string;
+  phone_number: string;
+  address: string;
+};
+
+const initialCreateForm: PatientCreateForm = {
+  patient_code: "",
+  name: "",
+  birth_date: "",
+  sex: "FEMALE",
+  phone_number: "",
+  address: "",
+};
+
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -25,31 +43,40 @@ export default function PatientsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [sexFilter, setSexFilter] = useState("ALL");
 
+  // 신규 환자 등록
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [createForm, setCreateForm] =
+    useState<PatientCreateForm>(initialCreateForm);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState("");
+
   // 환자 목록 조회
-  useEffect(() => {
-    const fetchPatients = async () => {
-      try {
-        const response = await fetch(
-          "http://127.0.0.1:8000/api/patients/"
-        );
+  const fetchPatients = async () => {
+    try {
+      setError("");
 
-        if (!response.ok) {
-          throw new Error("환자 목록을 불러오지 못했습니다.");
-        }
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/patients/"
+      );
 
-        const data = await response.json();
-        setPatients(data);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "환자 목록 조회 중 오류가 발생했습니다."
-        );
-      } finally {
-        setLoading(false);
+      if (!response.ok) {
+        throw new Error("환자 목록을 불러오지 못했습니다.");
       }
-    };
 
+      const data = await response.json();
+      setPatients(data);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "환자 목록 조회 중 오류가 발생했습니다."
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     fetchPatients();
   }, []);
 
@@ -76,6 +103,95 @@ export default function PatientsPage() {
       );
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  // 신규 환자 등록 Drawer 열기
+  const openCreateDrawer = () => {
+    setSelectedPatient(null);
+    setCreateError("");
+    setCreateForm(initialCreateForm);
+    setIsCreateOpen(true);
+  };
+
+  // 신규 환자 등록 Drawer 닫기
+  const closeCreateDrawer = () => {
+    if (createLoading) return;
+
+    setIsCreateOpen(false);
+    setCreateError("");
+    setCreateForm(initialCreateForm);
+  };
+
+  // 신규 환자 등록
+  const handleCreatePatient = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (
+      !createForm.patient_code.trim() ||
+      !createForm.name.trim() ||
+      !createForm.birth_date ||
+      !createForm.sex ||
+      !createForm.phone_number.trim() ||
+      !createForm.address.trim()
+    ) {
+      setCreateError("모든 필수 정보를 입력해주세요.");
+      return;
+    }
+
+    try {
+      setCreateLoading(true);
+      setCreateError("");
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/patients/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            patient_code: createForm.patient_code.trim(),
+            name: createForm.name.trim(),
+            birth_date: createForm.birth_date,
+            sex: createForm.sex,
+            phone_number: createForm.phone_number.trim(),
+            address: createForm.address.trim(),
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => null);
+
+        if (errorData) {
+          const firstError = Object.values(errorData)[0];
+
+          if (Array.isArray(firstError)) {
+            throw new Error(String(firstError[0]));
+          }
+
+          if (typeof firstError === "string") {
+            throw new Error(firstError);
+          }
+        }
+
+        throw new Error("환자 등록에 실패했습니다.");
+      }
+
+      // 등록 성공 후 목록 다시 조회
+      await fetchPatients();
+
+      setIsCreateOpen(false);
+      setCreateForm(initialCreateForm);
+    } catch (err) {
+      setCreateError(
+        err instanceof Error
+          ? err.message
+          : "환자 등록 중 오류가 발생했습니다."
+      );
+    } finally {
+      setCreateLoading(false);
     }
   };
 
@@ -107,7 +223,7 @@ export default function PatientsPage() {
     });
   }, [patients, searchTerm, sexFilter]);
 
-  // 검색 조건 초기화
+  // 검색 초기화
   const resetFilters = () => {
     setSearchTerm("");
     setSexFilter("ALL");
@@ -136,6 +252,7 @@ export default function PatientsPage() {
 
           <button
             type="button"
+            onClick={openCreateDrawer}
             className="rounded-xl bg-pink-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-pink-600"
           >
             + 신규 환자 등록
@@ -278,15 +395,189 @@ export default function PatientsPage() {
         </div>
       )}
 
-      {/* Drawer 배경 */}
-      {selectedPatient && (
+      {/* 공통 Drawer 배경 */}
+      {(selectedPatient || isCreateOpen) && (
         <div
           className="fixed inset-0 z-40 bg-black/20"
-          onClick={() => setSelectedPatient(null)}
+          onClick={() => {
+            if (isCreateOpen) {
+              closeCreateDrawer();
+            } else {
+              setSelectedPatient(null);
+            }
+          }}
         />
       )}
 
-      {/* 우측 상세 Drawer */}
+      {/* 신규 환자 등록 Drawer */}
+      <div
+        className={`fixed right-0 top-0 z-50 h-full w-[440px] bg-white shadow-2xl transition-transform duration-300 ${
+          isCreateOpen ? "translate-x-0" : "translate-x-full"
+        }`}
+      >
+        {isCreateOpen && (
+          <form
+            onSubmit={handleCreatePatient}
+            className="flex h-full flex-col"
+          >
+            {/* Header */}
+            <div className="border-b border-slate-100 px-6 py-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-sm font-medium text-pink-500">
+                    New Patient
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                    신규 환자 등록
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-400">
+                    환자의 기본정보를 입력해주세요.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeCreateDrawer}
+                  className="rounded-full px-3 py-2 text-xl text-slate-400 transition hover:bg-slate-100"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              {createError && (
+                <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {createError}
+                </div>
+              )}
+
+              <div className="space-y-5">
+                <FormField label="환자번호" required>
+                  <input
+                    type="text"
+                    value={createForm.patient_code}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        patient_code: e.target.value,
+                      })
+                    }
+                    placeholder="예: P0003"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                  />
+                </FormField>
+
+                <FormField label="이름" required>
+                  <input
+                    type="text"
+                    value={createForm.name}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        name: e.target.value,
+                      })
+                    }
+                    placeholder="환자 이름"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                  />
+                </FormField>
+
+                <FormField label="생년월일" required>
+                  <input
+                    type="date"
+                    value={createForm.birth_date}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        birth_date: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-600 outline-none transition focus:border-pink-300"
+                  />
+                </FormField>
+
+                <FormField label="성별" required>
+                  <select
+                    value={createForm.sex}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        sex: e.target.value,
+                      })
+                    }
+                    className="w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 outline-none transition focus:border-pink-300"
+                  >
+                    <option value="FEMALE">여</option>
+                    <option value="MALE">남</option>
+                    <option value="OTHER">기타</option>
+                    <option value="UNKNOWN">미상</option>
+                  </select>
+                </FormField>
+
+                <FormField label="연락처" required>
+                  <input
+                    type="text"
+                    value={createForm.phone_number}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        phone_number: e.target.value,
+                      })
+                    }
+                    placeholder="예: 010-1234-5678"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                  />
+                </FormField>
+
+                <FormField label="주소" required>
+                  <input
+                    type="text"
+                    value={createForm.address}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        address: e.target.value,
+                      })
+                    }
+                    placeholder="환자 주소"
+                    className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none transition focus:border-pink-300"
+                  />
+                </FormField>
+              </div>
+
+              <div className="mt-6 rounded-2xl bg-pink-50/60 p-4 text-xs leading-5 text-slate-500">
+                등록된 환자 정보는 저장 후 환자 목록에 바로 반영됩니다.
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex gap-3 border-t border-slate-100 p-5">
+              <button
+                type="button"
+                onClick={closeCreateDrawer}
+                disabled={createLoading}
+                className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                취소
+              </button>
+
+              <button
+                type="submit"
+                disabled={createLoading}
+                className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-pink-600 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {createLoading ? "등록 중..." : "환자 등록"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      {/* 환자 상세 Drawer */}
       <div
         className={`fixed right-0 top-0 z-50 h-full w-[420px] bg-white shadow-2xl transition-transform duration-300 ${
           selectedPatient
@@ -296,7 +587,7 @@ export default function PatientsPage() {
       >
         {selectedPatient && (
           <div className="flex h-full flex-col">
-            {/* Drawer Header */}
+            {/* Header */}
             <div className="border-b border-slate-100 px-6 py-5">
               <div className="flex items-start justify-between">
                 <div>
@@ -323,9 +614,8 @@ export default function PatientsPage() {
               </div>
             </div>
 
-            {/* Drawer Content */}
+            {/* Content */}
             <div className="flex-1 overflow-y-auto px-6 py-6">
-              {/* 기본 정보 */}
               <div className="rounded-2xl bg-pink-50/70 p-5">
                 <h3 className="mb-4 font-semibold text-slate-700">
                   기본 정보
@@ -404,7 +694,7 @@ export default function PatientsPage() {
               </div>
             </div>
 
-            {/* Drawer Footer */}
+            {/* Footer */}
             <div className="flex gap-3 border-t border-slate-100 p-5">
               <button
                 type="button"
@@ -436,13 +726,35 @@ function DetailRow({
 }) {
   return (
     <div className="flex justify-between gap-6">
-      <span className="text-slate-400">
-        {label}
-      </span>
+      <span className="text-slate-400">{label}</span>
 
       <span className="text-right font-medium text-slate-700">
         {value}
       </span>
+    </div>
+  );
+}
+
+function FormField({
+  label,
+  required = false,
+  children,
+}: {
+  label: string;
+  required?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <label className="mb-2 block text-sm font-medium text-slate-700">
+        {label}
+
+        {required && (
+          <span className="ml-1 text-pink-500">*</span>
+        )}
+      </label>
+
+      {children}
     </div>
   );
 }
