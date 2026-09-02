@@ -8,6 +8,7 @@ from apps.accounts.models import Hospital
 from .models import Patient
 from .serializers import (
     PatientCreateSerializer,
+    PatientDetailSerializer,
     PatientSerializer,
     PatientUpdateSerializer,
 )
@@ -26,8 +27,7 @@ class PatientListAPIView(ListCreateAPIView):
         return PatientCreateSerializer
 
     def perform_create(self, serializer):
-        # 현재 로그인/병원 연동 전이므로
-        # 테스트용으로 첫 번째 병원을 사용
+        # 로그인/병원 연동 전 개발용 처리
         hospital = Hospital.objects.first()
 
         if hospital is None:
@@ -59,8 +59,7 @@ class PatientDetailAPIView(RetrieveUpdateAPIView):
     def get_serializer_class(self):
         # GET /api/patients/{id}/
         if self.request.method == "GET":
-            return PatientSerializer
+            return PatientDetailSerializer
 
-        # PATCH /api/patients/{id}/
-        # PUT /api/patients/{id}/
+        # PATCH / PUT
         return PatientUpdateSerializer

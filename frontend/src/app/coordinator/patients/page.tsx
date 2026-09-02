@@ -12,6 +12,23 @@ type Patient = {
   address: string | null;
   created_at: string;
   updated_at: string;
+
+  app_link_status?: string;
+
+  current_case?: {
+    id: string;
+    case_code: string;
+    current_stage: string;
+    case_status: string;
+  } | null;
+
+  recent_appointment?: {
+    id: string;
+    scheduled_at: string;
+    appointment_status: string;
+    visit_status: string;
+    created_by_type: string;
+  } | null;
 };
 
 type PatientCreateForm = {
@@ -289,10 +306,8 @@ export default function PatientsPage() {
         throw new Error(message);
       }
 
-      // 목록 다시 조회
       await fetchPatients();
 
-      // 상세정보 다시 조회
       const updatedPatient = await fetchPatientDetail(
         selectedPatient.id
       );
@@ -318,6 +333,62 @@ export default function PatientsPage() {
     if (sex === "UNKNOWN") return "미상";
 
     return sex;
+  };
+
+  // 앱 연결 상태 표시
+  const getAppLinkStatusLabel = (status?: string) => {
+    if (status === "LINKED") return "연결됨";
+    if (status === "PENDING_REVIEW") return "확인대기";
+    if (status === "REJECTED") return "거부됨";
+    return "미연결";
+  };
+
+  // Case 단계 표시
+  const getStageLabel = (stage: string) => {
+    if (stage === "XRAY") return "X-ray";
+    if (stage === "CT") return "CT";
+    if (stage === "PATHOLOGY") return "병리";
+    if (stage === "STAGING") return "TNM 병기";
+    if (stage === "GENE") return "유전자 검사";
+    if (stage === "TREATMENT") return "치료 의사결정";
+    if (stage === "PRESCRIPTION") return "처방";
+
+    return stage;
+  };
+
+  // Case 상태 표시
+  const getCaseStatusLabel = (status: string) => {
+    if (status === "ACTIVE") return "진행중";
+    if (status === "REFERRED_OUT") return "전원";
+    if (status === "CLOSED") return "종결";
+
+    return status;
+  };
+
+  // 예약 상태 표시
+  const getAppointmentStatusLabel = (status: string) => {
+    if (status === "REQUESTED") return "예약 요청";
+    if (status === "CONFIRMED") return "예약 확정";
+    if (status === "CANCELLED") return "예약 취소";
+
+    return status;
+  };
+
+  // 방문 상태 표시
+  const getVisitStatusLabel = (status: string) => {
+    if (status === "SCHEDULED") return "방문 예정";
+    if (status === "VISITED") return "방문 완료";
+    if (status === "NO_SHOW") return "미방문";
+
+    return status;
+  };
+
+  // 예약 생성 주체 표시
+  const getCreatedByTypeLabel = (type: string) => {
+    if (type === "PATIENT") return "환자";
+    if (type === "DOCTOR_ORDER") return "의사 오더";
+
+    return type;
   };
 
   // 검색 + 성별 필터
@@ -675,6 +746,7 @@ export default function PatientsPage() {
             />
 
             <div className="flex-1 overflow-y-auto px-6 py-6">
+              {/* 기본 정보 */}
               <div className="rounded-2xl bg-pink-50/70 p-5">
                 <h3 className="mb-4 font-semibold text-slate-700">
                   기본 정보
@@ -713,40 +785,110 @@ export default function PatientsPage() {
                 </div>
               </div>
 
+              {/* 앱 연결 상태 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <div className="flex items-center justify-between">
                   <h3 className="font-semibold text-slate-700">
                     앱 연결 상태
                   </h3>
 
-                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-500">
-                    연동 예정
+                  <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
+                    {getAppLinkStatusLabel(
+                      selectedPatient.app_link_status
+                    )}
                   </span>
                 </div>
 
-                <p className="mt-3 text-sm text-slate-400">
-                  환자 앱 계정 연결 정보는 추후 API와 연동합니다.
+                <p className="mt-3 text-sm text-slate-500">
+                  {selectedPatient.app_link_status === "LINKED"
+                    ? "환자 앱 계정이 연결되어 있습니다."
+                    : selectedPatient.app_link_status === "PENDING_REVIEW"
+                    ? "환자 앱 연결 요청을 확인 중입니다."
+                    : selectedPatient.app_link_status === "REJECTED"
+                    ? "환자 앱 연결이 거부된 상태입니다."
+                    : "연결된 환자 앱 계정이 없습니다."}
                 </p>
               </div>
 
+              {/* Case 정보 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <h3 className="font-semibold text-slate-700">
-                  Case 정보
+                  현재 Case
                 </h3>
 
-                <p className="mt-3 text-sm text-slate-400">
-                  연결된 Case 정보는 다음 단계에서 연동합니다.
-                </p>
+                {selectedPatient.current_case ? (
+                  <div className="mt-4 space-y-3 text-sm">
+                    <DetailRow
+                      label="Case ID"
+                      value={selectedPatient.current_case.case_code}
+                    />
+
+                    <DetailRow
+                      label="현재 단계"
+                      value={getStageLabel(
+                        selectedPatient.current_case.current_stage
+                      )}
+                    />
+
+                    <DetailRow
+                      label="Case 상태"
+                      value={getCaseStatusLabel(
+                        selectedPatient.current_case.case_status
+                      )}
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-400">
+                    현재 진행 중인 Case가 없습니다.
+                  </p>
+                )}
               </div>
 
+              {/* 최근 예약 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <h3 className="font-semibold text-slate-700">
                   최근 예약
                 </h3>
 
-                <p className="mt-3 text-sm text-slate-400">
-                  예약 정보는 다음 단계에서 연동합니다.
-                </p>
+                {selectedPatient.recent_appointment ? (
+                  <div className="mt-4 space-y-3 text-sm">
+                    <DetailRow
+                      label="예약일시"
+                      value={formatDateTime(
+                        selectedPatient.recent_appointment
+                          .scheduled_at
+                      )}
+                    />
+
+                    <DetailRow
+                      label="예약 상태"
+                      value={getAppointmentStatusLabel(
+                        selectedPatient.recent_appointment
+                          .appointment_status
+                      )}
+                    />
+
+                    <DetailRow
+                      label="방문 상태"
+                      value={getVisitStatusLabel(
+                        selectedPatient.recent_appointment
+                          .visit_status
+                      )}
+                    />
+
+                    <DetailRow
+                      label="예약 생성"
+                      value={getCreatedByTypeLabel(
+                        selectedPatient.recent_appointment
+                          .created_by_type
+                      )}
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-slate-400">
+                    최근 예약 정보가 없습니다.
+                  </p>
+                )}
               </div>
             </div>
 
@@ -793,7 +935,6 @@ export default function PatientsPage() {
                 <ErrorMessage message={updateError} />
               )}
 
-              {/* 환자번호는 수정 불가 */}
               <div className="mb-5 rounded-2xl bg-slate-50 p-4">
                 <p className="text-xs text-slate-400">
                   환자번호
@@ -913,6 +1054,7 @@ function DetailRow({
   return (
     <div className="flex justify-between gap-6">
       <span className="text-slate-400">{label}</span>
+
       <span className="text-right font-medium text-slate-700">
         {value}
       </span>
@@ -1027,6 +1169,22 @@ function ErrorMessage({
       {message}
     </div>
   );
+}
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  return date.toLocaleString("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 async function getApiErrorMessage(

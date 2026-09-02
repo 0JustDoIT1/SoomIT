@@ -12,7 +12,7 @@ from .models import Patient, PatientAccount, SocialAccount
 
 
 # ─────────────────────────────────────────────
-# 원무과(coordinator) - 환자 조회용
+# 원무과(coordinator) - 환자 목록 조회용
 # ─────────────────────────────────────────────
 class PatientSerializer(serializers.ModelSerializer):
     class Meta:
@@ -28,6 +28,81 @@ class PatientSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+# ─────────────────────────────────────────────
+# 원무과(coordinator) - 환자 상세 조회용
+# ─────────────────────────────────────────────
+class PatientDetailSerializer(serializers.ModelSerializer):
+    app_link_status = serializers.SerializerMethodField()
+    current_case = serializers.SerializerMethodField()
+    recent_appointment = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Patient
+        fields = [
+            "id",
+            "patient_code",
+            "name",
+            "birth_date",
+            "sex",
+            "phone_number",
+            "address",
+            "created_at",
+            "updated_at",
+
+            # 상세 조회 전용
+            "app_link_status",
+            "current_case",
+            "recent_appointment",
+        ]
+
+    # 환자 앱 계정 연결 상태
+    def get_app_link_status(self, obj):
+        patient_account = obj.accounts.first()
+
+        if patient_account is None:
+            return "UNLINKED"
+
+        return patient_account.link_status
+
+    # 현재 진행 중인 Lung Cancer Case
+    def get_current_case(self, obj):
+        current_case = (
+            obj.cases
+            .filter(case_status="ACTIVE")
+            .order_by("-created_at")
+            .first()
+        )
+
+        if current_case is None:
+            return None
+
+        return {
+            "id": str(current_case.id),
+            "case_code": current_case.case_code,
+            "current_stage": current_case.current_stage,
+            "case_status": current_case.case_status,
+        }
+
+    # 가장 최근 예약
+    def get_recent_appointment(self, obj):
+        appointment = (
+            obj.appointments
+            .order_by("-scheduled_at")
+            .first()
+        )
+
+        if appointment is None:
+            return None
+
+        return {
+            "id": str(appointment.id),
+            "scheduled_at": appointment.scheduled_at,
+            "appointment_status": appointment.appointment_status,
+            "visit_status": appointment.visit_status,
+            "created_by_type": appointment.created_by_type,
+        }
 
 
 # ─────────────────────────────────────────────
