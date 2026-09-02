@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     "apps.annotations",
     "apps.notifications",
     "apps.audit",
+    "rest_framework",
 ]
 
 MIDDLEWARE = [
