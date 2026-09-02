@@ -1,0 +1,25 @@
+# Local environment and secrets
+**/.env
+**/.env.*
+!**/.env.example
+
+# Python cache
+**/__pycache__/
+*.py[cod]
+
+# Python environments
+.venv/
+venv/
+
+# Node / Next.js
+**/node_modules/
+**/.next/
+
+# Build outputs
+**/build/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
