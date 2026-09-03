@@ -31,35 +31,27 @@ class AppointmentSerializer(serializers.ModelSerializer):
         model = Appointment
         fields = [
             "id",
-
-            # 환자
             "patient_code",
             "patient_name",
-
-            # Case
             "case_code",
-
-            # 담당 의료진
             "doctor_name",
-
-            # 예약
             "scheduled_at",
             "appointment_status",
             "created_by_type",
-
-            # 방문
             "visit_status",
             "checked_in_at",
-
-            # 확정
             "confirmed_at",
-
-            # 취소
             "cancelled_at",
             "cancellation_reason",
-
-            # 생성 / 수정
             "created_at",
             "updated_at",
         ]
-        
+
+
+# 원무과 - 예약 취소 요청값
+class AppointmentCancelSerializer(serializers.Serializer):
+    cancellation_reason = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=1000,
+    )
