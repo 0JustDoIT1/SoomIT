@@ -1,7 +1,10 @@
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 
 from .models import LungCancerCase
-from .serializers import LungCancerCaseSerializer
+from .serializers import (
+    LungCancerCaseDetailSerializer,
+    LungCancerCaseSerializer,
+)
 
 
 # 원무과 - Case 목록 조회
@@ -22,5 +25,5 @@ class LungCancerCaseDetailAPIView(RetrieveAPIView):
         .select_related("patient")
         .all()
     )
-    serializer_class = LungCancerCaseSerializer
+    serializer_class = LungCancerCaseDetailSerializer
     lookup_field = "id"
