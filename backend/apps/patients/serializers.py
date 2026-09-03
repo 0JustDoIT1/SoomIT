@@ -2,14 +2,95 @@ import hashlib
 
 from rest_framework import serializers
 
-from .models import Patient, PatientAccount, SocialAccount
+from .models import Patient, PatientAccount, SocialAccount, Appointment
 
 
 # ─────────────────────────────────────────────
 # Flutter용
 # 기존 Flutter serializer가 추가되면 이 아래에 유지
 # ─────────────────────────────────────────────
+class AppointmentSerializer(serializers.ModelSerializer):
+    doctor_name = serializers.SerializerMethodField()
+    hospital_name = serializers.SerializerMethodField()
+    exam_type = serializers.SerializerMethodField()
+    display_type = serializers.SerializerMethodField()
 
+    appointment_status_label = serializers.CharField(
+        source="get_appointment_status_display",
+        read_only=True,
+    )
+
+    visit_status_label = serializers.CharField(
+        source="get_visit_status_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = Appointment
+        fields = [
+            "id",
+            "scheduled_at",
+
+            "appointment_status",
+            "appointment_status_label",
+
+            "visit_status",
+            "visit_status_label",
+
+            "created_by_type",
+
+            "doctor",
+            "doctor_name",
+
+            "hospital_name",
+
+            "exam_type",
+            "display_type",
+        ]
+
+    # 담당 의사 이름
+    def get_doctor_name(self, obj):
+        if obj.doctor is None:
+            return None
+
+        return obj.doctor.name
+
+    # 환자 소속 병원명
+    def get_hospital_name(self, obj):
+        if obj.patient is None:
+            return None
+
+        if obj.patient.hospital is None:
+            return None
+
+        return obj.patient.hospital.name
+
+    # 검사 예약일 경우 검사 종류
+    def get_exam_type(self, obj):
+        if obj.examination_order is None:
+            return None
+
+        return obj.examination_order.exam_type
+
+    # Flutter 화면 표시용 예약 종류
+    def get_display_type(self, obj):
+        # 검사 오더와 연결된 예약
+        if obj.examination_order is not None:
+            exam_type = obj.examination_order.exam_type
+
+            exam_labels = {
+                "XRAY": "X-ray 검사",
+                "CT": "CT 검사",
+                "WSI": "병리 검사",
+            }
+
+            return exam_labels.get(
+                exam_type,
+                f"{exam_type} 검사",
+            )
+
+        # examination_order가 없으면 일반 외래 예약
+        return "외래 진료"
 
 # ─────────────────────────────────────────────
 # 원무과(coordinator) - 환자 목록 조회용

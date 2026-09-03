@@ -1,12 +1,17 @@
 import hashlib
 
 from rest_framework.exceptions import ValidationError
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import (
+    ListAPIView,
+    ListCreateAPIView,
+    RetrieveUpdateAPIView,
+)
 
 from apps.accounts.models import Hospital
 
-from .models import Patient
+from .models import Patient, Appointment
 from .serializers import (
+    AppointmentSerializer,
     PatientCreateSerializer,
     PatientDetailSerializer,
     PatientSerializer,
@@ -63,3 +68,34 @@ class PatientDetailAPIView(RetrieveUpdateAPIView):
 
         # PATCH / PUT
         return PatientUpdateSerializer
+    
+    
+
+
+
+
+# ─────────────────────────────────────────────
+# Flutter용 - 환자 예약 목록 조회
+# 로그인 구현 전 개발용
+# ─────────────────────────────────────────────
+class AppointmentListAPIView(ListAPIView):
+    serializer_class = AppointmentSerializer
+
+    def get_queryset(self):
+        # 로그인 연동 전 개발용 테스트 환자
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return Appointment.objects.none()
+
+        return (
+            Appointment.objects
+            .filter(patient=patient)
+            .select_related(
+                "patient",
+                "patient__hospital",
+                "doctor",
+                "examination_order",
+            )
+            .order_by("-scheduled_at")
+        )
