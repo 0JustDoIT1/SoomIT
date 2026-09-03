@@ -1,6 +1,8 @@
 // 헤더 + 본문
 import 'package:flutter/material.dart';
 
+import '../features/appointment/appointment_screen.dart';
+import '../features/exam_result/exam_result_screen.dart';
 import '../features/home/home_screen.dart';
 import 'app_header.dart';
 import 'bottom_nav.dart';
@@ -17,8 +19,8 @@ class _AppShellState extends State<AppShell> {
 
   final List<Widget> _screens = const [
     HomeScreen(),
-    _PlaceholderScreen(title: '예약'),
-    _PlaceholderScreen(title: '검사·결과'),
+    AppointmentScreen(),
+    ExamResultScreen(),
     _PlaceholderScreen(title: '복약'),
     _PlaceholderScreen(title: '마이페이지'),
   ];
