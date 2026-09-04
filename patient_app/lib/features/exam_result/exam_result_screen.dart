@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 
 import 'exam_result_detail_screen.dart';
-import 'mock/exam_result_mock.dart';
 import 'models/exam_result.dart';
+import 'services/exam_result_service.dart';
 
 class ExamResultScreen extends StatefulWidget {
   const ExamResultScreen({super.key});
@@ -14,24 +14,39 @@ class ExamResultScreen extends StatefulWidget {
 class _ExamResultScreenState extends State<ExamResultScreen> {
   int _selectedTab = 0;
 
+  final ExamResultService _examResultService = ExamResultService();
+
+  late Future<List<ExamResult>> _resultsFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadResults();
+  }
+
+  void _loadResults() {
+    _resultsFuture = _examResultService.getExamResults();
+  }
+
+  void _retry() {
+    setState(() {
+      _loadResults();
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    final upcomingExams =
-        mockExamResults.where((exam) => !exam.hasResult).toList();
-
-    final completedResults =
-        mockExamResults.where((exam) => exam.hasResult).toList();
-
     return SafeArea(
       child: Column(
         children: [
           _buildTabBar(),
+
           Expanded(
             child: IndexedStack(
               index: _selectedTab,
               children: [
-                _buildScheduleTab(upcomingExams),
-                _buildResultTab(completedResults),
+                _buildScheduleTab(),
+                _buildResultTab(),
               ],
             ),
           ),
@@ -40,7 +55,10 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
     );
   }
 
-  // 상단 2개 탭
+  // ─────────────────────────────────────────
+  // 상단 2탭
+  // ─────────────────────────────────────────
+
   Widget _buildTabBar() {
     const tabs = [
       '검사 일정',
@@ -64,7 +82,9 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                   });
                 },
                 child: Container(
-                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 13,
+                  ),
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
@@ -96,8 +116,12 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
     );
   }
 
-  // 검사 일정 탭
-  Widget _buildScheduleTab(List<ExamResult> upcomingExams) {
+  // ─────────────────────────────────────────
+  // 검사 일정
+  // 현재는 일정 API 연결 전
+  // ─────────────────────────────────────────
+
+  Widget _buildScheduleTab() {
     return SingleChildScrollView(
       physics: const BouncingScrollPhysics(),
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
@@ -112,7 +136,9 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
               color: Color(0xFF191F28),
             ),
           ),
+
           const SizedBox(height: 6),
+
           const Text(
             '예정된 검사 일정을 확인해보세요.',
             style: TextStyle(
@@ -120,75 +146,22 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
               color: Color(0xFF8B95A1),
             ),
           ),
+
           const SizedBox(height: 22),
 
-          if (upcomingExams.isEmpty)
-            _buildEmptyState(
-              icon: Icons.calendar_month_outlined,
-              title: '예정된 검사가 없어요.',
-              description: '새로운 검사 일정이 등록되면 여기에서 확인할 수 있어요.',
-            )
-          else
-            ...upcomingExams.map(
-              (exam) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildScheduleCard(exam),
-              ),
-            ),
+          _buildScheduleNotice(),
         ],
       ),
     );
   }
 
-  // 검사 결과 탭
-  Widget _buildResultTab(List<ExamResult> completedResults) {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '검사 결과',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF191F28),
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            '완료된 검사 결과를 확인해보세요.',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF8B95A1),
-            ),
-          ),
-          const SizedBox(height: 22),
-
-          if (completedResults.isEmpty)
-            _buildEmptyState(
-              icon: Icons.fact_check_outlined,
-              title: '확인 가능한 검사 결과가 없어요.',
-              description: '검사 결과가 등록되면 여기에서 확인할 수 있어요.',
-            )
-          else
-            ...completedResults.map(
-              (exam) => Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: _buildResultCard(exam),
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // 검사 일정 카드
-  Widget _buildScheduleCard(ExamResult exam) {
+  Widget _buildScheduleNotice() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(
+        vertical: 42,
+        horizontal: 20,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
@@ -196,83 +169,34 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
           color: const Color(0xFFE9EDF2),
         ),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: const Column(
         children: [
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF4F7FF),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: const Icon(
-                  Icons.biotech_outlined,
-                  color: Color(0xFF2B66F6),
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  exam.examName,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: Color(0xFF191F28),
-                  ),
-                ),
-              ),
-              _buildStatusBadge(
-                exam.status,
-                const Color(0xFF2B66F6),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          _buildInfoRow(
+          Icon(
             Icons.calendar_month_outlined,
-            _formatDateTime(exam.scheduledAt),
+            size: 42,
+            color: Color(0xFFB0B8C1),
           ),
 
-          const SizedBox(height: 8),
+          SizedBox(height: 14),
 
-          _buildInfoRow(
-            Icons.local_hospital_outlined,
-            exam.department,
-          ),
-
-          const SizedBox(height: 14),
-
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8F9FB),
-              borderRadius: BorderRadius.circular(12),
+          Text(
+            '검사 일정 정보를 준비 중이에요.',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF191F28),
             ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(
-                  Icons.info_outline_rounded,
-                  size: 18,
-                  color: Color(0xFF6B7684),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    exam.preparationGuide,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      height: 1.5,
-                      color: Color(0xFF4E5968),
-                    ),
-                  ),
-                ),
-              ],
+          ),
+
+          SizedBox(height: 6),
+
+          Text(
+            '검사 일정 API 연결 후 실제 일정이 표시됩니다.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.5,
+              color: Color(0xFF8B95A1),
             ),
           ),
         ],
@@ -280,7 +204,83 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
     );
   }
 
-  // 검사 결과 카드
+  // ─────────────────────────────────────────
+  // 검사 결과 - 실제 API
+  // ─────────────────────────────────────────
+
+  Widget _buildResultTab() {
+    return FutureBuilder<List<ExamResult>>(
+      future: _resultsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return _buildErrorState();
+        }
+
+        final results = snapshot.data ?? [];
+
+        if (results.isEmpty) {
+          return _buildEmptyResultState();
+        }
+
+        return RefreshIndicator(
+          onRefresh: () async {
+            setState(() {
+              _loadResults();
+            });
+
+            await _resultsFuture;
+          },
+          child: ListView(
+            physics: const AlwaysScrollableScrollPhysics(
+              parent: BouncingScrollPhysics(),
+            ),
+            padding: const EdgeInsets.fromLTRB(
+              20,
+              20,
+              20,
+              28,
+            ),
+            children: [
+              const Text(
+                '검사 결과',
+                style: TextStyle(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF191F28),
+                ),
+              ),
+
+              const SizedBox(height: 6),
+
+              const Text(
+                '확정된 검사 결과를 확인해보세요.',
+                style: TextStyle(
+                  fontSize: 14,
+                  color: Color(0xFF8B95A1),
+                ),
+              ),
+
+              const SizedBox(height: 22),
+
+              ...results.map(
+                (exam) => Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: _buildResultCard(exam),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildResultCard(ExamResult exam) {
     return InkWell(
       borderRadius: BorderRadius.circular(16),
@@ -321,54 +321,58 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                     color: Color(0xFF20A66A),
                   ),
                 ),
+
                 const SizedBox(width: 12),
+
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        exam.examName,
-                        style: const TextStyle(
-                          fontSize: 17,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF191F28),
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        exam.department,
-                        style: const TextStyle(
-                          fontSize: 13,
-                          color: Color(0xFF8B95A1),
-                        ),
-                      ),
-                    ],
+                  child: Text(
+                    exam.examName,
+                    style: const TextStyle(
+                      fontSize: 17,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF191F28),
+                    ),
                   ),
                 ),
+
                 _buildStatusBadge(
-                  exam.status,
-                  const Color(0xFF20A66A),
+                  exam.resultStatusLabel,
                 ),
               ],
             ),
+
             const SizedBox(height: 14),
 
-            _buildInfoRow(
-              Icons.calendar_today_outlined,
-              _formatDate(exam.scheduledAt),
+            Row(
+              children: [
+                const Icon(
+                  Icons.calendar_today_outlined,
+                  size: 16,
+                  color: Color(0xFF8B95A1),
+                ),
+
+                const SizedBox(width: 6),
+
+                Text(
+                  _formatDate(exam.resultDate),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF8B95A1),
+                  ),
+                ),
+              ],
             ),
 
-            if (exam.resultSummary != null) ...[
-              const SizedBox(height: 12),
-              Text(
-                exam.resultSummary!,
-                style: const TextStyle(
-                  fontSize: 14,
-                  height: 1.55,
-                  color: Color(0xFF4E5968),
-                ),
+            const SizedBox(height: 12),
+
+            Text(
+              exam.resultSummary,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.55,
+                color: Color(0xFF4E5968),
               ),
-            ],
+            ),
 
             const SizedBox(height: 16),
 
@@ -383,7 +387,9 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
                     color: Color(0xFF2B66F6),
                   ),
                 ),
+
                 SizedBox(width: 2),
+
                 Icon(
                   Icons.chevron_right_rounded,
                   size: 20,
@@ -397,102 +403,133 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
     );
   }
 
-  Widget _buildStatusBadge(
-    String text,
-    Color color,
-  ) {
+  Widget _buildStatusBadge(String status) {
     return Container(
       padding: const EdgeInsets.symmetric(
         horizontal: 9,
         vertical: 5,
       ),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.09),
+        color: const Color(0xFF20A66A)
+            .withValues(alpha: 0.09),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Text(
-        text,
-        style: TextStyle(
+        status,
+        style: const TextStyle(
           fontSize: 11,
           fontWeight: FontWeight.w700,
-          color: color,
+          color: Color(0xFF20A66A),
         ),
       ),
     );
   }
 
-  Widget _buildInfoRow(
-    IconData icon,
-    String text,
-  ) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Icon(
-          icon,
-          size: 17,
-          color: const Color(0xFF8B95A1),
-        ),
-        const SizedBox(width: 7),
-        Expanded(
-          child: Text(
-            text,
-            style: const TextStyle(
-              fontSize: 13,
-              color: Color(0xFF4E5968),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // ─────────────────────────────────────────
+  // 결과 없음
+  // ─────────────────────────────────────────
 
-  Widget _buildEmptyState({
-    required IconData icon,
-    required String title,
-    required String description,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        vertical: 42,
-        horizontal: 20,
-      ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE9EDF2),
-        ),
-      ),
+  Widget _buildEmptyResultState() {
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(
-            icon,
-            size: 40,
-            color: const Color(0xFFB0B8C1),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            title,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
+          const Text(
+            '검사 결과',
+            style: TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
               color: Color(0xFF191F28),
             ),
           ),
+
           const SizedBox(height: 6),
-          Text(
-            description,
-            textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 13,
-              height: 1.5,
+
+          const Text(
+            '확정된 검사 결과를 확인해보세요.',
+            style: TextStyle(
+              fontSize: 14,
               color: Color(0xFF8B95A1),
             ),
           ),
+
+          const SizedBox(height: 50),
+
+          const Center(
+            child: Column(
+              children: [
+                Icon(
+                  Icons.fact_check_outlined,
+                  size: 46,
+                  color: Color(0xFFB0B8C1),
+                ),
+
+                SizedBox(height: 14),
+
+                Text(
+                  '확인 가능한 검사 결과가 없어요.',
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF4E5968),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────
+  // API 오류
+  // ─────────────────────────────────────────
+
+  Widget _buildErrorState() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.error_outline_rounded,
+              size: 48,
+              color: Color(0xFF8B95A1),
+            ),
+
+            const SizedBox(height: 14),
+
+            const Text(
+              '검사 결과를 불러오지 못했습니다.',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF191F28),
+              ),
+            ),
+
+            const SizedBox(height: 8),
+
+            const Text(
+              '잠시 후 다시 시도해주세요.',
+              style: TextStyle(
+                fontSize: 13,
+                color: Color(0xFF8B95A1),
+              ),
+            ),
+
+            const SizedBox(height: 18),
+
+            OutlinedButton(
+              onPressed: _retry,
+              child: const Text('다시 시도'),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -501,19 +538,5 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
     return '${date.year}.'
         '${date.month.toString().padLeft(2, '0')}.'
         '${date.day.toString().padLeft(2, '0')}';
-  }
-
-  String _formatDateTime(DateTime date) {
-    final minute = date.minute.toString().padLeft(2, '0');
-    final period = date.hour < 12 ? '오전' : '오후';
-
-    final hour = date.hour == 0
-        ? 12
-        : date.hour > 12
-            ? date.hour - 12
-            : date.hour;
-
-    return '${_formatDate(date)} '
-        '$period ${hour.toString().padLeft(2, '0')}:$minute';
   }
 }

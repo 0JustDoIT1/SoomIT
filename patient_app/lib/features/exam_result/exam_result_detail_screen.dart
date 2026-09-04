@@ -72,8 +72,6 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  // 검사 완료 파란 박스 대신
-  // 검사명 + 상태 + 검사일 + 진료과를 하나의 카드로 표시
   Widget _buildExamInfoCard() {
     return Container(
       width: double.infinity,
@@ -128,7 +126,7 @@ class ExamResultDetailScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(9),
                 ),
                 child: Text(
-                  exam.status,
+                  exam.resultStatusLabel,
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -150,9 +148,9 @@ class ExamResultDetailScreen extends StatelessWidget {
             child: Column(
               children: [
                 _buildInfoRow(
-                  icon: Icons.calendar_month_outlined,
-                  label: '검사일',
-                  value: _formatDateTime(exam.scheduledAt),
+                  icon: Icons.category_outlined,
+                  label: '검사 종류',
+                  value: exam.examType,
                 ),
 
                 const Divider(
@@ -163,9 +161,9 @@ class ExamResultDetailScreen extends StatelessWidget {
                 ),
 
                 _buildInfoRow(
-                  icon: Icons.local_hospital_outlined,
-                  label: '진료과',
-                  value: exam.department,
+                  icon: Icons.calendar_month_outlined,
+                  label: '결과 확정일',
+                  value: _formatDateTime(exam.resultDate),
                 ),
               ],
             ),
@@ -269,7 +267,7 @@ class ExamResultDetailScreen extends StatelessWidget {
           const SizedBox(height: 18),
 
           Text(
-            exam.resultSummary ?? '검사 결과가 등록되어 있습니다.',
+            exam.resultSummary,
             style: const TextStyle(
               fontSize: 14,
               height: 1.65,
