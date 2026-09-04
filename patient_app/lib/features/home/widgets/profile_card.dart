@@ -1,7 +1,14 @@
 import 'package:flutter/material.dart';
 
+import '../models/patient_profile.dart';
+
 class ProfileCard extends StatelessWidget {
-  const ProfileCard({super.key});
+  const ProfileCard({
+    super.key,
+    required this.profile,
+  });
+
+  final PatientProfile profile;
 
   @override
   Widget build(BuildContext context) {
@@ -41,28 +48,30 @@ class ProfileCard extends StatelessWidget {
 
               const SizedBox(width: 14),
 
-              const Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '김숨잇 님',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${profile.name} 님',
+                      style: const TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
                     ),
-                  ),
 
-                  SizedBox(height: 2),
+                    const SizedBox(height: 2),
 
-                  Text(
-                    '오늘도 숨 편한 하루 되세요!',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.white70,
+                    const Text(
+                      '오늘도 숨 편한 하루 되세요!',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white70,
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ],
           ),
@@ -81,9 +90,9 @@ class ProfileCard extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Row(
+                Row(
                   children: [
-                    Text(
+                    const Text(
                       '환자코드',
                       style: TextStyle(
                         fontSize: 13,
@@ -91,11 +100,11 @@ class ProfileCard extends StatelessWidget {
                       ),
                     ),
 
-                    SizedBox(width: 10),
+                    const SizedBox(width: 10),
 
                     Text(
-                      'PAT-7F29A3',
-                      style: TextStyle(
+                      profile.patientCode,
+                      style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
                         color: Colors.white,

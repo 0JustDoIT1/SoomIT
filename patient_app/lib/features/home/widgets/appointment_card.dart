@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
 
 import '../../../shared/base_card.dart';
+import '../../appointment/models/appointment.dart';
 
 class AppointmentCard extends StatelessWidget {
-  const AppointmentCard({super.key});
+  const AppointmentCard({
+    super.key,
+    required this.appointment,
+  });
+
+  final Appointment appointment;
 
   @override
   Widget build(BuildContext context) {
@@ -15,14 +21,13 @@ class AppointmentCard extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               _buildTag(
-                'D-3',
+                _getDday(appointment.scheduledAt),
                 const Color(0xFFEFF6FF),
                 const Color(0xFF2B66F6),
               ),
-
-              const Text(
-                '예약확정',
-                style: TextStyle(
+              Text(
+                appointment.appointmentStatusLabel,
+                style: const TextStyle(
                   fontSize: 12,
                   color: Color(0xFF2B66F6),
                   fontWeight: FontWeight.w600,
@@ -33,9 +38,9 @@ class AppointmentCard extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          const Text(
-            '2026.09.04 (금) 10:30',
-            style: TextStyle(
+          Text(
+            _formatDateTime(appointment.scheduledAt),
+            style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
               color: Color(0xFF191F28),
@@ -44,11 +49,22 @@ class AppointmentCard extends StatelessWidget {
 
           const SizedBox(height: 4),
 
-          const Text(
-            '호흡기내과 · 김의사 교수',
-            style: TextStyle(
+          Text(
+            '${appointment.displayType} · '
+            '${appointment.doctorName ?? '담당 의료진 미지정'}',
+            style: const TextStyle(
               fontSize: 14,
               color: Color(0xFF4E5968),
+            ),
+          ),
+
+          const SizedBox(height: 4),
+
+          Text(
+            appointment.hospitalName,
+            style: const TextStyle(
+              fontSize: 12,
+              color: Color(0xFF8B95A1),
             ),
           ),
         ],
@@ -79,5 +95,52 @@ class AppointmentCard extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  String _getDday(DateTime date) {
+    final now = DateTime.now();
+
+    final today = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
+
+    final target = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    );
+
+    final difference = target.difference(today).inDays;
+
+    if (difference == 0) {
+      return 'D-DAY';
+    }
+
+    if (difference > 0) {
+      return 'D-$difference';
+    }
+
+    return '지난 예약';
+  }
+
+  String _formatDateTime(DateTime date) {
+    final local = date.toLocal();
+
+    final period = local.hour < 12 ? '오전' : '오후';
+
+    final hour = local.hour == 0
+        ? 12
+        : local.hour > 12
+            ? local.hour - 12
+            : local.hour;
+
+    final minute = local.minute.toString().padLeft(2, '0');
+
+    return '${local.year}.'
+        '${local.month.toString().padLeft(2, '0')}.'
+        '${local.day.toString().padLeft(2, '0')} '
+        '$period $hour:$minute';
   }
 }
