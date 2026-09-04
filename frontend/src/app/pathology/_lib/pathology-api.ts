@@ -49,6 +49,27 @@ export type PathologySpecimen = {
   updated_at: string;
 };
 
+export type WholeSlideImage = {
+  id: string;
+  specimen_id: string;
+  image_asset_id: string;
+  slide_code: string;
+  block_code: string | null;
+  version: number;
+  stain: string;
+  original_filename: string;
+  sha256: string;
+  mpp: string | number | null;
+  is_current: boolean;
+  storage_uri: string;
+  file_format: string;
+  image_status: string;
+  invalidated_at: string | null;
+  invalidation_reason: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export const WORK_ITEMS_API_URL =
   "http://127.0.0.1:8000/api/pathology/work-items/";
 export const CASES_API_URL = "http://127.0.0.1:8000/api/cases/";
@@ -59,6 +80,10 @@ export function workItemDetailApiUrl(itemId: string) {
 
 export function caseSpecimensApiUrl(caseId: string) {
   return `http://127.0.0.1:8000/api/pathology/cases/${encodeURIComponent(caseId)}/specimens/`;
+}
+
+export function specimenSlidesApiUrl(specimenId: string) {
+  return `http://127.0.0.1:8000/api/pathology/specimens/${encodeURIComponent(specimenId)}/wsis/`;
 }
 
 export const statusLabel: Record<string, string> = {
@@ -174,4 +199,8 @@ export function readCases(response: Response) {
 
 export function readSpecimens(response: Response) {
   return readCollection<PathologySpecimen>(response);
+}
+
+export function readSlides(response: Response) {
+  return readCollection<WholeSlideImage>(response);
 }
