@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'exam_result_detail_screen.dart';
 import 'models/exam_result.dart';
+import 'models/exam_schedule.dart';
+import 'services/exam_schedule_service.dart';
 import 'services/exam_result_service.dart';
 
 class ExamResultScreen extends StatefulWidget {
@@ -18,10 +20,15 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
 
   late Future<List<ExamResult>> _resultsFuture;
 
+  final ExamScheduleService _examScheduleService = ExamScheduleService();
+
+  late Future<List<ExamSchedule>> _schedulesFuture;
+
   @override
   void initState() {
     super.initState();
     _loadResults();
+    _loadSchedules();
   }
 
   void _loadResults() {
@@ -32,6 +39,10 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
     setState(() {
       _loadResults();
     });
+  }
+
+  void _loadSchedules() {
+  _schedulesFuture = _examScheduleService.getExamSchedules();
   }
 
   @override
@@ -117,92 +128,300 @@ class _ExamResultScreenState extends State<ExamResultScreen> {
   }
 
   // ─────────────────────────────────────────
-  // 검사 일정
-  // 현재는 일정 API 연결 전
+  // 검사 일정 - 실제 api
   // ─────────────────────────────────────────
 
-  Widget _buildScheduleTab() {
-    return SingleChildScrollView(
-      physics: const BouncingScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            '검사 일정',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              color: Color(0xFF191F28),
-            ),
+Widget _buildScheduleTab() {
+  return FutureBuilder<List<ExamSchedule>>(
+    future: _schedulesFuture,
+    builder: (context, snapshot) {
+      if (snapshot.connectionState == ConnectionState.waiting) {
+        return const Center(
+          child: CircularProgressIndicator(),
+        );
+      }
+
+      if (snapshot.hasError) {
+        return _buildScheduleErrorState();
+      }
+
+      final schedules = snapshot.data ?? [];
+
+      if (schedules.isEmpty) {
+        return _buildEmptyScheduleState();
+      }
+
+      return RefreshIndicator(
+        onRefresh: () async {
+          setState(() {
+            _loadSchedules();
+          });
+
+          await _schedulesFuture;
+        },
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(
+            parent: BouncingScrollPhysics(),
           ),
-
-          const SizedBox(height: 6),
-
-          const Text(
-            '예정된 검사 일정을 확인해보세요.',
-            style: TextStyle(
-              fontSize: 14,
-              color: Color(0xFF8B95A1),
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+          children: [
+            const Text(
+              '검사 일정',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF191F28),
+              ),
             ),
+            const SizedBox(height: 6),
+            const Text(
+              '예정된 검사 일정을 확인해보세요.',
+              style: TextStyle(
+                fontSize: 14,
+                color: Color(0xFF8B95A1),
+              ),
+            ),
+            const SizedBox(height: 22),
+
+            ...schedules.map(
+              (schedule) => Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: _buildScheduleCard(schedule),
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
+
+Widget _buildScheduleCard(ExamSchedule schedule) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(18),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color: const Color(0xFFE9EDF2),
+      ),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              width: 44,
+              height: 44,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF4F7FF),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(
+                Icons.biotech_outlined,
+                color: Color(0xFF2B66F6),
+              ),
+            ),
+            const SizedBox(width: 12),
+
+            Expanded(
+              child: Text(
+                schedule.examName,
+                style: const TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF191F28),
+                ),
+              ),
+            ),
+
+            Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 9,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: const Color(0xFF2B66F6)
+                    .withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                schedule.visitStatusLabel,
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF2B66F6),
+                ),
+              ),
+            ),
+          ],
+        ),
+
+        const SizedBox(height: 16),
+
+        _buildScheduleInfo(
+          Icons.calendar_today_outlined,
+          _formatScheduleDate(schedule.scheduledAt),
+        ),
+
+        if (schedule.hospitalName != null) ...[
+          const SizedBox(height: 10),
+          _buildScheduleInfo(
+            Icons.local_hospital_outlined,
+            schedule.hospitalName!,
           ),
-
-          const SizedBox(height: 22),
-
-          _buildScheduleNotice(),
         ],
-      ),
-    );
-  }
 
-  Widget _buildScheduleNotice() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        vertical: 42,
-        horizontal: 20,
+        if (schedule.doctorName != null) ...[
+          const SizedBox(height: 10),
+          _buildScheduleInfo(
+            Icons.person_outline,
+            schedule.doctorName!,
+          ),
+        ],
+
+        if (schedule.preparationGuide != null) ...[
+          const SizedBox(height: 16),
+
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8F9FB),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline,
+                  size: 18,
+                  color: Color(0xFF6B7684),
+                ),
+                const SizedBox(width: 8),
+
+                Expanded(
+                  child: Text(
+                    schedule.preparationGuide!,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: Color(0xFF4E5968),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ],
+    ),
+  );
+}
+
+Widget _buildScheduleInfo(
+  IconData icon,
+  String text,
+) {
+  return Row(
+    children: [
+      Icon(
+        icon,
+        size: 17,
+        color: const Color(0xFF8B95A1),
       ),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE9EDF2),
+      const SizedBox(width: 7),
+      Expanded(
+        child: Text(
+          text,
+          style: const TextStyle(
+            fontSize: 13,
+            color: Color(0xFF4E5968),
+          ),
         ),
       ),
-      child: const Column(
-        children: [
-          Icon(
-            Icons.calendar_month_outlined,
-            size: 42,
-            color: Color(0xFFB0B8C1),
+    ],
+  );
+}
+
+String _formatScheduleDate(DateTime date) {
+  final local = date.toLocal();
+
+  final period = local.hour < 12 ? '오전' : '오후';
+
+  final hour = local.hour == 0
+      ? 12
+      : local.hour > 12
+          ? local.hour - 12
+          : local.hour;
+
+  final minute = local.minute.toString().padLeft(2, '0');
+
+  return '${local.year}.'
+      '${local.month.toString().padLeft(2, '0')}.'
+      '${local.day.toString().padLeft(2, '0')} '
+      '$period $hour:$minute';
+}
+
+Widget _buildEmptyScheduleState() {
+  return const Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          Icons.calendar_month_outlined,
+          size: 46,
+          color: Color(0xFFB0B8C1),
+        ),
+        SizedBox(height: 14),
+        Text(
+          '예정된 검사가 없어요.',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: Color(0xFF4E5968),
           ),
+        ),
+      ],
+    ),
+  );
+}
 
-          SizedBox(height: 14),
-
-          Text(
-            '검사 일정 정보를 준비 중이에요.',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF191F28),
-            ),
+Widget _buildScheduleErrorState() {
+  return Center(
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Icon(
+          Icons.error_outline,
+          size: 46,
+          color: Color(0xFF8B95A1),
+        ),
+        const SizedBox(height: 14),
+        const Text(
+          '검사 일정을 불러오지 못했습니다.',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
           ),
+        ),
+        const SizedBox(height: 16),
+        OutlinedButton(
+          onPressed: () {
+            setState(() {
+              _loadSchedules();
+            });
+          },
+          child: const Text('다시 시도'),
+        ),
+      ],
+    ),
+  );
+}
 
-          SizedBox(height: 6),
 
-          Text(
-            '검사 일정 API 연결 후 실제 일정이 표시됩니다.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13,
-              height: 1.5,
-              color: Color(0xFF8B95A1),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // ─────────────────────────────────────────
   // 검사 결과 - 실제 API
