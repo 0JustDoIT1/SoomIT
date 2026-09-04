@@ -15,7 +15,11 @@ const primaryNavigation: NavigationItem[] = [
   { label: "업무 대기열", href: "/pathology/work-items", icon: "queue" },
   { label: "케이스·검체", href: "/pathology/specimens", icon: "case" },
   { label: "WSI 등록", href: "/pathology/slides", icon: "slide" },
-  { label: "검체 적정성 분석", icon: "analysis" },
+  {
+    label: "검체 적정성 분석",
+    href: "/pathology/adequacy",
+    icon: "analysis",
+  },
   { label: "병리 AI", icon: "analysis" },
   { label: "PD-L1·경로 분석", icon: "analysis" },
   { label: "병리 보고서", icon: "report" },
