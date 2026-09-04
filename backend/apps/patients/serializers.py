@@ -91,7 +91,143 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
         # examination_order가 없으면 일반 외래 예약
         return "외래 진료"
+    
+   
+# ─────────────────────────────────────────────    
+# 환자 검사 일정 조회
+# ─────────────────────────────────────────────
+class ExaminationScheduleSerializer(serializers.ModelSerializer):
+    exam_type = serializers.SerializerMethodField()
+    exam_name = serializers.SerializerMethodField()
 
+    appointment_status_label = serializers.CharField(
+        source="get_appointment_status_display",
+        read_only=True,
+    )
+
+    visit_status_label = serializers.CharField(
+        source="get_visit_status_display",
+        read_only=True,
+    )
+
+    hospital_name = serializers.SerializerMethodField()
+    doctor_name = serializers.SerializerMethodField()
+    preparation_guide = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Appointment
+        fields = [
+            "id",
+            "scheduled_at",
+
+            "exam_type",
+            "exam_name",
+
+            "appointment_status",
+            "appointment_status_label",
+
+            "visit_status",
+            "visit_status_label",
+
+            "hospital_name",
+            "doctor_name",
+
+            "preparation_guide",
+        ]
+
+    def get_exam_type(self, obj):
+        if obj.examination_order is None:
+            return None
+
+        return obj.examination_order.exam_type
+
+    def get_exam_name(self, obj):
+        if obj.examination_order is None:
+            return "검사"
+
+        exam_names = {
+            "XRAY": "흉부 X-ray 검사",
+            "CT": "흉부 CT 검사",
+            "WSI": "병리 검사",
+        }
+
+        return exam_names.get(
+            obj.examination_order.exam_type,
+            obj.examination_order.exam_type,
+        )
+
+    def get_hospital_name(self, obj):
+        if obj.patient and obj.patient.hospital:
+            return obj.patient.hospital.name
+
+        return None
+
+    def get_doctor_name(self, obj):
+        if obj.doctor:
+            return obj.doctor.name
+
+        return None
+
+    def get_preparation_guide(self, obj):
+        if obj.examination_order is None:
+            return None
+
+        exam_type = obj.examination_order.exam_type
+
+        guides = {
+            "XRAY": "검사 전 별도의 준비사항은 없습니다.",
+            "CT": "검사 전 안내받은 금식 및 조영제 관련 주의사항을 확인해주세요.",
+            "WSI": "검사 관련 안내사항은 담당 의료진의 설명을 따라주세요.",
+        }
+
+        return guides.get(
+            exam_type,
+            "검사 전 안내사항을 확인해주세요.",
+        )
+
+
+# ─────────────────────────────────────────────
+# - 환자 프로필 조회
+# 홈 / 마이페이지 공용
+# ─────────────────────────────────────────────
+class PatientProfileSerializer(serializers.ModelSerializer):
+    hospital_name = serializers.SerializerMethodField()
+    sex_label = serializers.CharField(
+        source="get_sex_display",
+        read_only=True,
+    )
+    app_link_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Patient
+        fields = [
+            "id",
+            "patient_code",
+            "name",
+            "birth_date",
+            "sex",
+            "sex_label",
+            "phone_number",
+            "address",
+            "hospital_name",
+            "app_link_status",
+        ]
+
+    def get_hospital_name(self, obj):
+        if obj.hospital:
+            return obj.hospital.name
+
+        return None
+
+    def get_app_link_status(self, obj):
+        patient_account = obj.accounts.first()
+
+        if patient_account is None:
+            return "UNLINKED"
+
+        return patient_account.link_status
+
+##################################################################################################################
 # ─────────────────────────────────────────────
 # 원무과(coordinator) - 환자 목록 조회용
 # ─────────────────────────────────────────────

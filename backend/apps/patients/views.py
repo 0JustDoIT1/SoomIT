@@ -12,11 +12,14 @@ from apps.accounts.models import Hospital
 from .models import Patient, Appointment
 from .serializers import (
     AppointmentSerializer,
+    ExaminationScheduleSerializer,
     PatientCreateSerializer,
     PatientDetailSerializer,
+    PatientProfileSerializer,
     PatientSerializer,
     PatientUpdateSerializer,
 )
+from drf_spectacular.utils import extend_schema
 
 
 # 원무과 - 환자 목록 조회 / 신규 환자 등록
@@ -78,6 +81,7 @@ class PatientDetailAPIView(RetrieveUpdateAPIView):
 # Flutter용 - 환자 예약 목록 조회
 # 로그인 구현 전 개발용
 # ─────────────────────────────────────────────
+@extend_schema(tags=["환자앱-예약"])
 class AppointmentListAPIView(ListAPIView):
     serializer_class = AppointmentSerializer
 
@@ -99,3 +103,56 @@ class AppointmentListAPIView(ListAPIView):
             )
             .order_by("-scheduled_at")
         )
+        
+# ─────────────────────────────────────────────
+# 환자 검사 일정 조회
+# - 로그인 구현 전 개발용
+# ─────────────────────────────────────────────
+@extend_schema(tags=["환자앱-검사일정"])
+class ExaminationScheduleListAPIView(ListAPIView):
+    serializer_class = ExaminationScheduleSerializer
+
+    def get_queryset(self):
+        # 로그인 연동 전 개발용 테스트 환자
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return Appointment.objects.none()
+
+        return (
+            Appointment.objects
+            .filter(
+                patient=patient,
+                examination_order__isnull=False,
+                appointment_status="CONFIRMED",
+                visit_status="SCHEDULED",
+            )
+            .select_related(
+                "patient",
+                "patient__hospital",
+                "doctor",
+                "examination_order",
+            )
+            .order_by("scheduled_at")
+        )
+        
+
+# ─────────────────────────────────────────────
+# - 환자 프로필 조회
+# 홈 / 마이페이지 공용
+# 로그인 구현 전 개발용
+# ─────────────────────────────────────────────
+@extend_schema(tags=["환자앱-마이페이지"])
+class PatientProfileAPIView(RetrieveUpdateAPIView):
+    serializer_class = PatientProfileSerializer
+
+    def get_object(self):
+        # 로그인 연동 전 개발용 테스트 환자
+        patient = Patient.objects.first()
+
+        if patient is None:
+            raise ValidationError(
+                {"patient": "등록된 환자 정보가 없습니다."}
+            )
+
+        return patient
