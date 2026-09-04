@@ -1,81 +1,160 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/base_card.dart';
+import '../models/patient_notification.dart';
 
 class NotificationCard extends StatelessWidget {
-  const NotificationCard({super.key});
+  final List<PatientNotification> notifications;
+  final void Function(PatientNotification notification)? onNotificationTap;
+
+  const NotificationCard({
+    super.key,
+    required this.notifications,
+    this.onNotificationTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return BaseCard(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 8,
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: colorScheme.outlineVariant.withValues(alpha: 0.5),
+        ),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildNotificationItem(
-            '폐기능 검사 결과지가 등록되었습니다.',
-            '10분 전',
+          Row(
+            children: [
+              Icon(
+                Icons.notifications_none_rounded,
+                color: colorScheme.primary,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                '최근 알림',
+                style: theme.textTheme.titleMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
           ),
 
-          const Divider(
-            height: 1,
-            color: Color(0xFFF2F4F6),
-          ),
+          const SizedBox(height: 14),
 
-          _buildNotificationItem(
-            '9월 4일 진료 예약 안내',
-            '1시간 전',
-          ),
+          if (notifications.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: Text(
+                  '최근 알림이 없습니다.',
+                  style: theme.textTheme.bodyMedium?.copyWith(
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
+            )
+          else
+            ...notifications.take(3).map(
+              (notification) => _NotificationItem(
+                notification: notification,
+                onTap: () => onNotificationTap?.call(notification),
+              ),
+            ),
         ],
       ),
     );
   }
+}
 
-  Widget _buildNotificationItem(
-    String title,
-    String time,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 10,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 6,
-            height: 6,
-            decoration: const BoxDecoration(
-              color: Color(0xFF2B66F6),
-              shape: BoxShape.circle,
-            ),
-          ),
+class _NotificationItem extends StatelessWidget {
+  final PatientNotification notification;
+  final VoidCallback? onTap;
 
-          const SizedBox(width: 10),
+  const _NotificationItem({
+    required this.notification,
+    this.onTap,
+  });
 
-          Expanded(
-            child: Text(
-              title,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF333D4B),
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(top: 6),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: notification.isRead
+                    ? colorScheme.outlineVariant
+                    : colorScheme.primary,
               ),
-              overflow: TextOverflow.ellipsis,
             ),
-          ),
 
-          const SizedBox(width: 8),
+            const SizedBox(width: 12),
 
-          Text(
-            time,
-            style: const TextStyle(
-              fontSize: 11,
-              color: Color(0xFF8B95A1),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    notification.title,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontWeight: notification.isRead
+                          ? FontWeight.w500
+                          : FontWeight.w700,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  Text(
+                    notification.message,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+
+                  const SizedBox(height: 5),
+
+                  Text(
+                    _formatDate(notification.sentAt ?? notification.createdAt),
+                    style: theme.textTheme.labelSmall?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
+  }
+
+  String _formatDate(DateTime dateTime) {
+    final local = dateTime.toLocal();
+
+    return '${local.month}월 ${local.day}일 '
+        '${local.hour.toString().padLeft(2, '0')}:'
+        '${local.minute.toString().padLeft(2, '0')}';
   }
 }

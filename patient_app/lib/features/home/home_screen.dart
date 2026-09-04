@@ -14,6 +14,9 @@ import 'widgets/profile_card.dart';
 import 'models/patient_profile.dart';
 import 'services/profile_service.dart';
 
+import 'models/patient_notification.dart';
+import 'services/notification_service.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -23,14 +26,17 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   final ProfileService _profileService = ProfileService();
-  
+
   final AppointmentService _appointmentService =
       AppointmentService();
 
   final ExamScheduleService _examScheduleService =
       ExamScheduleService();
   
+  final NotificationService _notificationService =
+    NotificationService();
 
+  late Future<List<PatientNotification>> _notificationsFuture;
   late Future<PatientProfile> _profileFuture;
   late Future<List<Appointment>> _appointmentsFuture;
   late Future<List<ExamSchedule>> _examSchedulesFuture;
@@ -40,13 +46,14 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
 
+    _notificationsFuture = _notificationService.getNotifications();
+
     _profileFuture = _profileService.getProfile();
 
-    _appointmentsFuture =
-        _appointmentService.getAppointments();
+    _appointmentsFuture = _appointmentService.getAppointments();
 
-    _examSchedulesFuture =
-        _examScheduleService.getExamSchedules();
+    _examSchedulesFuture = _examScheduleService.getExamSchedules();
+    
   }
 
   @override
@@ -192,7 +199,55 @@ class _HomeScreenState extends State<HomeScreen> {
 
             const SizedBox(height: 10),
 
-            const NotificationCard(),
+            FutureBuilder<List<PatientNotification>>(
+              future: _notificationsFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return _buildLoadingCard();
+                }
+            
+                if (snapshot.hasError) {
+                  return _buildErrorCard(
+                    '알림을 불러오지 못했습니다.',
+                  );
+                }
+            
+                final notifications = snapshot.data ?? [];
+            
+                return NotificationCard(
+                  notifications: notifications,
+                  onNotificationTap: (notification) async {
+                    if (notification.isRead) {
+                      return;
+                    }
+            
+                    try {
+                      await _notificationService.markAsRead(
+                        notification.id,
+                      );
+            
+                      if (!mounted) return;
+            
+                      setState(() {
+                        _notificationsFuture =
+                            _notificationService.getNotifications();
+                      });
+                    } catch (e) {
+                      if (!mounted) return;
+            
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            '알림 읽음 처리에 실패했습니다.',
+                          ),
+                        ),
+                      );
+                    }
+                  },
+                );
+              },
+            ),
 
             const SizedBox(height: 20),
           ],
