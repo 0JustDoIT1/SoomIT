@@ -93,11 +93,15 @@ export default function CoordinatorDashboardPage() {
         <p className="mt-2 text-sm text-slate-500">원무과 주요 업무 현황을 확인합니다.</p>
       </div>
 
-     <div className="flex w-full justify-between">
-      <div className="w-[18%]"><IndexStatCard title="오늘 예약" value={todayAppointments.length} fill="#F2F9FF" /></div>
-      <div className="w-[18%]"><IndexStatCard title="예약 요청" value={requestedCount} fill="#FFF9E8" /></div>
-      <div className="w-[18%]"><IndexStatCard title="예약 확정" value={confirmedCount} fill="#F0FBF6" /></div>
-      <div className="w-[18%]"><IndexStatCard title="예약 취소" value={cancelledCount} fill="#FFF2F7" /></div>
+     <div className="relative">
+      <div className="flex gap-8">
+        <IndexStatCard title="오늘 예약" value={todayAppointments.length} fill="#F2F9FF" />
+        <IndexStatCard title="예약 요청" value={requestedCount} fill="#FFF9E8" />
+        <IndexStatCard title="예약 확정" value={confirmedCount} fill="#F0FBF6" />
+        <IndexStatCard title="예약 취소" value={cancelledCount} fill="#FFF2F7" />
+      </div>
+
+      <div className="mt-1 h-px w-[690px] bg-pink-100" />
     </div>
 
       <div className="mt-6 grid grid-cols-2 gap-5">
