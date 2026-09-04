@@ -13,7 +13,7 @@ type NavigationItem = {
 const primaryNavigation: NavigationItem[] = [
   { label: "대시보드", href: "/pathology", icon: "home" },
   { label: "업무 대기열", href: "/pathology/work-items", icon: "queue" },
-  { label: "케이스·검체", icon: "case" },
+  { label: "케이스·검체", href: "/pathology/specimens", icon: "case" },
   { label: "WSI 등록", icon: "slide" },
   { label: "검체 적정성 분석", icon: "analysis" },
   { label: "병리 AI", icon: "analysis" },
@@ -64,7 +64,9 @@ function SidebarNavigation({ onNavigate }: { onNavigate: () => void }) {
   function renderItem(item: NavigationItem) {
     const active = Boolean(
       item.href &&
-        (pathname === item.href || pathname.startsWith(`${item.href}/`)),
+        (pathname === item.href ||
+          (item.href !== "/pathology" &&
+            pathname.startsWith(`${item.href}/`))),
     );
     const content = (
       <>

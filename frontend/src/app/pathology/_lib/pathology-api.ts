@@ -19,11 +19,46 @@ export type WorkItem = {
   updated_at: string;
 };
 
+export type PathologyCase = {
+  id: string;
+  case_code: string;
+  patient_code: string;
+  patient_name: string;
+  current_stage: string;
+  case_status: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PathologySpecimen = {
+  id: string;
+  case_id: string;
+  case_code: string;
+  patient_id: string;
+  patient_code: string;
+  patient_name: string;
+  examination_order_id: string | null;
+  specimen_code: string;
+  specimen_type: string;
+  body_site: string | null;
+  collected_at: string | null;
+  received_at: string | null;
+  status: string;
+  wsi_count: number;
+  created_at: string;
+  updated_at: string;
+};
+
 export const WORK_ITEMS_API_URL =
   "http://127.0.0.1:8000/api/pathology/work-items/";
+export const CASES_API_URL = "http://127.0.0.1:8000/api/cases/";
 
 export function workItemDetailApiUrl(itemId: string) {
   return `${WORK_ITEMS_API_URL}${encodeURIComponent(itemId)}/`;
+}
+
+export function caseSpecimensApiUrl(caseId: string) {
+  return `http://127.0.0.1:8000/api/pathology/cases/${encodeURIComponent(caseId)}/specimens/`;
 }
 
 export const statusLabel: Record<string, string> = {
@@ -106,4 +141,37 @@ export async function readWorkItem(response: Response): Promise<WorkItem> {
   }
 
   return (await response.json()) as WorkItem;
+}
+
+async function readCollection<T>(response: Response): Promise<T[]> {
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("인증에 실패했습니다. 계정 정보를 확인해 주세요.");
+  }
+
+  if (!response.ok) {
+    throw new Error(`API 요청 실패 (${response.status})`);
+  }
+
+  const data: unknown = await response.json();
+
+  if (Array.isArray(data)) return data as T[];
+
+  if (
+    data &&
+    typeof data === "object" &&
+    "results" in data &&
+    Array.isArray(data.results)
+  ) {
+    return data.results as T[];
+  }
+
+  return [];
+}
+
+export function readCases(response: Response) {
+  return readCollection<PathologyCase>(response);
+}
+
+export function readSpecimens(response: Response) {
+  return readCollection<PathologySpecimen>(response);
 }
