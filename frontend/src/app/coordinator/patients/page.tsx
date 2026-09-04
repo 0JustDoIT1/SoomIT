@@ -1,5 +1,5 @@
 "use client";
-
+import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Patient = {
@@ -12,16 +12,13 @@ type Patient = {
   address: string | null;
   created_at: string;
   updated_at: string;
-
   app_link_status?: string;
-
   current_case?: {
     id: string;
     case_code: string;
     current_stage: string;
     case_status: string;
   } | null;
-
   recent_appointment?: {
     id: string;
     scheduled_at: string;
@@ -66,13 +63,12 @@ const initialUpdateForm: PatientUpdateForm = {
 };
 
 export default function PatientsPage() {
+  const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
-
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [error, setError] = useState("");
-
   const [searchTerm, setSearchTerm] = useState("");
   const [sexFilter, setSexFilter] = useState("ALL");
 
@@ -94,15 +90,12 @@ export default function PatientsPage() {
   const fetchPatients = async () => {
     try {
       setError("");
-
       const response = await fetch(
         "http://127.0.0.1:8000/api/patients/"
       );
-
       if (!response.ok) {
         throw new Error("환자 목록을 불러오지 못했습니다.");
       }
-
       const data = await response.json();
       setPatients(data);
     } catch (err) {
@@ -115,7 +108,6 @@ export default function PatientsPage() {
       setLoading(false);
     }
   };
-
   useEffect(() => {
     fetchPatients();
   }, []);
@@ -125,20 +117,15 @@ export default function PatientsPage() {
     const response = await fetch(
       `http://127.0.0.1:8000/api/patients/${patientId}/`
     );
-
     if (!response.ok) {
       throw new Error("환자 상세 정보를 불러오지 못했습니다.");
     }
-
     return response.json();
   };
-
   const openPatientDetail = async (patientId: string) => {
     try {
       setDetailLoading(true);
-
       const data = await fetchPatientDetail(patientId);
-
       setSelectedPatient(data);
     } catch (err) {
       alert(
@@ -155,15 +142,12 @@ export default function PatientsPage() {
   const openCreateDrawer = () => {
     setSelectedPatient(null);
     setIsUpdateOpen(false);
-
     setCreateError("");
     setCreateForm(initialCreateForm);
     setIsCreateOpen(true);
   };
-
   const closeCreateDrawer = () => {
     if (createLoading) return;
-
     setIsCreateOpen(false);
     setCreateError("");
     setCreateForm(initialCreateForm);
@@ -174,7 +158,6 @@ export default function PatientsPage() {
     e: FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
-
     if (
       !createForm.patient_code.trim() ||
       !createForm.name.trim() ||
@@ -186,11 +169,9 @@ export default function PatientsPage() {
       setCreateError("모든 필수 정보를 입력해주세요.");
       return;
     }
-
     try {
       setCreateLoading(true);
       setCreateError("");
-
       const response = await fetch(
         "http://127.0.0.1:8000/api/patients/",
         {
@@ -208,18 +189,14 @@ export default function PatientsPage() {
           }),
         }
       );
-
       if (!response.ok) {
         const message = await getApiErrorMessage(
           response,
           "환자 등록에 실패했습니다."
         );
-
         throw new Error(message);
       }
-
       await fetchPatients();
-
       setIsCreateOpen(false);
       setCreateForm(initialCreateForm);
     } catch (err) {
@@ -236,9 +213,7 @@ export default function PatientsPage() {
   // 수정 Drawer 열기
   const openUpdateDrawer = () => {
     if (!selectedPatient) return;
-
     setUpdateError("");
-
     setUpdateForm({
       name: selectedPatient.name,
       birth_date: selectedPatient.birth_date,
@@ -246,13 +221,10 @@ export default function PatientsPage() {
       phone_number: selectedPatient.phone_number,
       address: selectedPatient.address ?? "",
     });
-
     setIsUpdateOpen(true);
   };
-
   const closeUpdateDrawer = () => {
     if (updateLoading) return;
-
     setIsUpdateOpen(false);
     setUpdateError("");
   };
@@ -262,9 +234,7 @@ export default function PatientsPage() {
     e: FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
-
     if (!selectedPatient) return;
-
     if (
       !updateForm.name.trim() ||
       !updateForm.birth_date ||
@@ -275,11 +245,9 @@ export default function PatientsPage() {
       setUpdateError("모든 필수 정보를 입력해주세요.");
       return;
     }
-
     try {
       setUpdateLoading(true);
       setUpdateError("");
-
       const response = await fetch(
         `http://127.0.0.1:8000/api/patients/${selectedPatient.id}/`,
         {
@@ -296,22 +264,17 @@ export default function PatientsPage() {
           }),
         }
       );
-
       if (!response.ok) {
         const message = await getApiErrorMessage(
           response,
           "환자정보 수정에 실패했습니다."
         );
-
         throw new Error(message);
       }
-
       await fetchPatients();
-
       const updatedPatient = await fetchPatientDetail(
         selectedPatient.id
       );
-
       setSelectedPatient(updatedPatient);
       setIsUpdateOpen(false);
     } catch (err) {
@@ -331,7 +294,6 @@ export default function PatientsPage() {
     if (sex === "MALE") return "남";
     if (sex === "OTHER") return "기타";
     if (sex === "UNKNOWN") return "미상";
-
     return sex;
   };
 
@@ -352,7 +314,6 @@ export default function PatientsPage() {
     if (stage === "GENE") return "유전자 검사";
     if (stage === "TREATMENT") return "치료 의사결정";
     if (stage === "PRESCRIPTION") return "처방";
-
     return stage;
   };
 
@@ -361,7 +322,6 @@ export default function PatientsPage() {
     if (status === "ACTIVE") return "진행중";
     if (status === "REFERRED_OUT") return "전원";
     if (status === "CLOSED") return "종결";
-
     return status;
   };
 
@@ -370,7 +330,6 @@ export default function PatientsPage() {
     if (status === "REQUESTED") return "예약 요청";
     if (status === "CONFIRMED") return "예약 확정";
     if (status === "CANCELLED") return "예약 취소";
-
     return status;
   };
 
@@ -379,7 +338,6 @@ export default function PatientsPage() {
     if (status === "SCHEDULED") return "방문 예정";
     if (status === "VISITED") return "방문 완료";
     if (status === "NO_SHOW") return "미방문";
-
     return status;
   };
 
@@ -387,33 +345,27 @@ export default function PatientsPage() {
   const getCreatedByTypeLabel = (type: string) => {
     if (type === "PATIENT") return "환자";
     if (type === "DOCTOR_ORDER") return "의사 오더";
-
     return type;
   };
 
   // 검색 + 성별 필터
   const filteredPatients = useMemo(() => {
     const keyword = searchTerm.trim().toLowerCase();
-
     return patients.filter((patient) => {
       const matchesSearch =
         keyword === "" ||
         patient.name.toLowerCase().includes(keyword) ||
         patient.patient_code.toLowerCase().includes(keyword) ||
         patient.phone_number.includes(keyword);
-
       const matchesSex =
         sexFilter === "ALL" || patient.sex === sexFilter;
-
       return matchesSearch && matchesSex;
     });
   }, [patients, searchTerm, sexFilter]);
-
   const resetFilters = () => {
     setSearchTerm("");
     setSexFilter("ALL");
   };
-
   return (
     <div>
       {/* 페이지 상단 */}
@@ -424,17 +376,14 @@ export default function PatientsPage() {
               <h1 className="text-2xl font-bold text-slate-800">
                 환자 관리
               </h1>
-
               <span className="rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-500">
                 총 {patients.length}명
               </span>
             </div>
-
             <p className="mt-2 text-sm text-slate-500">
               환자의 기본정보와 Case 연결 현황을 관리합니다.
             </p>
           </div>
-
           <button
             type="button"
             onClick={openCreateDrawer}
@@ -455,7 +404,6 @@ export default function PatientsPage() {
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 focus:bg-white"
             />
           </div>
-
           <select
             value={sexFilter}
             onChange={(e) => setSexFilter(e.target.value)}
@@ -467,7 +415,6 @@ export default function PatientsPage() {
             <option value="OTHER">기타</option>
             <option value="UNKNOWN">미상</option>
           </select>
-
           <button
             type="button"
             onClick={resetFilters}
@@ -499,12 +446,10 @@ export default function PatientsPage() {
             <p className="text-sm font-semibold text-slate-700">
               환자 목록
             </p>
-
             <p className="mt-1 text-xs text-slate-400">
               검색 결과 {filteredPatients.length}명
             </p>
           </div>
-
           <div className="overflow-x-auto">
             <table className="w-full min-w-[850px] text-left">
               <thead className="bg-pink-50/70 text-sm text-slate-600">
@@ -517,7 +462,6 @@ export default function PatientsPage() {
                   <th className="px-5 py-4 font-semibold">주소</th>
                 </tr>
               </thead>
-
               <tbody className="divide-y divide-slate-100">
                 {filteredPatients.map((patient) => (
                   <tr
@@ -528,31 +472,25 @@ export default function PatientsPage() {
                     <td className="px-5 py-4 font-medium text-slate-600">
                       {patient.patient_code}
                     </td>
-
                     <td className="px-5 py-4 font-semibold text-slate-800">
                       {patient.name}
                     </td>
-
                     <td className="px-5 py-4">
                       {patient.birth_date}
                     </td>
-
                     <td className="px-5 py-4">
                       <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs text-slate-600">
                         {getSexLabel(patient.sex)}
                       </span>
                     </td>
-
                     <td className="px-5 py-4">
                       {patient.phone_number}
                     </td>
-
                     <td className="max-w-[260px] truncate px-5 py-4">
                       {patient.address ?? "-"}
                     </td>
                   </tr>
                 ))}
-
                 {filteredPatients.length === 0 && (
                   <tr>
                     <td
@@ -587,12 +525,10 @@ export default function PatientsPage() {
               closeUpdateDrawer();
               return;
             }
-
             if (isCreateOpen) {
               closeCreateDrawer();
               return;
             }
-
             setSelectedPatient(null);
           }}
         />
@@ -615,12 +551,10 @@ export default function PatientsPage() {
               description="환자의 기본정보를 입력해주세요."
               onClose={closeCreateDrawer}
             />
-
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {createError && (
                 <ErrorMessage message={createError} />
               )}
-
               <div className="space-y-5">
                 <FormField label="환자번호" required>
                   <input
@@ -636,7 +570,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="이름" required>
                   <input
                     type="text"
@@ -651,7 +584,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="생년월일" required>
                   <input
                     type="date"
@@ -665,7 +597,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="성별" required>
                   <select
                     value={createForm.sex}
@@ -683,7 +614,6 @@ export default function PatientsPage() {
                     <option value="UNKNOWN">미상</option>
                   </select>
                 </FormField>
-
                 <FormField label="연락처" required>
                   <input
                     type="text"
@@ -698,7 +628,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="주소" required>
                   <input
                     type="text"
@@ -715,7 +644,6 @@ export default function PatientsPage() {
                 </FormField>
               </div>
             </div>
-
             <DrawerFooter
               cancelLabel="취소"
               submitLabel={
@@ -744,40 +672,33 @@ export default function PatientsPage() {
               description={selectedPatient.patient_code}
               onClose={() => setSelectedPatient(null)}
             />
-
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {/* 기본 정보 */}
               <div className="rounded-2xl bg-pink-50/70 p-5">
                 <h3 className="mb-4 font-semibold text-slate-700">
                   기본 정보
                 </h3>
-
                 <div className="space-y-4 text-sm">
                   <DetailRow
                     label="환자번호"
                     value={selectedPatient.patient_code}
                   />
-
                   <DetailRow
                     label="이름"
                     value={selectedPatient.name}
                   />
-
                   <DetailRow
                     label="생년월일"
                     value={selectedPatient.birth_date}
                   />
-
                   <DetailRow
                     label="성별"
                     value={getSexLabel(selectedPatient.sex)}
                   />
-
                   <DetailRow
                     label="연락처"
                     value={selectedPatient.phone_number}
                   />
-
                   <DetailRow
                     label="주소"
                     value={selectedPatient.address ?? "-"}
@@ -791,14 +712,12 @@ export default function PatientsPage() {
                   <h3 className="font-semibold text-slate-700">
                     앱 연결 상태
                   </h3>
-
                   <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-600">
                     {getAppLinkStatusLabel(
                       selectedPatient.app_link_status
                     )}
                   </span>
                 </div>
-
                 <p className="mt-3 text-sm text-slate-500">
                   {selectedPatient.app_link_status === "LINKED"
                     ? "환자 앱 계정이 연결되어 있습니다."
@@ -815,21 +734,18 @@ export default function PatientsPage() {
                 <h3 className="font-semibold text-slate-700">
                   현재 Case
                 </h3>
-
                 {selectedPatient.current_case ? (
                   <div className="mt-4 space-y-3 text-sm">
                     <DetailRow
                       label="Case ID"
                       value={selectedPatient.current_case.case_code}
                     />
-
                     <DetailRow
                       label="현재 단계"
                       value={getStageLabel(
                         selectedPatient.current_case.current_stage
                       )}
                     />
-
                     <DetailRow
                       label="Case 상태"
                       value={getCaseStatusLabel(
@@ -849,7 +765,6 @@ export default function PatientsPage() {
                 <h3 className="font-semibold text-slate-700">
                   최근 예약
                 </h3>
-
                 {selectedPatient.recent_appointment ? (
                   <div className="mt-4 space-y-3 text-sm">
                     <DetailRow
@@ -859,7 +774,6 @@ export default function PatientsPage() {
                           .scheduled_at
                       )}
                     />
-
                     <DetailRow
                       label="예약 상태"
                       value={getAppointmentStatusLabel(
@@ -867,7 +781,6 @@ export default function PatientsPage() {
                           .appointment_status
                       )}
                     />
-
                     <DetailRow
                       label="방문 상태"
                       value={getVisitStatusLabel(
@@ -875,7 +788,6 @@ export default function PatientsPage() {
                           .visit_status
                       )}
                     />
-
                     <DetailRow
                       label="예약 생성"
                       value={getCreatedByTypeLabel(
@@ -891,7 +803,6 @@ export default function PatientsPage() {
                 )}
               </div>
             </div>
-
             <div className="flex gap-3 border-t border-slate-100 p-5">
               <button
                 type="button"
@@ -900,10 +811,14 @@ export default function PatientsPage() {
               >
                 환자정보 수정
               </button>
-
               <button
                 type="button"
-                className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-pink-600"
+                onClick={() => {
+                  if (!selectedPatient.current_case) return;
+                  router.push(`/coordinator/cases/${selectedPatient.current_case.id}`);
+                }}
+                disabled={!selectedPatient.current_case}
+                className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-pink-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
               >
                 Case 상세
               </button>
@@ -929,26 +844,21 @@ export default function PatientsPage() {
               description={`${selectedPatient.name} · ${selectedPatient.patient_code}`}
               onClose={closeUpdateDrawer}
             />
-
             <div className="flex-1 overflow-y-auto px-6 py-6">
               {updateError && (
                 <ErrorMessage message={updateError} />
               )}
-
               <div className="mb-5 rounded-2xl bg-slate-50 p-4">
                 <p className="text-xs text-slate-400">
                   환자번호
                 </p>
-
                 <p className="mt-1 text-sm font-semibold text-slate-700">
                   {selectedPatient.patient_code}
                 </p>
-
                 <p className="mt-1 text-xs text-slate-400">
                   환자번호는 수정할 수 없습니다.
                 </p>
               </div>
-
               <div className="space-y-5">
                 <FormField label="이름" required>
                   <input
@@ -963,7 +873,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="생년월일" required>
                   <input
                     type="date"
@@ -977,7 +886,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="성별" required>
                   <select
                     value={updateForm.sex}
@@ -995,7 +903,6 @@ export default function PatientsPage() {
                     <option value="UNKNOWN">미상</option>
                   </select>
                 </FormField>
-
                 <FormField label="연락처" required>
                   <input
                     type="text"
@@ -1009,7 +916,6 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-
                 <FormField label="주소" required>
                   <input
                     type="text"
@@ -1025,7 +931,6 @@ export default function PatientsPage() {
                 </FormField>
               </div>
             </div>
-
             <DrawerFooter
               cancelLabel="취소"
               submitLabel={
@@ -1054,7 +959,6 @@ function DetailRow({
   return (
     <div className="flex justify-between gap-6">
       <span className="text-slate-400">{label}</span>
-
       <span className="text-right font-medium text-slate-700">
         {value}
       </span>
@@ -1075,12 +979,10 @@ function FormField({
     <div>
       <label className="mb-2 block text-sm font-medium text-slate-700">
         {label}
-
         {required && (
           <span className="ml-1 text-pink-500">*</span>
         )}
       </label>
-
       {children}
     </div>
   );
@@ -1104,16 +1006,13 @@ function DrawerHeader({
           <p className="text-sm font-medium text-pink-500">
             {eyebrow}
           </p>
-
           <h2 className="mt-1 text-xl font-bold text-slate-800">
             {title}
           </h2>
-
           <p className="mt-1 text-sm text-slate-400">
             {description}
           </p>
         </div>
-
         <button
           type="button"
           onClick={onClose}
@@ -1147,7 +1046,6 @@ function DrawerFooter({
       >
         {cancelLabel}
       </button>
-
       <button
         type="submit"
         disabled={loading}
@@ -1173,11 +1071,9 @@ function ErrorMessage({
 
 function formatDateTime(value: string) {
   const date = new Date(value);
-
   if (Number.isNaN(date.getTime())) {
     return value;
   }
-
   return date.toLocaleString("ko-KR", {
     year: "numeric",
     month: "2-digit",
@@ -1194,15 +1090,12 @@ async function getApiErrorMessage(
   try {
     const errorData = await response.json();
     const firstError = Object.values(errorData)[0];
-
     if (Array.isArray(firstError)) {
       return String(firstError[0]);
     }
-
     if (typeof firstError === "string") {
       return firstError;
     }
-
     return fallback;
   } catch {
     return fallback;
