@@ -21,7 +21,7 @@ const primaryNavigation: NavigationItem[] = [
     icon: "analysis",
   },
   { label: "병리 AI", href: "/pathology/ai-analysis", icon: "analysis" },
-  { label: "PD-L1·경로 분석", icon: "analysis" },
+  { label: "PD-L1·경로 분석", href: "/pathology/pdl1", icon: "analysis" },
   { label: "병리 보고서", icon: "report" },
   { label: "알림", icon: "bell" },
   { label: "임상 타임라인", icon: "timeline" },
