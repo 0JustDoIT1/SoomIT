@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { type FormEvent, type ReactNode, useState } from "react";
+import { type ReactNode, useState } from "react";
 
 type NavigationItem = {
   label: string;
@@ -21,15 +21,24 @@ const primaryNavigation: NavigationItem[] = [
     icon: "analysis",
   },
   { label: "병리 AI", href: "/pathology/ai-analysis", icon: "analysis" },
-  { label: "PD-L1·경로 분석", icon: "analysis" },
-  { label: "병리 보고서", icon: "report" },
-  { label: "알림", icon: "bell" },
-  { label: "임상 타임라인", icon: "timeline" },
+  { label: "병리 판독", href: "/pathology/review", icon: "slide" },
+  { label: "PD-L1·경로 분석", href: "/pathology/pdl1", icon: "analysis" },
+  { label: "병리 보고서", href: "/pathology/reports", icon: "report" },
+  { label: "알림", href: "/pathology/notifications", icon: "bell" },
+  {
+    label: "임상 타임라인",
+    href: "/pathology/timeline",
+    icon: "timeline",
+  },
 ];
 
 const collaborationNavigation: NavigationItem[] = [
-  { label: "케이스 협업", icon: "users" },
-  { label: "업무 인계", icon: "handoff" },
+  {
+    label: "케이스 협업",
+    href: "/pathology/collaboration",
+    icon: "users",
+  },
+  { label: "업무 인계", href: "/pathology/handoffs", icon: "handoff" },
 ];
 
 function NavigationIcon({ icon }: { icon: NavigationItem["icon"] }) {
@@ -139,11 +148,6 @@ function Sidebar({ onNavigate }: { onNavigate: () => void }) {
 
 export function PathologyShell({ children }: { children: ReactNode }) {
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
-  const [search, setSearch] = useState("");
-
-  function handleSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-  }
 
   const today = new Intl.DateTimeFormat("ko-KR", {
     year: "numeric",
@@ -189,7 +193,7 @@ export function PathologyShell({ children }: { children: ReactNode }) {
             {today}
           </p>
 
-          <form onSubmit={handleSearch} role="search" className="ml-auto w-full max-w-md">
+          <div role="search" className="ml-auto w-full max-w-md">
             <label className="relative block">
               <span className="sr-only">병리과 통합 검색</span>
               <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-slate-400">
@@ -197,13 +201,12 @@ export function PathologyShell({ children }: { children: ReactNode }) {
                 <path d="m16 16 4 4" />
               </svg>
               <input
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="환자명 · 케이스 번호 · 검체 번호 검색"
-                className="w-full rounded-md border border-slate-300 bg-white py-2 pl-10 pr-3 text-sm outline-none placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                disabled
+                placeholder="통합 검색 API 연결 전"
+                className="w-full rounded-md border border-slate-300 bg-slate-50 py-2 pl-10 pr-3 text-sm text-slate-400 placeholder:text-slate-400"
               />
             </label>
-          </form>
+          </div>
 
           <button
             type="button"
