@@ -22,6 +22,10 @@ export type WorkItem = {
 export const WORK_ITEMS_API_URL =
   "http://127.0.0.1:8000/api/pathology/work-items/";
 
+export function workItemDetailApiUrl(itemId: string) {
+  return `${WORK_ITEMS_API_URL}${encodeURIComponent(itemId)}/`;
+}
+
 export const statusLabel: Record<string, string> = {
   PENDING: "대기",
   IN_PROGRESS: "진행 중",
@@ -86,4 +90,20 @@ export async function readWorkItems(response: Response): Promise<WorkItem[]> {
   }
 
   return [];
+}
+
+export async function readWorkItem(response: Response): Promise<WorkItem> {
+  if (response.status === 401 || response.status === 403) {
+    throw new Error("인증에 실패했습니다. 계정 정보를 확인해 주세요.");
+  }
+
+  if (response.status === 404) {
+    throw new Error("해당 병리 작업을 찾을 수 없습니다.");
+  }
+
+  if (!response.ok) {
+    throw new Error(`API 요청 실패 (${response.status})`);
+  }
+
+  return (await response.json()) as WorkItem;
 }

@@ -1,5 +1,5 @@
 from django.db.models import Case, Count, IntegerField, Q, When
-from rest_framework.generics import ListAPIView
+from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
@@ -53,6 +53,19 @@ class PathologyWorkItemListAPIView(ListAPIView):
             queryset = queryset.filter(assigned_to_id=assigned_to_value)
 
         return queryset
+
+
+class PathologyWorkItemDetailAPIView(RetrieveAPIView):
+    queryset = PathologyWorkItem.objects.select_related(
+        "case",
+        "case__patient",
+        "specimen",
+        "wsi",
+        "assigned_to",
+    )
+    serializer_class = PathologyWorkItemSerializer
+    permission_classes = [IsAuthenticated]
+    lookup_field = "id"
 
 
 class CasePathologySpecimenListAPIView(ListAPIView):

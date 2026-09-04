@@ -6,12 +6,12 @@ import { useEffect, useState } from "react";
 import { PathologyAuthPanel } from "../../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../../_components/pathology-auth-provider";
 import {
-  readWorkItems,
+  readWorkItem,
   statusLabel,
   statusStyle,
   taskLabel,
   type WorkItem,
-  WORK_ITEMS_API_URL,
+  workItemDetailApiUrl,
 } from "../../_lib/pathology-api";
 
 function formatDate(value: string) {
@@ -38,16 +38,10 @@ export function WorkItemDetail({ itemId }: { itemId: string }) {
 
     let cancelled = false;
 
-    void authorizedFetch(WORK_ITEMS_API_URL)
-      .then(readWorkItems)
-      .then((items) => {
+    void authorizedFetch(workItemDetailApiUrl(itemId))
+      .then(readWorkItem)
+      .then((selectedItem) => {
         if (cancelled) return;
-
-        const selectedItem = items.find((candidate) => candidate.id === itemId);
-
-        if (!selectedItem) {
-          throw new Error("해당 병리 작업을 찾을 수 없습니다.");
-        }
 
         setItem(selectedItem);
       })
@@ -73,13 +67,8 @@ export function WorkItemDetail({ itemId }: { itemId: string }) {
     setError("");
 
     try {
-      const response = await authorizedFetch(WORK_ITEMS_API_URL);
-      const items = await readWorkItems(response);
-      const selectedItem = items.find((candidate) => candidate.id === itemId);
-
-      if (!selectedItem) {
-        throw new Error("해당 병리 작업을 찾을 수 없습니다.");
-      }
+      const response = await authorizedFetch(workItemDetailApiUrl(itemId));
+      const selectedItem = await readWorkItem(response);
 
       setItem(selectedItem);
       markConnected();

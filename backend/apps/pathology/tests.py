@@ -122,6 +122,37 @@ class PathologyReadAPITestCase(APITestCase):
             str(self.work_item.id),
         )
 
+    def test_unauthenticated_user_cannot_access_work_item_detail(self):
+        url = reverse(
+            "pathology:work-item-detail",
+            kwargs={"id": self.work_item.id},
+        )
+        response = self.client.get(url)
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN],
+        )
+
+    def test_authenticated_user_can_read_work_item_detail(self):
+        self.client.force_authenticate(user=self.user)
+
+        url = reverse(
+            "pathology:work-item-detail",
+            kwargs={"id": self.work_item.id},
+        )
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(str(response.data["id"]), str(self.work_item.id))
+        self.assertEqual(response.data["patient_name"], self.patient.name)
+        self.assertEqual(response.data["case_code"], self.case.case_code)
+        self.assertEqual(
+            response.data["specimen_code"],
+            self.specimen.specimen_code,
+        )
+        self.assertEqual(response.data["slide_code"], self.wsi.slide_code)
+
     def test_authenticated_user_can_read_case_specimens(self):
         self.client.force_authenticate(user=self.user)
 
