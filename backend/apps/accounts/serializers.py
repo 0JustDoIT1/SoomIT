@@ -85,6 +85,11 @@ class StaffLoginResponseSerializer(serializers.Serializer):
     @classmethod
     def for_user(cls, user):
         refresh = RefreshToken.for_user(user)
+        department = user.department_role.department
+        refresh["hospital_id"] = str(department.hospital_id)
+        refresh["department_id"] = str(department.id)
+        refresh["department_code"] = department.code
+        refresh["role"] = user.department_role.role
         return {
             "access": str(refresh.access_token),
             "refresh": str(refresh),

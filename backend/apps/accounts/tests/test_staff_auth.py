@@ -1,6 +1,7 @@
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 
@@ -58,6 +59,20 @@ class StaffAuthenticationAPITestCase(APITestCase):
         self.assertEqual(response.data["user"]["username"], "doctor01")
         self.assertEqual(response.data["user"]["role"], "DOCTOR")
         self.assertEqual(response.data["user"]["hospital"]["code"], "SUMIT001")
+
+        access = AccessToken(response.data["access"])
+        refresh = RefreshToken(response.data["refresh"])
+        expected_claims = {
+            "hospital_id": str(self.hospital.id),
+            "department_id": str(self.department.id),
+            "department_code": self.department.code,
+            "role": self.department_role.role,
+        }
+        for claim, expected_value in expected_claims.items():
+            with self.subTest(token="access", claim=claim):
+                self.assertEqual(access[claim], expected_value)
+            with self.subTest(token="refresh", claim=claim):
+                self.assertEqual(refresh[claim], expected_value)
 
     def test_login_fails_with_wrong_password(self):
         response = self.client.post(
@@ -122,3 +137,8 @@ class StaffAuthenticationAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("access", response.data)
+        access = AccessToken(response.data["access"])
+        self.assertEqual(access["hospital_id"], str(self.hospital.id))
+        self.assertEqual(access["department_id"], str(self.department.id))
+        self.assertEqual(access["department_code"], self.department.code)
+        self.assertEqual(access["role"], self.department_role.role)
