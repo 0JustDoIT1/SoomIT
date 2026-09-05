@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
+import { WsiViewerPanel } from "../_components/wsi-viewer-panel";
 import {
   CASES_API_URL,
   caseSpecimensApiUrl,
@@ -198,7 +199,6 @@ export default function PathologySlidesPage() {
     }
   }
 
-  const selectedCase = cases.find((item) => item.id === selectedCaseId) ?? null;
   const selectedSpecimen =
     specimens.find((item) => item.id === selectedSpecimenId) ?? null;
   const selectedSlide =
@@ -340,46 +340,7 @@ export default function PathologySlidesPage() {
           </div>
         </section>
 
-        <section className="border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-5 py-4">
-            <h2 className="text-sm font-semibold text-slate-900">WSI 상세 정보</h2>
-          </div>
-          {selectedSlide ? (
-            <div className="p-5">
-              <dl className="space-y-4 text-sm">
-                {[
-                  ["환자", selectedCase ? `${selectedCase.patient_name} · ${selectedCase.patient_code}` : "-"],
-                  ["Case", selectedCase?.case_code ?? "-"],
-                  ["검체", selectedSpecimen?.specimen_code ?? "-"],
-                  ["슬라이드", selectedSlide.slide_code],
-                  ["블록", selectedSlide.block_code ?? "-"],
-                  ["원본 파일", selectedSlide.original_filename],
-                  ["염색", stainLabel[selectedSlide.stain] ?? selectedSlide.stain],
-                  ["MPP", selectedSlide.mpp ?? "-"],
-                  ["등록일", formatDateTime(selectedSlide.created_at)],
-                ].map(([label, value]) => (
-                  <div key={label} className="grid grid-cols-[76px_1fr] gap-3">
-                    <dt className="text-slate-500">{label}</dt>
-                    <dd className="min-w-0 break-words font-medium text-slate-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
-
-              {!selectedSlide.is_current && selectedSlide.invalidation_reason && (
-                <div className="mt-5 border border-red-200 bg-red-50 p-4 text-sm text-red-700">
-                  <p className="font-semibold">무효 처리 사유</p>
-                  <p className="mt-1">{selectedSlide.invalidation_reason}</p>
-                </div>
-              )}
-
-              <div className="mt-5 border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
-                현재 화면은 조회 전용입니다. WSI 업로드와 재등록은 쓰기 API가 준비된 후 연결합니다.
-              </div>
-            </div>
-          ) : (
-            <p className="px-5 py-16 text-center text-sm text-slate-500">WSI를 선택해 주세요.</p>
-          )}
-        </section>
+        <WsiViewerPanel slide={selectedSlide} loading={contentLoading} />
       </div>
     </div>
   );
