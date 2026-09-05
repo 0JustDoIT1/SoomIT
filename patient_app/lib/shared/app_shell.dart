@@ -1,9 +1,12 @@
 // 헤더 + 본문
 import 'package:flutter/material.dart';
+import '../features/notification/notification_list_screen.dart';
 
 import '../features/appointment/appointment_screen.dart';
 import '../features/exam_result/exam_result_screen.dart';
 import '../features/home/home_screen.dart';
+import '../features/mypage/mypage_screen.dart';
+
 import 'app_header.dart';
 import 'bottom_nav.dart';
 
@@ -22,7 +25,7 @@ class _AppShellState extends State<AppShell> {
     AppointmentScreen(),
     ExamResultScreen(),
     _PlaceholderScreen(title: '복약'),
-    _PlaceholderScreen(title: '마이페이지'),
+    MyPageScreen(),
   ];
 
   void _onTabChanged(int index) {
@@ -38,10 +41,16 @@ class _AppShellState extends State<AppShell> {
 
       appBar: AppHeader(
         onMenuPressed: () {
-          // TODO: 메뉴 기능 연결
+          // 메뉴
         },
         onNotificationPressed: () {
-          // TODO: 알림 화면 연결
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) =>
+                  const NotificationListScreen(),
+            ),
+          );
         },
       ),
 

@@ -17,6 +17,8 @@ import 'services/profile_service.dart';
 import 'models/patient_notification.dart';
 import 'services/notification_service.dart';
 
+import '../notification/notification_list_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -194,7 +196,15 @@ class _HomeScreenState extends State<HomeScreen> {
 
             _buildSectionHeader(
               '최근 알림',
-              () {},
+              () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const NotificationListScreen(),
+                  ),
+                );
+              },
             ),
 
             const SizedBox(height: 10),
@@ -206,36 +216,36 @@ class _HomeScreenState extends State<HomeScreen> {
                     ConnectionState.waiting) {
                   return _buildLoadingCard();
                 }
-            
+
                 if (snapshot.hasError) {
                   return _buildErrorCard(
                     '알림을 불러오지 못했습니다.',
                   );
                 }
-            
+
                 final notifications = snapshot.data ?? [];
-            
+
                 return NotificationCard(
                   notifications: notifications,
                   onNotificationTap: (notification) async {
                     if (notification.isRead) {
                       return;
                     }
-            
+
                     try {
                       await _notificationService.markAsRead(
                         notification.id,
                       );
-            
+
                       if (!mounted) return;
-            
+
                       setState(() {
                         _notificationsFuture =
                             _notificationService.getNotifications();
                       });
                     } catch (e) {
                       if (!mounted) return;
-            
+
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text(
