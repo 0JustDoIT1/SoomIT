@@ -4,6 +4,11 @@ import '../home/models/patient_profile.dart';
 import '../home/services/profile_service.dart';
 import 'patient_info_screen.dart';
 import 'notification_setting_screen.dart';
+import 'profile_edit_screen.dart';
+import 'questionnaire_history_screen.dart';
+import 'language_setting_screen.dart';
+import '../../l10n/app_localizations.dart';
+import 'settings_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -169,6 +174,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // QR / 프로필 / 알림
   // ─────────────────────────────────────────────
   Widget _buildQuickMenu() {
+    final l10n = AppLocalizations.of(context);
+
     return Container(
       padding: const EdgeInsets.symmetric(
         vertical: 16,
@@ -186,7 +193,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           Expanded(
             child: _buildQuickMenuItem(
               icon: Icons.qr_code_2_rounded,
-              title: 'QR 코드',
+              title: l10n.qrCode,
               onTap: () {
                 // TODO: QR 코드 화면
               },
@@ -198,9 +205,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
           Expanded(
             child: _buildQuickMenuItem(
               icon: Icons.person_outline_rounded,
-              title: '프로필 관리',
+              title: l10n.profileManagement,
               onTap: () {
-                // TODO: 프로필 관리
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const ProfileEditScreen(),
+                  ),
+                );
               },
             ),
           ),
@@ -210,7 +223,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
           Expanded(
             child: _buildQuickMenuItem(
               icon: Icons.notifications_none_rounded,
-              title: '알림 설정',
+              title: l10n.notificationSettings,
               onTap: () {
                 Navigator.push(
                   context,
@@ -271,6 +284,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // 메뉴
   // ─────────────────────────────────────────────
   Widget _buildMenuList() {
+    final l10n = AppLocalizations.of(context);
+
+    final currentLanguage =
+        Localizations.localeOf(context).languageCode == 'en'
+            ? 'English'
+            : '한국어';
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -283,7 +303,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         children: [
           _buildMenuItem(
             icon: Icons.person_outline_rounded,
-            title: '환자 정보',
+            title: l10n.patientInfo,
             onTap: () {
               Navigator.push(
                 context,
@@ -299,9 +319,14 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
           _buildMenuItem(
             icon: Icons.assignment_outlined,
-            title: '문진표 작성 내역',
+            title: l10n.questionnaireHistory,
             onTap: () {
-              // TODO
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const QuestionnaireHistoryScreen(),
+                ),
+              );
             },
           ),
 
@@ -309,20 +334,29 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
           _buildMenuItem(
             icon: Icons.language_rounded,
-            title: '언어 설정',
-            trailingText: '한국어',
+            title: l10n.languageSettings,
+            trailingText: currentLanguage,
             onTap: () {
-              // TODO
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const LanguageSettingScreen(),
+                ),
+              );
             },
           ),
 
           _menuDivider(),
-
           _buildMenuItem(
             icon: Icons.settings_outlined,
-            title: '설정',
+            title: l10n.settings,
             onTap: () {
-              // TODO
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const SettingsScreen(),
+                ),
+              );
             },
           ),
         ],
@@ -399,6 +433,8 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // 로그아웃
   // ─────────────────────────────────────────────
   Widget _buildLogoutButton() {
+    final l10n = AppLocalizations.of(context);
+
     return SizedBox(
       width: double.infinity,
       height: 48,
@@ -415,9 +451,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: const Text(
-          '로그아웃',
-          style: TextStyle(
+        child: Text(
+          l10n.logout,
+          style: const TextStyle(
             fontWeight: FontWeight.w600,
           ),
         ),

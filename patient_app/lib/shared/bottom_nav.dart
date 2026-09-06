@@ -2,6 +2,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../l10n/app_localizations.dart';
+
 class BottomNav extends StatelessWidget {
   const BottomNav({
     super.key,
@@ -14,6 +16,8 @@ class BottomNav extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
     return Container(
       decoration: const BoxDecoration(
         border: Border(
@@ -32,26 +36,26 @@ class BottomNav extends StatelessWidget {
         unselectedItemColor: const Color(0xFF8B95A1),
         selectedFontSize: 11,
         unselectedFontSize: 11,
-        items: const [
+        items: [
           BottomNavigationBarItem(
-            icon: Icon(Icons.home_filled),
-            label: '홈',
+            icon: const Icon(Icons.home_filled),
+            label: l10n.home,
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.calendar_month_outlined),
-            label: '예약',
+            icon: const Icon(Icons.calendar_month_outlined),
+            label: l10n.appointment,
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.assignment_outlined),
-            label: '검사·결과',
+            icon: const Icon(Icons.assignment_outlined),
+            label: l10n.examResult,
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.medication_outlined),
-            label: '복약',
+            icon: const Icon(Icons.medication_outlined),
+            label: l10n.medication,
           ),
           BottomNavigationBarItem(
-            icon: Icon(Icons.person_outline),
-            label: '마이페이지',
+            icon: const Icon(Icons.person_outline),
+            label: l10n.mypage,
           ),
         ],
       ),

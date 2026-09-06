@@ -1,11 +1,13 @@
 // 헤더 + 본문
 import 'package:flutter/material.dart';
-import '../features/notification/notification_list_screen.dart';
 
+import '../features/notification/notification_list_screen.dart';
 import '../features/appointment/appointment_screen.dart';
 import '../features/exam_result/exam_result_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/mypage/mypage_screen.dart';
+
+import '../l10n/app_localizations.dart';
 
 import 'app_header.dart';
 import 'bottom_nav.dart';
@@ -20,14 +22,6 @@ class AppShell extends StatefulWidget {
 class _AppShellState extends State<AppShell> {
   int _selectedIndex = 0;
 
-  final List<Widget> _screens = const [
-    HomeScreen(),
-    AppointmentScreen(),
-    ExamResultScreen(),
-    _PlaceholderScreen(title: '복약'),
-    MyPageScreen(),
-  ];
-
   void _onTabChanged(int index) {
     setState(() {
       _selectedIndex = index;
@@ -36,6 +30,18 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    final screens = [
+      const HomeScreen(),
+      const AppointmentScreen(),
+      const ExamResultScreen(),
+      _PlaceholderScreen(
+        title: l10n.medication,
+      ),
+      const MyPageScreen(),
+    ];
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
 
@@ -56,7 +62,7 @@ class _AppShellState extends State<AppShell> {
 
       body: IndexedStack(
         index: _selectedIndex,
-        children: _screens,
+        children: screens,
       ),
 
       bottomNavigationBar: BottomNav(
