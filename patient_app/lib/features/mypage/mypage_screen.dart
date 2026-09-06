@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../home/models/patient_profile.dart';
 import '../home/services/profile_service.dart';
 import 'patient_info_screen.dart';
+import 'notification_setting_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -211,7 +212,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
               icon: Icons.notifications_none_rounded,
               title: '알림 설정',
               onTap: () {
-                // TODO: 알림 설정
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        const NotificationSettingScreen(),
+                  ),
+                );
               },
             ),
           ),
