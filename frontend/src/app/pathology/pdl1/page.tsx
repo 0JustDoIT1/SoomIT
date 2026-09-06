@@ -201,8 +201,17 @@ export default function PathologyPdL1Page() {
                 {filteredItems.map((item) => (
                   <tr
                     key={item.id}
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`${item.patient_name} PD-L1 작업 선택`}
                     onClick={() => setSelectedId(item.id)}
-                    className={`cursor-pointer hover:bg-blue-50/60 ${selectedItem?.id === item.id ? "bg-blue-50" : ""}`}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setSelectedId(item.id);
+                      }
+                    }}
+                    className={`cursor-pointer hover:bg-blue-50/60 focus-visible:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${selectedItem?.id === item.id ? "bg-blue-50" : ""}`}
                   >
                     <td className="min-w-36 px-4 py-3">
                       <p className="font-semibold text-slate-900">{item.patient_name}</p>

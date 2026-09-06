@@ -305,8 +305,17 @@ export default function PathologySpecimensPage() {
                   {specimens.map((item) => (
                     <tr
                       key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${item.specimen_code} 검체 선택`}
                       onClick={() => setSelectedSpecimenId(item.id)}
-                      className={`cursor-pointer hover:bg-blue-50/60 ${selectedSpecimenId === item.id ? "bg-blue-50" : ""}`}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          setSelectedSpecimenId(item.id);
+                        }
+                      }}
+                      className={`cursor-pointer hover:bg-blue-50/60 focus-visible:bg-blue-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-blue-600 ${selectedSpecimenId === item.id ? "bg-blue-50" : ""}`}
                     >
                       <td className="whitespace-nowrap px-4 py-3 font-semibold text-slate-900">{item.specimen_code}</td>
                       <td className="whitespace-nowrap px-4 py-3">{specimenTypeLabel[item.specimen_type] ?? item.specimen_type}</td>
