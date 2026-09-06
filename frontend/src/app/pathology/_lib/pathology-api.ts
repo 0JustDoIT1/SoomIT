@@ -70,20 +70,25 @@ export type WholeSlideImage = {
   updated_at: string;
 };
 
-export const WORK_ITEMS_API_URL =
-  "http://127.0.0.1:8000/api/pathology/work-items/";
-export const CASES_API_URL = "http://127.0.0.1:8000/api/cases/";
+const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
+
+export const API_BASE_URL = (
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? DEFAULT_API_BASE_URL
+).replace(/\/+$/, "");
+
+export const WORK_ITEMS_API_URL = `${API_BASE_URL}/api/pathology/work-items/`;
+export const CASES_API_URL = `${API_BASE_URL}/api/cases/`;
 
 export function workItemDetailApiUrl(itemId: string) {
   return `${WORK_ITEMS_API_URL}${encodeURIComponent(itemId)}/`;
 }
 
 export function caseSpecimensApiUrl(caseId: string) {
-  return `http://127.0.0.1:8000/api/pathology/cases/${encodeURIComponent(caseId)}/specimens/`;
+  return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/specimens/`;
 }
 
 export function specimenSlidesApiUrl(specimenId: string) {
-  return `http://127.0.0.1:8000/api/pathology/specimens/${encodeURIComponent(specimenId)}/wsis/`;
+  return `${API_BASE_URL}/api/pathology/specimens/${encodeURIComponent(specimenId)}/wsis/`;
 }
 
 export const statusLabel: Record<string, string> = {
