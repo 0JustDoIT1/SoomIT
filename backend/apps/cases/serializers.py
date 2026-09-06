@@ -135,3 +135,56 @@ class DoctorLungCancerCaseSerializer(serializers.ModelSerializer):
                 return full_name
 
         return getattr(user, "username", str(user))
+
+# 호흡기내과 - 담당 Case 상세 조회용
+class DoctorLungCancerCaseDetailSerializer(serializers.ModelSerializer):
+    patient_code = serializers.CharField(source="patient.patient_code", read_only=True)
+    patient_name = serializers.CharField(source="patient.name", read_only=True)
+    patient_sex = serializers.CharField(source="patient.sex", read_only=True)
+    patient_birth_date = serializers.DateField(source="patient.birth_date", read_only=True)
+    primary_doctor_name = serializers.SerializerMethodField()
+    latest_clinician_decision = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LungCancerCase
+        fields = [
+            "id",
+            "case_code",
+            "patient_code",
+            "patient_name",
+            "patient_sex",
+            "patient_birth_date",
+            "primary_doctor_name",
+            "current_stage",
+            "case_status",
+            "created_at",
+            "updated_at",
+            "latest_clinician_decision",
+        ]
+
+    def get_primary_doctor_name(self, obj):
+        user = obj.primary_doctor
+
+        if user is None:
+            return None
+
+        if hasattr(user, "get_full_name"):
+            full_name = user.get_full_name()
+
+            if full_name:
+                return full_name
+
+        return getattr(user, "login_id", str(user))
+
+    def get_latest_clinician_decision(self, obj):
+        decision = (
+            obj.clinician_decisions
+            .select_related("decided_by_user")
+            .order_by("-decided_at")
+            .first()
+        )
+
+        if decision is None:
+            return None
+
+        return ClinicianDecisionSummarySerializer(decision).data

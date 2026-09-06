@@ -4,6 +4,7 @@ from rest_framework.generics import ListAPIView, RetrieveAPIView
 
 from .models import LungCancerCase
 from .serializers import (
+    DoctorLungCancerCaseDetailSerializer,
     DoctorLungCancerCaseSerializer,
     LungCancerCaseDetailSerializer,
     LungCancerCaseSerializer,
@@ -47,4 +48,21 @@ class DoctorLungCancerCaseListAPIView(ListAPIView):
                 case_status="ACTIVE",
             )
             .order_by("-updated_at")
+        )
+
+# 호흡기내과 - 내 담당 Case 상세 조회
+class DoctorLungCancerCaseDetailAPIView(RetrieveAPIView):
+    serializer_class = DoctorLungCancerCaseDetailSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    lookup_field = "id"
+
+    def get_queryset(self):
+        return (
+            LungCancerCase.objects
+            .select_related("patient", "primary_doctor")
+            .filter(
+                primary_doctor=self.request.user,
+                case_status="ACTIVE",
+            )
         )
