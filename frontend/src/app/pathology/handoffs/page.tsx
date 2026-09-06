@@ -249,7 +249,7 @@ export default function PathologyHandoffsPage() {
           </div>
         </section>
 
-        <aside className="space-y-5">
+        <aside className="min-w-0 space-y-5">
           <section className="border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="text-sm font-semibold text-slate-900">인계 준비</h2>

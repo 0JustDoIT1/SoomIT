@@ -146,7 +146,7 @@ export default function PathologyCollaborationPage() {
       )}
 
       <div className="mt-6 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)_340px]">
-        <section className="border border-slate-200 bg-white">
+        <section className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 p-4">
             <h2 className="text-sm font-semibold text-slate-900">Case 목록</h2>
             <input
@@ -234,7 +234,7 @@ export default function PathologyCollaborationPage() {
           </section>
         </div>
 
-        <aside className="space-y-5">
+        <aside className="min-w-0 space-y-5">
           <section className="border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="text-sm font-semibold text-slate-900">연결된 병리 업무</h2>

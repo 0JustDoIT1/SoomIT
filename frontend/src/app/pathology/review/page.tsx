@@ -170,7 +170,7 @@ export default function PathologyReviewPage() {
       </section>
 
       <div className="mt-5 grid gap-5 2xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-        <section className="border border-slate-200 bg-white">
+        <section className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 p-4">
             <h2 className="text-sm font-semibold text-slate-900">판독 대기열</h2>
             <input
@@ -265,7 +265,7 @@ export default function PathologyReviewPage() {
           )}
         </section>
 
-        <aside className="space-y-5">
+        <aside className="min-w-0 space-y-5">
           <section className="border border-slate-200 bg-white">
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="text-sm font-semibold text-slate-900">판독 작업 정보</h2>

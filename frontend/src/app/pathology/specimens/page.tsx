@@ -221,7 +221,7 @@ export default function PathologySpecimensPage() {
       </section>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <section className="border border-slate-200 bg-white">
+        <section className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 p-4">
             <h2 className="text-sm font-semibold text-slate-900">Case 목록</h2>
             <input

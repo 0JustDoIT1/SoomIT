@@ -49,7 +49,7 @@ export default function PathologyNotificationsPage() {
       </section>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_340px]">
-        <aside className="border border-slate-200 bg-white">
+        <aside className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-4">
             <h2 className="text-sm font-semibold text-slate-900">알림 분류</h2>
           </div>
@@ -116,7 +116,7 @@ export default function PathologyNotificationsPage() {
           </div>
         </section>
 
-        <aside className="border border-slate-200 bg-white">
+        <aside className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
             <h2 className="text-sm font-semibold text-slate-900">알림 상세</h2>
           </div>

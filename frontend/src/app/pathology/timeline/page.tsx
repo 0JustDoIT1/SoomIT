@@ -244,7 +244,7 @@ export default function PathologyTimelinePage() {
       )}
 
       <div className="mt-5 grid gap-5 xl:grid-cols-[220px_minmax(0,1fr)_320px]">
-        <aside className="border border-slate-200 bg-white p-4">
+        <aside className="min-w-0 border border-slate-200 bg-white p-4">
           <h2 className="text-sm font-semibold text-slate-900">이벤트 필터</h2>
           <div className="mt-4 space-y-1">
             {[
@@ -315,7 +315,7 @@ export default function PathologyTimelinePage() {
           </div>
         </section>
 
-        <aside className="space-y-5">
+        <aside className="min-w-0 space-y-5">
           <section className="border border-slate-200 bg-white p-5">
             <h2 className="text-sm font-semibold text-slate-900">현재 병리 업무</h2>
             <div className="mt-4 space-y-3">

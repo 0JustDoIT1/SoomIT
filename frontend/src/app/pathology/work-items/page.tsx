@@ -124,7 +124,7 @@ export default function PathologyWorkItemsPage() {
 
       <PathologyAuthPanel loading={loading} onConnect={loadWorkItems} />
 
-      <section className="mt-6 overflow-hidden border border-slate-200 bg-white">
+      <section className="mt-6 min-w-0 overflow-hidden border border-slate-200 bg-white">
         <div className="flex flex-wrap items-center gap-3 border-b border-slate-200 p-4">
           <input
             value={search}

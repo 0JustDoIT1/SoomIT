@@ -280,7 +280,7 @@ export default function PathologyDashboardPage() {
           </div>
         </section>
 
-        <section className="border border-slate-200 bg-white">
+        <section className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
             <h2 className="text-base font-semibold text-slate-900">선택 작업 정보</h2>
           </div>
@@ -315,7 +315,7 @@ export default function PathologyDashboardPage() {
       </div>
 
       <div className="mt-5 grid gap-5 xl:grid-cols-2">
-        <section className="border border-slate-200 bg-white p-5">
+        <section className="min-w-0 border border-slate-200 bg-white p-5">
           <h2 className="text-base font-semibold text-slate-900">선택 작업 단계</h2>
           {selectedItem ? (
             <div className="mt-5 overflow-x-auto pb-2">
@@ -342,7 +342,7 @@ export default function PathologyDashboardPage() {
           )}
         </section>
 
-        <section className="border border-slate-200 bg-white">
+        <section className="min-w-0 border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-5 py-4">
             <h2 className="text-base font-semibold text-slate-900">진행 중인 분석 작업</h2>
           </div>
