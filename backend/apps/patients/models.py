@@ -276,3 +276,78 @@ class SymptomLog(TimestampedUUIDModel):
         constraints = [
             models.CheckConstraint(check=Q(severity__gte=0) & Q(severity__lte=10), name="ck_symptom_severity_0_10"),
         ]
+
+
+# ── 2-10. current_medications ───────────────────────────────────
+class CurrentMedication(TimestampedUUIDModel):
+    patient = models.ForeignKey(
+        Patient,
+        on_delete=models.PROTECT,
+        related_name="current_medications",
+    )
+    drug = models.ForeignKey(
+        "clinical.Drug",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="patient_current_medications",
+    )
+    medication_name = models.CharField(max_length=200)
+    ingredient_name = models.CharField(max_length=200, null=True, blank=True)
+    dose = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    dose_unit = models.CharField(max_length=30, null=True, blank=True)
+    frequency = models.CharField(max_length=100, null=True, blank=True)
+    route = models.CharField(max_length=30, null=True, blank=True)
+    started_at = models.DateField(null=True, blank=True)
+    ended_at = models.DateField(null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    note = models.TextField(null=True, blank=True)
+    recorded_by_user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="recorded_current_medications",
+    )
+
+    class Meta:
+        db_table = "current_medications"
+        indexes = [
+            models.Index(
+                fields=["patient", "is_active"],
+                name="idx_curmed_patient_active",
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.patient.patient_code} - {self.medication_name}"
+
+
+
+
+# ── 2-11. lab_results ───────────────────────────────────────────
+class LabResult(TimestampedUUIDModel):
+    patient = models.ForeignKey(
+        Patient,
+        on_delete=models.PROTECT,
+        related_name="lab_results",
+    )
+    creatinine = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
+    egfr = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    ast = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    alt = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    total_bilirubin = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    tested_at = models.DateTimeField()
+    note = models.TextField(null=True, blank=True)
+    recorded_by_user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="recorded_lab_results",
+    )
+
+    class Meta:
+        db_table = "lab_results"
+        indexes = [
+            models.Index(
+                fields=["patient", "-tested_at"],
+                name="idx_lab_patient_tested",
+            ),
+        ]

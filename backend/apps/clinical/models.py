@@ -257,6 +257,13 @@ class TreatmentDecision(models.Model):
     )
     ai_recommendation_action = models.CharField(max_length=15, choices=AiRecommendationAction.choices)
     treatment_type = models.CharField(max_length=20, choices=TreatmentType.choices)
+    selected_regimen = models.ForeignKey(
+        "Regimen",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="treatment_decisions",
+    )
     treatment_plan = models.TextField()
     targeted_therapy_plan = models.TextField(null=True, blank=True)
     rationale = models.TextField(null=True, blank=True)
@@ -486,3 +493,38 @@ class SafetyCheckResult(models.Model):
 
     class Meta:
         db_table = "safety_check_results"
+
+
+
+# ── 5-10. pdl1_results ─────────────────────────────────────────
+class PDL1Result(models.Model):
+    clinical_result = models.OneToOneField(
+        ClinicalResult,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        related_name="pdl1_detail",
+    )
+    tps_percent = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+    )
+    interpretation = models.TextField(null=True, blank=True)
+    source_wsi = models.ForeignKey(
+        "pathology.WholeSlideImage",
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="pdl1_results",
+    )
+    note = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "pdl1_results"
+        constraints = [
+            models.CheckConstraint(
+                check=Q(tps_percent__gte=0) & Q(tps_percent__lte=100),
+                name="ck_pdl1_tps_0_100",
+            ),
+        ]
