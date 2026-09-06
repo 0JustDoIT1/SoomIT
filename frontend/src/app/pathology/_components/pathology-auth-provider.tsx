@@ -20,6 +20,17 @@ type PathologyAuthContextValue = {
   authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
+export class PathologyApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly kind: "authentication" | "permission" | "network" | "response",
+  ) {
+    super(message);
+    this.name = "PathologyApiError";
+  }
+}
+
 const PathologyAuthContext = createContext<PathologyAuthContextValue | null>(
   null,
 );
@@ -30,10 +41,12 @@ export function PathologyAuthProvider({ children }: { children: ReactNode }) {
   const [isConnected, setIsConnected] = useState(false);
 
   const authorizedFetch = useCallback(
-    (input: RequestInfo | URL, init: RequestInit = {}) => {
+    async (input: RequestInfo | URL, init: RequestInit = {}) => {
       if (!username || !password) {
-        return Promise.reject(
-          new Error("API 조회를 위해 로컬 테스트 계정을 입력해 주세요."),
+        throw new PathologyApiError(
+          "API 조회를 위해 로컬 테스트 계정을 입력해 주세요.",
+          null,
+          "authentication",
         );
       }
 
@@ -45,7 +58,45 @@ export function PathologyAuthProvider({ children }: { children: ReactNode }) {
       headers.set("Accept", "application/json");
       headers.set("Authorization", `Basic ${token}`);
 
-      return fetch(input, { ...init, headers, cache: "no-store" });
+      let response: Response;
+
+      try {
+        response = await fetch(input, { ...init, headers, cache: "no-store" });
+      } catch {
+        throw new PathologyApiError(
+          "병리 API 서버에 연결할 수 없습니다. 서버 실행 상태와 네트워크를 확인해 주세요.",
+          null,
+          "network",
+        );
+      }
+
+      if (response.status === 401) {
+        setPassword("");
+        setIsConnected(false);
+        throw new PathologyApiError(
+          "인증 정보가 올바르지 않거나 만료되었습니다. 계정 정보를 다시 입력해 주세요.",
+          response.status,
+          "authentication",
+        );
+      }
+
+      if (response.status === 403) {
+        throw new PathologyApiError(
+          "이 병리 정보에 접근할 권한이 없습니다. 계정 권한을 확인해 주세요.",
+          response.status,
+          "permission",
+        );
+      }
+
+      if (!response.ok) {
+        throw new PathologyApiError(
+          `병리 API 요청에 실패했습니다. (${response.status})`,
+          response.status,
+          "response",
+        );
+      }
+
+      return response;
     },
     [password, username],
   );

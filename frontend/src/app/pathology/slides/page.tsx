@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 
 import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
+import { PathologyStateMessage } from "../_components/pathology-state-message";
 import { WsiViewerPanel } from "../_components/wsi-viewer-panel";
 import {
   CASES_API_URL,
@@ -203,6 +204,19 @@ export default function PathologySlidesPage() {
     specimens.find((item) => item.id === selectedSpecimenId) ?? null;
   const selectedSlide =
     slides.find((item) => item.id === selectedSlideId) ?? null;
+  const emptyStateMessage = !isConnected
+    ? "API 연결 후 WSI를 조회할 수 있습니다."
+    : loading
+      ? "Case 정보를 불러오는 중입니다."
+      : cases.length === 0
+        ? "조회 가능한 Case가 없습니다."
+        : !selectedCaseId
+          ? "Case를 선택해 주세요."
+          : specimens.length === 0
+            ? "선택한 Case에 등록된 검체가 없습니다."
+            : !selectedSpecimenId
+              ? "검체를 선택해 주세요."
+              : "선택한 검체에 등록된 WSI가 없습니다.";
 
   return (
     <div>
@@ -228,9 +242,12 @@ export default function PathologySlidesPage() {
       <PathologyAuthPanel loading={loading} onConnect={loadInitialData} />
 
       {error && (
-        <div className="mt-6 border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {error}
-        </div>
+        <PathologyStateMessage
+          variant="error"
+          title={error}
+          description="인증 정보, 접근 권한 또는 API 서버 상태를 확인한 뒤 다시 시도해 주세요."
+          className="mt-6"
+        />
       )}
 
       <section className="mt-6 border border-slate-200 bg-white p-5">
@@ -331,7 +348,7 @@ export default function PathologySlidesPage() {
                 {!contentLoading && slides.length === 0 && (
                   <tr>
                     <td colSpan={8} className="px-5 py-16 text-center text-sm text-slate-500">
-                      선택한 검체에 등록된 WSI가 없습니다.
+                      {emptyStateMessage}
                     </td>
                   </tr>
                 )}
@@ -340,7 +357,11 @@ export default function PathologySlidesPage() {
           </div>
         </section>
 
-        <WsiViewerPanel slide={selectedSlide} loading={contentLoading} />
+        <WsiViewerPanel
+          slide={selectedSlide}
+          loading={loading || contentLoading}
+          emptyMessage={emptyStateMessage}
+        />
       </div>
     </div>
   );

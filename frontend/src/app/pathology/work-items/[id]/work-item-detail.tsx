@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 
 import { PathologyAuthPanel } from "../../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../../_components/pathology-auth-provider";
+import { PathologyStateMessage } from "../../_components/pathology-state-message";
 import {
   readWorkItem,
   statusLabel,
@@ -127,9 +128,7 @@ export function WorkItemDetail({ itemId }: { itemId: string }) {
       )}
 
       {error && (
-        <div className="mt-6 border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {error}
-        </div>
+        <PathologyStateMessage variant="error" title={error} className="mt-6" />
       )}
 
       {loading && (

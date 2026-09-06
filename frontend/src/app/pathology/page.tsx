@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { PathologyAuthPanel } from "./_components/pathology-auth-panel";
 import { usePathologyAuth } from "./_components/pathology-auth-provider";
+import { PathologyStateMessage } from "./_components/pathology-state-message";
 import {
   readWorkItems,
   statusLabel,
@@ -202,9 +203,7 @@ export default function PathologyDashboardPage() {
       <PathologyAuthPanel loading={loading} onConnect={loadDashboard} />
 
       {error && (
-        <div className="mt-6 border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {error}
-        </div>
+        <PathologyStateMessage variant="error" title={error} className="mt-6" />
       )}
 
       <section aria-label="병리 업무 요약" className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-3 2xl:grid-cols-6">

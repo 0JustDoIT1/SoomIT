@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
+import { PathologyStateMessage } from "../_components/pathology-state-message";
 import {
   readWorkItems,
   statusLabel,
@@ -153,9 +154,7 @@ export default function PathologyAiAnalysisPage() {
       <PathologyAuthPanel loading={loading} onConnect={loadAiItems} />
 
       {error && (
-        <div className="mt-6 border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {error}
-        </div>
+        <PathologyStateMessage variant="error" title={error} className="mt-6" />
       )}
 
       <section className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-5">

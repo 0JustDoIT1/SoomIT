@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
+import { PathologyStateMessage } from "../_components/pathology-state-message";
 import {
   readWorkItems,
   statusLabel,
@@ -147,9 +148,7 @@ export default function PathologyWorkItemsPage() {
         </div>
 
         {error && (
-          <div className="border-b border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-            {error}
-          </div>
+          <PathologyStateMessage variant="error" title={error} className="border-x-0 border-t-0" />
         )}
 
         <div className="w-full overflow-x-auto">

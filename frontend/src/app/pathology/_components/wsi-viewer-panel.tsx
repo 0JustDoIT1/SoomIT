@@ -1,4 +1,5 @@
 import type { WholeSlideImage } from "../_lib/pathology-api";
+import { PathologyStateMessage } from "./pathology-state-message";
 
 const imageStatusLabel: Record<string, string> = {
   UPLOADING: "업로드 중",
@@ -16,13 +17,18 @@ const stainLabel: Record<string, string> = {
 type WsiViewerPanelProps = {
   slide: WholeSlideImage | null;
   loading: boolean;
+  emptyMessage: string;
 };
 
 function displayValue(value: string | number | null) {
   return value === null || value === "" ? "-" : String(value);
 }
 
-export function WsiViewerPanel({ slide, loading }: WsiViewerPanelProps) {
+export function WsiViewerPanel({
+  slide,
+  loading,
+  emptyMessage,
+}: WsiViewerPanelProps) {
   return (
     <section className="min-w-0 border border-slate-200 bg-white">
       <div className="border-b border-slate-200 px-5 py-4">
@@ -33,22 +39,22 @@ export function WsiViewerPanel({ slide, loading }: WsiViewerPanelProps) {
       </div>
 
       <div className="p-5">
-        <div className="flex min-h-72 items-center justify-center border border-dashed border-slate-300 bg-slate-50 px-6 text-center">
-          <div>
-            <p className="text-sm font-semibold text-slate-800">
-              {loading
-                ? "WSI 정보를 불러오는 중입니다."
-                : slide
-                  ? "WSI 원본 영상 API 연동 대기"
-                  : "표시할 WSI가 없습니다."}
-            </p>
-            <p className="mt-2 text-xs leading-5 text-slate-500">
-              {slide
-                ? "썸네일·타일·원본 파일 제공 API가 준비되면 이 영역에 뷰어를 연결합니다."
-                : "검체에 등록된 WSI가 있으면 목록에서 선택할 수 있습니다."}
-            </p>
-          </div>
-        </div>
+        <PathologyStateMessage
+          variant={loading ? "loading" : slide ? "info" : "empty"}
+          title={
+            loading
+              ? "WSI 정보를 불러오는 중입니다."
+              : slide
+                ? "WSI 원본 영상 API 연동 대기"
+                : emptyMessage
+          }
+          description={
+            slide
+              ? "썸네일·타일·원본 파일 제공 API가 준비되면 이 영역에 뷰어를 연결합니다."
+              : "검체에 등록된 WSI가 있으면 목록에서 선택할 수 있습니다."
+          }
+          className="flex min-h-72 items-center justify-center border-dashed px-6 text-center"
+        />
 
         {slide && (
           <div className="mt-5 border-t border-slate-200 pt-5">

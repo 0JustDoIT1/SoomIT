@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
+import { PathologyStateMessage } from "../_components/pathology-state-message";
 import {
   CASES_API_URL,
   type PathologyCase,
@@ -202,9 +203,7 @@ export default function PathologyTimelinePage() {
       <PathologyAuthPanel loading={loading} onConnect={loadTimeline} />
 
       {error && (
-        <div className="mt-6 border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700">
-          {error}
-        </div>
+        <PathologyStateMessage variant="error" title={error} className="mt-6" />
       )}
 
       <section className="mt-6 border border-slate-200 bg-white p-5">
