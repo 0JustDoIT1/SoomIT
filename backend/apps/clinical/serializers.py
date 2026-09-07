@@ -197,3 +197,57 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
             }
 
         return detail
+
+
+from .models import Regimen, TreatmentDecision
+
+
+class RegimenSummarySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Regimen
+        fields = [
+            "id",
+            "regimen_code",
+            "regimen_name",
+            "cancer_type",
+            "histology",
+            "treatment_line",
+            "cycle_length_days",
+            "induction_cycles",
+            "maintenance_yn",
+            "source",
+            "source_version",
+        ]
+
+
+class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
+    selected_regimen_detail = RegimenSummarySerializer(
+        source="selected_regimen",
+        read_only=True,
+    )
+    ai_recommendation_action_label = serializers.CharField(
+        source="get_ai_recommendation_action_display",
+        read_only=True,
+    )
+    treatment_type_label = serializers.CharField(
+        source="get_treatment_type_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = TreatmentDecision
+        fields = [
+            "clinical_result",
+            "ai_recommendation_action",
+            "ai_recommendation_action_label",
+            "treatment_type",
+            "treatment_type_label",
+            "selected_regimen",
+            "selected_regimen_detail",
+            "treatment_plan",
+            "targeted_therapy_plan",
+            "rationale",
+        ]
+        read_only_fields = [
+            "clinical_result",
+        ]

@@ -1,7 +1,10 @@
 from django.urls import path
 
 from apps.ai_results.views import DoctorAiAnalysisListAPIView
-from apps.clinical.views import DoctorClinicalResultListAPIView
+from apps.clinical.views import (
+    DoctorClinicalResultListAPIView,
+    DoctorTreatmentDecisionAPIView,
+)
 
 from .views import (
     DoctorLungCancerCaseDetailAPIView,
@@ -29,5 +32,10 @@ urlpatterns = [
         "<uuid:case_id>/ai-results/",
         DoctorAiAnalysisListAPIView.as_view(),
         name="doctor-ai-result-list",
+    ),
+    path(
+        "<uuid:case_id>/treatment-decision/",
+        DoctorTreatmentDecisionAPIView.as_view(),
+        name="doctor-treatment-decision",
     ),
 ]
