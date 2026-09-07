@@ -491,6 +491,22 @@ class SafetyCheckResult(models.Model):
     source_code = models.CharField(max_length=100, null=True, blank=True)
     checked_at = models.DateTimeField()
 
+    acknowledged_by_user = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="acknowledged_safety_checks",
+    )
+    acknowledged_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+    acknowledgment_note = models.TextField(
+        null=True,
+        blank=True,
+    )
+
     class Meta:
         db_table = "safety_check_results"
 

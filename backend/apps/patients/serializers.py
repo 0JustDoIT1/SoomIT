@@ -2,7 +2,14 @@ import hashlib
 
 from rest_framework import serializers
 
-from .models import Patient, PatientAccount, SocialAccount, Appointment
+from .models import (
+    Appointment,
+    CurrentMedication,
+    LabResult,
+    Patient,
+    PatientAccount,
+    SocialAccount,
+)
 
 
 # ─────────────────────────────────────────────
@@ -393,3 +400,61 @@ class PatientUpdateSerializer(serializers.ModelSerializer):
         instance.save()
 
         return instance
+
+
+# ─────────────────────────────────────────────
+# 호흡기내과 - 현재 복용약
+# ─────────────────────────────────────────────
+class CurrentMedicationSerializer(serializers.ModelSerializer):
+    drug_name = serializers.CharField(
+        source="drug.drug_name",
+        read_only=True,
+    )
+
+    class Meta:
+        model = CurrentMedication
+        fields = [
+            "id",
+            "drug",
+            "drug_name",
+            "medication_name",
+            "ingredient_name",
+            "dose",
+            "dose_unit",
+            "frequency",
+            "route",
+            "started_at",
+            "ended_at",
+            "is_active",
+            "note",
+            "recorded_by_user",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "recorded_by_user",
+        ]
+
+
+# ─────────────────────────────────────────────
+# 호흡기내과 - 검사실 수치
+# ─────────────────────────────────────────────
+class LabResultSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = LabResult
+        fields = [
+            "id",
+            "creatinine",
+            "egfr",
+            "ast",
+            "alt",
+            "total_bilirubin",
+            "tested_at",
+            "note",
+            "recorded_by_user",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "recorded_by_user",
+        ]

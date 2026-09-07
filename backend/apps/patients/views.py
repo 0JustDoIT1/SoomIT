@@ -1,26 +1,35 @@
 import hashlib
 
+from drf_spectacular.utils import extend_schema
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import (
     ListAPIView,
     ListCreateAPIView,
     RetrieveUpdateAPIView,
 )
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import Hospital
+from apps.cases.models import LungCancerCase
 
-from .models import Patient, Appointment
+from .models import (
+    Appointment,
+    CurrentMedication,
+    LabResult,
+    Patient,
+)
 from .serializers import (
     AppointmentSerializer,
+    CurrentMedicationSerializer,
     ExaminationScheduleSerializer,
+    LabResultSerializer,
     PatientCreateSerializer,
     PatientDetailSerializer,
     PatientProfileSerializer,
     PatientSerializer,
     PatientUpdateSerializer,
 )
-from drf_spectacular.utils import extend_schema
-
 
 # 원무과 - 환자 목록 조회 / 신규 환자 등록
 class PatientListAPIView(ListCreateAPIView):
@@ -156,3 +165,98 @@ class PatientProfileAPIView(RetrieveUpdateAPIView):
             )
 
         return patient
+
+@extend_schema(tags=["호흡기내과-환자정보"])
+class DoctorCurrentMedicationListCreateAPIView(ListCreateAPIView):
+    serializer_class = CurrentMedicationSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_case(self):
+        case_id = self.kwargs["case_id"]
+
+        return (
+            LungCancerCase.objects
+            .select_related("patient")
+            .filter(
+                id=case_id,
+                primary_doctor=self.request.user,
+                case_status="ACTIVE",
+            )
+            .first()
+        )
+
+    def get_queryset(self):
+        case = self.get_case()
+
+        if case is None:
+            return CurrentMedication.objects.none()
+
+        return (
+            CurrentMedication.objects
+            .filter(patient=case.patient)
+            .select_related(
+                "drug",
+                "recorded_by_user",
+            )
+            .order_by("-is_active", "-created_at")
+        )
+
+    def perform_create(self, serializer):
+        case = self.get_case()
+
+        if case is None:
+            raise ValidationError(
+                {"case": "담당 Case를 찾을 수 없습니다."}
+            )
+
+        serializer.save(
+            patient=case.patient,
+            recorded_by_user=self.request.user,
+        )
+
+@extend_schema(tags=["호흡기내과-환자정보"])
+class DoctorLabResultListCreateAPIView(ListCreateAPIView):
+    serializer_class = LabResultSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_case(self):
+        case_id = self.kwargs["case_id"]
+
+        return (
+            LungCancerCase.objects
+            .select_related("patient")
+            .filter(
+                id=case_id,
+                primary_doctor=self.request.user,
+                case_status="ACTIVE",
+            )
+            .first()
+        )
+
+    def get_queryset(self):
+        case = self.get_case()
+
+        if case is None:
+            return LabResult.objects.none()
+
+        return (
+            LabResult.objects
+            .filter(patient=case.patient)
+            .select_related("recorded_by_user")
+            .order_by("-tested_at")
+        )
+
+    def perform_create(self, serializer):
+        case = self.get_case()
+
+        if case is None:
+            raise ValidationError(
+                {"case": "담당 Case를 찾을 수 없습니다."}
+            )
+
+        serializer.save(
+            patient=case.patient,
+            recorded_by_user=self.request.user,
+        )

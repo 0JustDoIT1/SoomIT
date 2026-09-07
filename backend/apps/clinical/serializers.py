@@ -251,3 +251,131 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "clinical_result",
         ]
+
+from .models import Prescription, PrescriptionItem, SafetyCheckResult
+
+
+class PrescriptionItemSerializer(serializers.ModelSerializer):
+    drug_name = serializers.CharField(
+        source="drug.drug_name",
+        read_only=True,
+    )
+    ingredient_name = serializers.CharField(
+        source="drug.ingredient_name",
+        read_only=True,
+    )
+    dose_basis_label = serializers.CharField(
+        source="get_dose_basis_display",
+        read_only=True,
+    )
+    route_label = serializers.CharField(
+        source="get_route_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = PrescriptionItem
+        fields = [
+            "id",
+            "drug",
+            "drug_name",
+            "ingredient_name",
+            "standard_dose",
+            "dose_basis",
+            "dose_basis_label",
+            "patient_bsa",
+            "target_auc",
+            "renal_value",
+            "calculated_dose",
+            "final_dose",
+            "unit",
+            "route",
+            "route_label",
+            "administration_day",
+            "frequency",
+            "instructions",
+        ]
+
+
+class SafetyCheckResultSerializer(serializers.ModelSerializer):
+    check_type_label = serializers.CharField(
+        source="get_check_type_display",
+        read_only=True,
+    )
+    result_label = serializers.CharField(
+        source="get_result_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = SafetyCheckResult
+        fields = [
+            "id",
+            "prescription_item",
+            "check_type",
+            "check_type_label",
+            "result",
+            "result_label",
+            "message",
+            "source",
+            "source_code",
+            "checked_at",
+            "acknowledged_by_user",
+            "acknowledged_at",
+            "acknowledgment_note",
+        ]
+
+
+class DoctorPrescriptionSerializer(serializers.ModelSerializer):
+    regimen_detail = RegimenSummarySerializer(
+        source="regimen",
+        read_only=True,
+    )
+    prescription_status_label = serializers.CharField(
+        source="get_prescription_status_display",
+        read_only=True,
+    )
+    phase_label = serializers.CharField(
+        source="get_phase_display",
+        read_only=True,
+    )
+    items = PrescriptionItemSerializer(
+        many=True,
+        read_only=True,
+    )
+    safety_check_results = SafetyCheckResultSerializer(
+        many=True,
+        read_only=True,
+    )
+
+    class Meta:
+        model = Prescription
+        fields = [
+            "id",
+            "case",
+            "treatment_decision",
+            "regimen",
+            "regimen_detail",
+            "cycle_number",
+            "phase",
+            "phase_label",
+            "cycle_start_date",
+            "prescription_status",
+            "prescription_status_label",
+            "prescribed_by_user",
+            "prescribed_at",
+            "cancelled_at",
+            "cancellation_reason",
+            "items",
+            "safety_check_results",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "case",
+            "treatment_decision",
+            "regimen",
+            "prescription_status",
+            "prescribed_by_user",
+            "prescribed_at",
+        ]

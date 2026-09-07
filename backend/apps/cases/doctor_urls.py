@@ -3,6 +3,10 @@ from django.urls import path
 from apps.ai_results.views import DoctorAiAnalysisListAPIView
 from apps.clinical.views import (
     DoctorClinicalResultListAPIView,
+    DoctorPrescriptionAPIView,
+    DoctorPrescriptionFinalizeAPIView,
+    DoctorPrescriptionItemUpdateAPIView,
+    DoctorSafetyWarningAcknowledgeAPIView,
     DoctorTreatmentDecisionAPIView,
     DoctorTreatmentDecisionConfirmAPIView,
 )
@@ -10,6 +14,11 @@ from apps.clinical.views import (
 from .views import (
     DoctorLungCancerCaseDetailAPIView,
     DoctorLungCancerCaseListAPIView,
+)
+
+from apps.patients.views import (
+    DoctorCurrentMedicationListCreateAPIView,
+    DoctorLabResultListCreateAPIView,
 )
 
 
@@ -43,5 +52,35 @@ urlpatterns = [
         "<uuid:case_id>/treatment-decision/confirm/",
         DoctorTreatmentDecisionConfirmAPIView.as_view(),
         name="doctor-treatment-decision-confirm",
+    ),
+    path(
+        "<uuid:case_id>/prescriptions/",
+        DoctorPrescriptionAPIView.as_view(),
+        name="doctor-prescription-list-create",
+    ),
+    path(
+        "<uuid:case_id>/prescriptions/<uuid:prescription_id>/finalize/",
+        DoctorPrescriptionFinalizeAPIView.as_view(),
+        name="doctor-prescription-finalize",
+    ),
+    path(
+        "<uuid:case_id>/prescriptions/<uuid:prescription_id>/warnings/acknowledge/",
+        DoctorSafetyWarningAcknowledgeAPIView.as_view(),
+        name="doctor-prescription-warning-acknowledge",
+    ),
+    path(
+        "<uuid:case_id>/prescriptions/<uuid:prescription_id>/items/<uuid:item_id>/",
+        DoctorPrescriptionItemUpdateAPIView.as_view(),
+        name="doctor-prescription-item-update",
+    ),
+    path(
+    "<uuid:case_id>/current-medications/",
+    DoctorCurrentMedicationListCreateAPIView.as_view(),
+    name="doctor-current-medication-list-create",
+    ),
+    path(
+        "<uuid:case_id>/lab-results/",
+        DoctorLabResultListCreateAPIView.as_view(),
+        name="doctor-lab-result-list-create",
     ),
 ]
