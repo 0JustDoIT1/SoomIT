@@ -5,6 +5,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
+from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion, PathologyAiResult
 from apps.cases.models import CaseImageAsset, LungCancerCase, Stage
 from apps.patients.models import Patient
 from apps.pathology.models import (
@@ -100,6 +101,32 @@ class PathologyReadAPITestCase(APITestCase):
             assigned_to=self.user,
         )
 
+        self.model_version = ModelVersion.objects.create(
+            model_name="pathology-model",
+            version="1.0",
+            analysis_type="PATHOLOGY_DIAGNOSIS",
+        )
+        self.ai_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            source_image_asset=self.image_asset,
+            model_version=self.model_version,
+            analysis_type="PATHOLOGY_DIAGNOSIS",
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        self.ai_result = AiResult.objects.create(
+            ai_analysis=self.ai_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        PathologyAiResult.objects.create(
+            ai_result=self.ai_result,
+            malignancy_assessment="MALIGNANT",
+            malignancy_probability=0.8750,
+            predicted_histologic_type="NSCLC",
+            predicted_subtype="Adenocarcinoma",
+            subtype_confidence=0.8125,
+        )
+
     def test_unauthenticated_user_cannot_access_work_items(self):
         url = reverse("pathology:work-item-list")
         response = self.client.get(url)
@@ -183,4 +210,39 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(
             str(response.data[0]["id"]),
             str(self.wsi.id),
+        )
+
+    def test_unauthenticated_user_cannot_access_case_ai_results(self):
+        url = reverse(
+            "pathology:case-ai-result-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN],
+        )
+
+    def test_authenticated_user_can_read_case_pathology_ai_results(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-ai-result-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(str(response.data[0]["case_id"]), str(self.case.id))
+        self.assertEqual(
+            str(response.data[0]["source_image_asset_id"]),
+            str(self.image_asset.id),
+        )
+        self.assertEqual(response.data[0]["analysis_type"], "PATHOLOGY_DIAGNOSIS")
+        self.assertEqual(
+            response.data[0]["result_detail"]["pathology"]["predicted_subtype"],
+            "Adenocarcinoma",
         )

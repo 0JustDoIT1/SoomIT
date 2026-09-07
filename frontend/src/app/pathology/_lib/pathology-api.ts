@@ -70,6 +70,37 @@ export type WholeSlideImage = {
   updated_at: string;
 };
 
+export type PathologyAiResultDetail = {
+  schema_version: string;
+  result_payload: unknown;
+  result_files: unknown[];
+  pathology?: {
+    malignancy_assessment: string;
+    malignancy_assessment_label: string;
+    malignancy_probability: string | number | null;
+    predicted_histologic_type: string | null;
+    predicted_subtype: string | null;
+    subtype_confidence: string | number | null;
+  };
+};
+
+export type PathologyAiAnalysis = {
+  id: string;
+  case_id: string;
+  source_image_asset_id: string | null;
+  analysis_type: string;
+  analysis_type_label: string;
+  status: string;
+  status_label: string;
+  model_name: string;
+  model_version_name: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  result_detail: PathologyAiResultDetail | null;
+  created_at: string;
+};
+
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
 export const API_BASE_URL = (
@@ -89,6 +120,10 @@ export function caseSpecimensApiUrl(caseId: string) {
 
 export function specimenSlidesApiUrl(specimenId: string) {
   return `${API_BASE_URL}/api/pathology/specimens/${encodeURIComponent(specimenId)}/wsis/`;
+}
+
+export function casePathologyAiResultsApiUrl(caseId: string) {
+  return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/`;
 }
 
 export const statusLabel: Record<string, string> = {
@@ -208,4 +243,8 @@ export function readSpecimens(response: Response) {
 
 export function readSlides(response: Response) {
   return readCollection<WholeSlideImage>(response);
+}
+
+export function readPathologyAiAnalyses(response: Response) {
+  return readCollection<PathologyAiAnalysis>(response);
 }

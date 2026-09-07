@@ -2,12 +2,35 @@ from django.db.models import Case, Count, IntegerField, Q, When
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.permissions import IsAuthenticated
 
+from apps.ai_results.models import AiAnalysis
+
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from .serializers import (
+    PathologyAiAnalysisSerializer,
     PathologySpecimenSerializer,
     PathologyWorkItemSerializer,
     WholeSlideImageSerializer,
 )
+
+
+class CasePathologyAiAnalysisListAPIView(ListAPIView):
+    serializer_class = PathologyAiAnalysisSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            AiAnalysis.objects.filter(
+                case_id=self.kwargs["case_id"],
+                analysis_type="PATHOLOGY_DIAGNOSIS",
+            )
+            .select_related(
+                "case",
+                "model_version",
+                "ai_result",
+                "ai_result__pathology_detail",
+            )
+            .order_by("-created_at")
+        )
 
 
 class PathologyWorkItemListAPIView(ListAPIView):

@@ -1,6 +1,17 @@
 from rest_framework import serializers
 
+from apps.ai_results.serializers import DoctorAiAnalysisSerializer
+
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
+
+
+class PathologyAiAnalysisSerializer(DoctorAiAnalysisSerializer):
+    class Meta(DoctorAiAnalysisSerializer.Meta):
+        fields = [
+            "case_id",
+            "source_image_asset_id",
+            *DoctorAiAnalysisSerializer.Meta.fields,
+        ]
 
 
 class WholeSlideImageSerializer(serializers.ModelSerializer):

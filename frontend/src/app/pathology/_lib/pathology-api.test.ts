@@ -20,13 +20,16 @@ describe("pathology API base URL", () => {
   it("uses the configured backend and removes trailing slashes", async () => {
     vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test///");
 
-    const { API_BASE_URL, specimenSlidesApiUrl } = await import(
+    const { API_BASE_URL, casePathologyAiResultsApiUrl, specimenSlidesApiUrl } = await import(
       "./pathology-api"
     );
 
     expect(API_BASE_URL).toBe("https://api.example.test");
     expect(specimenSlidesApiUrl("specimen/1")).toBe(
       "https://api.example.test/api/pathology/specimens/specimen%2F1/wsis/",
+    );
+    expect(casePathologyAiResultsApiUrl("case/1")).toBe(
+      "https://api.example.test/api/pathology/cases/case%2F1/ai-results/",
     );
   });
 });

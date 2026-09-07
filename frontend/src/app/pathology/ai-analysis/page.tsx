@@ -7,6 +7,9 @@ import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
 import { PathologyStateMessage } from "../_components/pathology-state-message";
 import {
+  casePathologyAiResultsApiUrl,
+  type PathologyAiAnalysis,
+  readPathologyAiAnalyses,
   readWorkItems,
   statusLabel,
   statusStyle,
@@ -52,6 +55,10 @@ export default function PathologyAiAnalysisPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(isConnected);
   const [error, setError] = useState("");
+  const [analyses, setAnalyses] = useState<PathologyAiAnalysis[]>([]);
+  const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [resultCaseId, setResultCaseId] = useState<string | null>(null);
+  const [resultError, setResultError] = useState("");
 
   useEffect(() => {
     if (!isConnected) return;
@@ -129,6 +136,45 @@ export default function PathologyAiAnalysisPage() {
 
   const selectedItem =
     items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const selectedAnalysis =
+    analyses.find((analysis) => analysis.id === selectedAnalysisId) ??
+    analyses[0] ??
+    null;
+  const selectedCaseId = selectedItem?.case_id ?? null;
+  const resultLoading = Boolean(
+    isConnected && selectedCaseId && resultCaseId !== selectedCaseId,
+  );
+
+  useEffect(() => {
+    if (!isConnected || !selectedCaseId) return;
+
+    let cancelled = false;
+
+    void authorizedFetch(casePathologyAiResultsApiUrl(selectedCaseId))
+      .then(readPathologyAiAnalyses)
+      .then((results) => {
+        if (cancelled) return;
+        setAnalyses(results);
+        setSelectedAnalysisId(results[0]?.id ?? null);
+        setResultCaseId(selectedCaseId);
+        setResultError("");
+      })
+      .catch((requestError: unknown) => {
+        if (cancelled) return;
+        setAnalyses([]);
+        setSelectedAnalysisId(null);
+        setResultCaseId(selectedCaseId);
+        setResultError(
+          requestError instanceof Error
+            ? requestError.message
+            : "병리 AI 결과를 불러오지 못했습니다.",
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authorizedFetch, isConnected, selectedCaseId]);
 
   return (
     <div>
@@ -306,12 +352,100 @@ export default function PathologyAiAnalysisPage() {
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="text-sm font-semibold text-slate-900">AI 실행 정보 및 결과</h2>
             </div>
-            <div className="px-5 py-10 text-center">
-              <p className="text-sm font-semibold text-slate-700">연결된 모델 실행 정보가 없습니다.</p>
-              <p className="mt-2 text-xs leading-5 text-slate-500">
-                모델 실행·진행률·결과 API가 준비되면 모델 버전, 실행 상태 및 분석 결과를 표시합니다.
-              </p>
-            </div>
+            {resultError ? (
+              <PathologyStateMessage variant="error" title={resultError} className="border-0" />
+            ) : resultLoading ? (
+              <PathologyStateMessage
+                variant="loading"
+                title="병리 AI 결과를 불러오는 중입니다."
+                className="border-0"
+              />
+            ) : !selectedItem ? (
+              <PathologyStateMessage
+                variant="empty"
+                title="먼저 병리 AI 작업을 선택해 주세요."
+                className="border-0"
+              />
+            ) : analyses.length === 0 ? (
+              <PathologyStateMessage
+                variant="empty"
+                title="이 Case에 등록된 병리 AI 결과가 없습니다."
+                description="AI 분석 데이터가 생성되면 이 영역에 실제 결과가 표시됩니다."
+                className="border-0"
+              />
+            ) : selectedAnalysis ? (
+              <div className="p-5">
+                {analyses.length > 1 && (
+                  <label className="mb-5 block text-xs font-semibold text-slate-600">
+                    분석 실행 선택
+                    <select
+                      value={selectedAnalysis.id}
+                      onChange={(event) => setSelectedAnalysisId(event.target.value)}
+                      className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900"
+                    >
+                      {analyses.map((analysis) => (
+                        <option key={analysis.id} value={analysis.id}>
+                          {analysis.analysis_type_label} · {analysis.status_label} · {formatDateTime(analysis.created_at)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <dl className="space-y-3 text-sm">
+                  {[
+                    ["분석 유형", selectedAnalysis.analysis_type_label],
+                    ["상태", selectedAnalysis.status_label],
+                    ["모델", selectedAnalysis.model_name],
+                    ["모델 버전", selectedAnalysis.model_version_name],
+                    ["원본 asset", selectedAnalysis.source_image_asset_id ?? "-"],
+                    ["시작일", formatDateTime(selectedAnalysis.started_at)],
+                    ["완료일", formatDateTime(selectedAnalysis.completed_at)],
+                  ].map(([label, value]) => (
+                    <div key={label} className="grid grid-cols-[80px_minmax(0,1fr)] gap-3">
+                      <dt className="text-slate-500">{label}</dt>
+                      <dd className="break-all font-medium text-slate-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                {selectedAnalysis.error_message && (
+                  <PathologyStateMessage
+                    variant="error"
+                    title="AI 분석 처리 실패"
+                    description={selectedAnalysis.error_message}
+                    className="mt-5"
+                  />
+                )}
+
+                {selectedAnalysis.result_detail?.pathology ? (
+                  <div className="mt-5 border-t border-slate-200 pt-5">
+                    <h3 className="text-sm font-semibold text-slate-900">병리 분석 결과</h3>
+                    <dl className="mt-4 space-y-3 text-sm">
+                      {[
+                        ["악성 판정", selectedAnalysis.result_detail.pathology.malignancy_assessment_label],
+                        ["악성 확률", selectedAnalysis.result_detail.pathology.malignancy_probability ?? "-"],
+                        ["조직형", selectedAnalysis.result_detail.pathology.predicted_histologic_type ?? "-"],
+                        ["아형", selectedAnalysis.result_detail.pathology.predicted_subtype ?? "-"],
+                        ["아형 신뢰도", selectedAnalysis.result_detail.pathology.subtype_confidence ?? "-"],
+                      ].map(([label, value]) => (
+                        <div key={label} className="grid grid-cols-[80px_minmax(0,1fr)] gap-3">
+                          <dt className="text-slate-500">{label}</dt>
+                          <dd className="break-words font-semibold text-slate-900">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </div>
+                ) : (
+                  <PathologyStateMessage
+                    variant="info"
+                    title="저장된 병리 상세 결과가 없습니다."
+                    description="분석 실행 정보만 API에서 확인되었습니다."
+                    className="mt-5"
+                  />
+                )}
+              </div>
+            ) : null}
           </section>
         </div>
       </div>
