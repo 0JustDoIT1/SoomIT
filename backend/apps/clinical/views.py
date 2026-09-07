@@ -139,10 +139,17 @@ class DoctorTreatmentDecisionAPIView(APIView):
         )
 
         if treatment_decision is None:
-            return Response({"detail": "치료 결정이 없습니다."}, status=404)
+            return Response(
+                {"detail": "치료 결정이 없습니다."},
+                status=404,
+            )
 
         serializer = DoctorTreatmentDecisionSerializer(treatment_decision)
-        return Response(serializer.data, status=200)
+
+        return Response(
+            serializer.data,
+            status=200,
+        )
 
     # 치료 결정 DRAFT 저장
     @extend_schema(
@@ -227,6 +234,24 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 {"detail": "확정할 치료 결정이 없습니다."},
                 status=404,
             )
+
+        regimen_required_types = {
+            "CHEMOTHERAPY",
+            "TARGETED_THERAPY",
+            "IMMUNOTHERAPY",
+            "COMBINATION",
+        }
+
+        if (
+            treatment_decision.treatment_type in regimen_required_types
+            and treatment_decision.selected_regimen is None
+        ):
+            return Response(
+                {"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."},
+                status=400,
+            )
+        
+        
 
         regimen_required_types = {"CHEMOTHERAPY", "TARGETED_THERAPY", "IMMUNOTHERAPY", "COMBINATION"}
 
