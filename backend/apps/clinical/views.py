@@ -5,7 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.cases.models import LungCancerCase
+from apps.cases.models import ClinicianDecision, LungCancerCase
 from apps.patients.models import Patient
 
 from .models import ClinicalResult, TreatmentDecision
@@ -14,6 +14,10 @@ from .serializers import (
     DoctorTreatmentDecisionSerializer,
     PatientClinicalResultSerializer,
 )
+
+from django.db import transaction
+from django.utils import timezone
+
 
 
 @extend_schema(tags=["환자앱-검사결과"])
@@ -183,4 +187,94 @@ class DoctorTreatmentDecisionAPIView(APIView):
         return Response(
             serializer.data,
             status=200 if treatment_decision else 201,
+        )
+@extend_schema(tags=["호흡기내과-치료결정"])
+class DoctorTreatmentDecisionConfirmAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        request=None,
+        responses={200: DoctorTreatmentDecisionSerializer},
+    )
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = (
+            LungCancerCase.objects
+            .filter(
+                id=case_id,
+                primary_doctor=request.user,
+                case_status="ACTIVE",
+            )
+            .first()
+        )
+
+        if case is None:
+            return Response(
+                {"detail": "담당 Case를 찾을 수 없습니다."},
+                status=404,
+            )
+
+        treatment_decision = (
+            TreatmentDecision.objects
+            .select_related(
+                "clinical_result",
+                "selected_regimen",
+            )
+            .filter(
+                clinical_result__case=case,
+            )
+            .first()
+        )
+
+        if treatment_decision is None:
+            return Response(
+                {"detail": "확정할 치료 결정이 없습니다."},
+                status=404,
+            )
+
+        clinical_result = treatment_decision.clinical_result
+
+        if clinical_result.result_status == "CONFIRMED":
+            return Response(
+                {"detail": "이미 확정된 치료 결정입니다."},
+                status=400,
+            )
+
+        clinical_result.result_status = "CONFIRMED"
+        clinical_result.confirmed_by_user = request.user
+        clinical_result.confirmed_at = timezone.now()
+        clinical_result.save(
+            update_fields=[
+                "result_status",
+                "confirmed_by_user",
+                "confirmed_at",
+                "updated_at",
+            ]
+        )
+
+        ClinicianDecision.objects.create(
+            case=case,
+            source_stage="TREATMENT",
+            source_clinical_result=clinical_result,
+            decision_type="PROCEED_NEXT_STAGE",
+            target_stage="PRESCRIPTION",
+            reason="치료 계획 확정 후 처방 단계로 진행",
+            decided_by_user=request.user,
+            decided_at=timezone.now(),
+        )
+
+        case.current_stage = "PRESCRIPTION"
+        case.save(
+            update_fields=[
+                "current_stage",
+                "updated_at",
+            ]
+        )
+
+        serializer = DoctorTreatmentDecisionSerializer(treatment_decision)
+
+        return Response(
+            serializer.data,
+            status=200,
         )

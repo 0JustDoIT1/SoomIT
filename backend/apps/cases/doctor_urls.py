@@ -4,6 +4,7 @@ from apps.ai_results.views import DoctorAiAnalysisListAPIView
 from apps.clinical.views import (
     DoctorClinicalResultListAPIView,
     DoctorTreatmentDecisionAPIView,
+    DoctorTreatmentDecisionConfirmAPIView,
 )
 
 from .views import (
@@ -37,5 +38,10 @@ urlpatterns = [
         "<uuid:case_id>/treatment-decision/",
         DoctorTreatmentDecisionAPIView.as_view(),
         name="doctor-treatment-decision",
+    ),
+    path(
+        "<uuid:case_id>/treatment-decision/confirm/",
+        DoctorTreatmentDecisionConfirmAPIView.as_view(),
+        name="doctor-treatment-decision-confirm",
     ),
 ]
