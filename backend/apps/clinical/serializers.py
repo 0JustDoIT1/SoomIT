@@ -183,7 +183,7 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
                         "assessment_label": finding.get_assessment_display(),
                         "note": finding.note,
                     }
-                    for finding in gene.findings.all()
+                    for finding in gene.gene_findings.all()
                 ],
             }
 
