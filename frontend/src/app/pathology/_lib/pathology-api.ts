@@ -82,6 +82,12 @@ export type PathologyAiResultDetail = {
     predicted_subtype: string | null;
     subtype_confidence: string | number | null;
   };
+  specimen_adequacy?: {
+    adequacy_status: string;
+    adequacy_status_label: string;
+    tumor_cell_ratio: string | number | null;
+    confidence: string | number | null;
+  };
 };
 
 export type PathologyAiAnalysis = {
@@ -124,6 +130,10 @@ export function specimenSlidesApiUrl(specimenId: string) {
 
 export function casePathologyAiResultsApiUrl(caseId: string) {
   return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/`;
+}
+
+export function caseAdequacyAiResultsApiUrl(caseId: string) {
+  return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/adequacy-results/`;
 }
 
 export const statusLabel: Record<string, string> = {

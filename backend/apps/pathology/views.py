@@ -33,6 +33,26 @@ class CasePathologyAiAnalysisListAPIView(ListAPIView):
         )
 
 
+class CaseSpecimenAdequacyAiAnalysisListAPIView(ListAPIView):
+    serializer_class = PathologyAiAnalysisSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return (
+            AiAnalysis.objects.filter(
+                case_id=self.kwargs["case_id"],
+                analysis_type="SPECIMEN_ADEQUACY",
+            )
+            .select_related(
+                "case",
+                "model_version",
+                "ai_result",
+                "ai_result__specimen_adequacy_detail",
+            )
+            .order_by("-created_at")
+        )
+
+
 class PathologyWorkItemListAPIView(ListAPIView):
     serializer_class = PathologyWorkItemSerializer
     permission_classes = [IsAuthenticated]

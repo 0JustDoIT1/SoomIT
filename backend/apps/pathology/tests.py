@@ -5,7 +5,13 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
-from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion, PathologyAiResult
+from apps.ai_results.models import (
+    AiAnalysis,
+    AiResult,
+    ModelVersion,
+    PathologyAiResult,
+    SpecimenAdequacyAiResult,
+)
 from apps.cases.models import CaseImageAsset, LungCancerCase, Stage
 from apps.patients.models import Patient
 from apps.pathology.models import (
@@ -127,6 +133,30 @@ class PathologyReadAPITestCase(APITestCase):
             subtype_confidence=0.8125,
         )
 
+        self.adequacy_model_version = ModelVersion.objects.create(
+            model_name="adequacy-model",
+            version="1.0",
+            analysis_type="SPECIMEN_ADEQUACY",
+        )
+        self.adequacy_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            source_image_asset=self.image_asset,
+            model_version=self.adequacy_model_version,
+            analysis_type="SPECIMEN_ADEQUACY",
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        self.adequacy_result = AiResult.objects.create(
+            ai_analysis=self.adequacy_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        SpecimenAdequacyAiResult.objects.create(
+            ai_result=self.adequacy_result,
+            adequacy_status="ADEQUATE",
+            tumor_cell_ratio=62.50,
+            confidence=0.9250,
+        )
+
     def test_unauthenticated_user_cannot_access_work_items(self):
         url = reverse("pathology:work-item-list")
         response = self.client.get(url)
@@ -245,4 +275,21 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(
             response.data[0]["result_detail"]["pathology"]["predicted_subtype"],
             "Adenocarcinoma",
+        )
+
+    def test_authenticated_user_can_read_case_adequacy_ai_results(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-adequacy-result-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["analysis_type"], "SPECIMEN_ADEQUACY")
+        self.assertEqual(
+            response.data[0]["result_detail"]["specimen_adequacy"]["adequacy_status"],
+            "ADEQUATE",
         )
