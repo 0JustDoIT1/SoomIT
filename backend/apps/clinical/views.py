@@ -92,7 +92,7 @@ class DoctorClinicalResultListAPIView(ListAPIView):
                 "pdl1_detail",
             )
             .prefetch_related(
-                "gene_detail__findings",
+                "gene_detail__gene_findings",
             )
             .order_by("-confirmed_at", "-updated_at")
         )
@@ -141,10 +141,8 @@ class DoctorTreatmentDecisionAPIView(APIView):
         if treatment_decision is None:
             return Response({"detail": "치료 결정이 없습니다."}, status=404)
 
-        regimen_required_types = {"CHEMOTHERAPY", "TARGETED_THERAPY", "IMMUNOTHERAPY", "COMBINATION"}
-
-        if treatment_decision.treatment_type in regimen_required_types and treatment_decision.selected_regimen is None:
-            return Response({"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."}, status=400)
+        serializer = DoctorTreatmentDecisionSerializer(treatment_decision)
+        return Response(serializer.data, status=200)
 
     # 치료 결정 DRAFT 저장
     @extend_schema(
@@ -228,6 +226,14 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
             return Response(
                 {"detail": "확정할 치료 결정이 없습니다."},
                 status=404,
+            )
+
+        regimen_required_types = {"CHEMOTHERAPY", "TARGETED_THERAPY", "IMMUNOTHERAPY", "COMBINATION"}
+
+        if treatment_decision.treatment_type in regimen_required_types and treatment_decision.selected_regimen is None:
+            return Response(
+                {"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."},
+                status=400,
             )
 
         clinical_result = treatment_decision.clinical_result
@@ -374,6 +380,19 @@ class DoctorPrescriptionAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
 
+        cycle_number = serializer.validated_data["cycle_number"]
+        phase = serializer.validated_data["phase"]
+        regimen = treatment_decision.selected_regimen
+
+        if Prescription.objects.filter(case=case, regimen=regimen, cycle_number=cycle_number).exists():
+            return Response({"detail": "같은 Regimen의 동일 cycle_number 처방이 이미 존재합니다."}, status=400)
+
+        if phase == "INDUCTION" and regimen.induction_cycles and cycle_number > regimen.induction_cycles:
+            return Response(
+                {"detail": f"INDUCTION 처방은 최대 {regimen.induction_cycles} cycle까지 가능합니다."},
+                status=400,
+            )
+
         prescription = serializer.save(
             case=case,
             treatment_decision=treatment_decision,
@@ -419,19 +438,42 @@ class DoctorPrescriptionAPIView(APIView):
                 )
             )
 
+        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at").first()
+
         for regimen_drug in regimen_drugs:
             calculated_dose = None
             final_dose = None
+            target_auc = None
+            renal_value = None
+            patient_weight = None
 
-            if (
-                regimen_drug.dose_basis == "MG_PER_M2"
-                and patient_bsa is not None
-            ):
-                calculated_dose = (
-                    regimen_drug.dose * patient_bsa
-                ).quantize(Decimal("0.001"))
+            if patient_profile and patient_profile.weight_kg:
+                patient_weight = Decimal(str(patient_profile.weight_kg))
 
+            if regimen_drug.dose_basis == "FIXED":
+                calculated_dose = regimen_drug.dose
                 final_dose = calculated_dose
+
+            elif regimen_drug.dose_basis == "MG_PER_M2" and patient_bsa is not None:
+                calculated_dose = (regimen_drug.dose * patient_bsa).quantize(Decimal("0.001"))
+                final_dose = calculated_dose
+
+            elif regimen_drug.dose_basis == "MG_PER_KG" and patient_weight is not None:
+                calculated_dose = (regimen_drug.dose * patient_weight).quantize(Decimal("0.001"))
+                final_dose = calculated_dose
+
+            elif regimen_drug.dose_basis == "AUC":
+                target_auc = regimen_drug.dose
+
+                if latest_lab and latest_lab.egfr is not None:
+                    renal_value = latest_lab.egfr
+
+                calculated_dose = None
+                final_dose = None
+
+            elif regimen_drug.dose_basis == "OTHER":
+                calculated_dose = None
+                final_dose = None
 
             PrescriptionItem.objects.create(
                 prescription=prescription,
@@ -439,6 +481,8 @@ class DoctorPrescriptionAPIView(APIView):
                 standard_dose=regimen_drug.dose,
                 dose_basis=regimen_drug.dose_basis,
                 patient_bsa=patient_bsa,
+                target_auc=target_auc,
+                renal_value=renal_value,
                 calculated_dose=calculated_dose,
                 final_dose=final_dose,
                 unit=regimen_drug.drug.strength_unit or "mg",
@@ -482,6 +526,7 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
             .select_related(
                 "case",
                 "treatment_decision",
+                "treatment_decision__clinical_result",
                 "regimen",
                 "prescribed_by_user",
             )
@@ -500,11 +545,22 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                 status=404,
             )
 
-        if prescription.prescription_status == "FINAL":
+        if prescription.prescription_status != "VALIDATED":
             return Response(
-                {"detail": "이미 최종 확정된 처방입니다."},
+                {"detail": "Safety Check가 완료된 VALIDATED 상태의 처방만 최종 확정할 수 있습니다."},
                 status=400,
             )
+
+        if prescription.treatment_decision.clinical_result.result_status != "CONFIRMED":
+            return Response({"detail": "확정된 치료 결정이 아닙니다."}, status=400)
+
+        items = prescription.items.all()
+
+        if not items.exists():
+            return Response({"detail": "처방 약물 항목이 없습니다."}, status=400)
+
+        if items.filter(final_dose__isnull=True).exists():
+            return Response({"detail": "최종 용량이 입력되지 않은 처방 약물이 있습니다."}, status=400)
 
         safety_results = prescription.safety_check_results.all()
 
@@ -593,6 +649,12 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
                 status=404,
             )
 
+        if prescription.prescription_status != "VALIDATED":
+            return Response(
+                {"detail": "VALIDATED 상태의 처방만 WARNING을 확인할 수 있습니다."},
+                status=400,
+            )
+
         warning_results = prescription.safety_check_results.filter(
             result="WARNING",
         )
@@ -669,9 +731,9 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
                 status=404,
             )
 
-        if prescription.prescription_status != "DRAFT":
+        if prescription.prescription_status not in {"DRAFT", "VALIDATED"}:
             return Response(
-                {"detail": "DRAFT 상태의 처방만 수정할 수 있습니다."},
+                {"detail": "DRAFT 또는 VALIDATED 상태의 처방만 수정할 수 있습니다."},
                 status=400,
             )
 
@@ -691,7 +753,15 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
             )
 
         if "final_dose" in request.data:
-            item.final_dose = request.data["final_dose"]
+            try:
+                final_dose = Decimal(str(request.data["final_dose"]))
+            except Exception:
+                return Response({"detail": "final_dose는 숫자여야 합니다."}, status=400)
+
+            if final_dose < 0:
+                return Response({"detail": "final_dose는 0 이상이어야 합니다."}, status=400)
+
+            item.final_dose = final_dose
 
         if "instructions" in request.data:
             item.instructions = request.data["instructions"]
@@ -703,6 +773,11 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
                 "updated_at",
             ]
         )
+        # 처방 내용이 변경되었으므로 기존 Safety Check 결과 무효화
+        prescription.safety_check_results.all().delete()
+        # Safety Check 완료 상태였다면 다시 DRAFT로 되돌림
+        prescription.prescription_status = "DRAFT"
+        prescription.save(update_fields=["prescription_status", "updated_at"])
 
         prescription = (
             Prescription.objects
@@ -761,6 +836,10 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
         # 기존 Safety 결과 초기화 후 재검사
         prescription.safety_check_results.all().delete()
 
+        patient_profile = PatientHealthProfile.objects.filter(patient=patient).first()
+        allergies = patient_profile.allergies if patient_profile and isinstance(patient_profile.allergies, list) else []
+        allergy_names = {str(allergy).strip().lower() for allergy in allergies}
+
         active_medications = CurrentMedication.objects.filter(
             patient=patient,
             is_active=True,
@@ -793,6 +872,30 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 ),
                 source="INTERNAL_RULE_V1",
                 source_code="DUPLICATION_CHECK",
+                checked_at=timezone.now(),
+            )
+
+            # 알레르기 검사
+            ingredient = (item.drug.ingredient_name or "").strip()
+            drug_name = (item.drug.drug_name or "").strip()
+
+            allergy_match = (
+                ingredient.lower() in allergy_names
+                or drug_name.lower() in allergy_names
+            )
+
+            SafetyCheckResult.objects.create(
+                prescription=prescription,
+                prescription_item=item,
+                check_type="ALLERGY",
+                result="BLOCK" if allergy_match else "PASS",
+                message=(
+                    f"{ingredient or drug_name} 성분/약물이 환자 알레르기 정보와 일치합니다."
+                    if allergy_match
+                    else f"{ingredient or drug_name} 관련 등록된 알레르기가 확인되지 않았습니다."
+                ),
+                source="INTERNAL_RULE_V1",
+                source_code="ALLERGY_CHECK",
                 checked_at=timezone.now(),
             )
 
@@ -840,6 +943,12 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             source_code="HEPATIC_DATA_CHECK",
             checked_at=timezone.now(),
         )
+
+        has_block = prescription.safety_check_results.filter(result="BLOCK").exists()
+
+        if not has_block:
+            prescription.prescription_status = "VALIDATED"
+            prescription.save(update_fields=["prescription_status", "updated_at"])
 
         prescription = (
             Prescription.objects
@@ -930,3 +1039,62 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             matched_rule_ids.append(rule.id)
 
         return rules.filter(id__in=matched_rule_ids).order_by("priority", "rule_code")
+    
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+
+        case = LungCancerCase.objects.filter(
+            id=self.kwargs["case_id"],
+            primary_doctor=self.request.user,
+            case_status="ACTIVE",
+        ).first()
+
+        histology = None
+        stage_group = None
+        positive_genes = set()
+        pdl1_tps = None
+
+        if case:
+            pathology_result = ClinicalResult.objects.filter(
+                case=case,
+                stage="PATHOLOGY",
+                result_status="CONFIRMED",
+            ).select_related("pathology_detail").order_by("-confirmed_at").first()
+
+            tnm_result = ClinicalResult.objects.filter(
+                case=case,
+                stage="STAGING",
+                result_status="CONFIRMED",
+            ).select_related("tnm_detail").order_by("-confirmed_at").first()
+
+            gene_result = ClinicalResult.objects.filter(
+                case=case,
+                stage="GENE",
+                result_status="CONFIRMED",
+            ).select_related("gene_detail", "pdl1_detail").prefetch_related("gene_detail__gene_findings").order_by("-confirmed_at").first()
+
+            if pathology_result and hasattr(pathology_result, "pathology_detail"):
+                histology = pathology_result.pathology_detail.histologic_type
+
+            if tnm_result and hasattr(tnm_result, "tnm_detail"):
+                stage_group = tnm_result.tnm_detail.stage_group
+
+            if gene_result and hasattr(gene_result, "gene_detail"):
+                positive_genes = {
+                    finding.gene_symbol.upper()
+                    for finding in gene_result.gene_detail.gene_findings.all()
+                    if finding.assessment == "LIKELY_POSITIVE"
+                }
+
+            if gene_result and hasattr(gene_result, "pdl1_detail"):
+                pdl1_tps = gene_result.pdl1_detail.tps_percent
+
+        context.update({
+            "histology": histology,
+            "stage_group": stage_group,
+            "positive_genes": positive_genes,
+            "pdl1_tps": pdl1_tps,
+        })
+
+        return context

@@ -381,10 +381,8 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
         ]
 
 class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
-    regimen_detail = RegimenSummarySerializer(
-        source="regimen",
-        read_only=True,
-    )
+    regimen_detail = RegimenSummarySerializer(source="regimen", read_only=True)
+    match_reasons = serializers.SerializerMethodField()
 
     class Meta:
         model = TreatmentRule
@@ -402,4 +400,40 @@ class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
             "evidence_source",
             "regimen",
             "regimen_detail",
+            "match_reasons",
         ]
+
+    def get_match_reasons(self, obj):
+        context = self.context
+
+        histology = context.get("histology")
+        stage_group = context.get("stage_group")
+        positive_genes = context.get("positive_genes", set())
+        pdl1_tps = context.get("pdl1_tps")
+
+        reasons = []
+
+        if histology and obj.histology:
+            reasons.append(f"조직형 일치: {histology}")
+
+        allowed_stages = (obj.stage_condition or {}).get("stage", [])
+        if stage_group and stage_group in allowed_stages:
+            reasons.append(f"병기 일치: {stage_group}")
+
+        required_genes = (obj.biomarker_condition or {}).get("positive", [])
+        for gene in required_genes:
+            if str(gene).upper() in positive_genes:
+                reasons.append(f"바이오마커 일치: {str(gene).upper()} 양성")
+
+        pdl1_condition = obj.pdl1_condition or {}
+        if pdl1_tps is not None and pdl1_condition:
+            minimum = pdl1_condition.get("min")
+            maximum = pdl1_condition.get("max")
+
+            if minimum is not None:
+                reasons.append(f"PD-L1 TPS {pdl1_tps}% ≥ {minimum}%")
+
+            if maximum is not None:
+                reasons.append(f"PD-L1 TPS {pdl1_tps}% ≤ {maximum}%")
+
+        return reasons
