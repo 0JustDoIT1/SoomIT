@@ -9,6 +9,8 @@ from apps.clinical.views import (
     DoctorSafetyWarningAcknowledgeAPIView,
     DoctorTreatmentDecisionAPIView,
     DoctorTreatmentDecisionConfirmAPIView,
+    DoctorPrescriptionSafetyCheckAPIView,
+    DoctorRegimenCandidateListAPIView,
 )
 
 from .views import (
@@ -83,4 +85,10 @@ urlpatterns = [
         DoctorLabResultListCreateAPIView.as_view(),
         name="doctor-lab-result-list-create",
     ),
+    path(
+    "<uuid:case_id>/prescriptions/<uuid:prescription_id>/safety-check/",
+    DoctorPrescriptionSafetyCheckAPIView.as_view(),
+    name="doctor-prescription-safety-check",
+    ),
+    path("<uuid:case_id>/regimen-candidates/", DoctorRegimenCandidateListAPIView.as_view(), name="doctor-regimen-candidates"),
 ]

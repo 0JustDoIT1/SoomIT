@@ -9,20 +9,15 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.cases.models import ClinicianDecision, LungCancerCase
-from apps.patients.models import Patient, PatientHealthProfile
+from apps.patients.models import CurrentMedication, LabResult, Patient, PatientHealthProfile
 
-from .models import (
-    ClinicalResult,
-    Prescription,
-    PrescriptionItem,
-    RegimenDrug,
-    TreatmentDecision,
-)
+from .models import ClinicalResult, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TreatmentDecision, TreatmentRule
 from .serializers import (
     DoctorClinicalResultSerializer,
     DoctorPrescriptionSerializer,
     DoctorTreatmentDecisionSerializer,
     PatientClinicalResultSerializer,
+    TreatmentRuleCandidateSerializer,
 )
 
 from decimal import Decimal
@@ -144,13 +139,12 @@ class DoctorTreatmentDecisionAPIView(APIView):
         )
 
         if treatment_decision is None:
-            return Response(
-                {"detail": "저장된 치료 결정이 없습니다."},
-                status=404,
-            )
+            return Response({"detail": "치료 결정이 없습니다."}, status=404)
 
-        serializer = DoctorTreatmentDecisionSerializer(treatment_decision)
-        return Response(serializer.data)
+        regimen_required_types = {"CHEMOTHERAPY", "TARGETED_THERAPY", "IMMUNOTHERAPY", "COMBINATION"}
+
+        if treatment_decision.treatment_type in regimen_required_types and treatment_decision.selected_regimen is None:
+            return Response({"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."}, status=400)
 
     # 치료 결정 DRAFT 저장
     @extend_schema(
@@ -169,19 +163,12 @@ class DoctorTreatmentDecisionAPIView(APIView):
                 status=404,
             )
 
-        clinical_result, _ = ClinicalResult.objects.get_or_create(
-            case=case,
-            stage="TREATMENT",
-            defaults={
-                "result_status": "DRAFT",
-            },
-        )
+        clinical_result, _ = ClinicalResult.objects.get_or_create(case=case, stage="TREATMENT", defaults={"result_status": "DRAFT"})
 
-        treatment_decision = (
-            TreatmentDecision.objects
-            .filter(clinical_result=clinical_result)
-            .first()
-        )
+        if clinical_result.result_status == "CONFIRMED":
+            return Response({"detail": "이미 확정된 치료 결정은 수정할 수 없습니다."}, status=400)
+
+        treatment_decision = TreatmentDecision.objects.filter(clinical_result=clinical_result).first()
 
         serializer = DoctorTreatmentDecisionSerializer(
             treatment_decision,
@@ -735,3 +722,211 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
             DoctorPrescriptionSerializer(prescription).data,
             status=200,
         )
+
+@extend_schema(tags=["호흡기내과-처방관리"])
+class DoctorPrescriptionSafetyCheckAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(request=None, responses={200: DoctorPrescriptionSerializer})
+    @transaction.atomic
+    def post(self, request, case_id, prescription_id):
+        prescription = (
+            Prescription.objects
+            .select_related("case", "case__patient")
+            .prefetch_related("items__drug")
+            .filter(
+                id=prescription_id,
+                case_id=case_id,
+                case__primary_doctor=request.user,
+                case__case_status="ACTIVE",
+            )
+            .first()
+        )
+
+        if prescription is None:
+            return Response(
+                {"detail": "처방을 찾을 수 없습니다."},
+                status=404,
+            )
+
+        if prescription.prescription_status != "DRAFT":
+            return Response(
+                {"detail": "DRAFT 상태의 처방만 Safety Check를 수행할 수 있습니다."},
+                status=400,
+            )
+
+        patient = prescription.case.patient
+
+        # 기존 Safety 결과 초기화 후 재검사
+        prescription.safety_check_results.all().delete()
+
+        active_medications = CurrentMedication.objects.filter(
+            patient=patient,
+            is_active=True,
+        )
+
+        latest_lab = (
+            LabResult.objects
+            .filter(patient=patient)
+            .order_by("-tested_at")
+            .first()
+        )
+
+        # 1. 현재 복용약과 처방약 성분 중복 확인
+        for item in prescription.items.all():
+            ingredient = item.drug.ingredient_name
+
+            duplicated = active_medications.filter(
+                ingredient_name__iexact=ingredient,
+            ).exists()
+
+            SafetyCheckResult.objects.create(
+                prescription=prescription,
+                prescription_item=item,
+                check_type="DUPLICATION",
+                result="WARNING" if duplicated else "PASS",
+                message=(
+                    f"{ingredient} 성분이 현재 복용약과 중복됩니다."
+                    if duplicated
+                    else f"{ingredient} 성분의 현재 복용약 중복이 확인되지 않았습니다."
+                ),
+                source="INTERNAL_RULE_V1",
+                source_code="DUPLICATION_CHECK",
+                checked_at=timezone.now(),
+            )
+
+        # 2. 신장기능 검사 데이터 존재 여부 확인
+        renal_data_available = (
+            latest_lab is not None
+            and latest_lab.creatinine is not None
+            and latest_lab.egfr is not None
+        )
+
+        SafetyCheckResult.objects.create(
+            prescription=prescription,
+            prescription_item=None,
+            check_type="RENAL_FUNCTION",
+            result="PASS" if renal_data_available else "WARNING",
+            message=(
+                "신장기능 검토에 필요한 최근 Creatinine/eGFR 결과가 있습니다."
+                if renal_data_available
+                else "최근 Creatinine/eGFR 결과가 없어 추가 검토가 필요합니다."
+            ),
+            source="INTERNAL_RULE_V1",
+            source_code="RENAL_DATA_CHECK",
+            checked_at=timezone.now(),
+        )
+
+        # 3. 간기능 검사 데이터 존재 여부 확인
+        hepatic_data_available = (
+            latest_lab is not None
+            and latest_lab.ast is not None
+            and latest_lab.alt is not None
+            and latest_lab.total_bilirubin is not None
+        )
+
+        SafetyCheckResult.objects.create(
+            prescription=prescription,
+            prescription_item=None,
+            check_type="HEPATIC_FUNCTION",
+            result="PASS" if hepatic_data_available else "WARNING",
+            message=(
+                "간기능 검토에 필요한 최근 AST/ALT/Bilirubin 결과가 있습니다."
+                if hepatic_data_available
+                else "최근 간기능 검사 결과가 부족하여 추가 검토가 필요합니다."
+            ),
+            source="INTERNAL_RULE_V1",
+            source_code="HEPATIC_DATA_CHECK",
+            checked_at=timezone.now(),
+        )
+
+        prescription = (
+            Prescription.objects
+            .select_related("treatment_decision", "regimen", "prescribed_by_user")
+            .prefetch_related("items__drug", "safety_check_results")
+            .get(id=prescription.id)
+        )
+
+        return Response(
+            DoctorPrescriptionSerializer(prescription).data,
+            status=200,
+        )
+
+@extend_schema(tags=["호흡기내과-치료결정"])
+class DoctorRegimenCandidateListAPIView(ListAPIView):
+    serializer_class = TreatmentRuleCandidateSerializer
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        case = LungCancerCase.objects.filter(id=self.kwargs["case_id"], primary_doctor=self.request.user, case_status="ACTIVE").first()
+
+        if case is None:
+            return TreatmentRule.objects.none()
+
+        rules = TreatmentRule.objects.select_related("regimen").all()
+
+        pathology_result = ClinicalResult.objects.filter(case=case, stage="PATHOLOGY", result_status="CONFIRMED").select_related("pathology_detail").order_by("-confirmed_at").first()
+
+        tnm_result = ClinicalResult.objects.filter(case=case, stage="STAGING", result_status="CONFIRMED").select_related("tnm_detail").order_by("-confirmed_at").first()
+
+        gene_result = ClinicalResult.objects.filter(case=case, stage="GENE", result_status="CONFIRMED").select_related("gene_detail", "pdl1_detail").prefetch_related("gene_detail__gene_findings").order_by("-confirmed_at").first()
+
+        histology = None
+        stage_group = None
+        positive_genes = set()
+        pdl1_tps = None
+
+        if pathology_result and hasattr(pathology_result, "pathology_detail"):
+            histology = pathology_result.pathology_detail.histologic_type
+
+        if tnm_result and hasattr(tnm_result, "tnm_detail"):
+            stage_group = tnm_result.tnm_detail.stage_group
+
+        if gene_result and hasattr(gene_result, "gene_detail"):
+            positive_genes = {
+                finding.gene_symbol.upper()
+                for finding in gene_result.gene_detail.gene_findings.all()
+                if finding.assessment == "LIKELY_POSITIVE"
+            }
+
+        if gene_result and hasattr(gene_result, "pdl1_detail"):
+            pdl1_tps = gene_result.pdl1_detail.tps_percent
+
+        if histology:
+            rules = rules.filter(histology__iexact=histology)
+
+        matched_rule_ids = []
+
+        for rule in rules:
+            stage_condition = rule.stage_condition or {}
+            allowed_stages = stage_condition.get("stage", [])
+
+            if stage_group and allowed_stages and stage_group not in allowed_stages:
+                continue
+
+            biomarker_condition = rule.biomarker_condition or {}
+            required_positive_genes = {
+                str(gene).upper()
+                for gene in biomarker_condition.get("positive", [])
+            }
+
+            if required_positive_genes and not required_positive_genes.issubset(positive_genes):
+                continue
+
+            pdl1_condition = rule.pdl1_condition or {}
+
+            if pdl1_tps is not None:
+                minimum = pdl1_condition.get("min")
+                maximum = pdl1_condition.get("max")
+
+                if minimum is not None and pdl1_tps < minimum:
+                    continue
+
+                if maximum is not None and pdl1_tps > maximum:
+                    continue
+
+            matched_rule_ids.append(rule.id)
+
+        return rules.filter(id__in=matched_rule_ids).order_by("priority", "rule_code")

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from .models import ClinicalResult
-
+from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
 
 class PatientClinicalResultSerializer(serializers.ModelSerializer):
     exam_type = serializers.CharField(source="stage")
@@ -378,4 +378,28 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
             "prescription_status",
             "prescribed_by_user",
             "prescribed_at",
+        ]
+
+class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
+    regimen_detail = RegimenSummarySerializer(
+        source="regimen",
+        read_only=True,
+    )
+
+    class Meta:
+        model = TreatmentRule
+        fields = [
+            "id",
+            "rule_code",
+            "cancer_type",
+            "histology",
+            "stage_condition",
+            "biomarker_condition",
+            "pdl1_condition",
+            "ecog_condition",
+            "treatment_line",
+            "priority",
+            "evidence_source",
+            "regimen",
+            "regimen_detail",
         ]
