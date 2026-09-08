@@ -35,7 +35,7 @@ class SymptomService {
         'symptom_type': symptomType,
         'symptom_description': symptomDescription,
         'severity': severity,
-        'logged_at': DateTime.now().toIso8601String(),
+        'logged_at': DateTime.now().toUtc().toIso8601String(),
       },
     );
 
