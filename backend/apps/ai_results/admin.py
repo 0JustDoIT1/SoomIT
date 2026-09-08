@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .models import (
     ModelVersion, AiAnalysis, AiResult, XrayAiResult, CtAiResult,
-    NoduleAiResult, SpecimenAdequacyAiResult, PathologyAiResult,
+    NoduleAiResult, SpecimenAdequacyAiResult, PathologyAiResult, PDL1AiResult,
     TnmAiResult, GeneAiResult, TreatmentAiResult,
 )
 
@@ -25,6 +25,7 @@ admin.site.register(CtAiResult)
 admin.site.register(NoduleAiResult)
 admin.site.register(SpecimenAdequacyAiResult)
 admin.site.register(PathologyAiResult)
+admin.site.register(PDL1AiResult)
 admin.site.register(TnmAiResult)
 admin.site.register(GeneAiResult)
 admin.site.register(TreatmentAiResult)

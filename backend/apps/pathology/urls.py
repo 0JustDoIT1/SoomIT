@@ -5,12 +5,16 @@ from .views import (
     CasePathologyDiagnosisListAPIView,
     CasePathologySpecimenListAPIView,
     CasePathologyReportListAPIView,
+    CasePDL1AiAnalysisListAPIView,
+    CasePDL1AnalysisRunAPIView,
     CaseSpecimenAdequacyAiAnalysisListAPIView,
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
     PathologyDiagnosisConfirmAPIView,
     PathologyDiagnosisDetailAPIView,
     SpecimenWholeSlideImageListAPIView,
+    WholeSlideImagePyramidAPIView,
+    WholeSlideImageTileAPIView,
 )
 
 app_name = "pathology"
@@ -42,6 +46,16 @@ urlpatterns = [
         name="case-adequacy-result-list",
     ),
     path(
+        "cases/<uuid:case_id>/pdl1-results/",
+        CasePDL1AiAnalysisListAPIView.as_view(),
+        name="case-pdl1-result-list",
+    ),
+    path(
+        "cases/<uuid:case_id>/pdl1-results/run/",
+        CasePDL1AnalysisRunAPIView.as_view(),
+        name="case-pdl1-analysis-run",
+    ),
+    path(
         "cases/<uuid:case_id>/diagnoses/",
         CasePathologyDiagnosisListAPIView.as_view(),
         name="case-diagnosis-list",
@@ -65,5 +79,15 @@ urlpatterns = [
         "specimens/<uuid:specimen_id>/wsis/",
         SpecimenWholeSlideImageListAPIView.as_view(),
         name="specimen-wsi-list",
+    ),
+    path(
+        "wsis/<uuid:wsi_id>/pyramid/",
+        WholeSlideImagePyramidAPIView.as_view(),
+        name="wsi-pyramid",
+    ),
+    path(
+        "wsis/<uuid:wsi_id>/tiles/<int:level>/<int:x>/<int:y>/",
+        WholeSlideImageTileAPIView.as_view(),
+        name="wsi-tile",
     ),
 ]

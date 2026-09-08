@@ -19,6 +19,11 @@ const slide: WholeSlideImage = {
   storage_uri: "n:/pathology/actual-slide.svs",
   file_format: "SVS",
   image_status: "READY",
+  orthanc_series_id: null,
+  orthanc_instance_id: null,
+  study_instance_uid: null,
+  series_instance_uid: null,
+  sop_instance_uid: null,
   invalidated_at: null,
   invalidation_reason: null,
   created_at: "2026-09-07T00:00:00Z",
@@ -46,7 +51,7 @@ describe("WsiViewerPanel", () => {
       <WsiViewerPanel slide={slide} loading={false} emptyMessage="표시할 WSI가 없습니다." />,
     );
 
-    expect(screen.getByText("WSI 원본 영상 API 연동 대기")).toBeInTheDocument();
+    expect(screen.getByText("Orthanc WSI 연결 대기")).toBeInTheDocument();
     expect(screen.getByText("SLIDE-001")).toBeInTheDocument();
     expect(screen.getByText("actual-slide.svs")).toBeInTheDocument();
     expect(screen.getByText("n:/pathology/actual-slide.svs")).toBeInTheDocument();

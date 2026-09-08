@@ -110,6 +110,11 @@ class WholeSlideImage(TimestampedUUIDModel):
         on_delete=models.PROTECT,
         related_name="uploaded_whole_slide_images",
     )
+    orthanc_series_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    orthanc_instance_id = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    study_instance_uid = models.CharField(max_length=128, null=True, blank=True)
+    series_instance_uid = models.CharField(max_length=128, null=True, blank=True)
+    sop_instance_uid = models.CharField(max_length=128, null=True, blank=True)
 
     class Meta:
         db_table = "whole_slide_images"
@@ -147,6 +152,7 @@ class PathologyWorkItem(TimestampedUUIDModel):
         ADEQUACY_ANALYSIS = "ADEQUACY_ANALYSIS", "적정성 AI 분석"
         ADEQUACY_REVIEW = "ADEQUACY_REVIEW", "적정성 전문의 판정"
         PATHOLOGY_ANALYSIS = "PATHOLOGY_ANALYSIS", "병리 AI 분석"
+        PD_L1_REVIEW = "PD_L1_REVIEW", "PD-L1 검토"
         DIAGNOSTIC_REVIEW = "DIAGNOSTIC_REVIEW", "병리 전문의 판독"
         REPORT_REVIEW = "REPORT_REVIEW", "병리 보고서 검토"
 

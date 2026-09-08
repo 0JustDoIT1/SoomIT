@@ -12,6 +12,7 @@ class AnalysisType(models.TextChoices):
     CT_NODULE = "CT_NODULE", "CT 결절분석"
     SPECIMEN_ADEQUACY = "SPECIMEN_ADEQUACY", "검체 적정성"
     PATHOLOGY_DIAGNOSIS = "PATHOLOGY_DIAGNOSIS", "병리 진단"
+    PDL1_CLASSIFICATION = "PDL1_CLASSIFICATION", "PD-L1 구간 분류"
     TNM_STAGING = "TNM_STAGING", "TNM 병기"
     GENE_PREDICTION = "GENE_PREDICTION", "유전자 예측"
     TREATMENT_RECOMMENDATION = "TREATMENT_RECOMMENDATION", "치료 추천"
@@ -188,6 +189,49 @@ class PathologyAiResult(models.Model):
             models.CheckConstraint(
                 check=Q(subtype_confidence__gte=0) & Q(subtype_confidence__lte=1),
                 name="ck_path_ai_subtype_conf_0_1",
+            ),
+        ]
+
+
+class PDL1AiResult(models.Model):
+    class TpsRange(models.TextChoices):
+        LT_1 = "LT_1", "<1%"
+        FROM_1_TO_49 = "FROM_1_TO_49", "1–49%"
+        GE_50 = "GE_50", "≥50%"
+
+    ai_result = models.OneToOneField(
+        AiResult,
+        on_delete=models.CASCADE,
+        primary_key=True,
+        db_column="ai_result_id",
+        related_name="pdl1_detail",
+    )
+    predicted_class = models.PositiveSmallIntegerField()
+    predicted_tps_range = models.CharField(
+        max_length=20,
+        choices=TpsRange.choices,
+    )
+    confidence = models.DecimalField(max_digits=10, decimal_places=9)
+    probabilities = models.JSONField()
+
+    class Meta:
+        db_table = "pdl1_ai_results"
+        constraints = [
+            models.CheckConstraint(
+                check=Q(predicted_class__gte=0) & Q(predicted_class__lte=2),
+                name="ck_pdl1_ai_class_0_2",
+            ),
+            models.CheckConstraint(
+                check=Q(confidence__gte=0) & Q(confidence__lte=1),
+                name="ck_pdl1_ai_conf_0_1",
+            ),
+            models.CheckConstraint(
+                check=(
+                    Q(predicted_class=0, predicted_tps_range="LT_1")
+                    | Q(predicted_class=1, predicted_tps_range="FROM_1_TO_49")
+                    | Q(predicted_class=2, predicted_tps_range="GE_50")
+                ),
+                name="ck_pdl1_ai_class_range",
             ),
         ]
 

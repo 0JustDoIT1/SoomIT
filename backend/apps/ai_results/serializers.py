@@ -97,6 +97,17 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
                 "subtype_confidence": pathology.subtype_confidence,
             }
 
+        # PD-L1 구간 분류
+        if hasattr(result, "pdl1_detail"):
+            pdl1 = result.pdl1_detail
+            detail["pdl1"] = {
+                "predicted_class": pdl1.predicted_class,
+                "predicted_tps_range": pdl1.predicted_tps_range,
+                "predicted_tps_range_label": pdl1.get_predicted_tps_range_display(),
+                "confidence": pdl1.confidence,
+                "probabilities": pdl1.probabilities,
+            }
+
         # TNM
         if hasattr(result, "tnm_detail"):
             tnm = result.tnm_detail

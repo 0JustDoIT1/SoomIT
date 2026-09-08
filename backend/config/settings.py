@@ -98,6 +98,25 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.6.0',
 }
 
+PDL1_INFERENCE_SERVICE_URL = os.environ.get(
+    "PDL1_INFERENCE_SERVICE_URL",
+    "http://127.0.0.1:8100",
+).rstrip("/")
+PDL1_INFERENCE_TIMEOUT_SECONDS = float(
+    os.environ.get("PDL1_INFERENCE_TIMEOUT_SECONDS", "60"),
+)
+PDL1_FEATURE_MAX_UPLOAD_BYTES = int(
+    os.environ.get("PDL1_FEATURE_MAX_UPLOAD_BYTES", str(64 * 1024 * 1024)),
+)
+
+ORTHANC_BASE_URL = os.environ.get(
+    "ORTHANC_BASE_URL",
+    "http://127.0.0.1:8042",
+).rstrip("/")
+ORTHANC_USERNAME = os.environ.get("ORTHANC_USERNAME", "orthanc")
+ORTHANC_PASSWORD = os.environ.get("ORTHANC_PASSWORD", "change-me")
+ORTHANC_TIMEOUT_SECONDS = float(os.environ.get("ORTHANC_TIMEOUT_SECONDS", "30"))
+
 #CORS_ALLOWED_ORIGINS = [
 #    "http://localhost:3000",
 #]

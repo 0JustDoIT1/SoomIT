@@ -64,10 +64,27 @@ export type WholeSlideImage = {
   storage_uri: string;
   file_format: string;
   image_status: string;
+  orthanc_series_id: string | null;
+  orthanc_instance_id: string | null;
+  study_instance_uid: string | null;
+  series_instance_uid: string | null;
+  sop_instance_uid: string | null;
   invalidated_at: string | null;
   invalidation_reason: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type WsiPyramid = {
+  wsi_id: string;
+  orthanc_series_id: string;
+  width: number;
+  height: number;
+  tile_width: number;
+  tile_height: number;
+  resolutions: number[];
+  sizes: [number, number][];
+  tile_url_template: string;
 };
 
 export type PathologyAiResultDetail = {
@@ -87,6 +104,13 @@ export type PathologyAiResultDetail = {
     adequacy_status_label: string;
     tumor_cell_ratio: string | number | null;
     confidence: string | number | null;
+  };
+  pdl1?: {
+    predicted_class: number;
+    predicted_tps_range: "LT_1" | "FROM_1_TO_49" | "GE_50";
+    predicted_tps_range_label: string;
+    confidence: string | number;
+    probabilities: Record<"class_0" | "class_1" | "class_2", number>;
   };
 };
 
@@ -183,12 +207,24 @@ export function specimenSlidesApiUrl(specimenId: string) {
   return `${API_BASE_URL}/api/pathology/specimens/${encodeURIComponent(specimenId)}/wsis/`;
 }
 
+export function wsiPyramidApiUrl(wsiId: string) {
+  return `${API_BASE_URL}/api/pathology/wsis/${encodeURIComponent(wsiId)}/pyramid/`;
+}
+
 export function casePathologyAiResultsApiUrl(caseId: string) {
   return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/`;
 }
 
 export function caseAdequacyAiResultsApiUrl(caseId: string) {
   return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/adequacy-results/`;
+}
+
+export function casePdl1AiResultsApiUrl(caseId: string) {
+  return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/pdl1-results/`;
+}
+
+export function casePdl1AnalysisRunApiUrl(caseId: string) {
+  return `${casePdl1AiResultsApiUrl(caseId)}run/`;
 }
 
 export function casePathologyDiagnosesApiUrl(caseId: string) {
@@ -328,6 +364,10 @@ export function readSlides(response: Response) {
 
 export function readPathologyAiAnalyses(response: Response) {
   return readCollection<PathologyAiAnalysis>(response);
+}
+
+export async function readPathologyAiAnalysis(response: Response) {
+  return (await response.json()) as PathologyAiAnalysis;
 }
 
 export function readPathologyDiagnoses(response: Response) {

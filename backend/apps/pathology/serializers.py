@@ -1,4 +1,5 @@
 from rest_framework import serializers
+from django.conf import settings
 
 from apps.ai_results.serializers import DoctorAiAnalysisSerializer
 from apps.clinical.models import ClinicalResult, PathologyResult
@@ -13,6 +14,28 @@ class PathologyAiAnalysisSerializer(DoctorAiAnalysisSerializer):
             "source_image_asset_id",
             *DoctorAiAnalysisSerializer.Meta.fields,
         ]
+
+
+class PDL1AnalysisRunSerializer(serializers.Serializer):
+    feature_file = serializers.FileField(write_only=True)
+    wsi_id = serializers.UUIDField(required=False, allow_null=True)
+
+    def validate_feature_file(self, value):
+        if not value.name.lower().endswith(".pt"):
+            raise serializers.ValidationError(".pt feature 파일만 사용할 수 있습니다.")
+        if value.size < 1:
+            raise serializers.ValidationError("빈 feature 파일은 사용할 수 없습니다.")
+        if value.size > settings.PDL1_FEATURE_MAX_UPLOAD_BYTES:
+            raise serializers.ValidationError("feature 파일 크기 제한을 초과했습니다.")
+        return value
+
+    def validate_wsi_id(self, value):
+        if value is None:
+            return value
+        case = self.context["case"]
+        if not WholeSlideImage.objects.filter(id=value, specimen__case=case).exists():
+            raise serializers.ValidationError("해당 Case의 WSI가 아닙니다.")
+        return value
 
 
 class PathologyDiagnosisSerializer(serializers.ModelSerializer):
@@ -336,6 +359,11 @@ class WholeSlideImageSerializer(serializers.ModelSerializer):
             "storage_uri",
             "file_format",
             "image_status",
+            "orthanc_series_id",
+            "orthanc_instance_id",
+            "study_instance_uid",
+            "series_instance_uid",
+            "sop_instance_uid",
             "invalidated_at",
             "invalidation_reason",
             "created_at",

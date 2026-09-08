@@ -1,5 +1,7 @@
 from datetime import date
+from unittest.mock import patch
 
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -10,6 +12,7 @@ from apps.ai_results.models import (
     AiResult,
     ModelVersion,
     PathologyAiResult,
+    PDL1AiResult,
     SpecimenAdequacyAiResult,
 )
 from apps.cases.models import CaseImageAsset, LungCancerCase, Stage
@@ -158,6 +161,35 @@ class PathologyReadAPITestCase(APITestCase):
             confidence=0.9250,
         )
 
+        self.pdl1_model_version = ModelVersion.objects.create(
+            model_name="pdl1-amd-mil",
+            version="final_model",
+            analysis_type="PDL1_CLASSIFICATION",
+        )
+        self.pdl1_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            source_image_asset=self.image_asset,
+            model_version=self.pdl1_model_version,
+            analysis_type="PDL1_CLASSIFICATION",
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        self.pdl1_ai_result = AiResult.objects.create(
+            ai_analysis=self.pdl1_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        PDL1AiResult.objects.create(
+            ai_result=self.pdl1_ai_result,
+            predicted_class=2,
+            predicted_tps_range=PDL1AiResult.TpsRange.GE_50,
+            confidence=0.995406985,
+            probabilities={
+                "class_0": 0.0001,
+                "class_1": 0.004493015,
+                "class_2": 0.995406985,
+            },
+        )
+
         self.clinical_result = ClinicalResult.objects.create(
             case=self.case,
             stage=Stage.PATHOLOGY,
@@ -259,6 +291,59 @@ class PathologyReadAPITestCase(APITestCase):
             str(self.wsi.id),
         )
 
+    @patch("apps.pathology.views.get_wsi_pyramid")
+    def test_authenticated_user_can_read_wsi_pyramid(self, mock_pyramid):
+        self.wsi.orthanc_series_id = "orthanc-series-1"
+        self.wsi.save(update_fields=["orthanc_series_id", "updated_at"])
+        mock_pyramid.return_value = {
+            "Resolutions": [1, 2, 4],
+            "Sizes": [[2048, 1024], [1024, 512], [512, 256]],
+            "TileWidth": 512,
+            "TileHeight": 512,
+            "TotalWidth": 2048,
+            "TotalHeight": 1024,
+        }
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            reverse("pathology:wsi-pyramid", kwargs={"wsi_id": self.wsi.id}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["width"], 2048)
+        self.assertIn("{level}/{x}/{y}", response.data["tile_url_template"])
+        mock_pyramid.assert_called_once_with("orthanc-series-1")
+
+    @patch("apps.pathology.views.get_wsi_tile")
+    def test_authenticated_user_can_read_wsi_tile(self, mock_tile):
+        from apps.pathology.services.orthanc import OrthancBinaryResponse
+
+        self.wsi.orthanc_series_id = "orthanc-series-1"
+        self.wsi.save(update_fields=["orthanc_series_id", "updated_at"])
+        mock_tile.return_value = OrthancBinaryResponse(b"jpeg-tile", "image/jpeg")
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            reverse(
+                "pathology:wsi-tile",
+                kwargs={"wsi_id": self.wsi.id, "level": 0, "x": 1, "y": 2},
+            ),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.content, b"jpeg-tile")
+        self.assertEqual(response["Content-Type"], "image/jpeg")
+        mock_tile.assert_called_once_with("orthanc-series-1", 0, 1, 2)
+
+    def test_wsi_pyramid_requires_orthanc_series(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(
+            reverse("pathology:wsi-pyramid", kwargs={"wsi_id": self.wsi.id}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
     def test_unauthenticated_user_cannot_access_case_ai_results(self):
         url = reverse(
             "pathology:case-ai-result-list",
@@ -310,6 +395,116 @@ class PathologyReadAPITestCase(APITestCase):
             response.data[0]["result_detail"]["specimen_adequacy"]["adequacy_status"],
             "ADEQUATE",
         )
+
+    def test_authenticated_user_can_read_case_pdl1_ai_results(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-pdl1-result-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["analysis_type"], "PDL1_CLASSIFICATION")
+        detail = response.data[0]["result_detail"]["pdl1"]
+        self.assertEqual(detail["predicted_class"], 2)
+        self.assertEqual(detail["predicted_tps_range"], "GE_50")
+        self.assertEqual(detail["predicted_tps_range_label"], "≥50%")
+        self.assertNotIn("tps_percent", detail)
+
+    @patch("apps.pathology.views.request_pdl1_prediction")
+    def test_authenticated_user_can_run_pdl1_analysis(self, mock_predict):
+        mock_predict.return_value = {
+            "main_index": "P-0019599",
+            "pdl1_image_id": "597881",
+            "patch_count": 1059,
+            "predicted_class": 2,
+            "predicted_tps_range": "GE_50",
+            "confidence": 0.9977335929870605,
+            "probabilities": {
+                "class_0": 0.000016584608601988293,
+                "class_1": 0.002249843906611204,
+                "class_2": 0.9977335929870605,
+            },
+        }
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-pdl1-analysis-run",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "feature_file": SimpleUploadedFile(
+                    "slide-features.pt",
+                    b"serialized-features",
+                    content_type="application/octet-stream",
+                ),
+                "wsi_id": str(self.wsi.id),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], AiAnalysis.Status.SUCCEEDED)
+        self.assertEqual(
+            response.data["result_detail"]["pdl1"]["predicted_tps_range"],
+            "GE_50",
+        )
+        self.assertNotIn(
+            "tps_percent",
+            response.data["result_detail"]["pdl1"],
+        )
+        created_analysis = AiAnalysis.objects.get(id=response.data["id"])
+        self.assertEqual(created_analysis.source_image_asset, self.image_asset)
+        self.assertEqual(created_analysis.ai_result.pdl1_detail.predicted_class, 2)
+        mock_predict.assert_called_once_with(b"serialized-features")
+
+    @patch("apps.pathology.views.request_pdl1_prediction")
+    def test_failed_pdl1_service_call_is_recorded(self, mock_predict):
+        from apps.pathology.services.pdl1_inference import PDL1InferenceError
+
+        mock_predict.side_effect = PDL1InferenceError(
+            "추론 서비스에 연결할 수 없습니다.",
+        )
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-pdl1-analysis-run",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "feature_file": SimpleUploadedFile("features.pt", b"features"),
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        analysis = AiAnalysis.objects.get(id=response.data["analysis_id"])
+        self.assertEqual(analysis.status, AiAnalysis.Status.FAILED)
+        self.assertIsNotNone(analysis.completed_at)
+        self.assertFalse(hasattr(analysis, "ai_result"))
+
+    def test_pdl1_analysis_rejects_non_pt_file(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-pdl1-analysis-run",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.post(
+            url,
+            {"feature_file": SimpleUploadedFile("features.txt", b"features")},
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("feature_file", response.data)
 
     def test_unauthenticated_user_cannot_access_case_diagnoses(self):
         url = reverse(

@@ -13,6 +13,7 @@ type PathologyAuthContextValue = {
   username: string;
   password: string;
   isConnected: boolean;
+  authorizationHeader: string | null;
   setUsername: (username: string) => void;
   setPassword: (password: string) => void;
   markConnected: () => void;
@@ -111,6 +112,10 @@ export function PathologyAuthProvider({ children }: { children: ReactNode }) {
       username,
       password,
       isConnected,
+      authorizationHeader:
+        username && password
+          ? `Basic ${btoa(unescape(encodeURIComponent(`${username}:${password}`)))}`
+          : null,
       setUsername,
       setPassword,
       markConnected: () => setIsConnected(true),
