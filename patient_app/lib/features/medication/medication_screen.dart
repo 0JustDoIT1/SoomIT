@@ -93,121 +93,127 @@ class _MedicationScreenState extends State<MedicationScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: RefreshIndicator(
-        onRefresh: _refresh,
-        child: FutureBuilder<List<MedicationSchedule>>(
-          future: _medicationFuture,
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              );
-            }
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FA),
+      appBar: AppBar(
+        title: const Text(
+          '복약 관리',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
+          onRefresh: _refresh,
+          child: FutureBuilder<List<MedicationSchedule>>(
+            future: _medicationFuture,
+            builder: (context, snapshot) {
+              if (snapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(),
+                );
+              }
 
-            if (snapshot.hasError) {
+              if (snapshot.hasError) {
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(20),
+                  children: [
+                    const SizedBox(height: 120),
+                    const Icon(
+                      Icons.error_outline,
+                      size: 48,
+                    ),
+                    const SizedBox(height: 16),
+                    const Center(
+                      child: Text(
+                        '복약 정보를 불러오지 못했습니다.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Center(
+                      child: Text(
+                        '${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              final schedules = snapshot.data ?? [];
+
+              if (schedules.isEmpty) {
+                return ListView(
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  padding: const EdgeInsets.all(20),
+                  children: const [
+                    SizedBox(height: 120),
+                    Icon(
+                      Icons.medication_outlined,
+                      size: 52,
+                    ),
+                    SizedBox(height: 16),
+                    Center(
+                      child: Text(
+                        '등록된 복약 일정이 없습니다.',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
               return ListView(
                 physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 16,
+                ),
                 children: [
-                  const SizedBox(height: 120),
-                  const Icon(
-                    Icons.error_outline,
-                    size: 48,
-                  ),
-                  const SizedBox(height: 16),
-                  const Center(
-                    child: Text(
-                      '복약 정보를 불러오지 못했습니다.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
+                  const Text(
+                    '처방받은 약과 복약 시간을 확인하세요.',
+                    style: TextStyle(
+                      fontSize: 14,
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Center(
-                    child: Text(
-                      '${snapshot.error}',
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 13,
-                      ),
+                  const SizedBox(height: 24),
+
+                  ...schedules.map(
+                    (schedule) => _MedicationScheduleCard(
+                      schedule: schedule,
+                      isTaken:
+                          schedule.todayStatus == 'TAKEN' ||
+                          _takenScheduleIds.contains(schedule.id),
+                      isSubmitting:
+                          _submittingScheduleIds.contains(schedule.id),
+                      onTaken: () => _markAsTaken(schedule),
                     ),
                   ),
                 ],
               );
-            }
-
-            final schedules = snapshot.data ?? [];
-
-            if (schedules.isEmpty) {
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(20),
-                children: const [
-                  SizedBox(height: 120),
-                  Icon(
-                    Icons.medication_outlined,
-                    size: 52,
-                  ),
-                  SizedBox(height: 16),
-                  Center(
-                    child: Text(
-                      '등록된 복약 일정이 없습니다.',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ],
-              );
-            }
-
-            return ListView(
-              physics: const AlwaysScrollableScrollPhysics(),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 20,
-                vertical: 16,
-              ),
-              children: [
-                const Text(
-                  '복약 관리',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                const Text(
-                  '처방받은 약과 복약 시간을 확인하세요.',
-                  style: TextStyle(
-                    fontSize: 14,
-                  ),
-                ),
-                const SizedBox(height: 24),
-
-                ...schedules.map(
-                  (schedule) => _MedicationScheduleCard(
-                    schedule: schedule,
-                    isTaken:
-                        schedule.todayStatus == 'TAKEN' ||
-                        _takenScheduleIds.contains(schedule.id),
-                    isSubmitting:
-                        _submittingScheduleIds.contains(schedule.id),
-                    onTaken: () => _markAsTaken(schedule),
-                  ),
-                ),
-              ],
-            );
-          },
+            },
+          ),
         ),
       ),
     );
   }
 }
-
+  
 class _MedicationScheduleCard extends StatelessWidget {
   final MedicationSchedule schedule;
   final bool isTaken;
