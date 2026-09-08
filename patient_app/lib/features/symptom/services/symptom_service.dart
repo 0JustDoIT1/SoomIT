@@ -28,7 +28,6 @@ class SymptomService {
     required String symptomType,
     String? symptomDescription,
     required int severity,
-    required String riskLevel,
   }) async {
     final response = await DioClient.instance.post(
       '/api/patients/symptoms/',
@@ -36,7 +35,6 @@ class SymptomService {
         'symptom_type': symptomType,
         'symptom_description': symptomDescription,
         'severity': severity,
-        'risk_level': riskLevel,
         'logged_at': DateTime.now().toIso8601String(),
       },
     );

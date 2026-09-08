@@ -13,14 +13,14 @@ class MedicalApp extends StatefulWidget {
   const MedicalApp({super.key});
 
   @override
-  State<MedicalApp> createState() => _MedicalAppState();
+  State<MedicalApp> createState() => MedicalAppState();
 
-  static _MedicalAppState? of(BuildContext context) {
-    return context.findAncestorStateOfType<_MedicalAppState>();
+  static MedicalAppState? of(BuildContext context) {
+    return context.findAncestorStateOfType<MedicalAppState>();
   }
 }
 
-class _MedicalAppState extends State<MedicalApp> {
+class MedicalAppState extends State<MedicalApp> {
   Locale _locale = const Locale('ko');
 
   @override

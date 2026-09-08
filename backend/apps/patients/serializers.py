@@ -342,10 +342,18 @@ class SymptomLogSerializer(serializers.ModelSerializer):
 
         read_only_fields = [
             "id",
+            "risk_level",
             "risk_level_label",
             "created_at",
             "updated_at",
         ]
+
+    def validate_severity(self, value):
+        if value < 0 or value > 10:
+            raise serializers.ValidationError(
+                "심각도는 0에서 10 사이의 값이어야 합니다."
+            )
+        return value
 
 ##################################################################################################################
 # ─────────────────────────────────────────────

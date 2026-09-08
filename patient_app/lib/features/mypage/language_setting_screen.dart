@@ -39,27 +39,24 @@ class _LanguageSettingScreenState
       appBar: AppBar(
         title: Text(l10n.languageSettings),
       ),
-      body: ListView(
-        children: [
-          RadioListTile<String>(
-            title: Text(l10n.korean),
-            value: 'ko',
-            groupValue: _selectedLanguage,
-            onChanged: (value) {
-              if (value == null) return;
-              _changeLanguage(value);
-            },
-          ),
-          RadioListTile<String>(
-            title: Text(l10n.english),
-            value: 'en',
-            groupValue: _selectedLanguage,
-            onChanged: (value) {
-              if (value == null) return;
-              _changeLanguage(value);
-            },
-          ),
-        ],
+      body: RadioGroup<String>(
+        groupValue: _selectedLanguage,
+        onChanged: (value) {
+          if (value == null) return;
+          _changeLanguage(value);
+        },
+        child: ListView(
+          children: [
+            RadioListTile<String>(
+              title: Text(l10n.korean),
+              value: 'ko',
+            ),
+            RadioListTile<String>(
+              title: Text(l10n.english),
+              value: 'en',
+            ),
+          ],
+        ),
       ),
     );
   }

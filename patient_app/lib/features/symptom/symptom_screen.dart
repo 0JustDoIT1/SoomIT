@@ -32,8 +32,21 @@ class _SymptomScreenState extends State<SymptomScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      child: RefreshIndicator(
+    return Scaffold(
+      backgroundColor: const Color(0xFFF7F8FA),
+      appBar: AppBar(
+        title: const Text(
+          '증상 기록',
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.white,
+        elevation: 0,
+      ),
+      body: SafeArea(
+        child: RefreshIndicator(
         onRefresh: _refresh,
         child: FutureBuilder<List<SymptomLog>>(
           future: _symptomFuture,
@@ -84,15 +97,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
                 vertical: 16,
               ),
               children: [
-                const Text(
-                  '증상 기록',
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
 
-                const SizedBox(height: 6),
 
                 const Text(
                   '현재 증상을 기록하고 이전 기록을 확인하세요.',
@@ -151,7 +156,8 @@ class _SymptomScreenState extends State<SymptomScreen> {
           },
         ),
       ),
-    );
+    ),
+  );
   }
 }
 
@@ -302,18 +308,26 @@ class _RiskBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     IconData icon;
+    Color backgroundColor;
+    Color foregroundColor;
 
     switch (riskLevel) {
       case 'RED':
         icon = Icons.error_outline;
+        backgroundColor = const Color(0xFFFFEBEE);
+        foregroundColor = const Color(0xFFD32F2F);
         break;
 
       case 'YELLOW':
         icon = Icons.warning_amber_rounded;
+        backgroundColor = const Color(0xFFFFF8E1);
+        foregroundColor = const Color(0xFFF57C00);
         break;
 
       default:
         icon = Icons.check_circle_outline;
+        backgroundColor = const Color(0xFFE8F5E9);
+        foregroundColor = const Color(0xFF2E7D32);
     }
 
     return Container(
@@ -322,7 +336,7 @@ class _RiskBadge extends StatelessWidget {
         vertical: 6,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+        color: backgroundColor,
         borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
@@ -331,13 +345,15 @@ class _RiskBadge extends StatelessWidget {
           Icon(
             icon,
             size: 16,
+            color: foregroundColor,
           ),
           const SizedBox(width: 4),
           Text(
             riskLabel,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 12,
               fontWeight: FontWeight.w700,
+              color: foregroundColor,
             ),
           ),
         ],

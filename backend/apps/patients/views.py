@@ -658,6 +658,21 @@ class PatientMedicationIntakeTakenAPIView(APIView):
     summary="환자 증상 기록 조회/등록",
     description="현재 환자의 증상 기록을 조회하거나 새 증상 기록을 등록합니다.",
 )
+def calculate_symptom_risk(symptom_type, severity):
+    if severity >= 8:
+        return SymptomLog.RiskLevel.RED
+
+    if symptom_type in ["객혈", "호흡곤란", "흉통"]:
+        if severity >= 5:
+            return SymptomLog.RiskLevel.RED
+
+        return SymptomLog.RiskLevel.YELLOW
+
+    if severity >= 4:
+        return SymptomLog.RiskLevel.YELLOW
+
+    return SymptomLog.RiskLevel.GREEN
+
 class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
     serializer_class = SymptomLogSerializer
 
@@ -677,9 +692,9 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
     def perform_create(self, serializer):
         # TODO: 로그인 구현 후 request.user 기반 환자로 변경
         patient = Patient.objects.first()
-
+    
         case = None
-
+    
         if patient is not None:
             case = (
                 patient.cases
@@ -687,8 +702,17 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
                 .order_by("-created_at")
                 .first()
             )
-
+    
+        symptom_type = serializer.validated_data["symptom_type"]
+        severity = serializer.validated_data["severity"]
+    
+        risk_level = calculate_symptom_risk(
+            symptom_type=symptom_type,
+            severity=severity,
+        )
+    
         serializer.save(
             patient=patient,
             case=case,
+            risk_level=risk_level,
         )

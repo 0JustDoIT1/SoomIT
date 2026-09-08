@@ -1,23 +1,21 @@
 import 'package:flutter/material.dart';
-
 import '../appointment/models/appointment.dart';
 import '../appointment/services/appointment_service.dart';
 import '../exam_result/models/exam_schedule.dart';
 import '../exam_result/services/exam_schedule_service.dart';
-
 import 'widgets/appointment_card.dart';
 import 'widgets/exam_card.dart';
-import 'widgets/medication_card.dart';
+
 import 'widgets/notification_card.dart';
 import 'widgets/profile_card.dart';
-
 import 'models/patient_profile.dart';
 import 'services/profile_service.dart';
-
 import 'models/patient_notification.dart';
 import 'services/notification_service.dart';
-
 import '../notification/notification_list_screen.dart';
+import '../symptom/symptom_screen.dart';
+
+import '../medication/medication_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -95,15 +93,60 @@ class _HomeScreenState extends State<HomeScreen> {
                 return ProfileCard(
                   profile: profile,
                 );
-              },
-            ),
+                },
+                ),
 
-            const SizedBox(height: 24),
+                const SizedBox(height: 24),
 
-            _buildSectionHeader(
-              '다음 진료 예약',
-              () {},
-            ),
+                _buildSectionHeader(
+                  '오늘의 건강관리',
+                  () {},
+                ),
+
+                const SizedBox(height: 10),
+
+                Row(
+                  children: [
+                    Expanded(
+                      child: _buildHealthActionCard(
+                        icon: Icons.monitor_heart_outlined,
+                        title: '증상 기록',
+                        subtitle: '몸 상태 기록',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const SymptomScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _buildHealthActionCard(
+                        icon: Icons.medication_outlined,
+                        title: '복약 관리',
+                        subtitle: '오늘 약 확인',
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => const MedicationScreen(),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+
+const SizedBox(height: 24),
+
+_buildSectionHeader(
+  '다음 진료 예약',
+  () {},
+),
 
             const SizedBox(height: 10),
 
@@ -183,16 +226,6 @@ class _HomeScreenState extends State<HomeScreen> {
 
             const SizedBox(height: 24),
 
-            _buildSectionHeader(
-              '오늘의 복약',
-              () {},
-            ),
-
-            const SizedBox(height: 10),
-
-            const MedicationCard(),
-
-            const SizedBox(height: 24),
 
             _buildSectionHeader(
               '최근 알림',
@@ -231,22 +264,24 @@ class _HomeScreenState extends State<HomeScreen> {
                     if (notification.isRead) {
                       return;
                     }
-
+                  
+                    final messenger = ScaffoldMessenger.of(context);
+                  
                     try {
                       await _notificationService.markAsRead(
                         notification.id,
                       );
-
+                  
                       if (!mounted) return;
-
+                  
                       setState(() {
                         _notificationsFuture =
                             _notificationService.getNotifications();
                       });
                     } catch (e) {
                       if (!mounted) return;
-
-                      ScaffoldMessenger.of(context).showSnackBar(
+                  
+                      messenger.showSnackBar(
                         const SnackBar(
                           content: Text(
                             '알림 읽음 처리에 실패했습니다.',
@@ -332,6 +367,69 @@ class _HomeScreenState extends State<HomeScreen> {
         style: const TextStyle(
           fontSize: 13,
           color: Color(0xFF8B95A1),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHealthActionCard({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 18,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFE9EDF2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF2F5FF),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  size: 24,
+                  color: const Color(0xFF4C6FFF),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF191F28),
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  fontSize: 12,
+                  color: Color(0xFF8B95A1),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

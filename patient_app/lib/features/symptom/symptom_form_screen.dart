@@ -36,14 +36,29 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
   }
 
   String _getRiskLevel(int severity) {
+    // 심각도가 매우 높은 경우
     if (severity >= 8) {
       return 'RED';
     }
-
+  
+    // 주의가 필요한 증상
+    if (_selectedSymptomType == '객혈' ||
+        _selectedSymptomType == '호흡곤란' ||
+        _selectedSymptomType == '흉통') {
+      // 해당 증상이 중등도 이상이면 위험
+      if (severity >= 5) {
+        return 'RED';
+      }
+  
+      // 경증이어도 주의
+      return 'YELLOW';
+    }
+  
+    // 일반 증상
     if (severity >= 4) {
       return 'YELLOW';
     }
-
+  
     return 'GREEN';
   }
 
@@ -62,37 +77,76 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
     if (_isSubmitting) {
       return;
     }
-
+  
     setState(() {
       _isSubmitting = true;
     });
-
+  
     try {
       final severity = _severity.round();
-      final riskLevel = _getRiskLevel(severity);
-
-      await _symptomService.createSymptomLog(
+  
+      // 최종 위험도는 Django 서버에서 판정
+      final createdSymptom = await _symptomService.createSymptomLog(
         symptomType: _selectedSymptomType,
-        symptomDescription:
-            _descriptionController.text.trim().isEmpty
-                ? null
-                : _descriptionController.text.trim(),
+        symptomDescription: _descriptionController.text.trim().isEmpty
+            ? null
+            : _descriptionController.text.trim(),
         severity: severity,
-        riskLevel: riskLevel,
       );
-
+  
       if (!mounted) return;
-
+  
+      // 서버가 RED로 판정한 경우 위험 안내
+      if (createdSymptom.riskLevel == 'RED') {
+        await showDialog<void>(
+          context: context,
+          barrierDismissible: false,
+          builder: (dialogContext) {
+            return AlertDialog(
+              icon: const Icon(
+                Icons.warning_amber_rounded,
+                color: Color(0xFFD32F2F),
+                size: 40,
+              ),
+              title: const Text(
+                '주의가 필요한 증상입니다',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: const Text(
+                '현재 기록한 증상의 위험도가 높습니다.\n\n'
+                '증상이 지속되거나 악화되는 경우 의료진과 상담하세요. '
+                '심한 호흡곤란, 심한 흉통, 많은 양의 객혈 등 응급 증상이 있는 경우 '
+                '즉시 응급실을 이용하거나 119에 연락하세요.',
+                textAlign: TextAlign.center,
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                  },
+                  child: const Text('확인'),
+                ),
+              ],
+            );
+          },
+        );
+      }
+  
+      if (!mounted) return;
+  
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('증상이 기록되었습니다.'),
         ),
       );
-
+  
       Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
-
+  
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
