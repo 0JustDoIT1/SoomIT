@@ -7,10 +7,11 @@ import '../features/exam_result/exam_result_screen.dart';
 import '../features/home/home_screen.dart';
 import '../features/mypage/mypage_screen.dart';
 
-import '../l10n/app_localizations.dart';
 
 import 'app_header.dart';
 import 'bottom_nav.dart';
+
+import '../features/medication/medication_screen.dart';
 
 class AppShell extends StatefulWidget {
   const AppShell({super.key});
@@ -30,17 +31,14 @@ class _AppShellState extends State<AppShell> {
 
   @override
   Widget build(BuildContext context) {
-    final l10n = AppLocalizations.of(context);
 
-    final screens = [
-      const HomeScreen(),
-      const AppointmentScreen(),
-      const ExamResultScreen(),
-      _PlaceholderScreen(
-        title: l10n.medication,
-      ),
-      const MyPageScreen(),
-    ];
+  final screens = [
+    const HomeScreen(),
+    const AppointmentScreen(),
+    const ExamResultScreen(),
+    const MedicationScreen(),
+    const MyPageScreen(),
+  ];
 
     return Scaffold(
       backgroundColor: const Color(0xFFF4F6F9),
@@ -73,24 +71,3 @@ class _AppShellState extends State<AppShell> {
   }
 }
 
-class _PlaceholderScreen extends StatelessWidget {
-  const _PlaceholderScreen({
-    required this.title,
-  });
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: Color(0xFF191F28),
-        ),
-      ),
-    );
-  }
-}

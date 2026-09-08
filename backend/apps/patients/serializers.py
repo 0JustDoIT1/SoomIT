@@ -1,4 +1,7 @@
 import hashlib
+from apps.notifications.models import NotificationLog
+from apps.notifications.models import PatientNotificationSetting
+from django.utils import timezone
 
 from rest_framework import serializers
 
@@ -6,9 +9,14 @@ from .models import (
     Appointment,
     CurrentMedication,
     LabResult,
+    MedicationIntakeLog,
+    MedicationSchedule,
+    MedicationScheduleItem,
     Patient,
     PatientAccount,
+    PatientQuestionnaire,
     SocialAccount,
+    SymptomLog,
 )
 
 
@@ -220,10 +228,21 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "app_link_status",
         ]
 
+        read_only_fields = [
+            "id",
+            "patient_code",
+            "name",
+            "birth_date",
+            "sex",
+            "sex_label",
+            "address",
+            "hospital_name",
+            "app_link_status",
+        ]
+
     def get_hospital_name(self, obj):
         if obj.hospital:
             return obj.hospital.name
-
         return None
 
     def get_app_link_status(self, obj):
@@ -233,6 +252,100 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             return "UNLINKED"
 
         return patient_account.link_status
+
+
+# ─────────────────────────────────────────────
+# 환자 앱 알림 조회
+# ─────────────────────────────────────────────
+class PatientNotificationSerializer(serializers.ModelSerializer):
+    is_read = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NotificationLog
+        fields = [
+            "id",
+            "notification_type",
+            "channel",
+            "title",
+            "message",
+            "payload",
+            "delivery_status",
+            "sent_at",
+            "read_at",
+            "is_read",
+            "created_at",
+        ]
+
+    def get_is_read(self, obj):
+        return obj.read_at is not None
+
+class PatientNotificationSettingSerializer(serializers.ModelSerializer):
+    notification_type_label = serializers.CharField(
+        source="get_notification_type_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = PatientNotificationSetting
+        fields = [
+            "notification_type",
+            "notification_type_label",
+            "enabled",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "notification_type",
+            "notification_type_label",
+            "updated_at",
+        ]
+        
+# ─────────────────────────────────────────────
+# 환자 앱 - 문진표 작성 내역
+# ─────────────────────────────────────────────
+class PatientQuestionnaireSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientQuestionnaire
+        fields = [
+            "id",
+            "questionnaire_type",
+            "questionnaire_version",
+            "responses",
+            "is_completed",
+            "completed_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields    
+
+# ─────────────────────────────────────────────
+# - 증상 기록
+# ─────────────────────────────────────────────
+class SymptomLogSerializer(serializers.ModelSerializer):
+    risk_level_label = serializers.CharField(
+        source="get_risk_level_display",
+        read_only=True,
+    )
+
+    class Meta:
+        model = SymptomLog
+        fields = [
+            "id",
+            "symptom_type",
+            "symptom_description",
+            "severity",
+            "risk_level",
+            "risk_level_label",
+            "logged_at",
+            "created_at",
+            "updated_at",
+        ]
+
+        read_only_fields = [
+            "id",
+            "risk_level_label",
+            "created_at",
+            "updated_at",
+        ]
 
 ##################################################################################################################
 # ─────────────────────────────────────────────
@@ -458,3 +571,117 @@ class LabResultSerializer(serializers.ModelSerializer):
         read_only_fields = [
             "recorded_by_user",
         ]
+    
+# ─────────────────────────────────────────────
+# 문진표 작성 / 제출
+# ─────────────────────────────────────────────
+class PatientQuestionnaireCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientQuestionnaire
+        fields = [
+            "questionnaire_type",
+            "questionnaire_version",
+            "responses",
+        ]
+
+    def create(self, validated_data):
+        patient = self.context["patient"]
+
+        return PatientQuestionnaire.objects.create(
+            patient=patient,
+            questionnaire_type=validated_data["questionnaire_type"],
+            questionnaire_version=validated_data["questionnaire_version"],
+            responses=validated_data.get("responses", {}),
+            is_completed=True,
+            completed_at=timezone.now(),
+        )
+        
+        
+class MedicationScheduleItemSerializer(serializers.ModelSerializer):
+    drug_name = serializers.CharField(
+        source="prescription_item.drug.drug_name",
+        read_only=True,
+    )
+    ingredient_name = serializers.CharField(
+        source="prescription_item.drug.ingredient_name",
+        read_only=True,
+    )
+    dose = serializers.DecimalField(
+        source="prescription_item.final_dose",
+        max_digits=12,
+        decimal_places=3,
+        read_only=True,
+    )
+    unit = serializers.CharField(
+        source="prescription_item.unit",
+        read_only=True,
+    )
+    route = serializers.CharField(
+        source="prescription_item.route",
+        read_only=True,
+    )
+    frequency = serializers.CharField(
+        source="prescription_item.frequency",
+        read_only=True,
+        allow_null=True,
+    )
+    instructions = serializers.CharField(
+        source="prescription_item.instructions",
+        read_only=True,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = MedicationScheduleItem
+        fields = [
+            "id",
+            "drug_name",
+            "ingredient_name",
+            "dose",
+            "unit",
+            "route",
+            "frequency",
+            "instructions",
+        ]
+
+
+class MedicationScheduleSerializer(serializers.ModelSerializer):
+    items = MedicationScheduleItemSerializer(
+        many=True,
+        read_only=True,
+    )
+
+    today_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MedicationSchedule
+        fields = [
+            "id",
+            "reminder_time",
+            "enabled",
+            "today_status",
+            "items",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_today_status(self, obj):
+        today = timezone.localdate()
+
+        log = (
+            obj.intake_logs
+            .filter(
+                scheduled_at__date=today,
+            )
+            .order_by("-scheduled_at")
+            .first()
+        )
+
+        if log is None:
+            return "PENDING"
+
+        return log.status
+
+class MedicationIntakeTakenSerializer(serializers.Serializer):
+    medication_schedule_id = serializers.UUIDField()
+    scheduled_at = serializers.DateTimeField()
