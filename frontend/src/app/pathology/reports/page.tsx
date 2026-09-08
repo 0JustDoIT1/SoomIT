@@ -7,10 +7,13 @@ import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
 import { PathologyStateMessage } from "../_components/pathology-state-message";
 import {
+  casePathologyReportsApiUrl,
+  readPathologyReports,
   readWorkItems,
   statusLabel,
   statusStyle,
   type WorkItem,
+  type PathologyReport,
   WORK_ITEMS_API_URL,
 } from "../_lib/pathology-api";
 
@@ -41,6 +44,10 @@ export default function PathologyReportsPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(isConnected);
   const [error, setError] = useState("");
+  const [reports, setReports] = useState<PathologyReport[]>([]);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const [reportCaseId, setReportCaseId] = useState<string | null>(null);
+  const [reportError, setReportError] = useState("");
 
   useEffect(() => {
     if (!isConnected) return;
@@ -117,6 +124,44 @@ export default function PathologyReportsPage() {
 
   const selectedItem =
     items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const selectedCaseId = selectedItem?.case_id ?? null;
+  const selectedReport =
+    reports.find((report) => report.id === selectedReportId) ??
+    reports[0] ??
+    null;
+  const reportLoading = Boolean(
+    isConnected && selectedCaseId && reportCaseId !== selectedCaseId,
+  );
+
+  useEffect(() => {
+    if (!isConnected || !selectedCaseId) return;
+    let cancelled = false;
+
+    void authorizedFetch(casePathologyReportsApiUrl(selectedCaseId))
+      .then(readPathologyReports)
+      .then((results) => {
+        if (cancelled) return;
+        setReports(results);
+        setSelectedReportId(results[0]?.id ?? null);
+        setReportCaseId(selectedCaseId);
+        setReportError("");
+      })
+      .catch((requestError: unknown) => {
+        if (cancelled) return;
+        setReports([]);
+        setSelectedReportId(null);
+        setReportCaseId(selectedCaseId);
+        setReportError(
+          requestError instanceof Error
+            ? requestError.message
+            : "병리 보고서를 불러오지 못했습니다.",
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authorizedFetch, isConnected, selectedCaseId]);
 
   return (
     <div>
@@ -261,16 +306,78 @@ export default function PathologyReportsPage() {
             <div className="border-b border-slate-200 px-5 py-4">
               <h2 className="text-sm font-semibold text-slate-900">보고서 내용</h2>
             </div>
-            <div className="grid gap-4 p-5 md:grid-cols-2">
-              {["최종 병리 진단", "면역조직화학 및 분자검사", "추가 검사 결과", "보고서 주석"].map((label) => (
-                <div key={label} className="min-h-28 border border-dashed border-slate-300 bg-slate-50 p-4">
-                  <p className="text-xs font-semibold text-slate-600">{label}</p>
-                  <p className="mt-4 text-xs text-slate-400">연결된 보고서 데이터가 없습니다.</p>
+            {reportError ? (
+              <PathologyStateMessage variant="error" title={reportError} className="border-0" />
+            ) : reportLoading ? (
+              <PathologyStateMessage
+                variant="loading"
+                title="확정된 병리 보고서를 불러오는 중입니다."
+                className="border-0"
+              />
+            ) : !selectedItem ? (
+              <PathologyStateMessage
+                variant="empty"
+                title="먼저 보고서 작업을 선택해 주세요."
+                className="border-0"
+              />
+            ) : reports.length === 0 ? (
+              <PathologyStateMessage
+                variant="empty"
+                title="이 Case에 확정된 병리 보고서가 없습니다."
+                description="병리 판독이 확정되면 실제 보고서 내용이 표시됩니다."
+                className="border-0"
+              />
+            ) : selectedReport ? (
+              <div className="p-5">
+                {reports.length > 1 && (
+                  <label className="mb-5 block text-xs font-semibold text-slate-600">
+                    확정 판독 선택
+                    <select
+                      value={selectedReport.id}
+                      onChange={(event) => setSelectedReportId(event.target.value)}
+                      className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900"
+                    >
+                      {reports.map((report) => (
+                        <option key={report.id} value={report.id}>
+                          {report.diagnosis.malignancy_status_label} · {formatDateTime(report.confirmed_at)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+
+                <dl className="grid gap-x-6 gap-y-4 text-sm md:grid-cols-2">
+                  {[
+                    ["환자", `${selectedReport.patient_name} · ${selectedReport.patient_code}`],
+                    ["Case", selectedReport.case_code],
+                    ["검체", selectedReport.specimen?.specimen_code ?? "-"],
+                    ["채취 부위", selectedReport.specimen?.body_site ?? "-"],
+                    ["WSI", selectedReport.wsi?.slide_code ?? "-"],
+                    ["염색", selectedReport.wsi?.stain ?? "-"],
+                    ["악성 여부", selectedReport.diagnosis.malignancy_status_label],
+                    ["조직형", selectedReport.diagnosis.histologic_type ?? "-"],
+                    ["아형", selectedReport.diagnosis.subtype ?? "-"],
+                    ["판독자", selectedReport.confirmed_by_name ?? "-"],
+                    ["확정일", formatDateTime(selectedReport.confirmed_at)],
+                    ["원본 파일", selectedReport.wsi?.original_filename ?? "-"],
+                  ].map(([label, value]) => (
+                    <div key={label}>
+                      <dt className="text-xs text-slate-500">{label}</dt>
+                      <dd className="mt-1 break-words font-semibold text-slate-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+
+                <div className="mt-6 border-t border-slate-200 pt-5">
+                  <p className="text-xs font-semibold text-slate-600">최종 병리 진단</p>
+                  <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-900">
+                    {selectedReport.diagnosis.diagnosis_summary ?? "-"}
+                  </p>
                 </div>
-              ))}
-            </div>
+              </div>
+            ) : null}
             <div className="border-t border-slate-200 bg-slate-50 px-5 py-4 text-xs leading-5 text-slate-600">
-              현재 화면은 조회 준비 상태입니다. 보고서 작성·저장·전자서명은 전용 API가 준비된 후 연결합니다.
+              현재는 확정 판독 조회만 지원합니다. PDF 생성과 전자서명은 전용 API 준비 후 연결합니다.
             </div>
           </section>
         </div>

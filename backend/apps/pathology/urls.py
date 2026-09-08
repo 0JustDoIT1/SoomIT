@@ -2,10 +2,14 @@ from django.urls import path
 
 from .views import (
     CasePathologyAiAnalysisListAPIView,
+    CasePathologyDiagnosisListAPIView,
     CasePathologySpecimenListAPIView,
+    CasePathologyReportListAPIView,
     CaseSpecimenAdequacyAiAnalysisListAPIView,
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
+    PathologyDiagnosisConfirmAPIView,
+    PathologyDiagnosisDetailAPIView,
     SpecimenWholeSlideImageListAPIView,
 )
 
@@ -36,6 +40,26 @@ urlpatterns = [
         "cases/<uuid:case_id>/adequacy-results/",
         CaseSpecimenAdequacyAiAnalysisListAPIView.as_view(),
         name="case-adequacy-result-list",
+    ),
+    path(
+        "cases/<uuid:case_id>/diagnoses/",
+        CasePathologyDiagnosisListAPIView.as_view(),
+        name="case-diagnosis-list",
+    ),
+    path(
+        "cases/<uuid:case_id>/reports/",
+        CasePathologyReportListAPIView.as_view(),
+        name="case-report-list",
+    ),
+    path(
+        "diagnoses/<uuid:diagnosis_id>/",
+        PathologyDiagnosisDetailAPIView.as_view(),
+        name="diagnosis-detail",
+    ),
+    path(
+        "diagnoses/<uuid:diagnosis_id>/confirm/",
+        PathologyDiagnosisConfirmAPIView.as_view(),
+        name="diagnosis-confirm",
     ),
     path(
         "specimens/<uuid:specimen_id>/wsis/",

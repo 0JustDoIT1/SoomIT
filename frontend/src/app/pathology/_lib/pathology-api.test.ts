@@ -24,6 +24,10 @@ describe("pathology API base URL", () => {
       API_BASE_URL,
       caseAdequacyAiResultsApiUrl,
       casePathologyAiResultsApiUrl,
+      casePathologyDiagnosesApiUrl,
+      casePathologyReportsApiUrl,
+      pathologyDiagnosisApiUrl,
+      pathologyDiagnosisConfirmApiUrl,
       specimenSlidesApiUrl,
     } = await import("./pathology-api");
 
@@ -36,6 +40,18 @@ describe("pathology API base URL", () => {
     );
     expect(caseAdequacyAiResultsApiUrl("case/1")).toBe(
       "https://api.example.test/api/pathology/cases/case%2F1/adequacy-results/",
+    );
+    expect(casePathologyDiagnosesApiUrl("case/1")).toBe(
+      "https://api.example.test/api/pathology/cases/case%2F1/diagnoses/",
+    );
+    expect(casePathologyReportsApiUrl("case/1")).toBe(
+      "https://api.example.test/api/pathology/cases/case%2F1/reports/",
+    );
+    expect(pathologyDiagnosisApiUrl("diagnosis/1")).toBe(
+      "https://api.example.test/api/pathology/diagnoses/diagnosis%2F1/",
+    );
+    expect(pathologyDiagnosisConfirmApiUrl("diagnosis/1")).toBe(
+      "https://api.example.test/api/pathology/diagnoses/diagnosis%2F1/confirm/",
     );
   });
 });

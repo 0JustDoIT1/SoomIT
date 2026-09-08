@@ -13,6 +13,7 @@ from apps.ai_results.models import (
     SpecimenAdequacyAiResult,
 )
 from apps.cases.models import CaseImageAsset, LungCancerCase, Stage
+from apps.clinical.models import ClinicalResult, PathologyResult
 from apps.patients.models import Patient
 from apps.pathology.models import (
     PathologySpecimen,
@@ -157,6 +158,22 @@ class PathologyReadAPITestCase(APITestCase):
             confidence=0.9250,
         )
 
+        self.clinical_result = ClinicalResult.objects.create(
+            case=self.case,
+            stage=Stage.PATHOLOGY,
+            source_image_asset=self.image_asset,
+            reviewed_ai_result=self.ai_result,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            confirmed_by_user=self.user,
+        )
+        PathologyResult.objects.create(
+            clinical_result=self.clinical_result,
+            malignancy_status=PathologyResult.MalignancyStatus.MALIGNANT,
+            histologic_type="NSCLC",
+            subtype="Adenocarcinoma",
+            diagnosis_summary="Confirmed pathology diagnosis",
+        )
+
     def test_unauthenticated_user_cannot_access_work_items(self):
         url = reverse("pathology:work-item-list")
         response = self.client.get(url)
@@ -293,3 +310,217 @@ class PathologyReadAPITestCase(APITestCase):
             response.data[0]["result_detail"]["specimen_adequacy"]["adequacy_status"],
             "ADEQUATE",
         )
+
+    def test_unauthenticated_user_cannot_access_case_diagnoses(self):
+        url = reverse(
+            "pathology:case-diagnosis-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN],
+        )
+
+    def test_authenticated_user_can_read_case_diagnoses(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-diagnosis-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(str(response.data[0]["case_id"]), str(self.case.id))
+        self.assertEqual(response.data[0]["result_status"], "CONFIRMED")
+        self.assertEqual(
+            response.data[0]["pathology"]["diagnosis_summary"],
+            "Confirmed pathology diagnosis",
+        )
+
+    def test_unauthenticated_user_cannot_access_case_reports(self):
+        url = reverse(
+            "pathology:case-report-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertIn(
+            response.status_code,
+            [status.HTTP_401_UNAUTHORIZED, status.HTTP_403_FORBIDDEN],
+        )
+
+    def test_case_reports_include_only_confirmed_pathology_results(self):
+        draft = ClinicalResult.objects.create(
+            case=self.case,
+            stage=Stage.PATHOLOGY,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PathologyResult.objects.create(
+            clinical_result=draft,
+            malignancy_status=PathologyResult.MalignancyStatus.BENIGN,
+            diagnosis_summary="Unconfirmed draft",
+        )
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-report-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(str(response.data[0]["id"]), str(self.clinical_result.id))
+        self.assertEqual(response.data[0]["patient_name"], self.patient.name)
+        self.assertEqual(
+            response.data[0]["specimen"]["specimen_code"],
+            self.specimen.specimen_code,
+        )
+        self.assertEqual(response.data[0]["wsi"]["slide_code"], self.wsi.slide_code)
+        self.assertEqual(
+            response.data[0]["diagnosis"]["diagnosis_summary"],
+            "Confirmed pathology diagnosis",
+        )
+
+    def test_authenticated_user_can_create_draft_diagnosis(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:case-diagnosis-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "malignancy_status": "MALIGNANT",
+                "histologic_type": "NSCLC",
+                "subtype": "Squamous cell carcinoma",
+                "diagnosis_summary": "Draft diagnosis",
+                "work_item_id": str(self.work_item.id),
+                "source_image_asset_id": str(self.image_asset.id),
+                "reviewed_ai_result_id": str(self.ai_result.id),
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["result_status"], "DRAFT")
+        self.assertEqual(
+            response.data["pathology"]["diagnosis_summary"],
+            "Draft diagnosis",
+        )
+        self.work_item.refresh_from_db()
+        self.assertEqual(
+            self.work_item.status,
+            PathologyWorkItem.Status.IN_PROGRESS,
+        )
+
+    def test_authenticated_user_can_update_draft_diagnosis(self):
+        draft = ClinicalResult.objects.create(
+            case=self.case,
+            stage=Stage.PATHOLOGY,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PathologyResult.objects.create(
+            clinical_result=draft,
+            malignancy_status=PathologyResult.MalignancyStatus.INDETERMINATE,
+        )
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:diagnosis-detail",
+            kwargs={"diagnosis_id": draft.id},
+        )
+
+        response = self.client.patch(
+            url,
+            {
+                "malignancy_status": "BENIGN",
+                "diagnosis_summary": "Updated draft",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data["pathology"]["malignancy_status"],
+            "BENIGN",
+        )
+        self.assertEqual(
+            response.data["pathology"]["diagnosis_summary"],
+            "Updated draft",
+        )
+
+    def test_authenticated_user_can_confirm_draft_diagnosis(self):
+        draft = ClinicalResult.objects.create(
+            case=self.case,
+            stage=Stage.PATHOLOGY,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PathologyResult.objects.create(
+            clinical_result=draft,
+            malignancy_status=PathologyResult.MalignancyStatus.BENIGN,
+        )
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:diagnosis-confirm",
+            kwargs={"diagnosis_id": draft.id},
+        )
+
+        response = self.client.post(
+            url,
+            {"work_item_id": str(self.work_item.id)},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["result_status"], "CONFIRMED")
+        self.assertEqual(response.data["confirmed_by_name"], self.user.name)
+        self.assertIsNotNone(response.data["confirmed_at"])
+        self.work_item.refresh_from_db()
+        self.assertEqual(
+            self.work_item.status,
+            PathologyWorkItem.Status.COMPLETED,
+        )
+        self.assertIsNotNone(self.work_item.completed_at)
+
+    def test_draft_creation_requires_matching_diagnostic_review_work_item(self):
+        self.client.force_authenticate(user=self.user)
+        self.work_item.task_type = PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS
+        self.work_item.save(update_fields=["task_type", "updated_at"])
+        url = reverse(
+            "pathology:case-diagnosis-list",
+            kwargs={"case_id": self.case.id},
+        )
+
+        response = self.client.post(
+            url,
+            {
+                "work_item_id": str(self.work_item.id),
+                "malignancy_status": "MALIGNANT",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("work_item_id", response.data)
+
+    def test_confirmed_diagnosis_cannot_be_updated(self):
+        self.client.force_authenticate(user=self.user)
+        url = reverse(
+            "pathology:diagnosis-detail",
+            kwargs={"diagnosis_id": self.clinical_result.id},
+        )
+
+        response = self.client.patch(
+            url,
+            {"diagnosis_summary": "Changed after confirmation"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)

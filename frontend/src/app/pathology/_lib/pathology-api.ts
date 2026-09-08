@@ -107,6 +107,61 @@ export type PathologyAiAnalysis = {
   created_at: string;
 };
 
+export type PathologyDiagnosis = {
+  id: string;
+  case_id: string;
+  source_image_asset_id: string | null;
+  reviewed_ai_result_id: string | null;
+  result_status: string;
+  result_status_label: string;
+  confirmed_by_user_id: string | null;
+  confirmed_by_name: string | null;
+  confirmed_at: string | null;
+  pathology: {
+    malignancy_status: string;
+    malignancy_status_label: string;
+    histologic_type: string | null;
+    subtype: string | null;
+    diagnosis_summary: string | null;
+  } | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PathologyReport = {
+  id: string;
+  case_id: string;
+  case_code: string;
+  patient_code: string;
+  patient_name: string;
+  source_image_asset_id: string | null;
+  reviewed_ai_result_id: string | null;
+  confirmed_by_user_id: string | null;
+  confirmed_by_name: string | null;
+  confirmed_at: string | null;
+  specimen: {
+    id: string;
+    specimen_code: string;
+    specimen_type: string;
+    body_site: string | null;
+  } | null;
+  wsi: {
+    id: string;
+    slide_code: string;
+    stain: string;
+    original_filename: string;
+  } | null;
+  diagnosis: {
+    malignancy_status: string;
+    malignancy_status_label: string;
+    histologic_type: string | null;
+    subtype: string | null;
+    diagnosis_summary: string | null;
+  };
+  created_at: string;
+  updated_at: string;
+};
+
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 
 export const API_BASE_URL = (
@@ -134,6 +189,22 @@ export function casePathologyAiResultsApiUrl(caseId: string) {
 
 export function caseAdequacyAiResultsApiUrl(caseId: string) {
   return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/adequacy-results/`;
+}
+
+export function casePathologyDiagnosesApiUrl(caseId: string) {
+  return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/diagnoses/`;
+}
+
+export function pathologyDiagnosisApiUrl(diagnosisId: string) {
+  return `${API_BASE_URL}/api/pathology/diagnoses/${encodeURIComponent(diagnosisId)}/`;
+}
+
+export function pathologyDiagnosisConfirmApiUrl(diagnosisId: string) {
+  return `${pathologyDiagnosisApiUrl(diagnosisId)}confirm/`;
+}
+
+export function casePathologyReportsApiUrl(caseId: string) {
+  return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/reports/`;
 }
 
 export const statusLabel: Record<string, string> = {
@@ -257,4 +328,16 @@ export function readSlides(response: Response) {
 
 export function readPathologyAiAnalyses(response: Response) {
   return readCollection<PathologyAiAnalysis>(response);
+}
+
+export function readPathologyDiagnoses(response: Response) {
+  return readCollection<PathologyDiagnosis>(response);
+}
+
+export async function readPathologyDiagnosis(response: Response) {
+  return (await response.json()) as PathologyDiagnosis;
+}
+
+export function readPathologyReports(response: Response) {
+  return readCollection<PathologyReport>(response);
 }

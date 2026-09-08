@@ -6,11 +6,15 @@ import { useEffect, useMemo, useState } from "react";
 import { PathologyAuthPanel } from "../_components/pathology-auth-panel";
 import { usePathologyAuth } from "../_components/pathology-auth-provider";
 import { PathologyStateMessage } from "../_components/pathology-state-message";
+import { DiagnosisEditor } from "./diagnosis-editor";
 import {
+  casePathologyDiagnosesApiUrl,
+  readPathologyDiagnoses,
   readWorkItems,
   statusLabel,
   statusStyle,
   type WorkItem,
+  type PathologyDiagnosis,
   WORK_ITEMS_API_URL,
 } from "../_lib/pathology-api";
 
@@ -49,6 +53,10 @@ export default function PathologyReviewPage() {
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(isConnected);
   const [error, setError] = useState("");
+  const [diagnoses, setDiagnoses] = useState<PathologyDiagnosis[]>([]);
+  const [selectedDiagnosisId, setSelectedDiagnosisId] = useState<string | null>(null);
+  const [diagnosisCaseId, setDiagnosisCaseId] = useState<string | null>(null);
+  const [diagnosisError, setDiagnosisError] = useState("");
 
   useEffect(() => {
     if (!isConnected) return;
@@ -126,6 +134,74 @@ export default function PathologyReviewPage() {
 
   const selectedItem =
     items.find((item) => item.id === selectedId) ?? items[0] ?? null;
+  const selectedCaseId = selectedItem?.case_id ?? null;
+  const selectedDiagnosis =
+    diagnoses.find((diagnosis) => diagnosis.id === selectedDiagnosisId) ??
+    diagnoses[0] ??
+    null;
+  const diagnosisLoading = Boolean(
+    isConnected && selectedCaseId && diagnosisCaseId !== selectedCaseId,
+  );
+
+  useEffect(() => {
+    if (!isConnected || !selectedCaseId) return;
+    let cancelled = false;
+
+    void authorizedFetch(casePathologyDiagnosesApiUrl(selectedCaseId))
+      .then(readPathologyDiagnoses)
+      .then((results) => {
+        if (cancelled) return;
+        setDiagnoses(results);
+        setSelectedDiagnosisId(results[0]?.id ?? null);
+        setDiagnosisCaseId(selectedCaseId);
+        setDiagnosisError("");
+      })
+      .catch((requestError: unknown) => {
+        if (cancelled) return;
+        setDiagnoses([]);
+        setSelectedDiagnosisId(null);
+        setDiagnosisCaseId(selectedCaseId);
+        setDiagnosisError(
+          requestError instanceof Error
+            ? requestError.message
+            : "병리 판독 결과를 불러오지 못했습니다.",
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [authorizedFetch, isConnected, selectedCaseId]);
+
+  function handleDiagnosisChanged(
+    changedDiagnosis: PathologyDiagnosis,
+    action: "saved" | "confirmed",
+  ) {
+    setDiagnoses((current) => {
+      const exists = current.some((item) => item.id === changedDiagnosis.id);
+      return exists
+        ? current.map((item) =>
+            item.id === changedDiagnosis.id ? changedDiagnosis : item,
+          )
+        : [changedDiagnosis, ...current];
+    });
+    setSelectedDiagnosisId(changedDiagnosis.id);
+    setDiagnosisCaseId(changedDiagnosis.case_id);
+    setItems((current) =>
+      current.map((item) =>
+        item.id === selectedItem?.id
+          ? {
+              ...item,
+              status: action === "confirmed" ? "COMPLETED" : "IN_PROGRESS",
+              completed_at:
+                action === "confirmed"
+                  ? changedDiagnosis.confirmed_at
+                  : item.completed_at,
+            }
+          : item,
+      ),
+    );
+  }
 
   return (
     <div>
@@ -253,11 +329,70 @@ export default function PathologyReviewPage() {
                 </div>
               </div>
 
+              {!diagnosisLoading && !diagnosisError && (
+                <DiagnosisEditor
+                  key={`${selectedItem.id}:${selectedDiagnosis?.id ?? "new"}`}
+                  authorizedFetch={authorizedFetch}
+                  diagnosis={selectedDiagnosis}
+                  workItem={selectedItem}
+                  onChanged={handleDiagnosisChanged}
+                />
+              )}
+
               <div className="mt-5 border border-slate-200 bg-slate-50 p-4">
                 <p className="text-xs font-semibold text-slate-700">판독 기록</p>
-                <p className="mt-3 text-xs leading-5 text-slate-500">
-                  저장된 판독문 데이터가 없습니다. 판독 입력과 임시 저장은 쓰기 API가 준비된 후 활성화합니다.
-                </p>
+                {diagnosisError ? (
+                  <PathologyStateMessage variant="error" title={diagnosisError} className="mt-3" />
+                ) : diagnosisLoading ? (
+                  <PathologyStateMessage variant="loading" title="판독 결과를 불러오는 중입니다." className="mt-3" />
+                ) : diagnoses.length === 0 ? (
+                  <PathologyStateMessage
+                    variant="empty"
+                    title="이 Case에 저장된 병리 판독 결과가 없습니다."
+                    description="판독 결과가 등록되면 이 영역에 실제 데이터가 표시됩니다."
+                    className="mt-3"
+                  />
+                ) : selectedDiagnosis ? (
+                  <div className="mt-4">
+                    {diagnoses.length > 1 && (
+                      <label className="mb-4 block text-xs font-semibold text-slate-600">
+                        판독 기록 선택
+                        <select
+                          value={selectedDiagnosis.id}
+                          onChange={(event) => setSelectedDiagnosisId(event.target.value)}
+                          className="mt-2 block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal text-slate-900"
+                        >
+                          {diagnoses.map((diagnosis) => (
+                            <option key={diagnosis.id} value={diagnosis.id}>
+                              {diagnosis.result_status_label} · {formatDateTime(diagnosis.confirmed_at ?? diagnosis.updated_at)}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <dl className="space-y-3 text-sm">
+                      {[
+                        ["상태", selectedDiagnosis.result_status_label],
+                        ["판독자", selectedDiagnosis.confirmed_by_name ?? "-"],
+                        ["악성 여부", selectedDiagnosis.pathology?.malignancy_status_label ?? "-"],
+                        ["조직형", selectedDiagnosis.pathology?.histologic_type ?? "-"],
+                        ["아형", selectedDiagnosis.pathology?.subtype ?? "-"],
+                        ["확정일", formatDateTime(selectedDiagnosis.confirmed_at)],
+                      ].map(([label, value]) => (
+                        <div key={label} className="grid grid-cols-[68px_minmax(0,1fr)] gap-3">
+                          <dt className="text-slate-500">{label}</dt>
+                          <dd className="break-words font-medium text-slate-900">{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                    <div className="mt-4 border-t border-slate-200 pt-4">
+                      <p className="text-xs text-slate-500">진단 요약</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-900">
+                        {selectedDiagnosis.pathology?.diagnosis_summary ?? "-"}
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             </div>
           ) : (
