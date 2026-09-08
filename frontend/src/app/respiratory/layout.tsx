@@ -63,6 +63,20 @@ export default function RespiratoryLayout({
               SoomIT CDSS
             </p>
           </div>
+
+          <button
+            type="button"
+            className="rounded-xl px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-700"
+          >
+            <span aria-hidden="true">⚙</span> 설정
+          </button>
+
+          <button
+            type="button"
+            className="rounded-xl border border-emerald-100 px-3 py-2 text-sm font-medium text-slate-500 transition hover:bg-emerald-50 hover:text-emerald-700"
+          >
+            로그아웃
+          </button>
         </div>
       </header>
 
