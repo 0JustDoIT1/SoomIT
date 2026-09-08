@@ -1,0 +1,55 @@
+General:
+    MODEL_NAME: TRANS_MIL
+    seed: 2024
+    num_classes: 2
+    num_epochs: 5
+    device: 0
+    num_workers: 4
+    best_model_metric: macro_auc
+    earlystop:
+        use: False
+        patience: 5
+        metric: macro_auc
+
+Dataset:
+    DATASET_NAME: CAMELYON_CONCH
+    dataset_csv_path: /data_sde/zbr/MIL_BASELINE/datasets/CAMELYON_CONCH_split.csv
+    dataset_root_dir: {}
+    balanced_sampler:
+        use: False
+        replacement: True
+
+Logs:
+    log_root_dir: /data_sde/zbr/MIL_BASELINE/logs
+
+Model:
+    in_dim: 512  # Check the real CONCH feature dim on the server; override with --options Model.in_dim=...
+    hidden_dim: 512
+    num_heads: 8
+    num_landmarks: null  # null keeps original TransMIL default: hidden_dim // 2
+    pinv_iterations: 6
+    dropout: 0.1
+    act: relu
+    optimizer:
+        which: adam
+        adam_config:
+            lr: 0.0002
+            weight_decay: 0.00001
+        adamw_config:
+            lr: 0.0002
+            weight_decay: 0.00001
+    criterion: ce
+    scheduler:
+        warmup: 2
+        which: step
+        step_config:
+            step_size: 3
+            gamma: 0.9
+        multi_step_config:
+            milestones: [20, 30, 40]
+            gamma: 0.9
+        exponential_config:
+            gamma: 0.9
+        cosine_config:
+            T_max: 10
+            eta_min: 0.0001

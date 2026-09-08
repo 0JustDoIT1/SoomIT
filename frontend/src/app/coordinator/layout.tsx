@@ -9,7 +9,7 @@ export default function CoordinatorLayout({ children }: { children: ReactNode })
       {/* Sidebar */}
       <aside className="flex w-64 flex-col border-r border-slate-200 bg-white">
         <div className="px-3 pb-5 pt-6">
-          <Image src="/soomit_logo.png" alt="숨잇 로고" width={220} height={120} priority className="-ml-5 h-auto w-[180px] object-contain" />
+          <Image src="/logo2.png" alt="숨잇 로고" width={220} height={120} priority className="-ml-5 h-auto w-[180px] object-contain" />
 
           <div className="mt-4 flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-pink-300" />

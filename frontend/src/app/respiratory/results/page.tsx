@@ -1,5 +1,5 @@
 "use client";
-
+import CaseSelectionRequired from "../CaseSelectionRequired";
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 
@@ -134,13 +134,10 @@ export default function RespiratoryResultsPage() {
 
   if (!caseId) {
     return (
-      <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-800">검사 결과</h1>
-
-        <p className="mt-3 text-sm text-slate-500">
-          담당 Case에서 환자를 선택한 뒤 검사 결과를 확인해주세요.
-        </p>
-      </div>
+        <CaseSelectionRequired
+        title="검사 결과"
+        description="검사 결과를 확인할 환자를 먼저 선택해주세요."
+        />
     );
   }
 

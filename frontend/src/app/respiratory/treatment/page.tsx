@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import CaseSelectionRequired from "../CaseSelectionRequired";
 
 type RegimenDetail = {
   id: string;
@@ -267,15 +268,10 @@ export default function RespiratoryTreatmentPage() {
 
   if (!caseId) {
     return (
-      <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-800">
-          치료 결정
-        </h1>
-
-        <p className="mt-3 text-sm text-slate-500">
-          담당 Case에서 환자를 선택한 뒤 치료 결정을 진행해주세요.
-        </p>
-      </div>
+      <CaseSelectionRequired
+        title="치료 결정"
+        description="치료 결정을 진행할 환자를 먼저 선택해주세요."
+      />
     );
   }
 

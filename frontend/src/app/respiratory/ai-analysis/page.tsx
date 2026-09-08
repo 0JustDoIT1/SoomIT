@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import CaseSelectionRequired from "../CaseSelectionRequired";
 
 type AiAnalysis = {
   id: string;
@@ -206,19 +207,16 @@ export default function RespiratoryAiAnalysisPage() {
     return map;
   }, [clinicalResults]);
 
-  if (!caseId) {
-    return (
-      <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
-        <h1 className="text-2xl font-bold text-slate-800">AI 분석</h1>
+    if (!caseId) {
+        return (
+        <CaseSelectionRequired
+            title="AI 분석"
+            description="AI 분석 결과를 확인할 환자를 먼저 선택해주세요."
+        />
+        );
+    }
 
-        <p className="mt-3 text-sm text-slate-500">
-          담당 Case에서 환자를 선택한 뒤 AI 분석 결과를 확인해주세요.
-        </p>
-      </div>
-    );
-  }
-
-  if (loading) {
+    if (loading) {
     return (
       <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
         AI 분석 결과를 불러오는 중입니다.
