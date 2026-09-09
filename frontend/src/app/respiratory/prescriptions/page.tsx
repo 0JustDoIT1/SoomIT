@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import CaseSelectionRequired from "../CaseSelectionRequired";
+import { Suspense, useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import CaseSelectionRequired from '../CaseSelectionRequired';
 
 type RegimenDetail = {
   id: string;
@@ -55,7 +55,7 @@ type SafetyResult = {
   prescription_item: string | null;
   check_type: string;
   check_type_label: string;
-  result: "PASS" | "WARNING" | "BLOCK";
+  result: 'PASS' | 'WARNING' | 'BLOCK';
   result_label: string;
   message: string;
   source: string | null;
@@ -89,27 +89,41 @@ type Prescription = {
 };
 
 export default function RespiratoryPrescriptionsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
+          불러오는 중입니다.
+        </div>
+      }
+    >
+      <RespiratoryPrescriptionsContent />
+    </Suspense>
+  );
+}
+
+function RespiratoryPrescriptionsContent() {
   const searchParams = useSearchParams();
-  const caseId = searchParams.get("caseId");
+  const caseId = searchParams.get('caseId');
 
   const [decision, setDecision] = useState<TreatmentDecision | null>(null);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
 
-  const [cycleNumber, setCycleNumber] = useState("1");
-  const [phase, setPhase] = useState("INDUCTION");
-  const [cycleStartDate, setCycleStartDate] = useState("");
+  const [cycleNumber, setCycleNumber] = useState('1');
+  const [phase, setPhase] = useState('INDUCTION');
+  const [cycleStartDate, setCycleStartDate] = useState('');
 
   const [loading, setLoading] = useState(false);
   const [working, setWorking] = useState(false);
-  const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
+  const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
   const loadData = async () => {
     if (!caseId) return;
 
     try {
       setLoading(true);
-      setError("");
+      setError('');
 
       const token = await getAccessToken();
       const headers = { Authorization: `Bearer ${token}` };
@@ -130,11 +144,11 @@ export default function RespiratoryPrescriptionsPage() {
       } else if (decisionResponse.status === 404) {
         setDecision(null);
       } else {
-        throw new Error("치료 결정 정보를 불러오지 못했습니다.");
+        throw new Error('치료 결정 정보를 불러오지 못했습니다.');
       }
 
       if (!prescriptionResponse.ok) {
-        throw new Error("처방 목록을 불러오지 못했습니다.");
+        throw new Error('처방 목록을 불러오지 못했습니다.');
       }
 
       setPrescriptions(await prescriptionResponse.json());
@@ -142,7 +156,7 @@ export default function RespiratoryPrescriptionsPage() {
       setError(
         err instanceof Error
           ? err.message
-          : "처방 정보를 불러오는 중 오류가 발생했습니다."
+          : '처방 정보를 불러오는 중 오류가 발생했습니다.'
       );
     } finally {
       setLoading(false);
@@ -158,17 +172,17 @@ export default function RespiratoryPrescriptionsPage() {
 
     try {
       setWorking(true);
-      setError("");
-      setMessage("");
+      setError('');
+      setMessage('');
 
       const token = await getAccessToken();
 
       const response = await fetch(
         `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
         {
-          method: "POST",
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
+            'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
@@ -182,14 +196,14 @@ export default function RespiratoryPrescriptionsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "처방 생성에 실패했습니다.");
+        throw new Error(data.detail || '처방 생성에 실패했습니다.');
       }
 
-      setMessage("처방 DRAFT가 생성되었습니다.");
+      setMessage('처방 DRAFT가 생성되었습니다.');
       await loadData();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "처방 생성에 실패했습니다."
+        err instanceof Error ? err.message : '처방 생성에 실패했습니다.'
       );
     } finally {
       setWorking(false);
@@ -206,17 +220,17 @@ export default function RespiratoryPrescriptionsPage() {
 
     try {
       setWorking(true);
-      setError("");
-      setMessage("");
+      setError('');
+      setMessage('');
 
       const token = await getAccessToken();
 
       const response = await fetch(
         `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
         {
-          method: "PATCH",
+          method: 'PATCH',
           headers: {
-            "Content-Type": "application/json",
+            'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
@@ -229,16 +243,14 @@ export default function RespiratoryPrescriptionsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "처방 약물 수정에 실패했습니다.");
+        throw new Error(data.detail || '처방 약물 수정에 실패했습니다.');
       }
 
-      setMessage("처방 약물 정보가 수정되었습니다.");
+      setMessage('처방 약물 정보가 수정되었습니다.');
       await loadData();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "처방 약물 수정에 실패했습니다."
+        err instanceof Error ? err.message : '처방 약물 수정에 실패했습니다.'
       );
     } finally {
       setWorking(false);
@@ -250,15 +262,15 @@ export default function RespiratoryPrescriptionsPage() {
 
     try {
       setWorking(true);
-      setError("");
-      setMessage("");
+      setError('');
+      setMessage('');
 
       const token = await getAccessToken();
 
       const response = await fetch(
         `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/safety-check/`,
         {
-          method: "POST",
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -268,14 +280,14 @@ export default function RespiratoryPrescriptionsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Safety Check에 실패했습니다.");
+        throw new Error(data.detail || 'Safety Check에 실패했습니다.');
       }
 
-      setMessage("Safety Check가 완료되었습니다.");
+      setMessage('Safety Check가 완료되었습니다.');
       await loadData();
     } catch (err) {
       setError(
-        err instanceof Error ? err.message : "Safety Check에 실패했습니다."
+        err instanceof Error ? err.message : 'Safety Check에 실패했습니다.'
       );
     } finally {
       setWorking(false);
@@ -286,25 +298,25 @@ export default function RespiratoryPrescriptionsPage() {
     if (!caseId) return;
 
     const note = window.prompt(
-      "WARNING 확인 사유를 입력하세요.",
-      "담당의 검토 후 처방 진행"
+      'WARNING 확인 사유를 입력하세요.',
+      '담당의 검토 후 처방 진행'
     );
 
     if (note === null) return;
 
     try {
       setWorking(true);
-      setError("");
-      setMessage("");
+      setError('');
+      setMessage('');
 
       const token = await getAccessToken();
 
       const response = await fetch(
         `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/warnings/acknowledge/`,
         {
-          method: "POST",
+          method: 'POST',
           headers: {
-            "Content-Type": "application/json",
+            'Content-Type': 'application/json',
             Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
@@ -316,16 +328,14 @@ export default function RespiratoryPrescriptionsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "WARNING 확인 처리에 실패했습니다.");
+        throw new Error(data.detail || 'WARNING 확인 처리에 실패했습니다.');
       }
 
-      setMessage("WARNING 확인이 완료되었습니다.");
+      setMessage('WARNING 확인이 완료되었습니다.');
       await loadData();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "WARNING 확인 처리에 실패했습니다."
+        err instanceof Error ? err.message : 'WARNING 확인 처리에 실패했습니다.'
       );
     } finally {
       setWorking(false);
@@ -336,22 +346,22 @@ export default function RespiratoryPrescriptionsPage() {
     if (!caseId) return;
 
     const confirmed = window.confirm(
-      "이 처방을 최종 확정하시겠습니까?\n확정 후에는 일반 DRAFT 수정이 불가능합니다."
+      '이 처방을 최종 확정하시겠습니까?\n확정 후에는 일반 DRAFT 수정이 불가능합니다.'
     );
 
     if (!confirmed) return;
 
     try {
       setWorking(true);
-      setError("");
-      setMessage("");
+      setError('');
+      setMessage('');
 
       const token = await getAccessToken();
 
       const response = await fetch(
         `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
         {
-          method: "POST",
+          method: 'POST',
           headers: {
             Authorization: `Bearer ${token}`,
           },
@@ -361,16 +371,14 @@ export default function RespiratoryPrescriptionsPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "처방 최종 확정에 실패했습니다.");
+        throw new Error(data.detail || '처방 최종 확정에 실패했습니다.');
       }
 
-      setMessage("처방이 최종 확정되었습니다.");
+      setMessage('처방이 최종 확정되었습니다.');
       await loadData();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : "처방 최종 확정에 실패했습니다."
+        err instanceof Error ? err.message : '처방 최종 확정에 실패했습니다.'
       );
     } finally {
       setWorking(false);
@@ -400,8 +408,8 @@ export default function RespiratoryPrescriptionsPage() {
         <h1 className="text-2xl font-bold text-slate-800">처방 관리</h1>
 
         <p className="mt-2 text-sm text-slate-500">
-          확정된 치료결정을 기준으로 처방 생성, 용량 검토, Safety Check 및
-          최종 확정을 진행합니다.
+          확정된 치료결정을 기준으로 처방 생성, 용량 검토, Safety Check 및 최종
+          확정을 진행합니다.
         </p>
       </div>
 
@@ -422,10 +430,7 @@ export default function RespiratoryPrescriptionsPage() {
 
         {decision?.selected_regimen_detail ? (
           <div className="mt-5 grid grid-cols-4 gap-3">
-            <Info
-              label="치료 유형"
-              value={decision.treatment_type_label}
-            />
+            <Info label="치료 유형" value={decision.treatment_type_label} />
 
             <Info
               label="Regimen"
@@ -437,7 +442,7 @@ export default function RespiratoryPrescriptionsPage() {
               value={
                 decision.selected_regimen_detail.cycle_length_days
                   ? `${decision.selected_regimen_detail.cycle_length_days}일`
-                  : "-"
+                  : '-'
               }
             />
 
@@ -446,7 +451,7 @@ export default function RespiratoryPrescriptionsPage() {
               value={
                 decision.selected_regimen_detail.induction_cycles
                   ? `${decision.selected_regimen_detail.induction_cycles} Cycle`
-                  : "-"
+                  : '-'
               }
             />
           </div>
@@ -548,11 +553,11 @@ function PrescriptionCard({
   onFinalize: (prescriptionId: string) => Promise<void>;
 }) {
   const warnings = prescription.safety_check_results.filter(
-    (item) => item.result === "WARNING"
+    (item) => item.result === 'WARNING'
   );
 
   const blocks = prescription.safety_check_results.filter(
-    (item) => item.result === "BLOCK"
+    (item) => item.result === 'BLOCK'
   );
 
   const unacknowledgedWarnings = warnings.filter(
@@ -568,7 +573,7 @@ function PrescriptionCard({
           </h2>
 
           <p className="mt-1 text-xs text-slate-400">
-            {prescription.regimen_detail.regimen_name} ·{" "}
+            {prescription.regimen_detail.regimen_name} ·{' '}
             {prescription.phase_label}
           </p>
         </div>
@@ -580,15 +585,9 @@ function PrescriptionCard({
       </div>
 
       <div className="mt-5 grid grid-cols-3 gap-3">
-        <Info
-          label="Cycle 시작일"
-          value={prescription.cycle_start_date}
-        />
+        <Info label="Cycle 시작일" value={prescription.cycle_start_date} />
 
-        <Info
-          label="Phase"
-          value={prescription.phase_label}
-        />
+        <Info label="Phase" value={prescription.phase_label} />
 
         <Info
           label="Safety 결과"
@@ -596,10 +595,10 @@ function PrescriptionCard({
             prescription.safety_check_results.length
               ? `PASS ${
                   prescription.safety_check_results.filter(
-                    (item) => item.result === "PASS"
+                    (item) => item.result === 'PASS'
                   ).length
                 } / WARNING ${warnings.length} / BLOCK ${blocks.length}`
-              : "미실행"
+              : '미실행'
           }
         />
       </div>
@@ -613,7 +612,7 @@ function PrescriptionCard({
               key={item.id}
               item={item}
               prescriptionId={prescription.id}
-              editable={prescription.prescription_status === "DRAFT"}
+              editable={prescription.prescription_status === 'DRAFT'}
               working={working}
               onSave={onItemUpdate}
             />
@@ -638,11 +637,11 @@ function PrescriptionCard({
               <div
                 key={result.id}
                 className={`rounded-xl border px-4 py-3 ${
-                  result.result === "BLOCK"
-                    ? "border-red-200 bg-red-50"
-                    : result.result === "WARNING"
-                    ? "border-amber-200 bg-amber-50"
-                    : "border-emerald-100 bg-emerald-50/50"
+                  result.result === 'BLOCK'
+                    ? 'border-red-200 bg-red-50'
+                    : result.result === 'WARNING'
+                      ? 'border-amber-200 bg-amber-50'
+                      : 'border-emerald-100 bg-emerald-50/50'
                 }`}
               >
                 <div className="flex items-center justify-between">
@@ -664,7 +663,7 @@ function PrescriptionCard({
                     의료진 확인 완료
                     {result.acknowledgment_note
                       ? ` · ${result.acknowledgment_note}`
-                      : ""}
+                      : ''}
                   </p>
                 )}
               </div>
@@ -674,7 +673,7 @@ function PrescriptionCard({
       )}
 
       <div className="mt-6 flex justify-end gap-3">
-        {prescription.prescription_status === "DRAFT" && (
+        {prescription.prescription_status === 'DRAFT' && (
           <button
             type="button"
             disabled={working}
@@ -685,7 +684,7 @@ function PrescriptionCard({
           </button>
         )}
 
-        {prescription.prescription_status === "VALIDATED" &&
+        {prescription.prescription_status === 'VALIDATED' &&
           unacknowledgedWarnings.length > 0 && (
             <button
               type="button"
@@ -697,13 +696,11 @@ function PrescriptionCard({
             </button>
           )}
 
-        {prescription.prescription_status === "VALIDATED" && (
+        {prescription.prescription_status === 'VALIDATED' && (
           <button
             type="button"
             disabled={
-              working ||
-              blocks.length > 0 ||
-              unacknowledgedWarnings.length > 0
+              working || blocks.length > 0 || unacknowledgedWarnings.length > 0
             }
             onClick={() => onFinalize(prescription.id)}
             className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
@@ -735,24 +732,18 @@ function PrescriptionItemRow({
   ) => Promise<void>;
 }) {
   const [finalDose, setFinalDose] = useState(
-    item.final_dose !== null ? String(item.final_dose) : ""
+    item.final_dose !== null ? String(item.final_dose) : ''
   );
 
-  const [instructions, setInstructions] = useState(
-    item.instructions ?? ""
-  );
+  const [instructions, setInstructions] = useState(item.instructions ?? '');
 
   return (
     <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-4">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-bold text-slate-800">
-            {item.drug_name}
-          </p>
+          <p className="text-sm font-bold text-slate-800">{item.drug_name}</p>
 
-          <p className="mt-1 text-xs text-slate-400">
-            {item.ingredient_name}
-          </p>
+          <p className="mt-1 text-xs text-slate-400">{item.ingredient_name}</p>
         </div>
 
         <span className="rounded-full bg-white px-3 py-1 text-xs font-medium text-slate-500">
@@ -766,32 +757,25 @@ function PrescriptionItemRow({
           value={
             item.standard_dose !== null
               ? `${item.standard_dose} ${item.dose_basis_label}`
-              : "-"
+              : '-'
           }
         />
 
         <Info
           label="BSA"
-          value={
-            item.patient_bsa !== null
-              ? `${item.patient_bsa} m²`
-              : "-"
-          }
+          value={item.patient_bsa !== null ? `${item.patient_bsa} m²` : '-'}
         />
 
         <Info
           label="계산 용량"
           value={
             item.calculated_dose !== null
-              ? `${item.calculated_dose} ${item.unit ?? ""}`
-              : "-"
+              ? `${item.calculated_dose} ${item.unit ?? ''}`
+              : '-'
           }
         />
 
-        <Info
-          label="투여일"
-          value={item.administration_day}
-        />
+        <Info label="투여일" value={item.administration_day} />
 
         <Info label="빈도" value={item.frequency} />
       </div>
@@ -810,9 +794,7 @@ function PrescriptionItemRow({
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 disabled:bg-slate-100"
             />
 
-            <span className="text-xs text-slate-500">
-              {item.unit}
-            </span>
+            <span className="text-xs text-slate-500">{item.unit}</span>
           </div>
         </div>
 
@@ -832,14 +814,9 @@ function PrescriptionItemRow({
           {editable && (
             <button
               type="button"
-              disabled={working || finalDose === ""}
+              disabled={working || finalDose === ''}
               onClick={() =>
-                onSave(
-                  prescriptionId,
-                  item.id,
-                  finalDose,
-                  instructions
-                )
+                onSave(prescriptionId, item.id, finalDose, instructions)
               }
               className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
             >
@@ -852,25 +829,19 @@ function PrescriptionItemRow({
   );
 }
 
-function StatusBadge({
-  status,
-  label,
-}: {
-  status: string;
-  label: string;
-}) {
-  let className = "bg-slate-100 text-slate-600";
+function StatusBadge({ status, label }: { status: string; label: string }) {
+  let className = 'bg-slate-100 text-slate-600';
 
-  if (status === "DRAFT") {
-    className = "bg-slate-100 text-slate-600";
+  if (status === 'DRAFT') {
+    className = 'bg-slate-100 text-slate-600';
   }
 
-  if (status === "VALIDATED") {
-    className = "bg-sky-50 text-sky-700";
+  if (status === 'VALIDATED') {
+    className = 'bg-sky-50 text-sky-700';
   }
 
-  if (status === "FINAL") {
-    className = "bg-emerald-100 text-emerald-700";
+  if (status === 'FINAL') {
+    className = 'bg-emerald-100 text-emerald-700';
   }
 
   return (
@@ -882,41 +853,29 @@ function StatusBadge({
   );
 }
 
-function SafetyBadge({
-  result,
-}: {
-  result: "PASS" | "WARNING" | "BLOCK";
-}) {
+function SafetyBadge({ result }: { result: 'PASS' | 'WARNING' | 'BLOCK' }) {
   const className =
-    result === "BLOCK"
-      ? "bg-red-100 text-red-700"
-      : result === "WARNING"
-      ? "bg-amber-100 text-amber-700"
-      : "bg-emerald-100 text-emerald-700";
+    result === 'BLOCK'
+      ? 'bg-red-100 text-red-700'
+      : result === 'WARNING'
+        ? 'bg-amber-100 text-amber-700'
+        : 'bg-emerald-100 text-emerald-700';
 
   return (
-    <span
-      className={`rounded-full px-3 py-1 text-xs font-bold ${className}`}
-    >
+    <span className={`rounded-full px-3 py-1 text-xs font-bold ${className}`}>
       {result}
     </span>
   );
 }
 
-function Info({
-  label,
-  value,
-}: {
-  label: string;
-  value: unknown;
-}) {
+function Info({ label, value }: { label: string; value: unknown }) {
   return (
     <div className="rounded-xl bg-emerald-50/40 px-4 py-3">
       <p className="text-xs text-slate-400">{label}</p>
 
       <p className="mt-1 break-words text-sm font-semibold text-slate-700">
-        {value === null || value === undefined || value === ""
-          ? "-"
+        {value === null || value === undefined || value === ''
+          ? '-'
           : String(value)}
       </p>
     </div>
@@ -932,9 +891,7 @@ function Field({
 }) {
   return (
     <div>
-      <p className="mb-2 text-xs font-semibold text-slate-500">
-        {label}
-      </p>
+      <p className="mb-2 text-xs font-semibold text-slate-500">{label}</p>
 
       {children}
     </div>
@@ -942,23 +899,20 @@ function Field({
 }
 
 async function getAccessToken() {
-  const response = await fetch(
-    "http://127.0.0.1:8000/api/auth/staff/login/",
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        hospital_code: "SUMIT001",
-        username: "doctor01",
-        password: "test1234",
-      }),
-    }
-  );
+  const response = await fetch('http://127.0.0.1:8000/api/auth/staff/login/', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      hospital_code: 'SUMIT001',
+      username: 'doctor01',
+      password: 'test1234',
+    }),
+  });
 
   if (!response.ok) {
-    throw new Error("의료진 로그인에 실패했습니다.");
+    throw new Error('의료진 로그인에 실패했습니다.');
   }
 
   const data = await response.json();

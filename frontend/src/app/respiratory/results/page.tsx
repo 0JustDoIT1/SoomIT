@@ -1,7 +1,7 @@
-"use client";
-import CaseSelectionRequired from "../CaseSelectionRequired";
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+'use client';
+import CaseSelectionRequired from '../CaseSelectionRequired';
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 
 type ClinicalResult = {
   id: string;
@@ -57,12 +57,26 @@ type ClinicalResult = {
 };
 
 export default function RespiratoryResultsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
+          불러오는 중입니다.
+        </div>
+      }
+    >
+      <RespiratoryResultsContent />
+    </Suspense>
+  );
+}
+
+function RespiratoryResultsContent() {
   const searchParams = useSearchParams();
-  const caseId = searchParams.get("caseId");
+  const caseId = searchParams.get('caseId');
 
   const [results, setResults] = useState<ClinicalResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!caseId) return;
@@ -70,25 +84,25 @@ export default function RespiratoryResultsPage() {
     const fetchResults = async () => {
       try {
         setLoading(true);
-        setError("");
+        setError('');
 
         const loginResponse = await fetch(
-          "http://127.0.0.1:8000/api/auth/staff/login/",
+          'http://127.0.0.1:8000/api/auth/staff/login/',
           {
-            method: "POST",
+            method: 'POST',
             headers: {
-              "Content-Type": "application/json",
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              hospital_code: "SUMIT001",
-              username: "doctor01",
-              password: "test1234",
+              hospital_code: 'SUMIT001',
+              username: 'doctor01',
+              password: 'test1234',
             }),
           }
         );
 
         if (!loginResponse.ok) {
-          throw new Error("의료진 로그인에 실패했습니다.");
+          throw new Error('의료진 로그인에 실패했습니다.');
         }
 
         const loginData = await loginResponse.json();
@@ -103,7 +117,7 @@ export default function RespiratoryResultsPage() {
         );
 
         if (!response.ok) {
-          throw new Error("검사 결과를 불러오지 못했습니다.");
+          throw new Error('검사 결과를 불러오지 못했습니다.');
         }
 
         const data = await response.json();
@@ -112,7 +126,7 @@ export default function RespiratoryResultsPage() {
         setError(
           err instanceof Error
             ? err.message
-            : "검사 결과 조회 중 오류가 발생했습니다."
+            : '검사 결과 조회 중 오류가 발생했습니다.'
         );
       } finally {
         setLoading(false);
@@ -134,10 +148,10 @@ export default function RespiratoryResultsPage() {
 
   if (!caseId) {
     return (
-        <CaseSelectionRequired
+      <CaseSelectionRequired
         title="검사 결과"
         description="검사 결과를 확인할 환자를 먼저 선택해주세요."
-        />
+      />
     );
   }
 
@@ -168,11 +182,11 @@ export default function RespiratoryResultsPage() {
       </div>
 
       <div className="grid grid-cols-5 gap-3">
-        <ResultStageCard title="X-ray" result={resultMap.get("XRAY")} />
-        <ResultStageCard title="CT" result={resultMap.get("CT")} />
-        <ResultStageCard title="병리" result={resultMap.get("PATHOLOGY")} />
-        <ResultStageCard title="TNM" result={resultMap.get("STAGING")} />
-        <ResultStageCard title="유전자" result={resultMap.get("GENE")} />
+        <ResultStageCard title="X-ray" result={resultMap.get('XRAY')} />
+        <ResultStageCard title="CT" result={resultMap.get('CT')} />
+        <ResultStageCard title="병리" result={resultMap.get('PATHOLOGY')} />
+        <ResultStageCard title="TNM" result={resultMap.get('STAGING')} />
+        <ResultStageCard title="유전자" result={resultMap.get('GENE')} />
       </div>
 
       <div className="mt-6 space-y-5">
@@ -203,8 +217,8 @@ function ResultStageCard({
     <div
       className={`rounded-2xl border p-4 ${
         confirmed
-          ? "border-emerald-200 bg-emerald-50/70"
-          : "border-slate-200 bg-white"
+          ? 'border-emerald-200 bg-emerald-50/70'
+          : 'border-slate-200 bg-white'
       }`}
     >
       <div className="flex items-center justify-between">
@@ -212,17 +226,17 @@ function ResultStageCard({
 
         <span
           className={`h-2.5 w-2.5 rounded-full ${
-            confirmed ? "bg-emerald-400" : "bg-slate-300"
+            confirmed ? 'bg-emerald-400' : 'bg-slate-300'
           }`}
         />
       </div>
 
       <p
         className={`mt-3 text-xs font-medium ${
-          confirmed ? "text-emerald-600" : "text-slate-400"
+          confirmed ? 'text-emerald-600' : 'text-slate-400'
         }`}
       >
-        {confirmed ? "확정 완료" : "결과 없음"}
+        {confirmed ? '확정 완료' : '결과 없음'}
       </p>
     </div>
   );
@@ -237,9 +251,7 @@ function ResultSection({ result }: { result: ClinicalResult }) {
             {result.exam_name}
           </h2>
 
-          <p className="mt-1 text-xs text-slate-400">
-            의료진 확정 결과
-          </p>
+          <p className="mt-1 text-xs text-slate-400">의료진 확정 결과</p>
         </div>
 
         <div className="text-right">
@@ -265,64 +277,41 @@ function ResultSection({ result }: { result: ClinicalResult }) {
 function ClinicalDetail({ result }: { result: ClinicalResult }) {
   const detail = result.result_detail ?? {};
 
-  if (result.exam_type === "XRAY" && detail.xray) {
+  if (result.exam_type === 'XRAY' && detail.xray) {
     return (
       <div className="grid grid-cols-2 gap-3">
         <Info label="판정" value={detail.xray.assessment_label} />
         <Info label="권고 조치" value={detail.xray.recommended_action} />
-        <Info
-          label="주요 소견"
-          value={detail.xray.finding_summary}
-          wide
-        />
+        <Info label="주요 소견" value={detail.xray.finding_summary} wide />
       </div>
     );
   }
 
-  if (result.exam_type === "CT" && detail.ct) {
+  if (result.exam_type === 'CT' && detail.ct) {
     return (
       <div className="grid grid-cols-2 gap-3">
-        <Info
-          label="종합 판정"
-          value={detail.ct.overall_assessment_label}
-        />
-        <Info
-          label="악성 위험도"
-          value={detail.ct.overall_malignancy_risk}
-        />
-        <Info
-          label="주요 소견"
-          value={detail.ct.finding_summary}
-          wide
-        />
+        <Info label="종합 판정" value={detail.ct.overall_assessment_label} />
+        <Info label="악성 위험도" value={detail.ct.overall_malignancy_risk} />
+        <Info label="주요 소견" value={detail.ct.finding_summary} wide />
       </div>
     );
   }
 
-  if (result.exam_type === "PATHOLOGY" && detail.pathology) {
+  if (result.exam_type === 'PATHOLOGY' && detail.pathology) {
     return (
       <div className="grid grid-cols-2 gap-3">
         <Info
           label="악성 여부"
           value={detail.pathology.malignancy_status_label}
         />
-        <Info
-          label="조직형"
-          value={detail.pathology.histologic_type}
-        />
-        <Info
-          label="세부 아형"
-          value={detail.pathology.subtype}
-        />
-        <Info
-          label="진단 요약"
-          value={detail.pathology.diagnosis_summary}
-        />
+        <Info label="조직형" value={detail.pathology.histologic_type} />
+        <Info label="세부 아형" value={detail.pathology.subtype} />
+        <Info label="진단 요약" value={detail.pathology.diagnosis_summary} />
       </div>
     );
   }
 
-  if (result.exam_type === "STAGING" && detail.tnm) {
+  if (result.exam_type === 'STAGING' && detail.tnm) {
     return (
       <div className="grid grid-cols-4 gap-3">
         <Info label="T" value={detail.tnm.t_category} />
@@ -330,38 +319,25 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
         <Info label="M" value={detail.tnm.m_category} />
         <Info label="Stage" value={detail.tnm.stage_group} />
 
-        <Info
-          label="판단 근거"
-          value={detail.tnm.evidence}
-          wide
-        />
+        <Info label="판단 근거" value={detail.tnm.evidence} wide />
 
-        <Info
-          label="비고"
-          value={detail.tnm.note}
-          wide
-        />
+        <Info label="비고" value={detail.tnm.note} wide />
       </div>
     );
   }
 
-  if (result.exam_type === "GENE") {
+  if (result.exam_type === 'GENE') {
     return (
       <div className="space-y-4">
         {detail.gene && (
           <>
             <div className="grid grid-cols-2 gap-3">
-              <Info
-                label="해석"
-                value={detail.gene.interpretation}
-              />
+              <Info label="해석" value={detail.gene.interpretation} />
 
               <Info
                 label="추가 검사 권고"
                 value={
-                  detail.gene.additional_test_recommended
-                    ? "필요"
-                    : "없음"
+                  detail.gene.additional_test_recommended ? '필요' : '없음'
                 }
               />
             </div>
@@ -416,26 +392,16 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
               }
             />
 
-            <Info
-              label="PD-L1 해석"
-              value={detail.pdl1.interpretation}
-            />
+            <Info label="PD-L1 해석" value={detail.pdl1.interpretation} />
 
-            <Info
-              label="비고"
-              value={detail.pdl1.note}
-            />
+            <Info label="비고" value={detail.pdl1.note} />
           </div>
         )}
       </div>
     );
   }
 
-  return (
-    <p className="text-sm text-slate-400">
-      상세 결과 데이터가 없습니다.
-    </p>
-  );
+  return <p className="text-sm text-slate-400">상세 결과 데이터가 없습니다.</p>;
 }
 
 function Info({
@@ -450,14 +416,14 @@ function Info({
   return (
     <div
       className={`rounded-xl bg-emerald-50/40 px-4 py-3 ${
-        wide ? "col-span-full" : ""
+        wide ? 'col-span-full' : ''
       }`}
     >
       <p className="text-xs text-slate-400">{label}</p>
 
       <p className="mt-1 break-words text-sm font-semibold text-slate-700">
-        {value === null || value === undefined || value === ""
-          ? "-"
+        {value === null || value === undefined || value === ''
+          ? '-'
           : String(value)}
       </p>
     </div>
@@ -471,11 +437,11 @@ function formatDateTime(value: string) {
     return value;
   }
 
-  return date.toLocaleString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }

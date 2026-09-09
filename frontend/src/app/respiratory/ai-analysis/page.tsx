@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import CaseSelectionRequired from "../CaseSelectionRequired";
+import { Suspense, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import CaseSelectionRequired from '../CaseSelectionRequired';
 
 type AiAnalysis = {
   id: string;
@@ -119,13 +119,27 @@ type ClinicalResult = {
 };
 
 export default function RespiratoryAiAnalysisPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
+          불러오는 중입니다.
+        </div>
+      }
+    >
+      <RespiratoryAiAnalysisContent />
+    </Suspense>
+  );
+}
+
+function RespiratoryAiAnalysisContent() {
   const searchParams = useSearchParams();
-  const caseId = searchParams.get("caseId");
+  const caseId = searchParams.get('caseId');
 
   const [analyses, setAnalyses] = useState<AiAnalysis[]>([]);
   const [clinicalResults, setClinicalResults] = useState<ClinicalResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [error, setError] = useState('');
 
   useEffect(() => {
     if (!caseId) return;
@@ -133,25 +147,25 @@ export default function RespiratoryAiAnalysisPage() {
     const fetchData = async () => {
       try {
         setLoading(true);
-        setError("");
+        setError('');
 
         const loginResponse = await fetch(
-          "http://127.0.0.1:8000/api/auth/staff/login/",
+          'http://127.0.0.1:8000/api/auth/staff/login/',
           {
-            method: "POST",
+            method: 'POST',
             headers: {
-              "Content-Type": "application/json",
+              'Content-Type': 'application/json',
             },
             body: JSON.stringify({
-              hospital_code: "SUMIT001",
-              username: "doctor01",
-              password: "test1234",
+              hospital_code: 'SUMIT001',
+              username: 'doctor01',
+              password: 'test1234',
             }),
           }
         );
 
         if (!loginResponse.ok) {
-          throw new Error("의료진 로그인에 실패했습니다.");
+          throw new Error('의료진 로그인에 실패했습니다.');
         }
 
         const loginData = await loginResponse.json();
@@ -171,11 +185,11 @@ export default function RespiratoryAiAnalysisPage() {
         ]);
 
         if (!aiResponse.ok) {
-          throw new Error("AI 분석 결과를 불러오지 못했습니다.");
+          throw new Error('AI 분석 결과를 불러오지 못했습니다.');
         }
 
         if (!clinicalResponse.ok) {
-          throw new Error("의료진 확정 결과를 불러오지 못했습니다.");
+          throw new Error('의료진 확정 결과를 불러오지 못했습니다.');
         }
 
         const aiData = await aiResponse.json();
@@ -187,7 +201,7 @@ export default function RespiratoryAiAnalysisPage() {
         setError(
           err instanceof Error
             ? err.message
-            : "AI 분석 조회 중 오류가 발생했습니다."
+            : 'AI 분석 조회 중 오류가 발생했습니다.'
         );
       } finally {
         setLoading(false);
@@ -207,16 +221,16 @@ export default function RespiratoryAiAnalysisPage() {
     return map;
   }, [clinicalResults]);
 
-    if (!caseId) {
-        return (
-        <CaseSelectionRequired
-            title="AI 분석"
-            description="AI 분석 결과를 확인할 환자를 먼저 선택해주세요."
-        />
-        );
-    }
+  if (!caseId) {
+    return (
+      <CaseSelectionRequired
+        title="AI 분석"
+        description="AI 분석 결과를 확인할 환자를 먼저 선택해주세요."
+      />
+    );
+  }
 
-    if (loading) {
+  if (loading) {
     return (
       <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
         AI 분석 결과를 불러오는 중입니다.
@@ -297,11 +311,11 @@ function AiAnalysisCard({
         <div className="text-right">
           <span
             className={`rounded-full px-3 py-1 text-xs font-semibold ${
-              analysis.status === "SUCCEEDED"
-                ? "bg-emerald-50 text-emerald-700"
-                : analysis.status === "FAILED"
-                ? "bg-red-50 text-red-600"
-                : "bg-slate-100 text-slate-500"
+              analysis.status === 'SUCCEEDED'
+                ? 'bg-emerald-50 text-emerald-700'
+                : analysis.status === 'FAILED'
+                  ? 'bg-red-50 text-red-600'
+                  : 'bg-slate-100 text-slate-500'
             }`}
           >
             {analysis.status_label}
@@ -323,9 +337,7 @@ function AiAnalysisCard({
 
       <div className="mt-5 grid grid-cols-2 gap-4">
         <div className="rounded-2xl bg-emerald-50/50 p-5">
-          <p className="text-xs font-semibold text-emerald-600">
-            AI 예측
-          </p>
+          <p className="text-xs font-semibold text-emerald-600">AI 예측</p>
 
           <div className="mt-4">
             <AiDetail analysis={analysis} />
@@ -349,10 +361,7 @@ function AiAnalysisCard({
         </div>
       </div>
 
-      <ComparisonBadge
-        analysis={analysis}
-        clinicalResult={clinicalResult}
-      />
+      <ComparisonBadge analysis={analysis} clinicalResult={clinicalResult} />
     </section>
   );
 }
@@ -388,16 +397,10 @@ function AiDetail({ analysis }: { analysis: AiAnalysis }) {
           }
         />
 
-        <Info
-          label="검출 결절 수"
-          value={`${detail.ct.nodules.length}개`}
-        />
+        <Info label="검출 결절 수" value={`${detail.ct.nodules.length}개`} />
 
         {detail.ct.nodules.map((nodule) => (
-          <div
-            key={nodule.nodule_no}
-            className="rounded-xl bg-white px-4 py-3"
-          >
+          <div key={nodule.nodule_no} className="rounded-xl bg-white px-4 py-3">
             <p className="text-sm font-bold text-slate-700">
               Nodule {nodule.nodule_no}
             </p>
@@ -407,10 +410,10 @@ function AiDetail({ analysis }: { analysis: AiAnalysis }) {
             </p>
 
             <p className="mt-1 text-xs text-slate-500">
-              악성 위험도{" "}
+              악성 위험도{' '}
               {nodule.malignancy_risk !== null
                 ? `${nodule.malignancy_risk}%`
-                : "-"}
+                : '-'}
             </p>
           </div>
         ))}
@@ -452,10 +455,7 @@ function AiDetail({ analysis }: { analysis: AiAnalysis }) {
           label="예측 조직형"
           value={detail.pathology.predicted_histologic_type}
         />
-        <Info
-          label="예측 아형"
-          value={detail.pathology.predicted_subtype}
-        />
+        <Info label="예측 아형" value={detail.pathology.predicted_subtype} />
         <Info
           label="아형 신뢰도"
           value={formatPercent(detail.pathology.subtype_confidence)}
@@ -470,10 +470,7 @@ function AiDetail({ analysis }: { analysis: AiAnalysis }) {
         <Info label="T" value={detail.tnm.predicted_t} />
         <Info label="N" value={detail.tnm.predicted_n} />
         <Info label="M" value={detail.tnm.predicted_m} />
-        <Info
-          label="Stage"
-          value={detail.tnm.predicted_stage_group}
-        />
+        <Info label="Stage" value={detail.tnm.predicted_stage_group} />
         <Info
           label="신뢰도"
           value={formatPercent(detail.tnm.confidence)}
@@ -513,10 +510,7 @@ function AiDetail({ analysis }: { analysis: AiAnalysis }) {
   if (detail.treatment) {
     return (
       <div className="space-y-3">
-        <Info
-          label="AI 종합 의견"
-          value={detail.treatment.overall_opinion}
-        />
+        <Info label="AI 종합 의견" value={detail.treatment.overall_opinion} />
 
         <Info
           label="추천 치료 계획"
@@ -528,18 +522,13 @@ function AiDetail({ analysis }: { analysis: AiAnalysis }) {
           value={detail.treatment.targeted_therapy_recommendation}
         />
 
-        <Info
-          label="추천 근거"
-          value={detail.treatment.rationale}
-        />
+        <Info label="추천 근거" value={detail.treatment.rationale} />
       </div>
     );
   }
 
   return (
-    <p className="text-sm text-slate-400">
-      표시할 AI 상세 결과가 없습니다.
-    </p>
+    <p className="text-sm text-slate-400">표시할 AI 상세 결과가 없습니다.</p>
   );
 }
 
@@ -547,21 +536,13 @@ function ClinicalSummary({ result }: { result: ClinicalResult }) {
   const detail = result.result_detail ?? {};
 
   if (detail.xray) {
-    return (
-      <Info
-        label="확정 판정"
-        value={detail.xray.assessment_label}
-      />
-    );
+    return <Info label="확정 판정" value={detail.xray.assessment_label} />;
   }
 
   if (detail.ct) {
     return (
       <div className="space-y-3">
-        <Info
-          label="확정 판정"
-          value={detail.ct.overall_assessment_label}
-        />
+        <Info label="확정 판정" value={detail.ct.overall_assessment_label} />
         <Info
           label="악성 위험도"
           value={
@@ -581,14 +562,8 @@ function ClinicalSummary({ result }: { result: ClinicalResult }) {
           label="악성 여부"
           value={detail.pathology.malignancy_status_label}
         />
-        <Info
-          label="조직형"
-          value={detail.pathology.histologic_type}
-        />
-        <Info
-          label="세부 아형"
-          value={detail.pathology.subtype}
-        />
+        <Info label="조직형" value={detail.pathology.histologic_type} />
+        <Info label="세부 아형" value={detail.pathology.subtype} />
       </div>
     );
   }
@@ -625,11 +600,7 @@ function ClinicalSummary({ result }: { result: ClinicalResult }) {
     );
   }
 
-  return (
-    <p className="text-sm text-slate-400">
-      확정 상세 결과가 없습니다.
-    </p>
-  );
+  return <p className="text-sm text-slate-400">확정 상세 결과가 없습니다.</p>;
 }
 
 function ComparisonBadge({
@@ -646,22 +617,19 @@ function ComparisonBadge({
   return (
     <div
       className={`mt-4 rounded-xl px-4 py-3 text-sm font-semibold ${
-        comparison === "MATCH"
-          ? "bg-emerald-50 text-emerald-700"
-          : "bg-amber-50 text-amber-700"
+        comparison === 'MATCH'
+          ? 'bg-emerald-50 text-emerald-700'
+          : 'bg-amber-50 text-amber-700'
       }`}
     >
-      {comparison === "MATCH"
-        ? "AI 예측과 의료진 확정 결과가 일치합니다."
-        : "AI 예측과 의료진 확정 결과가 다릅니다. 의료진 확정 결과를 우선합니다."}
+      {comparison === 'MATCH'
+        ? 'AI 예측과 의료진 확정 결과가 일치합니다.'
+        : 'AI 예측과 의료진 확정 결과가 다릅니다. 의료진 확정 결과를 우선합니다.'}
     </div>
   );
 }
 
-function compareResult(
-  analysis: AiAnalysis,
-  clinicalResult?: ClinicalResult
-) {
+function compareResult(analysis: AiAnalysis, clinicalResult?: ClinicalResult) {
   if (!clinicalResult || !analysis.result_detail) return null;
 
   const ai = analysis.result_detail;
@@ -669,8 +637,8 @@ function compareResult(
 
   if (ai.xray && clinical.xray) {
     return ai.xray.assessment === clinical.xray.assessment
-      ? "MATCH"
-      : "MISMATCH";
+      ? 'MATCH'
+      : 'MISMATCH';
   }
 
   if (ai.tnm && clinical.tnm) {
@@ -679,7 +647,7 @@ function compareResult(
       ai.tnm.predicted_n === clinical.tnm.n_category &&
       ai.tnm.predicted_m === clinical.tnm.m_category;
 
-    return match ? "MATCH" : "MISMATCH";
+    return match ? 'MATCH' : 'MISMATCH';
   }
 
   if (ai.pathology && clinical.pathology) {
@@ -687,7 +655,7 @@ function compareResult(
       ai.pathology.predicted_histologic_type ===
       clinical.pathology.histologic_type;
 
-    return match ? "MATCH" : "MISMATCH";
+    return match ? 'MATCH' : 'MISMATCH';
   }
 
   return null;
@@ -697,24 +665,24 @@ function getClinicalResult(
   analysisType: string,
   clinicalMap: Map<string, ClinicalResult>
 ) {
-  if (analysisType === "XRAY_SCREENING") {
-    return clinicalMap.get("XRAY");
+  if (analysisType === 'XRAY_SCREENING') {
+    return clinicalMap.get('XRAY');
   }
 
-  if (analysisType === "CT_NODULE") {
-    return clinicalMap.get("CT");
+  if (analysisType === 'CT_NODULE') {
+    return clinicalMap.get('CT');
   }
 
-  if (analysisType === "PATHOLOGY_DIAGNOSIS") {
-    return clinicalMap.get("PATHOLOGY");
+  if (analysisType === 'PATHOLOGY_DIAGNOSIS') {
+    return clinicalMap.get('PATHOLOGY');
   }
 
-  if (analysisType === "TNM_STAGING") {
-    return clinicalMap.get("STAGING");
+  if (analysisType === 'TNM_STAGING') {
+    return clinicalMap.get('STAGING');
   }
 
-  if (analysisType === "GENE_PREDICTION") {
-    return clinicalMap.get("GENE");
+  if (analysisType === 'GENE_PREDICTION') {
+    return clinicalMap.get('GENE');
   }
 
   return undefined;
@@ -731,15 +699,13 @@ function Info({
 }) {
   return (
     <div
-      className={`rounded-xl bg-white px-4 py-3 ${
-        wide ? "col-span-full" : ""
-      }`}
+      className={`rounded-xl bg-white px-4 py-3 ${wide ? 'col-span-full' : ''}`}
     >
       <p className="text-xs text-slate-400">{label}</p>
 
       <p className="mt-1 break-words text-sm font-semibold text-slate-700">
-        {value === null || value === undefined || value === ""
-          ? "-"
+        {value === null || value === undefined || value === ''
+          ? '-'
           : String(value)}
       </p>
     </div>
@@ -747,8 +713,8 @@ function Info({
 }
 
 function formatPercent(value: number | string | null) {
-  if (value === null || value === undefined || value === "") {
-    return "-";
+  if (value === null || value === undefined || value === '') {
+    return '-';
   }
 
   const number = Number(value);
@@ -771,11 +737,11 @@ function formatDateTime(value: string) {
     return value;
   }
 
-  return date.toLocaleString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
+  return date.toLocaleString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
