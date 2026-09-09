@@ -1,0 +1,95 @@
+name: soomit-infra
+
+x-celery: &celery
+  build:
+    context: ../backend
+  image: soomit-backend:local
+  restart: unless-stopped
+  environment: &celery-environment
+    POSTGRES_HOST: ${POSTGRES_HOST:?Set POSTGRES_HOST}
+    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
+    POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
+    POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
+    CELERY_BROKER_URL: redis://redis:6379/0
+    CELERY_RESULT_BACKEND: redis://redis:6379/1
+  depends_on:
+    redis:
+      condition: service_healthy
+
+services:
+  celery_worker:
+    <<: *celery
+    environment:
+      <<: *celery-environment
+      ORTHANC_BASE_URL: http://orthanc:8042
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
+      ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
+    command: ["celery", "-A", "config", "worker", "-l", "info"]
+
+  celery_beat:
+    <<: *celery
+    command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule=/var/lib/celery/celerybeat-schedule"]
+    volumes:
+      - celery_beat_data:/var/lib/celery
+
+  redis:
+    image: redis:7-alpine
+    container_name: soomit-infra-redis
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  orthanc:
+    image: orthancteam/orthanc:26.7.0
+    container_name: soomit-infra-orthanc
+    restart: unless-stopped
+    ports:
+      - "${ORTHANC_HTTP_BIND_ADDRESS:-127.0.0.1}:8042:8042"
+      - "${ORTHANC_DICOM_BIND_ADDRESS:-127.0.0.1}:4242:4242"
+    environment:
+      DICOM_WEB_PLUGIN_ENABLED: "true"
+      WSI_PLUGIN_ENABLED: "true"
+      ORTHANC_JSON: |
+        {
+          "Name": "SoomIT Shared Orthanc",
+          "RemoteAccessAllowed": true,
+          "AuthenticationEnabled": true,
+          "RegisteredUsers": {
+            "${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}": "${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}"
+          },
+          "DicomWeb": {
+            "Enable": true,
+            "Root": "/dicom-web/"
+          },
+          "WholeSlideImaging": {
+            "EnableIIIF": true,
+            "OrthancPublicURL": "${ORTHANC_PUBLIC_URL:?Set ORTHANC_PUBLIC_URL}",
+            "ServeOpenSeadragon": false,
+            "ForcePowersOfTwoScaleFactors": true
+          }
+        }
+    volumes:
+      - orthanc_storage:/var/lib/orthanc/db
+    healthcheck:
+      test: ["CMD", "python3", "/probes/test-aliveness.py"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  celery_beat_data:
+    name: soomit_infra_celery_beat_data
+  redis_data:
+    name: soomit_infra_redis_data
+  orthanc_storage:
+    name: soomit_infra_orthanc_storage
