@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     "apps.patients",
     "apps.cases",
     "apps.pathology",
+    "apps.radiology",
     "apps.ai_results",
     "apps.clinical",
     "apps.scheduling",
