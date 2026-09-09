@@ -70,6 +70,15 @@ services:
       orthanc:
         condition: service_healthy
 
+  nextjs:
+    build:
+      context: ../frontend
+      args:
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL}
+    image: soomit-frontend:local
+    container_name: soomit-infra-nextjs
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     container_name: soomit-infra-redis
