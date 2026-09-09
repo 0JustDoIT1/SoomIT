@@ -8,7 +8,6 @@ from apps.cases.models import LungCancerCase
 from .models import AiAnalysis
 from .serializers import DoctorAiAnalysisSerializer
 
-
 @extend_schema(tags=["호흡기내과-AI분석"])
 class DoctorAiAnalysisListAPIView(ListAPIView):
     serializer_class = DoctorAiAnalysisSerializer

@@ -169,6 +169,19 @@ type CasePrescriptionItem = {
   route_label: string;
   administration_day: string | null;
   frequency: string | null;
+  instructions: string | null;
+};
+
+type CaseSafetyResult = {
+  id: string;
+  check_type: string;
+  check_type_label: string;
+  result: "PASS" | "WARNING" | "BLOCK";
+  result_label: string;
+  message: string;
+  acknowledged_by_user: string | null;
+  acknowledged_at: string | null;
+  acknowledgment_note: string | null;
 };
 
 type CasePrescription = {
@@ -181,7 +194,7 @@ type CasePrescription = {
   prescription_status: string;
   prescription_status_label: string;
   items: CasePrescriptionItem[];
-  safety_check_results: { id: string }[];
+  safety_check_results: CaseSafetyResult[];
   created_at: string;
   updated_at: string;
 };
@@ -882,6 +895,326 @@ export default function RespiratoryCaseDetailPage() {
     }
   };
 
+  const handleCasePrescriptionItemUpdate = async (
+    prescriptionId: string,
+    itemId: string,
+    finalDose: string,
+    instructions: string
+  ) => {
+    if (!caseId) return;
+
+    try {
+      setCasePrescriptionWorking(true);
+      setCasePrescriptionError("");
+      setCasePrescriptionMessage("");
+
+      const loginResponse = await fetch(
+        "http://127.0.0.1:8000/api/auth/staff/login/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            hospital_code: "SUMIT001",
+            username: "doctor01",
+            password: "test1234",
+          }),
+        }
+      );
+
+      if (!loginResponse.ok) {
+        throw new Error("의료진 로그인에 실패했습니다.");
+      }
+
+      const loginData = await loginResponse.json();
+      const headers = {
+        Authorization: `Bearer ${loginData.access}`,
+      };
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
+        {
+          method: "PATCH",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            final_dose: finalDose,
+            instructions,
+          }),
+        }
+      );
+
+      const data: CasePrescriptionItem & { detail?: string } =
+        await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "처방 약물 수정에 실패했습니다.");
+      }
+
+      const prescriptionResponse = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
+        { headers }
+      );
+
+      if (!prescriptionResponse.ok) {
+        throw new Error("처방 목록을 불러오지 못했습니다.");
+      }
+
+      const prescriptionData: CasePrescription[] =
+        await prescriptionResponse.json();
+
+      setCasePrescriptions(prescriptionData);
+      setCasePrescriptionMessage("처방 약물 정보가 수정되었습니다.");
+    } catch (err) {
+      setCasePrescriptionError(
+        err instanceof Error
+          ? err.message
+          : "처방 약물 수정에 실패했습니다."
+      );
+    } finally {
+      setCasePrescriptionWorking(false);
+    }
+  };
+
+  const handleCasePrescriptionSafetyCheck = async (
+    prescriptionId: string
+  ) => {
+    if (!caseId) return;
+
+    try {
+      setCasePrescriptionWorking(true);
+      setCasePrescriptionError("");
+      setCasePrescriptionMessage("");
+
+      const loginResponse = await fetch(
+        "http://127.0.0.1:8000/api/auth/staff/login/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            hospital_code: "SUMIT001",
+            username: "doctor01",
+            password: "test1234",
+          }),
+        }
+      );
+
+      if (!loginResponse.ok) {
+        throw new Error("의료진 로그인에 실패했습니다.");
+      }
+
+      const loginData = await loginResponse.json();
+      const headers = {
+        Authorization: `Bearer ${loginData.access}`,
+      };
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/safety-check/`,
+        {
+          method: "POST",
+          headers,
+        }
+      );
+
+      const data: { detail?: string } = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "Safety Check에 실패했습니다.");
+      }
+
+      const prescriptionResponse = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
+        { headers }
+      );
+
+      if (!prescriptionResponse.ok) {
+        throw new Error("처방 목록을 불러오지 못했습니다.");
+      }
+
+      const prescriptionData: CasePrescription[] =
+        await prescriptionResponse.json();
+
+      setCasePrescriptions(prescriptionData);
+      setCasePrescriptionMessage("Safety Check가 완료되었습니다.");
+    } catch (err) {
+      setCasePrescriptionError(
+        err instanceof Error ? err.message : "Safety Check에 실패했습니다."
+      );
+    } finally {
+      setCasePrescriptionWorking(false);
+    }
+  };
+
+  const handleCasePrescriptionAcknowledgeWarnings = async (
+    prescriptionId: string
+  ) => {
+    if (!caseId) return;
+
+    const note = window.prompt(
+      "WARNING 확인 사유를 입력하세요.",
+      "담당의 검토 후 처방 진행"
+    );
+
+    if (note === null) return;
+
+    try {
+      setCasePrescriptionWorking(true);
+      setCasePrescriptionError("");
+      setCasePrescriptionMessage("");
+
+      const loginResponse = await fetch(
+        "http://127.0.0.1:8000/api/auth/staff/login/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            hospital_code: "SUMIT001",
+            username: "doctor01",
+            password: "test1234",
+          }),
+        }
+      );
+
+      if (!loginResponse.ok) {
+        throw new Error("의료진 로그인에 실패했습니다.");
+      }
+
+      const loginData = await loginResponse.json();
+      const headers = {
+        Authorization: `Bearer ${loginData.access}`,
+      };
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/warnings/acknowledge/`,
+        {
+          method: "POST",
+          headers: {
+            ...headers,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            acknowledgment_note: note,
+          }),
+        }
+      );
+
+      const data: { detail?: string } = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "WARNING 확인 처리에 실패했습니다.");
+      }
+
+      const prescriptionResponse = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
+        { headers }
+      );
+
+      if (!prescriptionResponse.ok) {
+        throw new Error("처방 목록을 불러오지 못했습니다.");
+      }
+
+      const prescriptionData: CasePrescription[] =
+        await prescriptionResponse.json();
+
+      setCasePrescriptions(prescriptionData);
+      setCasePrescriptionMessage("WARNING 확인이 완료되었습니다.");
+    } catch (err) {
+      setCasePrescriptionError(
+        err instanceof Error
+          ? err.message
+          : "WARNING 확인 처리에 실패했습니다."
+      );
+    } finally {
+      setCasePrescriptionWorking(false);
+    }
+  };
+
+  const handleCasePrescriptionFinalize = async (
+    prescriptionId: string
+  ) => {
+    if (!caseId) return;
+
+    const confirmed = window.confirm(
+      "처방을 최종 확정하면 이후 수정할 수 없습니다.\n계속하시겠습니까?"
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setCasePrescriptionWorking(true);
+      setCasePrescriptionError("");
+      setCasePrescriptionMessage("");
+
+      const loginResponse = await fetch(
+        "http://127.0.0.1:8000/api/auth/staff/login/",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            hospital_code: "SUMIT001",
+            username: "doctor01",
+            password: "test1234",
+          }),
+        }
+      );
+
+      if (!loginResponse.ok) {
+        throw new Error("의료진 로그인에 실패했습니다.");
+      }
+
+      const loginData = await loginResponse.json();
+      const headers = {
+        Authorization: `Bearer ${loginData.access}`,
+      };
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
+        {
+          method: "POST",
+          headers,
+        }
+      );
+
+      const data: { detail?: string } = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.detail || "처방 최종 확정에 실패했습니다.");
+      }
+
+      const prescriptionResponse = await fetch(
+        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
+        { headers }
+      );
+
+      if (!prescriptionResponse.ok) {
+        throw new Error("처방 목록을 불러오지 못했습니다.");
+      }
+
+      const prescriptionData: CasePrescription[] =
+        await prescriptionResponse.json();
+
+      setCasePrescriptions(prescriptionData);
+      setCasePrescriptionMessage("처방이 최종 확정되었습니다.");
+    } catch (err) {
+      setCasePrescriptionError(
+        err instanceof Error
+          ? err.message
+          : "처방 최종 확정에 실패했습니다."
+      );
+    } finally {
+      setCasePrescriptionWorking(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
@@ -1037,7 +1370,7 @@ export default function RespiratoryCaseDetailPage() {
 
       {/* B. 업무 대분류 */}
       <aside
-        style={{ width: "220px" }}
+        style={{ width: "200px" }}
         className="shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-3 py-5"
       >
         <div className="mb-4 flex items-center gap-2 px-2">
@@ -1192,15 +1525,23 @@ export default function RespiratoryCaseDetailPage() {
                     className="rounded-xl border border-slate-100 bg-slate-50/50 p-4"
                   >
                     <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="font-bold text-slate-800">
+                      <div className="min-w-0">
+                        <p className="break-words font-bold text-slate-800">
                           {prescription.regimen_detail.regimen_name}
                         </p>
                         <p className="mt-1 text-xs text-slate-400">
                           {prescription.regimen_detail.regimen_code} · Cycle {prescription.cycle_number} · {prescription.phase_label}
                         </p>
                       </div>
-                      <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
+                      <span
+                        className={`shrink-0 rounded-full px-3 py-1 text-xs font-semibold ${
+                          prescription.prescription_status === "FINAL"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : prescription.prescription_status === "VALIDATED"
+                              ? "bg-sky-50 text-sky-700"
+                              : "bg-slate-100 text-slate-600"
+                        }`}
+                      >
                         {prescription.prescription_status_label}
                       </span>
                     </div>
@@ -1237,33 +1578,146 @@ export default function RespiratoryCaseDetailPage() {
                     {prescription.items.length > 0 && (
                       <div className="mt-3 overflow-hidden rounded-lg border border-slate-100 bg-white">
                         {prescription.items.map((item) => (
-                          <div
+                          <CasePrescriptionItemRow
                             key={item.id}
-                            className="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr] gap-2 border-t border-slate-100 px-3 py-2 text-xs first:border-t-0"
+                            item={item}
+                            prescriptionId={prescription.id}
+                            editable={
+                              prescription.prescription_status === "DRAFT"
+                            }
+                            working={casePrescriptionWorking}
+                            onSave={handleCasePrescriptionItemUpdate}
+                          />
+                        ))}
+                      </div>
+                    )}
+
+                    {prescription.safety_check_results.length > 0 && (
+                      <div className="mt-3 space-y-2">
+                        <p className="text-xs font-bold text-slate-700">
+                          Safety Check 결과
+                        </p>
+                        {prescription.safety_check_results.map((result) => (
+                          <div
+                            key={result.id}
+                            className={`rounded-lg border px-3 py-2 ${
+                              result.result === "BLOCK"
+                                ? "border-red-200 bg-red-50"
+                                : result.result === "WARNING"
+                                  ? "border-amber-200 bg-amber-50"
+                                  : "border-emerald-100 bg-emerald-50/50"
+                            }`}
                           >
-                            <span className="font-semibold text-slate-700">
-                              {item.drug_name}
-                              {item.ingredient_name && (
-                                <span className="ml-1 font-normal text-slate-400">
-                                  {item.ingredient_name}
-                                </span>
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-slate-700">
+                                  {result.check_type_label}
+                                </p>
+                                <p className="mt-1 break-words text-xs text-slate-500">
+                                  {result.message}
+                                </p>
+                              </div>
+                              <span
+                                className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                                  result.result === "BLOCK"
+                                    ? "bg-red-100 text-red-700"
+                                    : result.result === "WARNING"
+                                      ? "bg-amber-100 text-amber-700"
+                                      : "bg-emerald-100 text-emerald-700"
+                                }`}
+                              >
+                                {result.result_label || result.result}
+                              </span>
+                            </div>
+                            {result.result === "WARNING" &&
+                              result.acknowledged_at && (
+                                <p className="mt-2 text-[11px] text-amber-700">
+                                  의료진 확인 완료
+                                  {result.acknowledgment_note
+                                    ? ` · ${result.acknowledgment_note}`
+                                    : ""}
+                                </p>
                               )}
-                            </span>
-                            <span className="text-slate-500">
-                              계산 {item.calculated_dose ?? "-"}{item.unit ?? ""} · 최종 {item.final_dose ?? "-"}{item.unit ?? ""}
-                            </span>
-                            <span className="text-slate-500">
-                              {item.route_label || "-"} · {item.frequency || "-"}
-                            </span>
-                            <span className="text-right text-slate-400">
-                              투여일 {item.administration_day || "-"}
-                            </span>
                           </div>
                         ))}
                       </div>
                     )}
 
-                    <p className="mt-3 text-[11px] text-slate-400">
+                    {prescription.prescription_status === "DRAFT" && (
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={casePrescriptionWorking}
+                          onClick={() =>
+                            handleCasePrescriptionSafetyCheck(prescription.id)
+                          }
+                          className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        >
+                          {casePrescriptionWorking
+                            ? "실행 중..."
+                            : "Safety Check 실행"}
+                        </button>
+                      </div>
+                    )}
+
+                    {prescription.prescription_status === "VALIDATED" &&
+                      prescription.safety_check_results.some(
+                        (result) =>
+                          result.result === "WARNING" &&
+                          !result.acknowledged_at
+                      ) && (
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            type="button"
+                            disabled={casePrescriptionWorking}
+                            onClick={() =>
+                              handleCasePrescriptionAcknowledgeWarnings(
+                                prescription.id
+                              )
+                            }
+                            className="rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50"
+                          >
+                            WARNING 확인
+                          </button>
+                        </div>
+                      )}
+
+                    {prescription.safety_check_results.some(
+                      (result) => result.result === "BLOCK"
+                    ) && (
+                      <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">
+                        BLOCK 결과가 있어 처방을 최종 확정할 수 없습니다.
+                      </p>
+                    )}
+
+                    {prescription.prescription_status === "VALIDATED" && (
+                      <div className="mt-3 flex justify-end">
+                        <button
+                          type="button"
+                          disabled={
+                            casePrescriptionWorking ||
+                            prescription.safety_check_results.some(
+                              (result) => result.result === "BLOCK"
+                            ) ||
+                            prescription.safety_check_results.some(
+                              (result) =>
+                                result.result === "WARNING" &&
+                                !result.acknowledged_at
+                            )
+                          }
+                          onClick={() =>
+                            handleCasePrescriptionFinalize(prescription.id)
+                          }
+                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                        >
+                          {casePrescriptionWorking
+                            ? "처리 중..."
+                            : "처방 최종 확정"}
+                        </button>
+                      </div>
+                    )}
+
+                    <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
                       생성 {prescription.created_at} · 수정 {prescription.updated_at}
                     </p>
                   </article>
@@ -1347,7 +1801,7 @@ export default function RespiratoryCaseDetailPage() {
               </button>
 
               <p className="mt-3 text-[11px] leading-5 text-slate-400">
-                생성 조건은 기존 처방 backend 검증을 따릅니다. Safety Check는 이번 단계에서 실행하지 않습니다.
+                생성 조건과 Safety Check는 기존 처방 backend 검증을 따릅니다.
               </p>
             </section>
           </div>
@@ -1569,7 +2023,7 @@ export default function RespiratoryCaseDetailPage() {
                   <p className="text-xs font-semibold text-emerald-700">
                     종합 소견
                   </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                  <p className="mt-2 break-words whitespace-pre-wrap text-sm leading-6 text-slate-700">
                     {treatmentAnalysis.overall_opinion || "-"}
                   </p>
                 </div>
@@ -1577,7 +2031,7 @@ export default function RespiratoryCaseDetailPage() {
                   <p className="text-xs font-semibold text-sky-700">
                     추천 치료 계획
                   </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                  <p className="mt-2 break-words whitespace-pre-wrap text-sm leading-6 text-slate-700">
                     {treatmentAnalysis.recommended_plan || "-"}
                   </p>
                 </div>
@@ -1589,7 +2043,7 @@ export default function RespiratoryCaseDetailPage() {
                 <p className="text-sm font-bold text-slate-800">
                   표적치료 추천
                 </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                <p className="mt-3 break-words whitespace-pre-wrap text-sm leading-6 text-slate-600">
                   {treatmentAnalysis.targeted_therapy_recommendation ??
                     "표시할 표적치료 추천이 없습니다."}
                 </p>
@@ -1598,7 +2052,7 @@ export default function RespiratoryCaseDetailPage() {
                 <p className="text-sm font-bold text-slate-800">
                   추천 근거
                 </p>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-slate-600">
+                <p className="mt-3 break-words whitespace-pre-wrap text-sm leading-6 text-slate-600">
                   {treatmentAnalysis.rationale ??
                     "표시할 추천 근거가 없습니다."}
                 </p>
@@ -1661,7 +2115,7 @@ export default function RespiratoryCaseDetailPage() {
                       {candidate.match_reasons.map((reason) => (
                         <span
                           key={reason}
-                          className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
+                          className="max-w-full break-words rounded-full bg-emerald-50 px-3 py-1 text-xs font-medium text-emerald-700"
                         >
                           {reason}
                         </span>
@@ -1676,7 +2130,7 @@ export default function RespiratoryCaseDetailPage() {
 
                   <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-100 pt-4 text-xs">
                     <span className="text-slate-400">조직형</span>
-                    <span className="text-right font-medium text-slate-600">
+                    <span className="break-words text-right font-medium text-slate-600">
                       {candidate.regimen_detail.histology ?? "-"}
                     </span>
                     <span className="text-slate-400">Cycle</span>
@@ -1887,7 +2341,7 @@ export default function RespiratoryCaseDetailPage() {
               ].map(([label, aiValue, clinicalValue]) => (
                 <div
                   key={label}
-                  className="flex items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3"
+                  className="flex min-w-0 flex-wrap items-center gap-3 rounded-xl border border-slate-100 bg-slate-50/60 px-4 py-3"
                 >
                   <span className="font-bold text-emerald-700">{label}</span>
                   <span className="text-xs text-slate-400">
@@ -1897,7 +2351,15 @@ export default function RespiratoryCaseDetailPage() {
                   <span className="text-xs text-slate-400">
                     의료진 {clinicalValue ?? "-"}
                   </span>
-                  <span className="ml-auto rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-slate-500">
+                  <span
+                    className={`ml-auto rounded-full px-2 py-1 text-[11px] font-semibold ${
+                      aiValue && clinicalValue
+                        ? aiValue === clinicalValue
+                          ? "bg-emerald-50 text-emerald-700"
+                          : "bg-red-50 text-red-600"
+                        : "bg-white text-slate-500"
+                    }`}
+                  >
                     {aiValue && clinicalValue
                       ? aiValue === clinicalValue
                         ? "일치"
@@ -1944,6 +2406,106 @@ export default function RespiratoryCaseDetailPage() {
         </main>
         </div>
     );
+}
+
+function CasePrescriptionItemRow({
+  item,
+  prescriptionId,
+  editable,
+  working,
+  onSave,
+}: {
+  item: CasePrescriptionItem;
+  prescriptionId: string;
+  editable: boolean;
+  working: boolean;
+  onSave: (
+    prescriptionId: string,
+    itemId: string,
+    finalDose: string,
+    instructions: string
+  ) => Promise<void>;
+}) {
+  const [finalDose, setFinalDose] = useState(
+    item.final_dose !== null ? String(item.final_dose) : ""
+  );
+  const [instructions, setInstructions] = useState(
+    item.instructions ?? ""
+  );
+
+  return (
+    <div className="border-t border-slate-100 px-3 py-3 first:border-t-0">
+      <div className="grid grid-cols-[1.2fr_1fr_0.8fr_0.8fr] gap-2 text-xs">
+        <span className="font-semibold text-slate-700">
+          {item.drug_name}
+          {item.ingredient_name && (
+            <span className="ml-1 font-normal text-slate-400">
+              {item.ingredient_name}
+            </span>
+          )}
+        </span>
+        <span className="text-slate-500">
+          계산 {item.calculated_dose ?? "-"}{item.unit ?? ""}
+        </span>
+        <span className="text-slate-500">
+          {item.route_label || "-"} · {item.frequency || "-"}
+        </span>
+        <span className="text-right text-slate-400">
+          투여일 {item.administration_day || "-"}
+        </span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-[160px_1fr_auto] gap-3">
+        <label className="block">
+          <span className="text-[11px] text-slate-400">최종 용량</span>
+          <div className="mt-1 flex items-center gap-2">
+            <input
+              type="number"
+              min="0"
+              disabled={!editable}
+              value={finalDose}
+              onChange={(event) => setFinalDose(event.target.value)}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 disabled:bg-slate-100"
+            />
+            <span className="text-xs text-slate-500">
+              {item.unit}
+            </span>
+          </div>
+        </label>
+
+        <label className="block">
+          <span className="text-[11px] text-slate-400">투여 지시</span>
+          <input
+            type="text"
+            disabled={!editable}
+            value={instructions}
+            onChange={(event) => setInstructions(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 disabled:bg-slate-100"
+          />
+        </label>
+
+        <div className="flex items-end">
+          {editable && (
+            <button
+              type="button"
+              disabled={working || finalDose === ""}
+              onClick={() =>
+                onSave(
+                  prescriptionId,
+                  item.id,
+                  finalDose,
+                  instructions
+                )
+              }
+              className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              수정 저장
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function PatientInfoRow({
@@ -2313,7 +2875,7 @@ function Pdl1AiPanel({
             <p className="text-[11px] font-semibold text-slate-400">
               의료진 종합 해석
             </p>
-            <p className="mt-1 text-xs text-slate-600">
+            <p className="mt-1 break-words text-xs text-slate-600">
               {geneClinicalResult?.result_detail.gene?.interpretation ??
                 "확정 결과 없음"}
             </p>
@@ -2394,13 +2956,13 @@ function Pdl1AiPanel({
         <div className="mt-3 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
           <div className="flex justify-between gap-3">
             <span className="text-slate-400">의료진 해석</span>
-            <span className="text-right font-medium text-slate-600">
+            <span className="min-w-0 break-words text-right font-medium text-slate-600">
               {clinicalPdl1?.interpretation ?? "확정 결과 없음"}
             </span>
           </div>
           <div className="flex justify-between gap-3">
             <span className="text-slate-400">판독 소견</span>
-            <span className="text-right font-medium text-slate-600">
+            <span className="min-w-0 break-words text-right font-medium text-slate-600">
               {clinicalPdl1?.note ?? "-"}
             </span>
           </div>
