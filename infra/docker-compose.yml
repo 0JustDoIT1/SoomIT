@@ -1,11 +1,11 @@
 name: soomit-infra
 
-x-celery: &celery
+x-django-base: &django-base
   build:
     context: ../backend
   image: soomit-backend:local
   restart: unless-stopped
-  environment: &celery-environment
+  environment: &common-environment
     POSTGRES_HOST: ${POSTGRES_HOST:?Set POSTGRES_HOST}
     POSTGRES_PORT: ${POSTGRES_PORT:-5432}
     POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
@@ -20,31 +20,65 @@ x-celery: &celery
 
 services:
   celery_worker:
-    <<: *celery
+    <<: *django-base
     environment:
-      <<: *celery-environment
+      <<: *common-environment
       ORTHANC_BASE_URL: http://orthanc:8042
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
       ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
       ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
-    command: ["celery", "-A", "config", "worker", "-l", "info"]
+    command: ['celery', '-A', 'config', 'worker', '-l', 'info']
 
   celery_beat:
-    <<: *celery
-    command: ["celery", "-A", "config", "beat", "-l", "info", "--schedule=/var/lib/celery/celerybeat-schedule"]
+    <<: *django-base
+    command:
+      [
+        'celery',
+        '-A',
+        'config',
+        'beat',
+        '-l',
+        'info',
+        '--schedule=/var/lib/celery/celerybeat-schedule',
+      ]
     volumes:
       - celery_beat_data:/var/lib/celery
+
+  django:
+    <<: *django-base
+    environment:
+      <<: *common-environment
+      ORTHANC_BASE_URL: http://orthanc:8042
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
+      ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
+    command:
+      [
+        'gunicorn',
+        'config.wsgi:application',
+        '--bind',
+        '0.0.0.0:8000',
+        '--workers',
+        '3',
+      ]
+    ports:
+      - '127.0.0.1:8000:8000'
+    depends_on:
+      redis:
+        condition: service_healthy
+      orthanc:
+        condition: service_healthy
 
   redis:
     image: redis:7-alpine
     container_name: soomit-infra-redis
     restart: unless-stopped
     ports:
-      - "127.0.0.1:6379:6379"
+      - '127.0.0.1:6379:6379'
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ['CMD', 'redis-cli', 'ping']
       interval: 10s
       timeout: 5s
       retries: 5
@@ -54,11 +88,11 @@ services:
     container_name: soomit-infra-orthanc
     restart: unless-stopped
     ports:
-      - "${ORTHANC_HTTP_BIND_ADDRESS:-127.0.0.1}:8042:8042"
-      - "${ORTHANC_DICOM_BIND_ADDRESS:-127.0.0.1}:4242:4242"
+      - '${ORTHANC_HTTP_BIND_ADDRESS:-127.0.0.1}:8042:8042'
+      - '${ORTHANC_DICOM_BIND_ADDRESS:-127.0.0.1}:4242:4242'
     environment:
-      DICOM_WEB_PLUGIN_ENABLED: "true"
-      WSI_PLUGIN_ENABLED: "true"
+      DICOM_WEB_PLUGIN_ENABLED: 'true'
+      WSI_PLUGIN_ENABLED: 'true'
       ORTHANC_JSON: |
         {
           "Name": "SoomIT Shared Orthanc",
@@ -81,7 +115,7 @@ services:
     volumes:
       - orthanc_storage:/var/lib/orthanc/db
     healthcheck:
-      test: ["CMD", "python3", "/probes/test-aliveness.py"]
+      test: ['CMD', 'python3', '/probes/test-aliveness.py']
       interval: 10s
       timeout: 5s
       retries: 10
