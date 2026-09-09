@@ -87,11 +87,19 @@ services:
       - '80:80'
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - certbot_www:/var/www/certbot:ro
     depends_on:
       django:
         condition: service_started
       nextjs:
         condition: service_started
+
+  certbot:
+    image: certbot/certbot
+    container_name: soomit-infra-certbot
+    volumes:
+      - certbot_conf:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
 
   redis:
     image: redis:7-alpine
@@ -151,3 +159,7 @@ volumes:
     name: soomit_infra_redis_data
   orthanc_storage:
     name: soomit_infra_orthanc_storage
+  certbot_conf:
+    name: soomit_infra_certbot_conf
+  certbot_www:
+    name: soomit_infra_certbot_www
