@@ -27,3 +27,5 @@ Thumbs.db
 # Locally delivered AI model artifacts and validation samples
 model_validation/
 *.pth
+
+gcs-key.json
