@@ -1,104 +1,456 @@
 .page {
   min-height: 100vh;
+  position: relative;
+
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f7f9fc;
-  padding: 24px;
+
+  overflow: hidden;
+  padding: 38px 24px;
+
+  /* 기본 청록 베이스 */
+  background:
+    linear-gradient(
+      135deg,
+      #80e4df 0%,
+      #50d4d2 28%,
+      #b9f1ed 52%,
+      #48cfcd 76%,
+      #83e5df 100%
+    );
 }
 
+/* 큰 스머징 레이어 */
+.page::before {
+  content: "";
+  position: absolute;
+
+  inset: -180px;
+
+  background:
+    /* 중앙의 넓은 흰색 번짐 */
+    radial-gradient(
+      ellipse at 50% 42%,
+      rgba(255, 255, 255, 0.95) 0%,
+      rgba(255, 255, 255, 0.78) 18%,
+      rgba(255, 255, 255, 0.4) 36%,
+      rgba(255, 255, 255, 0.12) 52%,
+      transparent 68%
+    ),
+
+    /* 좌측 청록 스머지 */
+    radial-gradient(
+      circle at 4% 30%,
+      rgba(0, 191, 190, 0.88) 0%,
+      rgba(0, 191, 190, 0.55) 22%,
+      rgba(0, 191, 190, 0.2) 44%,
+      transparent 68%
+    ),
+
+    /* 우측 위 청록 스머지 */
+    radial-gradient(
+      circle at 94% 20%,
+      rgba(0, 205, 197, 0.78) 0%,
+      rgba(0, 205, 197, 0.48) 24%,
+      rgba(0, 205, 197, 0.16) 46%,
+      transparent 70%
+    ),
+
+    /* 좌측 아래 민트 */
+    radial-gradient(
+      circle at 18% 86%,
+      rgba(47, 216, 204, 0.65) 0%,
+      rgba(47, 216, 204, 0.35) 28%,
+      transparent 66%
+    ),
+
+    /* 우측 아래 진한 청록 */
+    radial-gradient(
+      circle at 88% 82%,
+      rgba(0, 159, 171, 0.7) 0%,
+      rgba(0, 159, 171, 0.35) 30%,
+      transparent 68%
+    );
+
+  filter: blur(95px);
+
+  transform: scale(1.12);
+
+  pointer-events: none;
+}
+
+/* 추가 흰색 안개 레이어 */
+.page::after {
+  content: "";
+  position: absolute;
+
+  inset: -120px;
+
+  background:
+    radial-gradient(
+      ellipse at 50% 44%,
+      rgba(255, 255, 255, 0.62) 0%,
+      rgba(255, 255, 255, 0.42) 28%,
+      rgba(255, 255, 255, 0.12) 52%,
+      transparent 75%
+    );
+
+  filter: blur(75px);
+
+  pointer-events: none;
+}
+
+/* 전체 로그인 영역 */
 .container {
+  position: relative;
+  z-index: 1;
+
   width: 100%;
-  max-width: 420px;
+  max-width: 500px;
 }
 
+/* 숨잇 로고 */
 .brand {
   text-align: center;
-  margin-bottom: 28px;
+
+  margin-bottom: 50px;
 }
 
 .title {
   margin: 0;
-  font-size: 32px;
-  font-weight: 700;
-  color: #111827;
+
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    "Apple SD Gothic Neo",
+    sans-serif;
+
+  font-size: 44px;
+  line-height: 1;
+
+  font-weight: 800;
+
+  letter-spacing: -2px;
+
+  color: #007f87;
 }
 
 .subtitle {
-  margin-top: 8px;
+  margin: 13px 0 0;
+
+  font-family:
+    "Inter",
+    "Pretendard",
+    sans-serif;
+
   font-size: 14px;
-  color: #6b7280;
+  font-weight: 500;
+
+  letter-spacing: 2px;
+
+  color: rgba(7, 80, 89, 0.62);
 }
 
+/* 로그인 외곽 박스 */
 .card {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  padding: 34px;
+  position: relative;
+
+  width: 100%;
+
+  padding: 54px 38px 26px;
+
+  /*
+    기존보다 훨씬 투명하게
+    배경 스머징이 박스를 통해 자연스럽게 보이도록
+  */
+  border: 4px solid rgba(255, 255, 255, 0.94);
+  border-radius: 20px;
+
   box-shadow:
-    0 8px 24px rgba(15, 23, 42, 0.06);
+    0 16px 36px rgba(0, 102, 108, 0.05),
+    inset 0 0 24px rgba(255, 255, 255, 0.03);
+
+  backdrop-filter: blur(1.5px);
+  -webkit-backdrop-filter: blur(1.5px);
 }
 
+
+/* 사람 아이콘 */
+.card::before {
+  content: "";
+
+  position: absolute;
+
+  top: -41px;
+  left: 50%;
+
+  width: 76px;
+  height: 76px;
+
+  transform: translateX(-50%);
+
+  border: 5px solid rgba(255, 255, 255, 0.98);
+  border-radius: 50%;
+
+  background:
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='36' r='15' fill='none' stroke='white' stroke-width='4'/%3E%3Cpath d='M25 79c2-18 12-28 25-28s23 10 25 28' fill='none' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E")
+      center / 62% 62% no-repeat,
+
+    linear-gradient(
+      145deg,
+      #2edbd3 0%,
+      #00b8bb 52%,
+      #00828c 100%
+    );
+
+  box-shadow:
+    0 9px 24px rgba(0, 127, 136, 0.2),
+    0 0 26px rgba(43, 222, 211, 0.28);
+}
+
+/* 로그인 */
 .cardTitle {
-  margin: 0 0 24px;
-  font-size: 20px;
+  margin: 0 0 6px;
+
+  text-align: center;
+
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 25px;
+  line-height: 1.3;
+
   font-weight: 700;
-  color: #111827;
+
+  letter-spacing: -1px;
+
+  color: #07525d;
 }
 
 .description {
-  margin: -14px 0 24px;
-  font-size: 14px;
+  margin: 0 0 22px;
+
+  text-align: center;
+
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 13px;
   line-height: 1.5;
-  color: #6b7280;
+
+  color: rgba(8, 78, 87, 0.65);
 }
 
+/* Form */
 .form {
   display: flex;
+
   flex-direction: column;
-  gap: 18px;
+
+  gap: 12px;
 }
 
+.form label {
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 12px;
+  font-weight: 600;
+
+  color: #075963;
+}
+
+/* 입력창 */
 .form input {
-  background-color: #fbfdff;
+  min-height: 42px;
+
+  padding-left: 15px;
+  padding-right: 15px;
+
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 13px;
+
+  color: #164e57;
+
+  background: rgba(255, 255, 255, 0.9);
+
+  border: 1px solid rgba(255, 255, 255, 0.92);
+
+  border-radius: 8px;
+
+  outline: none;
+
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
     background-color 160ms ease;
 }
 
-.form input:focus {
-  background-color: #ffffff;
-  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.12);
+.form input::placeholder {
+  color: #9bb4b7;
 }
 
+.form input:hover {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.form input:focus {
+  background: #ffffff;
+
+  border-color: #13bdbd;
+
+  box-shadow:
+    0 0 0 3px rgba(0, 184, 181, 0.12),
+    0 5px 15px rgba(0, 128, 136, 0.07);
+}
+
+/* 로그인 버튼 */
 .form button {
-  margin-top: 2px;
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.16);
+  min-height: 44px;
+
+  margin-top: 0px;
+
+  border: none;
+  border-radius: 9px;
+
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 12px;
+
+  font-weight: 700;
+
+  color: #ffffff;
+
+  background:
+    linear-gradient(
+      90deg,
+      #008e99 0%,
+      #00b5b7 52%,
+      #25d4cb 100%
+    );
+
+  box-shadow:
+    0 8px 20px rgba(0, 139, 150, 0.18);
+
+  transition:
+    transform 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease;
+}
+
+.form button:hover:not(:disabled) {
+  transform: translateY(-20px);
+
+  filter: saturate(1.08);
+
+  box-shadow:
+    0 11px 24px rgba(0, 139, 150, 0.23);
+}
+
+.form button:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .form button:disabled {
+  opacity: 0.65;
   box-shadow: none;
 }
 
 .notice {
-  margin: -4px 0 0;
+  margin: 1px 0 0;
+
   text-align: center;
-  color: #94a3b8;
-  font-size: 12px;
+
+  font-family:
+    "Pretendard",
+    "Noto Sans KR",
+    sans-serif;
+
+  font-size: 10px;
   line-height: 1.5;
+
+  color: rgba(9, 78, 87, 0.55);
 }
 
-@media (max-width: 480px) {
-  .page {
-    padding: 16px;
+/* 태블릿 */
+@media (max-width: 768px) {
+  .container {
+    max-width: 590px;
   }
 
   .brand {
-    margin-bottom: 22px;
+    margin-bottom: 56px;
+  }
+
+  .title {
+    font-size: 40px;
   }
 
   .card {
-    padding: 26px;
+    padding: 62px 44px 34px;
+  }
+}
+
+/* 모바일 */
+@media (max-width: 480px) {
+  .page {
+    padding: 28px 18px;
+  }
+
+  .container {
+    max-width: 100%;
+  }
+
+  .brand {
+    margin-bottom: 54px;
+  }
+
+  .title {
+    font-size: 34px;
+  }
+
+  .subtitle {
+    font-size: 11px;
+    letter-spacing: 1.4px;
+  }
+
+  .card {
+    padding:
+      58px
+      22px
+      28px;
+
+    border-width: 3px;
+
+    border-radius: 18px;
+  }
+
+  .card::before {
+    width: 86px;
+    height: 86px;
+
+    top: -46px;
+  }
+
+  .cardTitle {
+    font-size: 27px;
+  }
+
+  .description {
+    margin-bottom: 22px;
   }
 }

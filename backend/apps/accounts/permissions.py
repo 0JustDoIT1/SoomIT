@@ -3,7 +3,13 @@ from uuid import UUID
 from django.conf import settings
 from rest_framework.permissions import BasePermission
 
-from .models import DepartmentRole, User
+from .constants import (
+    ADMINISTRATION_DEPARTMENT_CODE,
+    PATHOLOGY_DEPARTMENT_CODE,
+    PULMONOLOGY_DEPARTMENT_CODE,
+    RADIOLOGY_DEPARTMENT_CODE,
+)
+from .models import DepartmentRole, HospitalAdmin, SystemAdmin, User
 
 
 def _get_token_claim(request, claim):
@@ -80,6 +86,43 @@ class IsActiveStaff(BasePermission):
         )
 
 
+class IsSystemAdmin(BasePermission):
+    message = "시스템 관리자 권한이 필요합니다."
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        return bool(
+            user
+            and user.is_authenticated
+            and user.account_status == User.AccountStatus.ACTIVE
+            and SystemAdmin.objects.filter(user_id=user.pk).exists()
+        )
+
+
+class IsHospitalAdmin(BasePermission):
+    message = "병원 관리자 권한이 필요합니다."
+
+    def has_permission(self, request, view):
+        user = getattr(request, "user", None)
+        if not (
+            user
+            and user.is_authenticated
+            and user.is_active
+            and user.account_status == User.AccountStatus.ACTIVE
+        ):
+            return False
+
+        try:
+            hospital_admin = HospitalAdmin.objects.select_related("hospital").get(
+                user_id=user.pk,
+            )
+        except HospitalAdmin.DoesNotExist:
+            return False
+
+        request.hospital_admin = hospital_admin
+        return True
+
+
 class IsSameHospital(BasePermission):
     message = "다른 병원의 리소스에는 접근할 수 없습니다."
 
@@ -113,23 +156,23 @@ class _DepartmentPermission(BasePermission):
 
 
 class IsRadiologyStaff(_DepartmentPermission):
-    # 저장소/DB에 실제 코드가 확인되기 전까지 기본 deny.
     department_setting = "SOOMIT_RADIOLOGY_DEPARTMENT_CODE"
+    default_department_code = RADIOLOGY_DEPARTMENT_CODE
 
 
 class IsPathologyStaff(_DepartmentPermission):
     department_setting = "SOOMIT_PATHOLOGY_DEPARTMENT_CODE"
-    default_department_code = "PATHOLOGY"
+    default_department_code = PATHOLOGY_DEPARTMENT_CODE
 
 
 class IsPulmonologyStaff(_DepartmentPermission):
     department_setting = "SOOMIT_PULMONOLOGY_DEPARTMENT_CODE"
-    default_department_code = "PULMONOLOGY"
+    default_department_code = PULMONOLOGY_DEPARTMENT_CODE
 
 
 class IsAdministrationStaff(_DepartmentPermission):
-    # 저장소/DB에 실제 코드가 확인되기 전까지 기본 deny.
     department_setting = "SOOMIT_ADMINISTRATION_DEPARTMENT_CODE"
+    default_department_code = ADMINISTRATION_DEPARTMENT_CODE
 
 
 class _RolePermission(BasePermission):

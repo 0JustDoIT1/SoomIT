@@ -8,6 +8,7 @@ export type RailItem = {
   label: string;
   href: string;
   icon: ReactNode;
+  matchPrefix?: boolean;
 };
 
 type ExpandableRailProps = {
@@ -42,7 +43,9 @@ export function ExpandableRail({
 
       <nav className="flex-1 space-y-1 px-2 py-4" aria-label={`${brand} 주요 메뉴`}>
         {items.map((item) => {
-          const active = pathname === item.href;
+          const active = pathname === item.href || Boolean(
+            item.matchPrefix && pathname.startsWith(`${item.href}/`),
+          );
           return (
             <Link
               key={item.href}
