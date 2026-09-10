@@ -6,13 +6,16 @@ export default function SidebarClock() {
   const [now, setNow] = useState<Date | null>(null);
 
   useEffect(() => {
-    setNow(new Date());
+    const initialTimer = window.setTimeout(() => setNow(new Date()), 0);
 
     const timer = setInterval(() => {
       setNow(new Date());
     }, 1000);
 
-    return () => clearInterval(timer);
+    return () => {
+      window.clearTimeout(initialTimer);
+      clearInterval(timer);
+    };
   }, []);
 
   if (!now) return null;

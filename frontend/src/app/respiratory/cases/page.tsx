@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
+import { API_BASE_URL } from "../_lib/respiratory-api";
 
 type CaseItem = {
   id: string;
@@ -16,6 +18,7 @@ type CaseItem = {
 
 export default function RespiratoryCasesPage() {
   const router = useRouter();
+  const { authorizedFetch } = useRespiratoryAuth();
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -28,35 +31,7 @@ export default function RespiratoryCasesPage() {
         setLoading(true);
         setError("");
 
-        const loginResponse = await fetch(
-          "http://127.0.0.1:8000/api/auth/staff/login/",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              hospital_code: "SUMIT001",
-              username: "doctor01",
-              password: "test1234",
-            }),
-          }
-        );
-
-        if (!loginResponse.ok) {
-          throw new Error("의료진 로그인에 실패했습니다.");
-        }
-
-        const loginData = await loginResponse.json();
-
-        const response = await fetch(
-          "http://127.0.0.1:8000/api/doctor/cases/",
-          {
-            headers: {
-              Authorization: `Bearer ${loginData.access}`,
-            },
-          }
-        );
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`);
 
         if (!response.ok) {
           throw new Error("담당 Case 목록을 불러오지 못했습니다.");
@@ -76,7 +51,7 @@ export default function RespiratoryCasesPage() {
     };
 
     fetchCases();
-  }, []);
+  }, [authorizedFetch]);
 
   const filteredCases = useMemo(() => {
     const keyword = search.trim().toLowerCase();

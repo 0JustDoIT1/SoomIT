@@ -1,7 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { notFound, useParams, useRouter } from "next/navigation";
+import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
+import { API_BASE_URL } from "../../_lib/respiratory-api";
+import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-sections";
+import { CaseWorkspaceEmpty } from "./case-workspace-empty";
+import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
+import { CurrentActionQueue } from "./current-action-queue";
+import { ResultReviewPanel } from "./result-review-panel";
+import { TnmReviewWorkspace } from "./tnm-review-workspace";
+import { CasePatientSidebar } from "./case-patient-sidebar";
+import { BottomActionBar } from "./bottom-action-bar";
+import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
+import { CaseOverviewPanel } from "./case-overview-panel";
+import { CaseChangeDialog } from "./case-change-dialog";
+import { deriveCurrentActions } from "../../_lib/derive-current-actions";
+import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
+import { canApplyCaseResponse } from "../../_lib/case-request-guard";
 
 type CaseItem = {
   id: string;
@@ -15,6 +31,14 @@ type CaseItem = {
   case_status: string;
   created_at: string;
   updated_at: string;
+  latest_clinician_decision?: {
+    source_stage: string;
+    decision_type: string;
+    target_stage: string | null;
+    reason: string | null;
+    decided_by: string;
+    decided_at: string;
+  } | null;
 };
 
 type Pdl1Result = {
@@ -44,7 +68,14 @@ type Pdl1Result = {
 };
 
 type TnmAnalysisResult = {
+  id?: string;
   analysis_type: string;
+  analysis_type_label?: string;
+  status?: string;
+  status_label?: string;
+  model_name?: string;
+  model_version_name?: string;
+  completed_at?: string | null;
   result_detail: {
     tnm?: {
       predicted_t: string | null;
@@ -57,7 +88,12 @@ type TnmAnalysisResult = {
 };
 
 type TnmClinicalResult = {
+  id?: string;
   exam_type: string;
+  exam_name?: string;
+  result_status?: string;
+  result_status_label?: string;
+  result_date?: string | null;
   result_detail: {
     tnm?: {
       t_category: string | null;
@@ -344,11 +380,34 @@ const prescriptionSubMenus: {
   },
 ];
 
+const workspaceMainMenus: typeof mainMenus = [
+  { key: "RESULTS", label: "검사·결과", description: "전문과 확정 결과" },
+  { key: "AI", label: "AI 분석 · TNM 검토", description: "AI 후보와 의료진 비교" },
+  { key: "TREATMENT", label: "치료 계획", description: "Regimen 및 치료 결정" },
+  { key: "PRESCRIPTION", label: "처방", description: "처방 및 Safety Check" },
+];
+const workspaceResultSubMenus: typeof resultSubMenus = [
+  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PATHOLOGY", label: "병리" }, { key: "STAGING", label: "TNM 병기" }, { key: "GENE", label: "바이오마커" },
+];
+const workspaceAiSubMenus: typeof aiSubMenus = [
+  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PATHOLOGY", label: "병리" }, { key: "STAGING", label: "TNM 검토" }, { key: "GENE", label: "바이오마커" },
+];
+const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
+  { key: "AI_RECOMMENDATION", label: "AI 치료 추천" }, { key: "REGIMEN", label: "Regimen 후보" }, { key: "FINAL_PLAN", label: "최종 치료계획" },
+];
+const workspacePrescriptionSubMenus: typeof prescriptionSubMenus = [
+  { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "SAFETY_CHECK", label: "Safety Check" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
+];
+// 기존 메뉴 상수는 기존 화면 동작과 타입 호환성을 위해 보존합니다.
+void [mainMenus, resultSubMenus, aiSubMenus, treatmentSubMenus, prescriptionSubMenus];
+
 export default function RespiratoryCaseDetailPage() {
   const params = useParams();
   const router = useRouter();
+  const { authorizedFetch } = useRespiratoryAuth();
 
   const caseId = params.caseId as string;
+  const isPreview = caseId === "preview";
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [selectedCase, setSelectedCase] =
@@ -357,16 +416,17 @@ export default function RespiratoryCaseDetailPage() {
   const [searchText, setSearchText] = useState("");
 
   const [selectedMainMenu, setSelectedMainMenu] =
-    useState<MainMenu>("RESULTS");
+  useState<MainMenu>("AI");
+  const [selectedInfoMenu, setSelectedInfoMenu] = useState<CaseInfoKey>("STAGING");
 
   const [expandedMainMenu, setExpandedMainMenu] =
-    useState<MainMenu | null>("RESULTS");
+  useState<MainMenu | null>("AI");
 
   const [selectedResultMenu, setSelectedResultMenu] =
   useState<ResultSubMenu>("XRAY");
 
   const [selectedAiMenu, setSelectedAiMenu] =
-  useState<AiSubMenu>("CT");
+  useState<AiSubMenu>("STAGING");
 
   const [pdl1Results, setPdl1Results] =
   useState<Pdl1Result[]>([]);
@@ -417,6 +477,12 @@ export default function RespiratoryCaseDetailPage() {
   useState("");
   const [casePrescriptionMessage, setCasePrescriptionMessage] =
   useState("");
+  const [regimenLoadError, setRegimenLoadError] = useState("");
+  const [treatmentLoadError, setTreatmentLoadError] = useState("");
+  const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
+  const [panelRetrying, setPanelRetrying] = useState<"REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
+  const activeCaseIdRef = useRef(caseId);
+  useEffect(() => { activeCaseIdRef.current = caseId; }, [caseId]);
 
   const [selectedTreatmentMenu, setSelectedTreatmentMenu] =
   useState<TreatmentSubMenu>("AI_RECOMMENDATION");
@@ -426,8 +492,29 @@ export default function RespiratoryCaseDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [clinicalResultError, setClinicalResultError] = useState("");
+  const [aiResultError, setAiResultError] = useState("");
+  const [resultRetryVersion, setResultRetryVersion] = useState(0);
+  const [tnmDirty, setTnmDirty] = useState(false);
+  const [pendingCaseId, setPendingCaseId] = useState<string | null>(null);
+  const [prescriptionItemDirty, setPrescriptionItemDirty] = useState<Record<string, boolean>>({});
+  const caseTriggerRef = useRef<HTMLElement | null>(null);
+
+  const treatmentBaseline = {
+    treatment_type: caseTreatmentDecision?.treatment_type ?? "",
+    selected_regimen: caseTreatmentDecision?.selected_regimen ?? "",
+    treatment_plan: caseTreatmentDecision?.treatment_plan ?? "",
+    targeted_therapy_plan: caseTreatmentDecision?.targeted_therapy_plan ?? "",
+    rationale: caseTreatmentDecision?.rationale ?? "",
+  };
+  const hasUnsavedTreatmentDraft = hasChangedFields({ ...caseTreatmentForm }, treatmentBaseline);
+  const hasUnsavedPrescriptionDraft = hasPrescriptionDraftChanges({ cycleNumber: casePrescriptionCycleNumber, phase: casePrescriptionPhase, cycleStartDate: casePrescriptionCycleStartDate, itemDirty: prescriptionItemDirty });
+  const hasUnacknowledgedWarnings = casePrescriptions.some((prescription) => prescription.safety_check_results.some((result) => result.result === "WARNING" && !result.acknowledged_at));
+  const hasUnsavedCaseChanges = combineUnsavedCaseChanges({ tnm: tnmDirty, treatment: hasUnsavedTreatmentDraft, prescription: hasUnsavedPrescriptionDraft, unacknowledgedWarnings: hasUnacknowledgedWarnings });
 
   useEffect(() => {
+    if (isPreview) return;
+    const controller = new AbortController();
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -436,42 +523,24 @@ export default function RespiratoryCaseDetailPage() {
         setCasePrescriptionError("");
         setCasePrescriptionMessage("");
         setCasePrescriptions([]);
-
-        const loginResponse = await fetch(
-          "http://127.0.0.1:8000/api/auth/staff/login/",
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              hospital_code: "SUMIT001",
-              username: "doctor01",
-              password: "test1234",
-            }),
-          }
-        );
-
-        if (!loginResponse.ok) {
-          throw new Error("의료진 로그인에 실패했습니다.");
-        }
-
-        const loginData = await loginResponse.json();
-
-        const headers = {
-          Authorization: `Bearer ${loginData.access}`,
-        };
+        setTnmAnalysisResults([]);
+        setTnmClinicalResults([]);
+        setRegimenCandidates([]);
+        setCaseTreatmentDecision(null);
+        setPrescriptionItemDirty({});
+        setCasePrescriptionCycleNumber("1");
+        setCasePrescriptionPhase("INDUCTION");
+        setCasePrescriptionCycleStartDate("");
+        setClinicalResultError("");
+        setAiResultError("");
+        setRegimenLoadError("");
+        setTreatmentLoadError("");
+        setPrescriptionLoadError("");
 
         const [caseListResponse, caseDetailResponse] =
           await Promise.all([
-            fetch(
-              "http://127.0.0.1:8000/api/doctor/cases/",
-              { headers }
-            ),
-            fetch(
-              `http://127.0.0.1:8000/api/doctor/cases/${caseId}/`,
-              { headers }
-            ),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/`, { signal: controller.signal }),
           ]);
 
         if (!caseListResponse.ok) {
@@ -492,72 +561,51 @@ export default function RespiratoryCaseDetailPage() {
         const caseDetailData: CaseItem =
           await caseDetailResponse.json();
 
-        setCases(caseListData);
-        setSelectedCase(caseDetailData);
-
-        const pdl1Response = await fetch(
-        `http://127.0.0.1:8000/api/pathology/cases/${caseId}/pdl1-results/`,
-        {
-            headers: {
-            Authorization: `Basic ${btoa("doctor01:test1234")}`,
-            },
-        }
-        );
-
-        if (pdl1Response.ok) {
-        const pdl1Data: Pdl1Result[] =
-            await pdl1Response.json();
-
-        setPdl1Results(pdl1Data);
-        }
+        if (!controller.signal.aborted) { setCases(caseListData); setSelectedCase(caseDetailData); }
+        setPdl1Results([]);
 
         const [tnmAnalysisResponse, tnmClinicalResponse] =
           await Promise.all([
-            fetch(
-              `http://127.0.0.1:8000/api/doctor/cases/${caseId}/ai-results/`,
-              { headers }
-            ),
-            fetch(
-              `http://127.0.0.1:8000/api/doctor/cases/${caseId}/clinical-results/`,
-              { headers }
-            ),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
           ]);
 
         if (tnmAnalysisResponse.ok) {
           const tnmAnalysisData: TnmAnalysisResult[] =
             await tnmAnalysisResponse.json();
 
-          setTnmAnalysisResults(tnmAnalysisData);
+          if (!controller.signal.aborted) setTnmAnalysisResults(tnmAnalysisData);
+        } else if (!controller.signal.aborted) {
+          setAiResultError(getPanelFetchError(tnmAnalysisResponse.status, "AI 결과"));
         }
 
         if (tnmClinicalResponse.ok) {
           const tnmClinicalData: TnmClinicalResult[] =
             await tnmClinicalResponse.json();
 
-          setTnmClinicalResults(tnmClinicalData);
+          if (!controller.signal.aborted) setTnmClinicalResults(tnmClinicalData);
+        } else if (!controller.signal.aborted) {
+          setClinicalResultError(getPanelFetchError(tnmClinicalResponse.status, "전문과 결과"));
         }
 
-        const regimenCandidateResponse = await fetch(
-          `http://127.0.0.1:8000/api/doctor/cases/${caseId}/regimen-candidates/`,
-          { headers }
-        );
+        const regimenCandidateResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal });
 
         if (regimenCandidateResponse.ok) {
           const regimenCandidateData: CaseRegimenCandidate[] =
             await regimenCandidateResponse.json();
 
-          setRegimenCandidates(regimenCandidateData);
+          if (!controller.signal.aborted) setRegimenCandidates(regimenCandidateData);
+        } else if (!controller.signal.aborted) {
+          setRegimenLoadError(getPanelFetchError(regimenCandidateResponse.status, "Regimen 후보"));
         }
 
-        const treatmentDecisionResponse = await fetch(
-          `http://127.0.0.1:8000/api/doctor/cases/${caseId}/treatment-decision/`,
-          { headers }
-        );
+        const treatmentDecisionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal });
 
         if (treatmentDecisionResponse.ok) {
           const treatmentDecisionData: CaseTreatmentDecision =
             await treatmentDecisionResponse.json();
 
+          if (controller.signal.aborted) return;
           setCaseTreatmentDecision(treatmentDecisionData);
           setCaseTreatmentForm({
             treatment_type: treatmentDecisionData.treatment_type ?? "",
@@ -577,36 +625,37 @@ export default function RespiratoryCaseDetailPage() {
             targeted_therapy_plan: "",
             rationale: "",
           });
+        } else if (!controller.signal.aborted) {
+          setTreatmentLoadError(getPanelFetchError(treatmentDecisionResponse.status, "치료 결정"));
         }
 
-        const prescriptionResponse = await fetch(
-          `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-          { headers }
-        );
+        const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal });
 
         if (prescriptionResponse.ok) {
           const prescriptionData: CasePrescription[] =
             await prescriptionResponse.json();
 
-          setCasePrescriptions(prescriptionData);
+          if (!controller.signal.aborted) setCasePrescriptions(prescriptionData);
         } else {
-          setCasePrescriptionError("처방 목록을 불러오지 못했습니다.");
+          setPrescriptionLoadError(getPanelFetchError(prescriptionResponse.status, "처방 목록"));
         }
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError(
           err instanceof Error
             ? err.message
             : "Case 조회 중 오류가 발생했습니다."
         );
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     if (caseId) {
       fetchData();
     }
-  }, [caseId]);
+    return () => controller.abort();
+  }, [authorizedFetch, caseId, isPreview, resultRetryVersion]);
 
   const filteredCases = cases.filter((item) => {
     const keyword = searchText.trim().toLowerCase();
@@ -627,7 +676,59 @@ export default function RespiratoryCaseDetailPage() {
       return;
     }
 
+    if (hasUnsavedCaseChanges) {
+      caseTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setPendingCaseId(id);
+      return;
+    }
     router.push(`/respiratory/cases/${id}`);
+  };
+
+  const discardDraftAndMove = () => {
+    if (!pendingCaseId) return;
+    const nextCaseId = pendingCaseId;
+    setPendingCaseId(null);
+    setTnmDirty(false);
+    setPrescriptionItemDirty({});
+    router.push(`/respiratory/cases/${nextCaseId}`);
+  };
+
+  const retryPanel = async (panel: "REGIMEN" | "TREATMENT" | "PRESCRIPTION") => {
+    const requestCaseId = caseId;
+    setPanelRetrying(panel);
+    try {
+      if (panel === "REGIMEN") {
+        setRegimenLoadError("");
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/regimen-candidates/`);
+        if (!response.ok) throw new Error(getPanelFetchError(response.status, "Regimen 후보"));
+        const data: CaseRegimenCandidate[] = await response.json();
+        if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setRegimenCandidates(data);
+      } else if (panel === "TREATMENT") {
+        setTreatmentLoadError("");
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/treatment-decision/`);
+        if (response.status === 404) { if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setCaseTreatmentDecision(null); return; }
+        if (!response.ok) throw new Error(getPanelFetchError(response.status, "치료 결정"));
+        const data: CaseTreatmentDecision = await response.json();
+        if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) {
+          setCaseTreatmentDecision(data);
+          setCaseTreatmentForm({ treatment_type: data.treatment_type ?? "", selected_regimen: data.selected_regimen ?? "", treatment_plan: data.treatment_plan ?? "", targeted_therapy_plan: data.targeted_therapy_plan ?? "", rationale: data.rationale ?? "" });
+        }
+      } else {
+        setPrescriptionLoadError("");
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/prescriptions/`);
+        if (!response.ok) throw new Error(getPanelFetchError(response.status, "처방 목록"));
+        const data: CasePrescription[] = await response.json();
+        if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setCasePrescriptions(data);
+      }
+    } catch (retryError) {
+      if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      const message = retryError instanceof Error ? retryError.message : "패널 조회에 실패했습니다.";
+      if (panel === "REGIMEN") setRegimenLoadError(message);
+      else if (panel === "TREATMENT") setTreatmentLoadError(message);
+      else setPrescriptionLoadError(message);
+    } finally {
+      if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
+    }
   };
 
   const handleMainMenuClick = (menu: MainMenu) => {
@@ -635,6 +736,24 @@ export default function RespiratoryCaseDetailPage() {
     setExpandedMainMenu((current) =>
       current === menu ? null : menu
     );
+  };
+
+  const handleInfoMenuSelect = (menu: CaseInfoKey) => {
+    setSelectedInfoMenu(menu);
+    if (menu === "OVERVIEW") return;
+    if (["XRAY", "CT", "PATHOLOGY"].includes(menu)) {
+      setSelectedMainMenu("RESULTS");
+      setSelectedResultMenu(menu as ResultSubMenu);
+      return;
+    }
+    if (menu === "STAGING" || menu === "GENE") {
+      setSelectedMainMenu("AI");
+      setSelectedAiMenu(menu);
+      return;
+    }
+    if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
+      setSelectedMainMenu(menu);
+    }
   };
 
   const latestPdl1Result =
@@ -671,6 +790,31 @@ export default function RespiratoryCaseDetailPage() {
   const treatmentAnalysis =
     treatmentAnalysisResult?.result_detail?.treatment;
 
+  const currentActions = selectedCase
+    ? deriveCurrentActions(
+        selectedCase,
+        tnmClinicalResults,
+        tnmAnalysisResults,
+        casePrescriptions,
+      )
+    : [];
+
+  const selectedClinicalResult = tnmClinicalResults.find(
+    (result) => result.exam_type === selectedResultMenu,
+  );
+
+  const selectedAiType = {
+    XRAY: "XRAY_SCREENING",
+    CT: "CT_NODULE",
+    PATHOLOGY: "PATHOLOGY_DIAGNOSIS",
+    STAGING: "TNM_STAGING",
+    GENE: "GENE_PREDICTION",
+  }[selectedResultMenu];
+
+  const selectedAiResult = tnmAnalysisResults.find(
+    (result) => result.analysis_type === selectedAiType,
+  );
+
   const handleCaseTreatmentDraftSave = async () => {
     if (!caseId) return;
 
@@ -679,34 +823,12 @@ export default function RespiratoryCaseDetailPage() {
       setCaseTreatmentError("");
       setCaseTreatmentMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/treatment-decision/`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${loginData.access}`,
           },
           body: JSON.stringify({
             treatment_type: caseTreatmentForm.treatment_type || null,
@@ -763,34 +885,10 @@ export default function RespiratoryCaseDetailPage() {
       setCaseTreatmentError("");
       setCaseTreatmentMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/confirm/`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/treatment-decision/confirm/`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${loginData.access}`,
-          },
         }
       );
 
@@ -825,36 +923,11 @@ export default function RespiratoryCaseDetailPage() {
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`,
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-      const headers = {
-        Authorization: `Bearer ${loginData.access}`,
-      };
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-        {
-          method: "POST",
-          headers: {
-            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -872,10 +945,7 @@ export default function RespiratoryCaseDetailPage() {
         throw new Error(data.detail || "처방 생성에 실패했습니다.");
       }
 
-      const prescriptionResponse = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-        { headers }
-      );
+      const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`);
 
       if (!prescriptionResponse.ok) {
         throw new Error("처방 목록을 불러오지 못했습니다.");
@@ -885,6 +955,9 @@ export default function RespiratoryCaseDetailPage() {
         await prescriptionResponse.json();
 
       setCasePrescriptions(prescriptionData);
+      setCasePrescriptionCycleNumber("1");
+      setCasePrescriptionPhase("INDUCTION");
+      setCasePrescriptionCycleStartDate("");
       setCasePrescriptionMessage("처방 DRAFT가 생성되었습니다.");
     } catch (err) {
       setCasePrescriptionError(
@@ -908,36 +981,11 @@ export default function RespiratoryCaseDetailPage() {
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-      const headers = {
-        Authorization: `Bearer ${loginData.access}`,
-      };
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
         {
           method: "PATCH",
           headers: {
-            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -954,10 +1002,7 @@ export default function RespiratoryCaseDetailPage() {
         throw new Error(data.detail || "처방 약물 수정에 실패했습니다.");
       }
 
-      const prescriptionResponse = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-        { headers }
-      );
+      const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`);
 
       if (!prescriptionResponse.ok) {
         throw new Error("처방 목록을 불러오지 못했습니다.");
@@ -989,35 +1034,10 @@ export default function RespiratoryCaseDetailPage() {
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/safety-check/`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-      const headers = {
-        Authorization: `Bearer ${loginData.access}`,
-      };
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/safety-check/`,
-        {
-          method: "POST",
-          headers,
         }
       );
 
@@ -1027,10 +1047,7 @@ export default function RespiratoryCaseDetailPage() {
         throw new Error(data.detail || "Safety Check에 실패했습니다.");
       }
 
-      const prescriptionResponse = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-        { headers }
-      );
+      const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`);
 
       if (!prescriptionResponse.ok) {
         throw new Error("처방 목록을 불러오지 못했습니다.");
@@ -1067,36 +1084,11 @@ export default function RespiratoryCaseDetailPage() {
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/warnings/acknowledge/`,
         {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-      const headers = {
-        Authorization: `Bearer ${loginData.access}`,
-      };
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/warnings/acknowledge/`,
-        {
-          method: "POST",
-          headers: {
-            ...headers,
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
@@ -1111,10 +1103,7 @@ export default function RespiratoryCaseDetailPage() {
         throw new Error(data.detail || "WARNING 확인 처리에 실패했습니다.");
       }
 
-      const prescriptionResponse = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-        { headers }
-      );
+      const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`);
 
       if (!prescriptionResponse.ok) {
         throw new Error("처방 목록을 불러오지 못했습니다.");
@@ -1152,35 +1141,10 @@ export default function RespiratoryCaseDetailPage() {
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
 
-      const loginResponse = await fetch(
-        "http://127.0.0.1:8000/api/auth/staff/login/",
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
         {
           method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            hospital_code: "SUMIT001",
-            username: "doctor01",
-            password: "test1234",
-          }),
-        }
-      );
-
-      if (!loginResponse.ok) {
-        throw new Error("의료진 로그인에 실패했습니다.");
-      }
-
-      const loginData = await loginResponse.json();
-      const headers = {
-        Authorization: `Bearer ${loginData.access}`,
-      };
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
-        {
-          method: "POST",
-          headers,
         }
       );
 
@@ -1190,10 +1154,7 @@ export default function RespiratoryCaseDetailPage() {
         throw new Error(data.detail || "처방 최종 확정에 실패했습니다.");
       }
 
-      const prescriptionResponse = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-        { headers }
-      );
+      const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`);
 
       if (!prescriptionResponse.ok) {
         throw new Error("처방 목록을 불러오지 못했습니다.");
@@ -1215,6 +1176,11 @@ export default function RespiratoryCaseDetailPage() {
     }
   };
 
+  if (isPreview) {
+    if (process.env.NODE_ENV === "production") notFound();
+    return <CaseWorkspaceEmpty isPreview />;
+  }
+
   if (loading) {
     return (
       <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
@@ -1224,18 +1190,17 @@ export default function RespiratoryCaseDetailPage() {
   }
 
   if (error || !selectedCase) {
-    return (
-      <div className="rounded-2xl bg-red-50 p-6 text-sm text-red-600">
-        {error || "Case를 찾을 수 없습니다."}
-      </div>
-    );
+    return <CaseWorkspaceEmpty errorMessage={error} />;
   }
 
   return (
-    <div className="flex min-h-[calc(100vh-80px)] w-full overflow-hidden bg-slate-50">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-50">
+      <CaseSummaryHeader caseData={selectedCase} />
+      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(1040px,1fr)] overflow-x-auto overflow-y-hidden">
+      <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
 
       {/* A. 담당 환자 목록 */}
-      <aside className="flex w-[220px] shrink-0 flex-col border-r border-slate-200 bg-white">
+      <aside className="hidden w-[220px] shrink-0 flex-col border-r border-slate-200 bg-white">
         <div className="border-b border-slate-100 px-4 py-5">
           <div className="flex items-center gap-2">
             <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
@@ -1368,12 +1333,15 @@ export default function RespiratoryCaseDetailPage() {
         </div>
       </aside>
 
-      {/* B. 업무 대분류 */}
+      <CaseInfoMenu selected={selectedInfoMenu} onSelect={handleInfoMenuSelect} />
+
+      {/* 기존 계층형 메뉴는 기능 호환을 위해 보존하고 화면에서는 숨깁니다. */}
       <aside
-        style={{ width: "200px" }}
-        className="shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-3 py-5"
+        style={{ width: "155px" }}
+        className="hidden shrink-0 overflow-y-auto border-r border-slate-200 bg-white px-3 py-5"
       >
-        <div className="mb-4 flex items-center gap-2 px-2">
+        <h2 className="mb-4 px-2 text-sm font-bold text-slate-900">정보</h2>
+        <div className="mb-4 hidden items-center gap-2 px-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
             B
           </span>
@@ -1384,7 +1352,7 @@ export default function RespiratoryCaseDetailPage() {
         </div>
 
         <div className="space-y-2">
-          {mainMenus.map((menu) => {
+          {workspaceMainMenus.map((menu) => {
             const active =
               selectedMainMenu === menu.key;
             const expanded =
@@ -1423,28 +1391,28 @@ export default function RespiratoryCaseDetailPage() {
 
                 {expanded && menu.key === "RESULTS" && (
                   <SubMenuList
-                    menus={resultSubMenus}
+                    menus={workspaceResultSubMenus}
                     selected={selectedResultMenu}
                     onSelect={setSelectedResultMenu}
                   />
                 )}
                 {expanded && menu.key === "AI" && (
                   <SubMenuList
-                    menus={aiSubMenus}
+                    menus={workspaceAiSubMenus}
                     selected={selectedAiMenu}
                     onSelect={setSelectedAiMenu}
                   />
                 )}
                 {expanded && menu.key === "TREATMENT" && (
                   <SubMenuList
-                    menus={treatmentSubMenus}
+                    menus={workspaceTreatmentSubMenus}
                     selected={selectedTreatmentMenu}
                     onSelect={setSelectedTreatmentMenu}
                   />
                 )}
                 {expanded && menu.key === "PRESCRIPTION" && (
                   <SubMenuList
-                    menus={prescriptionSubMenus}
+                    menus={workspacePrescriptionSubMenus}
                     selected={selectedPrescriptionMenu}
                     onSelect={setSelectedPrescriptionMenu}
                   />
@@ -1456,8 +1424,13 @@ export default function RespiratoryCaseDetailPage() {
       </aside>
 
       {/* D. 상세 영역 */}
-      <main className="min-w-0 flex-1 p-6">
-        <div className="mb-5 flex items-start justify-between">
+      <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0" : "min-w-0 overflow-y-auto p-4"}>
+        <CaseWorkflowBar currentStage={selectedCase.current_stage} />
+        <CurrentActionQueue actions={currentActions} onNavigate={(href) => router.push(href)} />
+        {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
+        {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
+        {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
+        <div className={selectedInfoMenu === "STAGING" ? "hidden" : "mb-5 flex items-start justify-between"}>
           <div>
             <div className="flex items-center gap-2">
               <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
@@ -1493,9 +1466,11 @@ export default function RespiratoryCaseDetailPage() {
           </span>
         </div>
 
-        {selectedMainMenu === "PRESCRIPTION" &&
+        {selectedInfoMenu === "OVERVIEW" ? (
+          <CaseOverviewPanel caseData={selectedCase} clinicalResultCount={tnmClinicalResults.length} aiResultCount={tnmAnalysisResults.length} />
+        ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
-          <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(280px,0.8fr)] items-start gap-4">
+          <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(280px,0.8fr)] items-start gap-4">
             <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
               <div>
                 <p className="text-xs font-semibold text-emerald-600">
@@ -1587,6 +1562,7 @@ export default function RespiratoryCaseDetailPage() {
                             }
                             working={casePrescriptionWorking}
                             onSave={handleCasePrescriptionItemUpdate}
+                            onDirtyChange={(dirty) => setPrescriptionItemDirty((current) => ({ ...current, [item.id]: dirty }))}
                           />
                         ))}
                       </div>
@@ -1804,10 +1780,10 @@ export default function RespiratoryCaseDetailPage() {
                 생성 조건과 Safety Check는 기존 처방 backend 검증을 따릅니다.
               </p>
             </section>
-          </div>
+          </PrescriptionSection>
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "FINAL_PLAN" ? (
-          <div className="space-y-4">
+          <TreatmentSection className="space-y-4">
             <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
               <div>
                 <p className="text-xs font-semibold text-emerald-600">
@@ -2000,11 +1976,11 @@ export default function RespiratoryCaseDetailPage() {
                 </button>
               </div>
             </section>
-          </div>
+          </TreatmentSection>
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "AI_RECOMMENDATION" ? (
         treatmentAnalysis ? (
-          <div className="space-y-4">
+          <TreatmentSection className="space-y-4">
             <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
               <div className="mb-4">
                 <p className="text-xs font-semibold text-emerald-600">
@@ -2065,7 +2041,7 @@ export default function RespiratoryCaseDetailPage() {
                 처방 초안 또는 추가 근거 데이터가 존재하지만 구조화된 상세 정보가 제공되지 않았습니다.
               </div>
             )}
-          </div>
+          </TreatmentSection>
         ) : (
           <div className="rounded-2xl border border-emerald-100 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-sm">
             AI 치료 추천 결과가 없습니다.
@@ -2073,7 +2049,7 @@ export default function RespiratoryCaseDetailPage() {
         )
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "REGIMEN" ? (
-        <div>
+        <TreatmentSection>
           <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
             <p className="text-sm font-semibold text-emerald-800">
               확정된 임상 결과와 TreatmentRule이 일치하는 Regimen 후보입니다.
@@ -2165,10 +2141,19 @@ export default function RespiratoryCaseDetailPage() {
               현재 확정된 임상 결과와 일치하는 Regimen 후보가 없습니다.
             </div>
           )}
-        </div>
+        </TreatmentSection>
         ) : selectedMainMenu === "AI" &&
         selectedAiMenu === "STAGING" ? (
-        <div className="space-y-4">
+        <div className="min-h-0 overflow-hidden">
+          <TnmReviewWorkspace
+            key={caseId}
+            aiTnm={tnmAnalysis}
+            clinicalTnm={tnmClinical}
+            modelName={tnmAnalysisResult?.model_name}
+            modelVersion={tnmAnalysisResult?.model_version_name}
+            onDirtyChange={setTnmDirty}
+          />
+          <div className="hidden">
           <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -2370,6 +2355,7 @@ export default function RespiratoryCaseDetailPage() {
               ))}
             </div>
           </section>
+          </div>
         </div>
         ) : selectedMainMenu === "AI" &&
         selectedAiMenu === "GENE" ? (
@@ -2377,6 +2363,15 @@ export default function RespiratoryCaseDetailPage() {
           result={latestPdl1Result}
           geneAnalysisResult={geneAnalysisResult}
           geneClinicalResult={geneClinicalResult}
+        />
+        ) : selectedMainMenu === "RESULTS" ? (
+        <ResultReviewPanel
+          stage={selectedResultMenu}
+          clinicalResult={selectedClinicalResult}
+          aiResult={selectedAiResult}
+          clinicalError={clinicalResultError}
+          aiError={aiResultError}
+          onRetry={() => setResultRetryVersion((current) => current + 1)}
         />
         ) : (
         <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
@@ -2403,7 +2398,10 @@ export default function RespiratoryCaseDetailPage() {
                 </div>
             </div>
             )}
+        {selectedInfoMenu === "STAGING" && <BottomActionBar />}
         </main>
+        </div>
+        {pendingCaseId && <CaseChangeDialog onCancel={() => setPendingCaseId(null)} onDiscard={discardDraftAndMove} returnFocusRef={caseTriggerRef} />}
         </div>
     );
 }
@@ -2414,6 +2412,7 @@ function CasePrescriptionItemRow({
   editable,
   working,
   onSave,
+  onDirtyChange,
 }: {
   item: CasePrescriptionItem;
   prescriptionId: string;
@@ -2425,6 +2424,7 @@ function CasePrescriptionItemRow({
     finalDose: string,
     instructions: string
   ) => Promise<void>;
+  onDirtyChange: (dirty: boolean) => void;
 }) {
   const [finalDose, setFinalDose] = useState(
     item.final_dose !== null ? String(item.final_dose) : ""
@@ -2432,6 +2432,12 @@ function CasePrescriptionItemRow({
   const [instructions, setInstructions] = useState(
     item.instructions ?? ""
   );
+  const baselineRef = useRef({ finalDose, instructions });
+  const saveItem = async () => {
+    await onSave(prescriptionId, item.id, finalDose, instructions);
+    baselineRef.current = { finalDose, instructions };
+    onDirtyChange(false);
+  };
 
   return (
     <div className="border-t border-slate-100 px-3 py-3 first:border-t-0">
@@ -2464,7 +2470,7 @@ function CasePrescriptionItemRow({
               min="0"
               disabled={!editable}
               value={finalDose}
-              onChange={(event) => setFinalDose(event.target.value)}
+              onChange={(event) => { const value = event.target.value; setFinalDose(value); onDirtyChange(value !== baselineRef.current.finalDose || instructions !== baselineRef.current.instructions); }}
               className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 disabled:bg-slate-100"
             />
             <span className="text-xs text-slate-500">
@@ -2479,7 +2485,7 @@ function CasePrescriptionItemRow({
             type="text"
             disabled={!editable}
             value={instructions}
-            onChange={(event) => setInstructions(event.target.value)}
+            onChange={(event) => { const value = event.target.value; setInstructions(value); onDirtyChange(finalDose !== baselineRef.current.finalDose || value !== baselineRef.current.instructions); }}
             className="mt-1 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300 disabled:bg-slate-100"
           />
         </label>
@@ -2489,14 +2495,7 @@ function CasePrescriptionItemRow({
             <button
               type="button"
               disabled={working || finalDose === ""}
-              onClick={() =>
-                onSave(
-                  prescriptionId,
-                  item.id,
-                  finalDose,
-                  instructions
-                )
-              }
+              onClick={saveItem}
               className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
             >
               수정 저장
@@ -2749,6 +2748,16 @@ function getAiMenuLabel(
   return menu;
 }
 
+function PanelRetryError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry: () => void }) {
+  return <div role="alert" className="mb-3 flex items-center justify-between gap-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700"><span>{message}</span><button type="button" disabled={retrying} onClick={onRetry} className="whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-50">{retrying ? "재시도 중" : "이 패널 다시 시도"}</button></div>;
+}
+
+function getPanelFetchError(status: number, label: string) {
+  if (status === 401) return `${label} 인증이 만료되었습니다. 다시 로그인해 주세요.`;
+  if (status === 403) return `${label} 조회 권한이 없습니다.`;
+  return `${label}를 불러오지 못했습니다.`;
+}
+
 function formatBirthDate(value: string) {
   if (!value) return "-";
 
@@ -2913,13 +2922,17 @@ function Pdl1AiPanel({
           )}
         </div>
 
+        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
+          PD-L1 AI 전용 조회는 JWT 인증 지원 확인 전까지 연동 대기 상태입니다. 의료진 확정 TPS는 임상 결과에서 계속 표시됩니다.
+        </p>
+
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div className="rounded-xl bg-emerald-50 p-4">
             <p className="text-xs font-medium text-slate-500">
               AI 예측 TPS 구간
             </p>
             <p className="mt-2 text-xl font-bold text-emerald-700">
-              {pdl1?.predicted_tps_range_label ?? "AI 데이터 없음"}
+              {pdl1?.predicted_tps_range_label ?? "인증 연동 대기"}
             </p>
           </div>
           <div className="rounded-xl bg-slate-50 p-4">

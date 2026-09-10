@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
+import { API_BASE_URL } from "../_lib/respiratory-api";
+import { DashboardWorkQueues } from "./dashboard-work-queues";
 
 type CaseItem = {
   id: string;
@@ -16,6 +19,7 @@ type CaseItem = {
 
 export default function RespiratoryDashboardPage() {
   const router = useRouter();
+  const { authorizedFetch } = useRespiratoryAuth();
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,30 +31,7 @@ export default function RespiratoryDashboardPage() {
         setLoading(true);
         setError("");
 
-        const loginResponse = await fetch("http://127.0.0.1:8000/api/auth/staff/login/", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-                hospital_code: "SUMIT001",
-                username: "doctor01",
-                password: "test1234",
-            }),
-            });
-
-            if (!loginResponse.ok) {
-            throw new Error("의료진 로그인에 실패했습니다.");
-            }
-
-            const loginData = await loginResponse.json();
-            const accessToken = loginData.access;
-
-            const response = await fetch("http://127.0.0.1:8000/api/doctor/cases/", {
-            headers: {
-                Authorization: `Bearer ${accessToken}`,
-            },
-            });
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`);
 
         if (!response.ok) {
           throw new Error("담당 Case 정보를 불러오지 못했습니다.");
@@ -70,7 +51,7 @@ export default function RespiratoryDashboardPage() {
     };
 
     fetchCases();
-  }, []);
+  }, [authorizedFetch]);
 
   const activeCases = useMemo(
     () => cases.filter((item) => item.case_status === "ACTIVE"),
@@ -119,11 +100,7 @@ export default function RespiratoryDashboardPage() {
   }
 
   if (error) {
-    return (
-      <div className="rounded-2xl bg-red-50 p-6 text-sm text-red-600">
-        {error}
-      </div>
-    );
+    return <DashboardWorkQueues cases={[]} error={error} />;
   }
 
   return (
@@ -137,6 +114,8 @@ export default function RespiratoryDashboardPage() {
           담당 Case와 진료 의사결정 업무 현황을 확인합니다.
         </p>
       </div>
+
+      <DashboardWorkQueues cases={cases} />
 
       <div className="grid grid-cols-4 gap-4">
         <StatCard

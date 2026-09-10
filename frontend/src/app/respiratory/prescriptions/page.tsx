@@ -1,8 +1,10 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CaseSelectionRequired from '../CaseSelectionRequired';
+import { useRespiratoryAuth } from '../_components/respiratory-auth-provider';
+import { API_BASE_URL } from '../_lib/respiratory-api';
 
 type RegimenDetail = {
   id: string;
@@ -101,10 +103,10 @@ export default function RespiratoryPrescriptionsPage() {
     </Suspense>
   );
 }
-
 function RespiratoryPrescriptionsContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get('caseId');
+  const { authorizedFetch } = useRespiratoryAuth();
 
   const [decision, setDecision] = useState<TreatmentDecision | null>(null);
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -118,25 +120,16 @@ function RespiratoryPrescriptionsContent() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!caseId) return;
 
     try {
       setLoading(true);
       setError('');
 
-      const token = await getAccessToken();
-      const headers = { Authorization: `Bearer ${token}` };
-
       const [decisionResponse, prescriptionResponse] = await Promise.all([
-        fetch(
-          `http://127.0.0.1:8000/api/doctor/cases/${caseId}/treatment-decision/`,
-          { headers }
-        ),
-        fetch(
-          `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
-          { headers }
-        ),
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`),
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`),
       ]);
 
       if (decisionResponse.ok) {
@@ -161,11 +154,12 @@ function RespiratoryPrescriptionsContent() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [authorizedFetch, caseId]);
 
   useEffect(() => {
-    loadData();
-  }, [caseId]);
+    const timer = window.setTimeout(() => void loadData(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadData]);
 
   const handleCreatePrescription = async () => {
     if (!caseId) return;
@@ -175,15 +169,12 @@ function RespiratoryPrescriptionsContent() {
       setError('');
       setMessage('');
 
-      const token = await getAccessToken();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/`,
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             cycle_number: Number(cycleNumber),
@@ -223,15 +214,12 @@ function RespiratoryPrescriptionsContent() {
       setError('');
       setMessage('');
 
-      const token = await getAccessToken();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
         {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             final_dose: finalDose,
@@ -265,15 +253,10 @@ function RespiratoryPrescriptionsContent() {
       setError('');
       setMessage('');
 
-      const token = await getAccessToken();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/safety-check/`,
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/safety-check/`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 
@@ -309,15 +292,12 @@ function RespiratoryPrescriptionsContent() {
       setError('');
       setMessage('');
 
-      const token = await getAccessToken();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/warnings/acknowledge/`,
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/warnings/acknowledge/`,
         {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             acknowledgment_note: note,
@@ -356,15 +336,10 @@ function RespiratoryPrescriptionsContent() {
       setError('');
       setMessage('');
 
-      const token = await getAccessToken();
-
-      const response = await fetch(
-        `http://127.0.0.1:8000/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
         {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         }
       );
 
@@ -896,25 +871,4 @@ function Field({
       {children}
     </div>
   );
-}
-
-async function getAccessToken() {
-  const response = await fetch('http://127.0.0.1:8000/api/auth/staff/login/', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      hospital_code: 'SUMIT001',
-      username: 'doctor01',
-      password: 'test1234',
-    }),
-  });
-
-  if (!response.ok) {
-    throw new Error('의료진 로그인에 실패했습니다.');
-  }
-
-  const data = await response.json();
-  return data.access as string;
 }

@@ -2,6 +2,8 @@
 import CaseSelectionRequired from '../CaseSelectionRequired';
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useRespiratoryAuth } from '../_components/respiratory-auth-provider';
+import { API_BASE_URL } from '../_lib/respiratory-api';
 
 type ClinicalResult = {
   id: string;
@@ -73,6 +75,7 @@ export default function RespiratoryResultsPage() {
 function RespiratoryResultsContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get('caseId');
+  const { authorizedFetch } = useRespiratoryAuth();
 
   const [results, setResults] = useState<ClinicalResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -80,61 +83,36 @@ function RespiratoryResultsContent() {
 
   useEffect(() => {
     if (!caseId) return;
+    const controller = new AbortController();
 
     const fetchResults = async () => {
       try {
         setLoading(true);
         setError('');
 
-        const loginResponse = await fetch(
-          'http://127.0.0.1:8000/api/auth/staff/login/',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              hospital_code: 'SUMIT001',
-              username: 'doctor01',
-              password: 'test1234',
-            }),
-          }
-        );
-
-        if (!loginResponse.ok) {
-          throw new Error('의료진 로그인에 실패했습니다.');
-        }
-
-        const loginData = await loginResponse.json();
-
-        const response = await fetch(
-          `http://127.0.0.1:8000/api/doctor/cases/${caseId}/clinical-results/`,
-          {
-            headers: {
-              Authorization: `Bearer ${loginData.access}`,
-            },
-          }
-        );
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal });
 
         if (!response.ok) {
           throw new Error('검사 결과를 불러오지 못했습니다.');
         }
 
         const data = await response.json();
-        setResults(data);
+        if (!controller.signal.aborted) setResults(data);
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError(
           err instanceof Error
             ? err.message
             : '검사 결과 조회 중 오류가 발생했습니다.'
         );
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     fetchResults();
-  }, [caseId]);
+    return () => controller.abort();
+  }, [authorizedFetch, caseId]);
 
   const resultMap = useMemo(() => {
     const map = new Map<string, ClinicalResult>();

@@ -3,6 +3,8 @@
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import CaseSelectionRequired from '../CaseSelectionRequired';
+import { useRespiratoryAuth } from '../_components/respiratory-auth-provider';
+import { API_BASE_URL } from '../_lib/respiratory-api';
 
 type AiAnalysis = {
   id: string;
@@ -135,6 +137,7 @@ export default function RespiratoryAiAnalysisPage() {
 function RespiratoryAiAnalysisContent() {
   const searchParams = useSearchParams();
   const caseId = searchParams.get('caseId');
+  const { authorizedFetch } = useRespiratoryAuth();
 
   const [analyses, setAnalyses] = useState<AiAnalysis[]>([]);
   const [clinicalResults, setClinicalResults] = useState<ClinicalResult[]>([]);
@@ -143,45 +146,16 @@ function RespiratoryAiAnalysisContent() {
 
   useEffect(() => {
     if (!caseId) return;
+    const controller = new AbortController();
 
     const fetchData = async () => {
       try {
         setLoading(true);
         setError('');
 
-        const loginResponse = await fetch(
-          'http://127.0.0.1:8000/api/auth/staff/login/',
-          {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              hospital_code: 'SUMIT001',
-              username: 'doctor01',
-              password: 'test1234',
-            }),
-          }
-        );
-
-        if (!loginResponse.ok) {
-          throw new Error('의료진 로그인에 실패했습니다.');
-        }
-
-        const loginData = await loginResponse.json();
-        const headers = {
-          Authorization: `Bearer ${loginData.access}`,
-        };
-
         const [aiResponse, clinicalResponse] = await Promise.all([
-          fetch(
-            `http://127.0.0.1:8000/api/doctor/cases/${caseId}/ai-results/`,
-            { headers }
-          ),
-          fetch(
-            `http://127.0.0.1:8000/api/doctor/cases/${caseId}/clinical-results/`,
-            { headers }
-          ),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
         ]);
 
         if (!aiResponse.ok) {
@@ -195,21 +169,22 @@ function RespiratoryAiAnalysisContent() {
         const aiData = await aiResponse.json();
         const clinicalData = await clinicalResponse.json();
 
-        setAnalyses(aiData);
-        setClinicalResults(clinicalData);
+        if (!controller.signal.aborted) { setAnalyses(aiData); setClinicalResults(clinicalData); }
       } catch (err) {
+        if (controller.signal.aborted) return;
         setError(
           err instanceof Error
             ? err.message
             : 'AI 분석 조회 중 오류가 발생했습니다.'
         );
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     };
 
     fetchData();
-  }, [caseId]);
+    return () => controller.abort();
+  }, [authorizedFetch, caseId]);
 
   const clinicalMap = useMemo(() => {
     const map = new Map<string, ClinicalResult>();
