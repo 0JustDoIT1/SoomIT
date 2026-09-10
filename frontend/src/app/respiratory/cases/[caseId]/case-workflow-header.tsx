@@ -42,7 +42,7 @@ export function CaseWorkflowBar({ currentStage }: { currentStage: string }) {
             return (
               <div key={stage.code} className="relative flex flex-1 items-start">
                 <div className="flex flex-1 flex-col items-center">
-                  <span data-current-stage={current ? "true" : "false"} className={`z-10 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${current ? "bg-blue-600 text-white ring-4 ring-blue-100" : "bg-slate-200 text-slate-500"}`}>{current ? "●" : "✓"}</span>
+                  <span data-current-stage={current ? "true" : "false"} className={`z-10 flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${current ? "bg-blue-600 text-white ring-4 ring-blue-100" : "border border-slate-300 bg-white text-slate-300"}`}>{current ? "●" : "○"}</span>
                   <span className={`mt-1.5 whitespace-nowrap text-[10px] font-semibold ${current ? "text-blue-700" : "text-slate-500"}`}>{stage.label}</span>
                 </div>
                 {index < CASE_STAGES.length - 1 && <span aria-hidden="true" className="absolute left-1/2 right-[-50%] top-2.5 h-px bg-slate-200" />}
@@ -51,7 +51,7 @@ export function CaseWorkflowBar({ currentStage }: { currentStage: string }) {
           })}
         </div>
       </div>
-      <p className="mt-1 text-center text-[9px] text-slate-400">현재 단계만 실제 Case 값으로 강조합니다. 검사별 상태는 오더 API 연동 후 표시됩니다.</p>
+      <p className="mt-1 text-center text-[10px] text-slate-500">실제 Case의 현재 단계만 강조됩니다. 검사별 완료 상태는 검사오더 API 연동 후 표시됩니다.</p>
     </section>
   );
 }

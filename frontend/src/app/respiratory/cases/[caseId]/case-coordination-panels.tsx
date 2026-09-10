@@ -9,14 +9,14 @@ type ClinicianDecision = {
 
 export function CaseCoordinationPanels({ decision }: { decision?: ClinicianDecision | null }) {
   return (
-    <div className="mb-5 grid grid-cols-2 gap-4">
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="mb-3 grid grid-cols-2 gap-3">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold text-emerald-700">호흡기내과 최종 판단</p>
+            <p className="text-xs font-semibold text-violet-700">호흡기내과 최종 판단</p>
             <h2 className="mt-1 text-base font-bold text-slate-900">단계 진행 결정</h2>
           </div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">저장 API 연동 대기</span>
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">저장 기능 준비 중</span>
         </div>
 
         {decision ? (
@@ -40,10 +40,10 @@ export function CaseCoordinationPanels({ decision }: { decision?: ClinicianDecis
         <div className="mt-3 grid grid-cols-2 gap-2"><button disabled className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-400">결정 검토</button><button disabled className="rounded-lg bg-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-400">결정 저장</button></div>
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <section className="rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-start justify-between gap-3">
-          <div><p className="text-xs font-semibold text-sky-700">검사 요청</p><h2 className="mt-1 text-base font-bold text-slate-900">Examination order</h2></div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">API 연동 대기</span>
+          <div><p className="text-xs font-semibold text-blue-700">검사 요청</p><h2 className="mt-1 text-base font-bold text-slate-900">검사 오더</h2></div>
+          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">기능 준비 중</span>
         </div>
         <p className="mt-3 text-xs leading-5 text-slate-500">검사 종류·목적·임상 소견·우선순위를 입력하고 기존 오더와 중복 여부를 확인한 뒤 확정하는 영역입니다.</p>
         <div className="mt-4 grid grid-cols-2 gap-3">

@@ -11,7 +11,8 @@ describe("Case workflow first stage", () => {
     expect(screen.getByText("바이오마커")).toBeTruthy();
     expect(container.querySelectorAll('[data-current-stage="true"]')).toHaveLength(1);
     expect(container.querySelector('[data-current-stage="true"]')?.textContent).toContain("●");
-    expect(container.textContent).not.toContain("완료");
+    expect(container.querySelectorAll('[data-current-stage="false"]')).toHaveLength(6);
+    expect(container.querySelector('[data-current-stage="false"]')?.textContent).toContain("○");
   });
 
   it("shows the specified empty state without inventing work", () => {

@@ -1,17 +1,13 @@
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 
 describe("EvidenceViewerPanel", () => {
-  it("opens a fixed preview while keeping unsupported annotation actions disabled", async () => {
-    const user = userEvent.setup();
+  it("keeps all viewer and annotation actions disabled until the API is connected", () => {
     render(<EvidenceViewerPanel />);
     expect(screen.getByText("연결된 영상 주석이 없습니다.")).toBeTruthy();
-    for (const label of ["T 소견에 참조", "N 소견에 참조", "M 소견에 참조"]) expect(screen.getByRole("button", { name: label })).toBeDisabled();
-    await user.click(screen.getByRole("button", { name: "원본 영상 전체화면" }));
-    expect(screen.getByRole("dialog", { name: "원본 영상 및 Annotation 전체화면 Viewer" })).toBeTruthy();
-    expect(screen.getAllByText("원본 영상 API 연동 대기").length).toBeGreaterThan(0);
+    for (const label of ["원본 영상 전체화면", "관심 위치 표시", "T 소견에 참조", "N 소견에 참조", "M 소견에 참조"]) expect(screen.getByRole("button", { name: label })).toBeDisabled();
+    expect(screen.getByText("원본 영상 및 Annotation API 연동 후 사용할 수 있습니다.")).toBeTruthy();
   });
 
   it("shows only fields supplied by a real image asset", () => {
@@ -22,14 +18,9 @@ describe("EvidenceViewerPanel", () => {
     expect(screen.getByText("Annotation API 연동 대기")).toBeTruthy();
   });
 
-  it("closes the viewer with Escape and restores focus", async () => {
-    const user = userEvent.setup();
+  it("does not open an unsupported viewer", () => {
     render(<EvidenceViewerPanel />);
-    const openButton = screen.getByRole("button", { name: "원본 영상 전체화면" });
-    await user.click(openButton);
-    expect(screen.getByRole("dialog")).toBeTruthy();
-    await user.keyboard("{Escape}");
+    expect(screen.getByRole("button", { name: "원본 영상 전체화면" })).toBeDisabled();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(openButton).toHaveFocus();
   });
 });

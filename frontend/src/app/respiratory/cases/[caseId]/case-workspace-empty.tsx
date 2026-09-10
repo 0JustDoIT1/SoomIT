@@ -8,6 +8,10 @@ import { CasePatientSidebar } from "./case-patient-sidebar";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
+import { CaseOverviewPanel } from "./case-overview-panel";
+import { ResultReviewPanel } from "./result-review-panel";
+import { BiomarkerSourceHeader } from "./biomarker-source-header";
+import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 
 export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorMessage?: string; isPreview?: boolean }) {
   const [selectedMenu, setSelectedMenu] = useState<CaseInfoKey>("STAGING");
@@ -22,12 +26,39 @@ export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorM
           <CaseWorkflowBar currentStage="" />
           <CurrentActionQueue actions={[]} onNavigate={() => undefined} />
           {errorMessage && <p role="alert" className="sr-only">{errorMessage}</p>}
-          <div className="min-h-0 overflow-hidden">
-            {selectedMenu === "STAGING" ? <TnmReviewWorkspace /> : <CaseInfoWorkspace menu={selectedMenu} />}
+          <div className="min-h-0 overflow-y-auto">
+            <PreviewWorkspace menu={selectedMenu} />
           </div>
           {selectedMenu === "STAGING" ? <BottomActionBar /> : <div className="-mx-2 border-t border-slate-200 bg-white" />}
         </main>
       </div>
     </div>
   );
+}
+
+const EMPTY_CASE = {
+  case_code: "-",
+  patient_name: "-",
+  patient_code: "-",
+  current_stage: "-",
+  case_status: "-",
+  primary_doctor_name: null,
+  updated_at: null,
+};
+
+function PreviewWorkspace({ menu }: { menu: CaseInfoKey }) {
+  if (menu === "OVERVIEW") return <CaseOverviewPanel caseData={EMPTY_CASE} clinicalResults={[]} aiResults={[]} />;
+  if (["XRAY", "CT", "PATHOLOGY"].includes(menu)) return <ResultReviewPanel stage={menu} />;
+  if (menu === "STAGING") return <TnmReviewWorkspace />;
+  if (menu === "GENE") {
+    return <div className="space-y-3"><BiomarkerSourceHeader /><div className="grid grid-cols-2 gap-3"><PreviewEmpty title="유전자 결과 비교" message="확인 가능한 전문과 확정 결과와 AI 분석 후보가 없습니다." /><PreviewEmpty title="PD-L1 결과 비교" message="전문과 확정 TPS가 없으며 PD-L1 AI 후보는 인증 연결 전까지 조회되지 않습니다." /></div></div>;
+  }
+  if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
+    return <div><TreatmentPrescriptionOverview treatment={null} prescriptions={[]} /><CaseInfoWorkspace menu={menu} /></div>;
+  }
+  return <CaseInfoWorkspace menu={menu} />;
+}
+
+function PreviewEmpty({ title, message }: { title: string; message: string }) {
+  return <section className="rounded-lg border border-slate-200 bg-white p-4"><h2 className="text-sm font-bold text-slate-900">{title}</h2><div className="mt-3 flex min-h-48 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-xs leading-5 text-slate-400">{message}</div></section>;
 }

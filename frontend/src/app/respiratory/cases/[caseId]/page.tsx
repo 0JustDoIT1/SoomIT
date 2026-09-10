@@ -14,6 +14,8 @@ import { CasePatientSidebar } from "./case-patient-sidebar";
 import { BottomActionBar } from "./bottom-action-bar";
 import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
 import { CaseOverviewPanel } from "./case-overview-panel";
+import { BiomarkerSourceHeader } from "./biomarker-source-header";
+import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
@@ -354,7 +356,7 @@ const treatmentSubMenus: {
   },
   {
     key: "REGIMEN",
-    label: "Regimen 후보",
+    label: "치료요법 후보",
   },
   {
     key: "FINAL_PLAN",
@@ -372,7 +374,7 @@ const prescriptionSubMenus: {
   },
   {
     key: "SAFETY_CHECK",
-    label: "Safety Check",
+    label: "안전성 검사",
   },
   {
     key: "FINAL_PRESCRIPTION",
@@ -383,8 +385,8 @@ const prescriptionSubMenus: {
 const workspaceMainMenus: typeof mainMenus = [
   { key: "RESULTS", label: "검사·결과", description: "전문과 확정 결과" },
   { key: "AI", label: "AI 분석 · TNM 검토", description: "AI 후보와 의료진 비교" },
-  { key: "TREATMENT", label: "치료 계획", description: "Regimen 및 치료 결정" },
-  { key: "PRESCRIPTION", label: "처방", description: "처방 및 Safety Check" },
+  { key: "TREATMENT", label: "치료 계획", description: "치료요법 및 치료 결정" },
+  { key: "PRESCRIPTION", label: "처방", description: "처방 및 안전성 검사" },
 ];
 const workspaceResultSubMenus: typeof resultSubMenus = [
   { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PATHOLOGY", label: "병리" }, { key: "STAGING", label: "TNM 병기" }, { key: "GENE", label: "바이오마커" },
@@ -393,10 +395,10 @@ const workspaceAiSubMenus: typeof aiSubMenus = [
   { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PATHOLOGY", label: "병리" }, { key: "STAGING", label: "TNM 검토" }, { key: "GENE", label: "바이오마커" },
 ];
 const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
-  { key: "AI_RECOMMENDATION", label: "AI 치료 추천" }, { key: "REGIMEN", label: "Regimen 후보" }, { key: "FINAL_PLAN", label: "최종 치료계획" },
+  { key: "AI_RECOMMENDATION", label: "AI 치료 추천" }, { key: "REGIMEN", label: "치료요법 후보" }, { key: "FINAL_PLAN", label: "최종 치료계획" },
 ];
 const workspacePrescriptionSubMenus: typeof prescriptionSubMenus = [
-  { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "SAFETY_CHECK", label: "Safety Check" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
+  { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "SAFETY_CHECK", label: "안전성 검사" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
 ];
 // 기존 메뉴 상수는 기존 화면 동작과 타입 호환성을 위해 보존합니다.
 void [mainMenus, resultSubMenus, aiSubMenus, treatmentSubMenus, prescriptionSubMenus];
@@ -1424,25 +1426,17 @@ export default function RespiratoryCaseDetailPage() {
       </aside>
 
       {/* D. 상세 영역 */}
-      <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0" : "min-w-0 overflow-y-auto p-4"}>
+      <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0" : "min-w-0 overflow-y-auto p-3"}>
         <CaseWorkflowBar currentStage={selectedCase.current_stage} />
         <CurrentActionQueue actions={currentActions} onNavigate={(href) => router.push(href)} />
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
-        <div className={selectedInfoMenu === "STAGING" ? "hidden" : "mb-5 flex items-start justify-between"}>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-100 text-xs font-bold text-emerald-700">
-                D
-              </span>
-
-              <span className="text-xs font-semibold text-emerald-700">
-                상세 화면
-              </span>
-            </div>
-
-            <h1 className="mt-3 text-2xl font-bold text-slate-800">
+        <div className={selectedInfoMenu === "STAGING" ? "hidden" : "mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1"}>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="h-5 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
+            <div className="min-w-0">
+              <h1 className="truncate text-sm font-bold text-slate-900">
               {getDetailTitle(
                 selectedMainMenu,
                 selectedResultMenu,
@@ -1450,28 +1444,31 @@ export default function RespiratoryCaseDetailPage() {
                 selectedTreatmentMenu,
                 selectedPrescriptionMenu
               )}
-            </h1>
-
-            <p className="mt-1 text-sm text-slate-500">
+              </h1>
+              <p className="truncate text-[10px] text-slate-400">
               {selectedCase.patient_name} ·{" "}
               {selectedCase.patient_code} ·{" "}
               {selectedCase.case_code}
-            </p>
+              </p>
+            </div>
           </div>
-
-          <span className="rounded-full bg-emerald-100 px-4 py-2 text-xs font-semibold text-emerald-700">
+          <span className="shrink-0 whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-semibold text-blue-700">
             {getStageLabel(
               selectedCase.current_stage
             )}
           </span>
         </div>
 
+        {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
+          <TreatmentPrescriptionOverview treatment={caseTreatmentDecision} prescriptions={casePrescriptions} />
+        )}
+
         {selectedInfoMenu === "OVERVIEW" ? (
-          <CaseOverviewPanel caseData={selectedCase} clinicalResultCount={tnmClinicalResults.length} aiResultCount={tnmAnalysisResults.length} />
+          <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
-          <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(280px,0.8fr)] items-start gap-4">
-            <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+          <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">
+            <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
               <div>
                 <p className="text-xs font-semibold text-emerald-600">
                   처방 조회
@@ -1493,11 +1490,11 @@ export default function RespiratoryCaseDetailPage() {
                 </p>
               )}
 
-              <div className="mt-4 space-y-3">
+              <div className="mt-3 space-y-2">
                 {casePrescriptions.map((prescription) => (
                   <article
                     key={prescription.id}
-                    className="rounded-xl border border-slate-100 bg-slate-50/50 p-4"
+                    className="rounded-lg border border-slate-100 bg-slate-50/50 p-3"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -1541,7 +1538,7 @@ export default function RespiratoryCaseDetailPage() {
                         </p>
                       </div>
                       <div className="rounded-lg bg-white px-3 py-2">
-                        <p className="text-slate-400">Safety Check</p>
+                        <p className="text-slate-400">안전성 검사</p>
                         <p className="mt-1 font-semibold text-slate-600">
                           {prescription.safety_check_results.length > 0
                             ? `결과 ${prescription.safety_check_results.length}건`
@@ -1571,7 +1568,7 @@ export default function RespiratoryCaseDetailPage() {
                     {prescription.safety_check_results.length > 0 && (
                       <div className="mt-3 space-y-2">
                         <p className="text-xs font-bold text-slate-700">
-                          Safety Check 결과
+                          안전성 검사 결과
                         </p>
                         {prescription.safety_check_results.map((result) => (
                           <div
@@ -1631,7 +1628,7 @@ export default function RespiratoryCaseDetailPage() {
                         >
                           {casePrescriptionWorking
                             ? "실행 중..."
-                            : "Safety Check 실행"}
+                            : "안전성 검사 실행"}
                         </button>
                       </div>
                     )}
@@ -1707,7 +1704,7 @@ export default function RespiratoryCaseDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
+            <section className="rounded-lg border border-sky-100 bg-white p-4 shadow-sm">
               <p className="text-xs font-semibold text-sky-600">
                 확정 치료결정 기반
               </p>
@@ -1715,7 +1712,7 @@ export default function RespiratoryCaseDetailPage() {
                 새 처방 생성
               </h2>
 
-              <div className="mt-4 space-y-4">
+              <div className="mt-3 space-y-3">
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-600">
                     Cycle 번호
@@ -1727,7 +1724,7 @@ export default function RespiratoryCaseDetailPage() {
                     onChange={(event) =>
                       setCasePrescriptionCycleNumber(event.target.value)
                     }
-                    className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-300"
                   />
                 </label>
 
@@ -1740,7 +1737,7 @@ export default function RespiratoryCaseDetailPage() {
                     onChange={(event) =>
                       setCasePrescriptionPhase(event.target.value)
                     }
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-emerald-300"
                   >
                     <option value="INDUCTION">INDUCTION</option>
                     <option value="MAINTENANCE">MAINTENANCE</option>
@@ -1757,7 +1754,7 @@ export default function RespiratoryCaseDetailPage() {
                     onChange={(event) =>
                       setCasePrescriptionCycleStartDate(event.target.value)
                     }
-                    className="mt-2 w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-emerald-300"
                   />
                 </label>
               </div>
@@ -1769,37 +1766,37 @@ export default function RespiratoryCaseDetailPage() {
                   !caseTreatmentDecision?.selected_regimen
                 }
                 onClick={handleCasePrescriptionCreate}
-                className="mt-5 w-full rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                className="mt-4 w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
                 {casePrescriptionWorking
                   ? "생성 중..."
-                  : "처방 DRAFT 생성"}
+                  : "임시 처방 생성"}
               </button>
 
               <p className="mt-3 text-[11px] leading-5 text-slate-400">
-                생성 조건과 Safety Check는 기존 처방 backend 검증을 따릅니다.
+                생성 조건과 안전성 검사는 기존 처방 검증 기준을 따릅니다.
               </p>
             </section>
           </PrescriptionSection>
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "FINAL_PLAN" ? (
-          <TreatmentSection className="space-y-4">
-            <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+          <TreatmentSection className="grid grid-cols-[minmax(280px,0.75fr)_minmax(0,1.25fr)] items-start gap-3">
+            <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
               <div>
                 <p className="text-xs font-semibold text-emerald-600">
-                  의료진 치료 결정 DRAFT
+                  의료진 치료 결정
                 </p>
                 <h2 className="mt-1 text-lg font-bold text-slate-800">
                   의료진 최종 치료계획
                 </h2>
                 <p className="mt-1 text-xs text-slate-400">
-                  현재 Case의 치료계획을 작성하고 DRAFT로 저장합니다.
+                  현재 Case의 치료계획을 작성하고 임시 저장합니다.
                 </p>
               </div>
 
               {!caseTreatmentDecision && (
                 <p className="mt-4 rounded-xl bg-slate-50 px-4 py-3 text-xs text-slate-500">
-                  아직 등록된 최종 치료계획이 없습니다. 새 DRAFT를 작성할 수 있습니다.
+                  아직 등록된 최종 치료계획이 없습니다. 새 치료계획을 작성할 수 있습니다.
                 </p>
               )}
 
@@ -1815,7 +1812,7 @@ export default function RespiratoryCaseDetailPage() {
                 </p>
               )}
 
-              <div className="mt-4 grid grid-cols-2 gap-4">
+              <div className="mt-3 grid grid-cols-1 gap-3">
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-600">
                     치료 유형
@@ -1829,7 +1826,7 @@ export default function RespiratoryCaseDetailPage() {
                         treatment_type: event.target.value,
                       }))
                     }
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
                   >
                     <option value="">선택</option>
                     <option value="CHEMOTHERAPY">항암화학요법</option>
@@ -1845,7 +1842,7 @@ export default function RespiratoryCaseDetailPage() {
 
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-600">
-                    선택 Regimen
+                    선택 치료요법
                   </span>
                   <select
                     value={caseTreatmentForm.selected_regimen}
@@ -1856,7 +1853,7 @@ export default function RespiratoryCaseDetailPage() {
                         selected_regimen: event.target.value,
                       }))
                     }
-                    className="mt-2 w-full rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
                   >
                     <option value="">선택 없음</option>
                     {regimenCandidates.map((candidate) => (
@@ -1872,8 +1869,8 @@ export default function RespiratoryCaseDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="grid grid-cols-2 gap-4">
+            <section className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+              <div className="grid grid-cols-2 gap-3">
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-600">
                     치료 계획
@@ -1887,9 +1884,9 @@ export default function RespiratoryCaseDetailPage() {
                         treatment_plan: event.target.value,
                       }))
                     }
-                    rows={3}
+                    rows={2}
                     placeholder="치료 계획을 입력하세요."
-                    className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
                   />
                 </label>
                 <label className="block">
@@ -1905,14 +1902,14 @@ export default function RespiratoryCaseDetailPage() {
                         targeted_therapy_plan: event.target.value,
                       }))
                     }
-                    rows={3}
+                    rows={2}
                     placeholder="표적치료 계획을 입력하세요."
-                    className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-300"
+                    className="mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
                   />
                 </label>
               </div>
 
-              <label className="mt-4 block">
+              <label className="mt-3 block">
                 <span className="text-xs font-semibold text-slate-600">
                   결정 근거
                 </span>
@@ -1925,9 +1922,9 @@ export default function RespiratoryCaseDetailPage() {
                       rationale: event.target.value,
                     }))
                   }
-                  rows={3}
+                  rows={2}
                   placeholder="치료 결정 근거를 입력하세요."
-                  className="mt-2 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none focus:border-emerald-300"
+                  className="mt-1.5 w-full resize-none rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none focus:border-emerald-300"
                 />
               </label>
 
@@ -1944,7 +1941,7 @@ export default function RespiratoryCaseDetailPage() {
                 </div>
               )}
 
-              <div className="mt-5 flex justify-end gap-3">
+              <div className="mt-3 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={handleCaseTreatmentDraftSave}
@@ -1953,9 +1950,9 @@ export default function RespiratoryCaseDetailPage() {
                     caseTreatmentConfirming ||
                     caseTreatmentConfirmed
                   }
-                  className="rounded-xl border border-emerald-200 bg-white px-5 py-3 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  className="rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {caseTreatmentSaving ? "저장 중..." : "DRAFT 저장"}
+                  {caseTreatmentSaving ? "저장 중..." : "임시 저장"}
                 </button>
                 <button
                   type="button"
@@ -1966,7 +1963,7 @@ export default function RespiratoryCaseDetailPage() {
                     caseTreatmentConfirming ||
                     caseTreatmentConfirmed
                   }
-                  className="rounded-xl bg-emerald-600 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
+                  className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
                   {caseTreatmentConfirming
                     ? "확정 중..."
@@ -2052,7 +2049,7 @@ export default function RespiratoryCaseDetailPage() {
         <TreatmentSection>
           <div className="mb-4 rounded-xl border border-emerald-100 bg-emerald-50/60 px-4 py-3">
             <p className="text-sm font-semibold text-emerald-800">
-              확정된 임상 결과와 TreatmentRule이 일치하는 Regimen 후보입니다.
+                  확정된 임상 결과와 치료 규칙이 일치하는 치료요법 후보입니다.
             </p>
             <p className="mt-1 text-xs text-emerald-600">
               표시 순서는 기존 우선순위 기준을 따르며 최종 치료 결정은 의료진이 진행합니다.
@@ -2138,7 +2135,7 @@ export default function RespiratoryCaseDetailPage() {
             </div>
           ) : (
             <div className="rounded-2xl border border-emerald-100 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-sm">
-              현재 확정된 임상 결과와 일치하는 Regimen 후보가 없습니다.
+              현재 확정된 임상 결과와 일치하는 치료요법 후보가 없습니다.
             </div>
           )}
         </TreatmentSection>
@@ -2812,22 +2809,25 @@ function Pdl1AiPanel({
 
   return (
     <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] items-start gap-4">
+      <BiomarkerSourceHeader />
       <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
-        <div>
-          <p className="text-base font-bold text-slate-800">
-            유전자 분석
+        <div className="flex items-start justify-between gap-3">
+          <div><p className="text-[10px] font-semibold text-slate-500">유전자 검사</p><p className="mt-0.5 text-base font-bold text-slate-800">
+            유전자 결과 비교
           </p>
           <p className="mt-1 text-xs text-slate-400">
-            AI 예측과 의료진 확정 결과를 함께 표시합니다.
+            전문과 확정 결과와 유전자 AI 분석 결과를 항목별로 비교합니다.
           </p>
+          </div>
+          <span className="whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">확정 결과 우선</span>
         </div>
 
         <div className="mt-4 overflow-hidden rounded-xl border border-slate-100">
           <div className="grid grid-cols-[0.8fr_1fr_0.7fr_1fr] gap-2 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">
             <span>유전자</span>
-            <span>AI 예측</span>
-            <span>확률</span>
-            <span>의료진 판정</span>
+            <span>AI 분석 결과</span>
+            <span>AI 확률</span>
+            <span>전문과 확정</span>
           </div>
           {geneSymbols.map((geneSymbol) => {
             const gene = genes.find(
@@ -2846,7 +2846,7 @@ function Pdl1AiPanel({
                   {geneSymbol}
                 </span>
                 <span className="text-emerald-700">
-                  {gene?.predicted_status_label ?? "AI 데이터 없음"}
+                  {gene?.predicted_status_label ?? "AI 결과 없음"}
                 </span>
                 <span className="text-slate-500">
                   {gene?.predicted_probability !== null &&
@@ -2874,7 +2874,7 @@ function Pdl1AiPanel({
           })}
           {geneSymbols.length === 0 && (
             <div className="border-t border-slate-100 px-3 py-8 text-center text-xs text-slate-400">
-              AI 데이터 및 의료진 확정 결과가 없습니다.
+              조회된 유전자 AI 분석 결과와 전문과 확정 결과가 없습니다.
             </div>
           )}
         </div>
@@ -2882,7 +2882,7 @@ function Pdl1AiPanel({
         <div className="mt-4 grid grid-cols-2 gap-3">
           <div className="rounded-xl bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-semibold text-slate-400">
-              의료진 종합 해석
+              전문과 종합 해석
             </p>
             <p className="mt-1 break-words text-xs text-slate-600">
               {geneClinicalResult?.result_detail.gene?.interpretation ??
@@ -2891,7 +2891,7 @@ function Pdl1AiPanel({
           </div>
           <div className="rounded-xl bg-slate-50 px-4 py-3">
             <p className="text-[11px] font-semibold text-slate-400">
-              추가 검사 권고
+              전문과 추가 검사 권고
             </p>
             <p className="mt-1 text-xs font-semibold text-slate-600">
               {geneClinicalResult?.result_detail.gene
@@ -2908,11 +2908,12 @@ function Pdl1AiPanel({
       <section className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div>
-            <p className="text-base font-bold text-slate-800">
-              PD-L1 분석
+            <p className="text-[10px] font-semibold text-slate-500">PD-L1 검사</p>
+            <p className="mt-0.5 text-base font-bold text-slate-800">
+              PD-L1 결과 비교
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              AI 예측 구간과 의료진 확정 TPS를 구분해 표시합니다.
+              전문과 확정 TPS와 AI 예측 구간을 서로 다른 출처로 표시합니다.
             </p>
           </div>
           {result && (
@@ -2923,31 +2924,34 @@ function Pdl1AiPanel({
         </div>
 
         <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          PD-L1 AI 전용 조회는 JWT 인증 지원 확인 전까지 연동 대기 상태입니다. 의료진 확정 TPS는 임상 결과에서 계속 표시됩니다.
+          PD-L1 AI 결과는 인증 연결 전까지 조회할 수 없습니다. 전문과 확정 TPS는 임상 결과에서 계속 표시됩니다.
         </p>
 
         <div className="mt-4 grid grid-cols-3 gap-3">
-          <div className="rounded-xl bg-emerald-50 p-4">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+            <p className="text-[10px] font-semibold text-blue-600">PD-L1 AI 분석 후보</p>
             <p className="text-xs font-medium text-slate-500">
-              AI 예측 TPS 구간
+              예측 TPS 구간
             </p>
-            <p className="mt-2 text-xl font-bold text-emerald-700">
+            <p className="mt-2 text-xl font-bold text-blue-700">
               {pdl1?.predicted_tps_range_label ?? "인증 연동 대기"}
             </p>
           </div>
-          <div className="rounded-xl bg-slate-50 p-4">
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
+            <p className="text-[10px] font-semibold text-blue-600">PD-L1 AI 분석 후보</p>
             <p className="text-xs font-medium text-slate-500">
-              AI 신뢰도
+              분석 신뢰도
             </p>
             <p className="mt-2 text-xl font-bold text-slate-700">
               {confidence !== null ? `${confidence.toFixed(2)}%` : "-"}
             </p>
           </div>
-          <div className="rounded-xl bg-sky-50 p-4">
+          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
+            <p className="text-[10px] font-semibold text-emerald-600">전문과 확정 결과</p>
             <p className="text-xs font-medium text-slate-500">
-              의료진 확정 TPS
+              확정 TPS
             </p>
-            <p className="mt-2 text-xl font-bold text-sky-700">
+            <p className="mt-2 text-xl font-bold text-emerald-700">
               {clinicalPdl1?.tps_percent !== null &&
               clinicalPdl1?.tps_percent !== undefined
                 ? `${clinicalPdl1.tps_percent}%`
@@ -2968,13 +2972,13 @@ function Pdl1AiPanel({
 
         <div className="mt-3 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
           <div className="flex justify-between gap-3">
-            <span className="text-slate-400">의료진 해석</span>
+            <span className="text-slate-400">전문과 확정 해석</span>
             <span className="min-w-0 break-words text-right font-medium text-slate-600">
               {clinicalPdl1?.interpretation ?? "확정 결과 없음"}
             </span>
           </div>
           <div className="flex justify-between gap-3">
-            <span className="text-slate-400">판독 소견</span>
+            <span className="text-slate-400">전문과 판독 소견</span>
             <span className="min-w-0 break-words text-right font-medium text-slate-600">
               {clinicalPdl1?.note ?? "-"}
             </span>
@@ -2999,7 +3003,7 @@ function Pdl1AiPanel({
         </div>
 
         <p className="mt-3 text-[11px] leading-5 text-amber-700">
-          AI 결과는 TPS 예측 구간이며 의료진 결과는 실제 TPS 값입니다.
+          AI 결과는 TPS 예측 구간이며 전문과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.
         </p>
       </section>
     </div>

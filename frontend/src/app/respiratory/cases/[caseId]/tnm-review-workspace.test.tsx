@@ -26,7 +26,7 @@ describe("TnmReviewWorkspace", () => {
     for (const label of ["채택", "수정", "재검", "보류"]) {
       expect(screen.getByRole("button", { name: label })).toBeEnabled();
     }
-    expect(screen.getByText("AI 후보와 전문과 근거를 분리해 검토합니다.")).toBeTruthy();
+    expect(screen.getByText("AI 후보 · 전문과 확정 근거 · 호흡기내과 결정을 구분해 검토합니다.")).toBeTruthy();
     expect(screen.getByText("연결된 영상 주석이 없습니다.")).toBeTruthy();
     expect(container.querySelector('[draggable="true"]')).toBeNull();
   });
