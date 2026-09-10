@@ -1,4 +1,5 @@
 import { getStageLabel } from "./case-workflow-header";
+import { getCaseStatusLabel } from "./clinical-display-labels";
 
 type CaseListItem = {
   id: string;
@@ -37,7 +38,7 @@ export function CasePatientSidebar({ cases, selectedId, searchText, onSearchChan
           <button key={item.id} type="button" onClick={() => onSelect(item.id)} className={`w-full rounded-md border px-3 py-2.5 text-left ${item.id === selectedId ? "border-blue-400 bg-blue-50 shadow-[inset_3px_0_0_#2563eb]" : "border-slate-200 bg-white"}`}>
             <div className="flex items-center justify-between gap-2">
               <p className="truncate text-[11px] font-bold text-slate-800">{item.patient_name || "-"}</p>
-              <span className="whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">{item.case_status || "-"}</span>
+              <span className="whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[9px] text-slate-500">{getCaseStatusLabel(item.case_status)}</span>
             </div>
             <p className="mt-1 truncate text-[10px] text-slate-500">{item.patient_code || "-"} · {item.case_code || "-"}</p>
             <p className="mt-0.5 truncate text-[9px] text-slate-400">{getStageLabel(item.current_stage)} · {formatDate(item.updated_at)}</p>

@@ -1,4 +1,5 @@
 import { getStageLabel } from "./case-workflow-header";
+import { getCaseStatusLabel, getDecisionTypeLabel } from "./clinical-display-labels";
 
 type OverviewCase = {
   case_code: string;
@@ -97,7 +98,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults }: Case
           <h2 className="mt-1 text-sm font-bold text-slate-900">다음 행동</h2>
           {decision ? (
             <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
-              <Detail label="결정" value={decision.decision_type} />
+              <Detail label="결정" value={getDecisionTypeLabel(decision.decision_type)} />
               <Detail label="검토 단계" value={getStageLabel(decision.source_stage)} />
               <Detail label="다음 단계" value={decision.target_stage ? getStageLabel(decision.target_stage) : "-"} />
               <Detail label="결정자" value={decision.decided_by} />
@@ -109,7 +110,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults }: Case
           )}
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
             <p className="text-[10px] text-slate-400">Case 상태</p>
-            <p className="mt-1 text-xs font-bold text-slate-700">{caseData.case_status || "-"}</p>
+            <p className="mt-1 text-xs font-bold text-slate-700">{getCaseStatusLabel(caseData.case_status)}</p>
             <p className="mt-2 text-[10px] leading-4 text-slate-400">검사별 진행 상태는 검사 오더 기능이 연결되면 표시됩니다.</p>
           </div>
         </section>

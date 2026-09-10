@@ -17,8 +17,8 @@ export function TreatmentPrescriptionOverview({ treatment, prescriptions }: { tr
   return (
     <section className="mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
       <header className="flex h-9 items-center justify-between border-b border-slate-200 px-4">
-        <h2 className="text-xs font-bold text-slate-900">치료·처방 현황</h2>
-        <p className="text-[10px] text-slate-400">확정 치료안과 실제 처방 상태를 함께 확인합니다.</p>
+        <h2 className="text-sm font-bold text-slate-900">치료·처방 현황</h2>
+        <p className="text-[11px] text-slate-500">의료진 치료 결정과 실제 처방 상태를 함께 확인합니다.</p>
       </header>
       <div className="grid grid-cols-4 divide-x divide-slate-200 bg-slate-50/50">
         <Summary label="치료 유형" value={treatment?.treatment_type_label} />

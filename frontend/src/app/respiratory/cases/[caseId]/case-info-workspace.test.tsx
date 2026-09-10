@@ -10,7 +10,7 @@ describe("CaseInfoWorkspace", () => {
     ["PATHOLOGY", "병리 검사·결과"],
     ["GENE", "바이오마커"],
     ["TREATMENT", "치료 결정"],
-    ["PRESCRIPTION", "처방"],
+    ["PRESCRIPTION", "처방 및 안전성 확인"],
   ] as const)("renders the %s workspace without fabricated records", (menu, title) => {
     render(<CaseInfoWorkspace menu={menu} />);
     expect(screen.getByRole("heading", { name: title })).toBeTruthy();

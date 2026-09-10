@@ -17,6 +17,7 @@ import { CaseOverviewPanel } from "./case-overview-panel";
 import { BiomarkerSourceHeader } from "./biomarker-source-header";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { CaseChangeDialog } from "./case-change-dialog";
+import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
 import { canApplyCaseResponse } from "../../_lib/case-request-guard";
@@ -290,7 +291,7 @@ const mainMenus: {
   {
     key: "PRESCRIPTION",
     label: "처방 관리",
-    description: "처방 및 Safety Check",
+    description: "처방 및 안전성 검사",
   },
 ];
 
@@ -598,7 +599,7 @@ export default function RespiratoryCaseDetailPage() {
 
           if (!controller.signal.aborted) setRegimenCandidates(regimenCandidateData);
         } else if (!controller.signal.aborted) {
-          setRegimenLoadError(getPanelFetchError(regimenCandidateResponse.status, "Regimen 후보"));
+          setRegimenLoadError(getPanelFetchError(regimenCandidateResponse.status, "치료요법 후보"));
         }
 
         const treatmentDecisionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal });
@@ -702,7 +703,7 @@ export default function RespiratoryCaseDetailPage() {
       if (panel === "REGIMEN") {
         setRegimenLoadError("");
         const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/regimen-candidates/`);
-        if (!response.ok) throw new Error(getPanelFetchError(response.status, "Regimen 후보"));
+        if (!response.ok) throw new Error(getPanelFetchError(response.status, "치료요법 후보"));
         const data: CaseRegimenCandidate[] = await response.json();
         if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setRegimenCandidates(data);
       } else if (panel === "TREATMENT") {
@@ -1046,7 +1047,7 @@ export default function RespiratoryCaseDetailPage() {
       const data: { detail?: string } = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.detail || "Safety Check에 실패했습니다.");
+        throw new Error(data.detail || "안전성 검사에 실패했습니다.");
       }
 
       const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`);
@@ -1059,10 +1060,10 @@ export default function RespiratoryCaseDetailPage() {
         await prescriptionResponse.json();
 
       setCasePrescriptions(prescriptionData);
-      setCasePrescriptionMessage("Safety Check가 완료되었습니다.");
+      setCasePrescriptionMessage("안전성 검사가 완료되었습니다.");
     } catch (err) {
       setCasePrescriptionError(
-        err instanceof Error ? err.message : "Safety Check에 실패했습니다."
+        err instanceof Error ? err.message : "안전성 검사에 실패했습니다."
       );
     } finally {
       setCasePrescriptionWorking(false);
@@ -1502,7 +1503,7 @@ export default function RespiratoryCaseDetailPage() {
                           {prescription.regimen_detail.regimen_name}
                         </p>
                         <p className="mt-1 text-xs text-slate-400">
-                          {prescription.regimen_detail.regimen_code} · Cycle {prescription.cycle_number} · {prescription.phase_label}
+                          {prescription.regimen_detail.regimen_code} · 투여 주기 {prescription.cycle_number} · {prescription.phase_label}
                         </p>
                       </div>
                       <span
@@ -1514,13 +1515,13 @@ export default function RespiratoryCaseDetailPage() {
                               : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        {prescription.prescription_status_label}
+                        {prescription.prescription_status_label || getPrescriptionStatusLabel(prescription.prescription_status)}
                       </span>
                     </div>
 
                     <div className="mt-3 grid grid-cols-4 gap-2 text-xs">
                       <div className="rounded-lg bg-white px-3 py-2">
-                        <p className="text-slate-400">Phase</p>
+                        <p className="text-slate-400">치료 단계</p>
                         <p className="mt-1 font-semibold text-slate-600">
                           {prescription.phase_label}
                         </p>
@@ -1730,7 +1731,7 @@ export default function RespiratoryCaseDetailPage() {
 
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-600">
-                    Phase
+                    치료 단계
                   </span>
                   <select
                     value={casePrescriptionPhase}
@@ -2603,7 +2604,7 @@ function getDetailTitle(
     }
 
     if (treatmentMenu === "REGIMEN") {
-      return "Regimen 후보";
+      return "치료요법 후보";
     }
 
     return "최종 치료계획";
@@ -2620,7 +2621,7 @@ function getDetailTitle(
     prescriptionMenu ===
     "SAFETY_CHECK"
   ) {
-    return "Safety Check";
+    return "안전성 검사";
   }
 
   return "최종 처방";
@@ -2648,7 +2649,7 @@ function getDetailDescription(
     }
 
     if (treatmentMenu === "REGIMEN") {
-      return "환자의 임상 조건에 맞는 Regimen 후보를 검토합니다.";
+      return "환자의 임상 조건에 맞는 치료요법 후보를 검토합니다.";
     }
 
     return "담당의가 최종 치료계획과 결정 근거를 확인하고 확정합니다.";
@@ -2668,7 +2669,7 @@ function getDetailDescription(
     return "처방약의 안전성 검사 결과를 확인합니다.";
   }
 
-  return "Safety Check가 완료된 최종 처방 내용을 확인합니다.";
+  return "안전성 검사가 완료된 최종 처방 내용을 확인합니다.";
 }
 
 function getSexLabel(sex: string) {

@@ -12,7 +12,7 @@ export function CaseInfoWorkspace({ menu }: { menu: CaseInfoKey }) {
 }
 
 function WorkspaceFrame({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="shrink-0 border-b border-slate-200 px-5 py-3"><h1 className="text-base font-bold text-slate-900">{title}</h1><p className="mt-1 text-[11px] text-slate-400">{description}</p></header><div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div></section>;
+  return <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="shrink-0 border-b border-slate-200 px-5 py-3"><h1 className="text-lg font-bold text-slate-900">{title}</h1><p className="mt-1 text-xs text-slate-600">{description}</p></header><div className="min-h-0 flex-1 overflow-y-auto p-3">{children}</div></section>;
 }
 
 function OverviewWorkspace() {
@@ -29,11 +29,11 @@ function BiomarkerWorkspace() {
 }
 
 function TreatmentWorkspace() {
-  return <WorkspaceFrame title="치료 결정" description="AI 치료 제안과 의료진 최종 치료 결정을 구분합니다."><div className="grid grid-cols-3 gap-3"><EmptySection title="AI 치료 소견" message="연결된 treatment_ai_results가 없습니다." /><EmptySection title="Regimen 후보" message="확인 가능한 Regimen 후보가 없습니다." /><EmptySection title="의료진 치료 결정" message="저장된 treatment_decision이 없습니다." emphasis /></div><div className="mt-3 flex justify-end gap-2"><DisabledButton label="임시 저장" /><DisabledButton label="치료 결정 확정" /></div></WorkspaceFrame>;
+  return <WorkspaceFrame title="치료 결정" description="AI 치료 후보와 호흡기내과 의료진의 최종 치료 결정을 구분해 확인합니다."><div className="grid grid-cols-3 gap-3"><EmptySection title="AI 치료 후보" message="현재 Case에 연결된 AI 치료 후보가 없습니다." /><EmptySection title="치료요법 후보" message="확인 가능한 치료요법 후보가 없습니다." /><EmptySection title="의료진 치료 결정" message="저장된 의료진 치료 결정이 없습니다." emphasis /></div><div className="mt-3 flex justify-end gap-2"><DisabledButton label="임시 저장" /><DisabledButton label="치료 결정 확정" /></div></WorkspaceFrame>;
 }
 
 function PrescriptionWorkspace() {
-  return <WorkspaceFrame title="처방" description="실제 처방과 안전성 검사·경고 확인 상태를 관리합니다."><div className="grid grid-cols-[1.4fr_1fr] gap-3"><EmptyTable title="처방 목록" columns={["처방 항목", "용량·주기", "상태", "수정 시각"]} /><div className="space-y-3"><EmptySection title="안전성 검사" message="확인 가능한 Safety Check 결과가 없습니다." /><EmptySection title="경고 확인" message="확인할 처방 경고가 없습니다." /></div></div><div className="mt-3 flex justify-end gap-2"><DisabledButton label="새 처방 생성" /><DisabledButton label="처방 최종 확정" /></div></WorkspaceFrame>;
+  return <WorkspaceFrame title="처방 및 안전성 확인" description="실제 처방과 안전성 검사, 경고 확인 및 최종 확정 상태를 관리합니다."><div className="grid grid-cols-[1.4fr_1fr] gap-3"><EmptyTable title="처방 목록" columns={["처방 항목", "용량·주기", "상태", "수정 시각"]} /><div className="space-y-3"><EmptySection title="안전성 검사" message="확인 가능한 안전성 검사 결과가 없습니다." /><EmptySection title="경고 확인" message="확인할 처방 경고가 없습니다." /></div></div><div className="mt-3 flex justify-end gap-2"><DisabledButton label="새 처방 생성" /><DisabledButton label="처방 최종 확정" /></div></WorkspaceFrame>;
 }
 
 function EmptyMetric({ label }: { label: string }) {
@@ -41,7 +41,7 @@ function EmptyMetric({ label }: { label: string }) {
 }
 
 function EmptySection({ title, message, emphasis = false }: { title: string; message: string; emphasis?: boolean }) {
-  return <section className={`rounded-lg border p-4 ${emphasis ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-white"}`}><h2 className="text-xs font-bold text-slate-800">{title}</h2><div className="flex min-h-24 items-center justify-center text-center text-[11px] leading-5 text-slate-400">{message}</div></section>;
+  return <section className={`rounded-lg border p-4 ${emphasis ? "border-emerald-200 bg-emerald-50/30" : "border-slate-200 bg-white"}`}><h2 className="text-sm font-bold text-slate-800">{title}</h2><div className="flex min-h-20 items-center justify-center text-center text-xs leading-5 text-slate-500">{message}</div></section>;
 }
 
 function EmptyTable({ title, columns }: { title: string; columns: string[] }) {

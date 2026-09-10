@@ -1,3 +1,5 @@
+import { getDecisionTypeLabel } from "./clinical-display-labels";
+
 type ClinicianDecision = {
   source_stage: string;
   decision_type: string;
@@ -22,7 +24,7 @@ export function CaseCoordinationPanels({ decision }: { decision?: ClinicianDecis
         {decision ? (
           <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-xs">
             <DecisionValue label="검토 단계" value={decision.source_stage} />
-            <DecisionValue label="진행 결정" value={decision.decision_type} />
+            <DecisionValue label="진행 결정" value={getDecisionTypeLabel(decision.decision_type)} />
             <DecisionValue label="다음 단계" value={decision.target_stage || "-"} />
             <DecisionValue label="확정자" value={decision.decided_by || "-"} />
             <div className="col-span-2"><DecisionValue label="판단 근거" value={decision.reason || "-"} /></div>

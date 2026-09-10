@@ -20,7 +20,7 @@ describe("CaseOverviewPanel", () => {
           ...caseData,
           latest_clinician_decision: {
             source_stage: "STAGING",
-            decision_type: "NEXT_STAGE",
+            decision_type: "PROCEED_NEXT_STAGE",
             target_stage: "GENE",
             reason: "확정 결과 확인",
             decided_by: "doctor",
@@ -36,7 +36,7 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getAllByText("AI 분석 후보").length).toBeGreaterThan(0);
     expect(screen.getByText("호흡기내과 판단")).toBeTruthy();
     expect(screen.getAllByText("바이오마커").length).toBeGreaterThan(0);
-    expect(screen.getByText("NEXT_STAGE")).toBeTruthy();
+    expect(screen.getByText("다음 단계 진행")).toBeTruthy();
   });
 
   it("shows explicit empty states without fabricating results", () => {

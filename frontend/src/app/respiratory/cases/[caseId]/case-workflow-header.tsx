@@ -1,3 +1,5 @@
+import { getCaseStatusLabel } from "./clinical-display-labels";
+
 export const CASE_STAGES = [
   { code: "XRAY", label: "흉부 X선" },
   { code: "CT", label: "흉부 CT" },
@@ -26,7 +28,7 @@ export function CaseSummaryHeader({ caseData }: { caseData: CaseHeaderData }) {
         <Summary label="Case" value={caseData.case_code} />
         <Summary label="담당의" value={caseData.primary_doctor_name} />
         <Summary label="현재 단계" value={getStageLabel(caseData.current_stage)} accent />
-        <Summary label="Case 상태" value={caseData.case_status} />
+        <Summary label="Case 상태" value={getCaseStatusLabel(caseData.case_status)} />
       </div>
     </section>
   );
