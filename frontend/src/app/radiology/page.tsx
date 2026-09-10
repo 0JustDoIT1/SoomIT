@@ -6,11 +6,6 @@ import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
 
 import { RadiologyDetail } from "./_components/radiology-detail";
-import {
-  getInitialDisplayStage,
-  RadiologyStagePanel,
-  type RadiologyDisplayStage,
-} from "./_components/radiology-stage-panel";
 import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
   fetchRadiologyWorklist,
@@ -86,7 +81,6 @@ export default function RadiologyWorklistPage() {
   const [errorMessage, setErrorMessage] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<WorkstationTab>("worklist");
-  const [selectedStage, setSelectedStage] = useState<RadiologyDisplayStage | null>(null);
 
   const totalPages = Math.max(1, Math.ceil(worklistItems.length / pageSize));
   const pagedItems = worklistItems.slice(
@@ -102,7 +96,6 @@ export default function RadiologyWorklistPage() {
 
   function handleSelectItem(item: RadiologyWorklistItem) {
     setSelectedItem(item);
-    setSelectedStage(getInitialDisplayStage(item.case.current_stage));
   }
 
   function handleFiltersChange(nextFilters: RadiologyWorklistFilters) {
@@ -124,7 +117,6 @@ export default function RadiologyWorklistPage() {
       )
     ) {
       setSelectedItem(null);
-      setSelectedStage(null);
     }
   }
 
@@ -138,7 +130,6 @@ export default function RadiologyWorklistPage() {
       if (!accessToken) {
         setWorklistItems([]);
         setSelectedItem(null);
-        setSelectedStage(null);
         setErrorMessage("로그인이 필요합니다.");
         setViewStatus("unauthorized");
         return;
@@ -170,7 +161,6 @@ export default function RadiologyWorklistPage() {
 
         setWorklistItems([]);
         setSelectedItem(null);
-        setSelectedStage(null);
 
         if (error instanceof RadiologyApiError && (error.status === 401 || error.status === 403)) {
           setErrorMessage(
@@ -194,25 +184,33 @@ export default function RadiologyWorklistPage() {
 
   return (
     <div className="min-w-0">
-      <nav aria-label="영상의학과 작업" className="overflow-x-auto border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
-        <div className="flex min-w-max gap-7">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => setActiveTab(tab.id)}
-              aria-current={activeTab === tab.id ? "page" : undefined}
-              className={`border-b-2 px-1 py-3 text-sm font-semibold transition-colors ${activeTab === tab.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
-            >
-              {tab.label}
-            </button>
-          ))}
+      <nav aria-label="영상의학과 작업" className="overflow-x-auto border-b border-slate-200 bg-white">
+        <div className="mx-auto w-full max-w-[1760px] px-4 sm:px-6">
+          <div className="flex min-w-max gap-7">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                onClick={() => setActiveTab(tab.id)}
+                aria-current={activeTab === tab.id ? "page" : undefined}
+                className={`border-b-2 px-1 py-3 text-sm font-semibold transition-colors ${activeTab === tab.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
         </div>
       </nav>
 
-      <div className="p-3 sm:p-4 lg:p-5">
+      <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
         {activeTab === "worklist" ? (
-          <div className="grid overflow-hidden border-y border-slate-200 bg-white xl:h-[calc(100vh-133px)] xl:min-h-[560px] xl:grid-cols-[minmax(360px,28fr)_minmax(190px,16fr)_minmax(0,56fr)] xl:divide-x xl:divide-slate-200">
+          <div
+            className={`grid overflow-hidden border border-slate-200 bg-white transition-[grid-template-columns] duration-200 xl:h-[calc(100vh-141px)] xl:min-h-[560px] ${
+              selectedItem
+                ? "xl:grid-cols-[minmax(520px,62fr)_minmax(420px,38fr)] xl:divide-x xl:divide-slate-200"
+                : "xl:grid-cols-1"
+            }`}
+          >
             <RadiologyWorklist
               items={pagedItems}
               selectedId={selectedItem?.examination_order.id ?? null}
@@ -226,12 +224,13 @@ export default function RadiologyWorklistPage() {
               totalItems={worklistItems.length}
               onPageChange={handlePageChange}
             />
-            <RadiologyStagePanel
-              item={selectedItem}
-              selectedStage={selectedStage}
-              onSelectStage={setSelectedStage}
-            />
-            <RadiologyDetail item={selectedItem} selectedStage={selectedStage} />
+            {selectedItem ? (
+              <RadiologyDetail
+                key={selectedItem.examination_order.id}
+                item={selectedItem}
+                onClose={() => setSelectedItem(null)}
+              />
+            ) : null}
           </div>
         ) : null}
         {activeTab === "ai" ? (

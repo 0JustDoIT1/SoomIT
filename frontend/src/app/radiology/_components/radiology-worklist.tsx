@@ -3,7 +3,19 @@ import { StateMessage } from "@/components/workspace/state-message";
 import type {
   RadiologyWorklistFilters,
   RadiologyWorklistItem,
+  RadiologyWorkflowStatus,
 } from "../_lib/radiology-api";
+
+const workflowLabels: Record<RadiologyWorkflowStatus, string> = {
+  CANCELLED: "취소됨",
+  EXAM_PENDING: "예약됨",
+  IMAGE_PENDING: "영상 연결 대기",
+  AI_READY: "분석 대기 중",
+  AI_RUNNING: "AI 분석 중",
+  AI_FAILED: "AI 실패",
+  REVIEW_PENDING: "의사 판독 중",
+  REVIEW_COMPLETED: "판독 완료",
+};
 
 export type WorklistViewStatus =
   | "loading"
@@ -109,12 +121,13 @@ export function RadiologyWorklist({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[520px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[680px] border-collapse text-left text-sm">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
             <tr className="border-b border-slate-200">
-              <th className="w-[34%] px-5 py-3">환자명</th>
-              <th className="w-[33%] px-5 py-3">환자코드</th>
-              <th className="w-[33%] px-5 py-3">검사 종류</th>
+              <th className="w-[26%] px-5 py-3">환자명</th>
+              <th className="w-[24%] px-5 py-3">환자코드</th>
+              <th className="w-[25%] px-5 py-3">검사</th>
+              <th className="w-[25%] px-5 py-3">상태</th>
             </tr>
           </thead>
 
@@ -148,6 +161,12 @@ export function RadiologyWorklist({
 
                   <td className="px-5 py-3 text-slate-700">
                     {item.examination_order.exam_type_label}
+                  </td>
+
+                  <td className="px-5 py-3">
+                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      {workflowLabels[item.workflow_status]}
+                    </span>
                   </td>
                 </tr>
               );

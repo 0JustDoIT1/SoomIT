@@ -36,7 +36,8 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen min-w-0 flex-col bg-slate-50 text-slate-900">
-        <header className="flex h-16 shrink-0 items-center border-b border-slate-200 bg-white px-4 sm:px-6 lg:px-8">
+      <header className="h-16 shrink-0 border-b border-slate-200 bg-white">
+        <div className="mx-auto flex h-full w-full max-w-[1760px] items-center px-4 sm:px-6">
           <div>
             <p className="text-sm font-semibold text-slate-800">영상의학과</p>
             <p className="text-xs text-slate-500">Radiology Workstation</p>
@@ -50,8 +51,9 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
               로그아웃
             </button>
           </div>
-        </header>
-        <main className="min-w-0 flex-1">{children}</main>
+        </div>
+      </header>
+      <main className="min-w-0 flex-1">{children}</main>
     </div>
   );
 }
