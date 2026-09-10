@@ -30,7 +30,7 @@ class MedicationService {
       '/api/patients/medications/intake/taken/',
       data: {
         'medication_schedule_id': medicationScheduleId,
-        'scheduled_at': scheduledAt.toIso8601String(),
+        'scheduled_at': scheduledAt.toUtc().toIso8601String(),
       },
     );
   }

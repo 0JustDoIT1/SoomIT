@@ -31,7 +31,7 @@ class _MedicationScreenState extends State<MedicationScreen> {
   
     try {
       final now = DateTime.now();
-  
+
       final timeParts = schedule.reminderTime.split(':');
       final hour = int.parse(timeParts[0]);
       final minute = int.parse(timeParts[1]);
@@ -80,6 +80,12 @@ class _MedicationScreenState extends State<MedicationScreen> {
   @override
   void initState() {
     super.initState();
+
+    final now = DateTime.now();
+    debugPrint('NOW = $now');
+    debugPrint('TIMEZONE = ${now.timeZoneName}');
+    debugPrint('OFFSET = ${now.timeZoneOffset}');
+
     _medicationFuture = _medicationService.getMedicationSchedules();
   }
 
