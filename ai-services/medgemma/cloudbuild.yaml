@@ -1,0 +1,26 @@
+availableSecrets:
+  secretManager:
+    - versionName: projects/soomit-506909/secrets/hf-token/versions/1
+      env: HF_TOKEN
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    env:
+      - DOCKER_BUILDKIT=1
+    secretEnv:
+      - HF_TOKEN
+    args:
+      - build
+      - --secret
+      - id=hf_token,env=HF_TOKEN
+      - -t
+      - gcr.io/soomit-506909/medgemma-serve
+      - .
+
+images:
+  - gcr.io/soomit-506909/medgemma-serve
+
+# Allow for the base image pull, model download, and image upload.
+timeout: 3600s
+options:
+  diskSizeGb: 100
