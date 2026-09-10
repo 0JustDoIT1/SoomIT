@@ -1,5 +1,5 @@
-from apps.ai_results.models import AiAnalysis
-from apps.cases.models import CaseImageAsset, ExaminationOrder
+from apps.ai_results.models import AiAnalysis, AnalysisType
+from apps.cases.models import CaseImageAsset, ExaminationOrder, Stage
 
 
 WORKFLOW_STATUS_LABELS = {
@@ -12,6 +12,18 @@ WORKFLOW_STATUS_LABELS = {
     "IMAGE_PENDING": "영상 연결 대기",
     "EXAM_PENDING": "검사 대기",
 }
+
+
+def is_pet_ct_tnm_order(image_assets):
+    """기존 STAGING 자산/TNM 분석을 PET-CT 기반 TNM 표시 단계로 해석한다."""
+    return any(
+        asset.uploaded_stage == Stage.STAGING
+        or any(
+            analysis.analysis_type == AnalysisType.TNM_STAGING
+            for analysis in asset.worklist_ai_analyses
+        )
+        for asset in image_assets
+    )
 
 
 def calculate_workflow_status(order, image_assets, latest_ai_analysis):

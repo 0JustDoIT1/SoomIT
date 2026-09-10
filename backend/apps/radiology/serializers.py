@@ -3,12 +3,16 @@ from rest_framework import serializers
 
 from apps.cases.models import ExaminationOrder
 
-from .services.workflow import calculate_workflow_status, get_workflow_status_label
+from .services.workflow import (
+    calculate_workflow_status,
+    get_workflow_status_label,
+    is_pet_ct_tnm_order,
+)
 
 
 class RadiologyWorklistQuerySerializer(serializers.Serializer):
     exam_type = serializers.ChoiceField(
-        choices=[ExaminationOrder.ExamType.XRAY, ExaminationOrder.ExamType.CT],
+        choices=[ExaminationOrder.ExamType.XRAY, ExaminationOrder.ExamType.CT, "STAGING"],
         required=False,
     )
     status = serializers.ChoiceField(
@@ -53,7 +57,7 @@ class RadiologyDoctorSummarySerializer(serializers.Serializer):
 
 
 class RadiologyExaminationOrderSummarySerializer(serializers.ModelSerializer):
-    exam_type_label = serializers.CharField(source="get_exam_type_display", read_only=True)
+    exam_type_label = serializers.SerializerMethodField()
     priority_label = serializers.CharField(source="get_priority_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -72,6 +76,11 @@ class RadiologyExaminationOrderSummarySerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+    def get_exam_type_label(self, obj):
+        if is_pet_ct_tnm_order(obj.worklist_image_assets):
+            return "PET-CT / TNM"
+        return obj.get_exam_type_display()
 
 
 class RadiologyImageAssetSummarySerializer(serializers.Serializer):

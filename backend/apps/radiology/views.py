@@ -1,4 +1,4 @@
-from django.db.models import Exists, OuterRef, Prefetch
+from django.db.models import Exists, OuterRef, Prefetch, Q
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
 from rest_framework.permissions import IsAuthenticated
@@ -88,7 +88,16 @@ class RadiologyWorklistAPIView(ListAPIView):
         )
 
         if "exam_type" in filters:
-            queryset = queryset.filter(exam_type=filters["exam_type"])
+            exam_type = filters["exam_type"]
+            staging_relation = Q(image_assets__uploaded_stage="STAGING") | Q(
+                image_assets__ai_analyses__analysis_type="TNM_STAGING",
+            )
+            if exam_type == "STAGING":
+                queryset = queryset.filter(staging_relation).distinct()
+            elif exam_type == ExaminationOrder.ExamType.CT:
+                queryset = queryset.filter(exam_type=exam_type).exclude(staging_relation).distinct()
+            else:
+                queryset = queryset.filter(exam_type=exam_type)
         if "status" in filters:
             queryset = queryset.filter(status=filters["status"])
         if "priority" in filters:

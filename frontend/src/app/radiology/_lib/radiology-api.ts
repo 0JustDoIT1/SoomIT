@@ -1,3 +1,5 @@
+import { staffAuthenticatedFetch } from "@/lib/api";
+
 export type RadiologyCaseStage =
   | "XRAY"
   | "CT"
@@ -8,7 +10,7 @@ export type RadiologyCaseStage =
   | "PRESCRIPTION";
 
 export type RadiologyWorklistFilters = {
-  exam_type?: "XRAY" | "CT";
+  exam_type?: "XRAY" | "CT" | "STAGING";
   status?: "ORDERED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
   priority?: "NORMAL" | "URGENT";
 };
@@ -119,7 +121,6 @@ function getErrorMessage(data: unknown) {
 }
 
 export async function fetchRadiologyWorklist(
-  accessToken: string,
   filters: RadiologyWorklistFilters,
   signal: AbortSignal,
 ): Promise<RadiologyWorklistItem[]> {
@@ -129,13 +130,12 @@ export async function fetchRadiologyWorklist(
   if (filters.priority) query.set("priority", filters.priority);
 
   const queryString = query.toString();
-  const response = await fetch(
+  const response = await staffAuthenticatedFetch(
     `${getApiBaseUrl()}/api/radiology/worklist/${queryString ? `?${queryString}` : ""}`,
     {
       method: "GET",
       headers: {
         Accept: "application/json",
-        Authorization: `Bearer ${accessToken}`,
       },
       signal,
     },

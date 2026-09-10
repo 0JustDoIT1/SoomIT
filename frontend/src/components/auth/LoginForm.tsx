@@ -28,6 +28,13 @@ function getRedirectPath(
   }
 
   if (
+    user.role === "TECHNOLOGIST" &&
+    user.department.code === "RADIOLOGY"
+  ) {
+    return "/radiology";
+  }
+
+  if (
     user.role === "DOCTOR" &&
     user.department.code === "PULMONOLOGY"
   ) {

@@ -205,6 +205,31 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         self.assertEqual(reversed_dates.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_staging_asset_is_displayed_and_filtered_as_pet_ct_tnm(self):
+        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.save(update_fields=["exam_type", "updated_at"])
+        self._create_asset(
+            self.order,
+            uploaded_stage=Stage.STAGING,
+            image_type=CaseImageAsset.ImageType.CT,
+        )
+
+        staging_response = self.client.get(self.url, {"exam_type": "STAGING"})
+        self.assertEqual(staging_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(staging_response.data), 1)
+        self.assertEqual(
+            staging_response.data[0]["examination_order"]["exam_type"],
+            ExaminationOrder.ExamType.CT,
+        )
+        self.assertEqual(
+            staging_response.data[0]["examination_order"]["exam_type_label"],
+            "PET-CT / TNM",
+        )
+
+        ct_response = self.client.get(self.url, {"exam_type": "CT"})
+        self.assertEqual(ct_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(ct_response.data, [])
+
     def test_date_filter_and_representative_schedule_exclude_cancelled(self):
         now = timezone.now()
         Appointment.objects.create(
@@ -233,9 +258,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        expected_value = response.renderer_context["view"].get_serializer().fields[
-            "scheduled_at"
-        ].to_representation(expected.scheduled_at)
+        expected_value = expected.scheduled_at
         self.assertEqual(response.data[0]["scheduled_at"], expected_value)
 
     def test_latest_asset_analysis_and_count_are_prefetched_summaries(self):
