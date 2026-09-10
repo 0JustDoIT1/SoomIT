@@ -87,12 +87,8 @@ TIME_ZONE = "Asia/Seoul"
 USE_I18N = True
 USE_TZ = True
 
-CELERY_BROKER_URL = os.environ.get(
-    "CELERY_BROKER_URL", "redis://127.0.0.1:6379/0",
-)
-CELERY_RESULT_BACKEND = os.environ.get(
-    "CELERY_RESULT_BACKEND", "redis://127.0.0.1:6379/1",
-)
+CELERY_BROKER_URL = os.environ["CELERY_BROKER_URL"]
+CELERY_RESULT_BACKEND = os.environ["CELERY_RESULT_BACKEND"]
 CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
@@ -110,10 +106,9 @@ SPECTACULAR_SETTINGS = {
     'VERSION': '1.6.0',
 }
 
-PDL1_INFERENCE_SERVICE_URL = os.environ.get(
-    "PDL1_INFERENCE_SERVICE_URL",
-    "http://127.0.0.1:8100",
-).rstrip("/")
+PDL1_INFERENCE_SERVICE_URL = os.environ[
+    "PDL1_INFERENCE_SERVICE_URL"
+].rstrip("/")
 PDL1_INFERENCE_TIMEOUT_SECONDS = float(
     os.environ.get("PDL1_INFERENCE_TIMEOUT_SECONDS", "60"),
 )
@@ -121,10 +116,9 @@ PDL1_FEATURE_MAX_UPLOAD_BYTES = int(
     os.environ.get("PDL1_FEATURE_MAX_UPLOAD_BYTES", str(64 * 1024 * 1024)),
 )
 
-ORTHANC_BASE_URL = os.environ.get(
-    "ORTHANC_BASE_URL",
-    "http://127.0.0.1:8042",
-).rstrip("/")
+ORTHANC_BASE_URL = os.environ[
+    "ORTHANC_BASE_URL"
+].rstrip("/")
 ORTHANC_USERNAME = os.environ.get("ORTHANC_USERNAME", "orthanc")
 ORTHANC_PASSWORD = os.environ.get("ORTHANC_PASSWORD", "change-me")
 ORTHANC_TIMEOUT_SECONDS = float(os.environ.get("ORTHANC_TIMEOUT_SECONDS", "30"))
