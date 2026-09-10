@@ -79,6 +79,18 @@ services:
     container_name: soomit-infra-nextjs
     restart: unless-stopped
 
+  realtime:
+    build:
+      context: ../realtime
+    image: soomit-realtime:local
+    container_name: soomit-infra-realtime
+    restart: unless-stopped
+    environment:
+      REDIS_URL: redis://redis:6379/2
+    depends_on:
+      redis:
+        condition: service_healthy
+
   nginx:
     image: nginx:1.27-alpine
     container_name: soomit-infra-nginx
@@ -92,6 +104,8 @@ services:
       django:
         condition: service_started
       nextjs:
+        condition: service_started
+      realtime:
         condition: service_started
 
   certbot:
