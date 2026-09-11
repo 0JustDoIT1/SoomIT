@@ -5,6 +5,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import (
@@ -26,6 +27,14 @@ from apps.pathology.models import (
 
 
 class PathologyReadAPITestCase(APITestCase):
+    def authenticate_pathology_user(self):
+        token = AccessToken.for_user(self.user)
+        token["hospital_id"] = str(self.hospital.id)
+        token["department_id"] = str(self.department.id)
+        token["department_code"] = self.department.code
+        token["role"] = self.department_role.role
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token}")
+
     def setUp(self):
         self.hospital = Hospital.objects.create(
             name="테스트병원",
@@ -229,14 +238,43 @@ class PathologyReadAPITestCase(APITestCase):
             case=other_case,
             task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
         )
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
 
         response = self.client.get(reverse("pathology:workstation-list"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(str(response.data[0]["id"]), str(self.work_item.id))
-        self.assertEqual(response.data[0]["workflow_status"], "REVIEW_COMPLETED")
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(
+            str(response.data["results"][0]["id"]),
+            str(self.work_item.id),
+        )
+        self.assertEqual(
+            response.data["results"][0]["workflow_status"],
+            "REVIEW_COMPLETED",
+        )
+
+    def test_pathology_workstation_filters_by_projected_workflow_status(self):
+        self.authenticate_pathology_user()
+        url = reverse("pathology:workstation-list")
+
+        matching_response = self.client.get(
+            url,
+            {"workflow_status": "REVIEW_COMPLETED"},
+        )
+        non_matching_response = self.client.get(
+            url,
+            {"workflow_status": "SCHEDULED"},
+        )
+
+        self.assertEqual(matching_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(matching_response.data["count"], 1)
+        self.assertEqual(
+            matching_response.data["results"][0]["workflow_status"],
+            "REVIEW_COMPLETED",
+        )
+        self.assertEqual(non_matching_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(non_matching_response.data["count"], 0)
 
     def test_non_pathology_staff_cannot_access_workstation(self):
         other_department = Department.objects.create(

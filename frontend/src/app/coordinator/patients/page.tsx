@@ -1,5 +1,4 @@
 "use client";
-import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type Patient = {
@@ -14,8 +13,6 @@ type Patient = {
   updated_at: string;
   app_link_status?: string;
   current_case?: {
-    id: string;
-    case_code: string;
     current_stage: string;
     case_status: string;
   } | null;
@@ -23,7 +20,6 @@ type Patient = {
     id: string;
     scheduled_at: string;
     appointment_status: string;
-    visit_status: string;
     created_by_type: string;
   } | null;
 };
@@ -63,7 +59,6 @@ const initialUpdateForm: PatientUpdateForm = {
 };
 
 export default function PatientsPage() {
-  const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
@@ -109,6 +104,8 @@ export default function PatientsPage() {
     }
   };
   useEffect(() => {
+    // Initial data synchronization with the existing patients API.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPatients();
   }, []);
 
@@ -305,7 +302,7 @@ export default function PatientsPage() {
     return "미연결";
   };
 
-  // Case 단계 표시
+  // 검사 단계 표시
   const getStageLabel = (stage: string) => {
     if (stage === "XRAY") return "X-ray";
     if (stage === "CT") return "CT";
@@ -317,8 +314,8 @@ export default function PatientsPage() {
     return stage;
   };
 
-  // Case 상태 표시
-  const getCaseStatusLabel = (status: string) => {
+  // 검사 진행 상태 표시
+  const getExamProgressStatusLabel = (status: string) => {
     if (status === "ACTIVE") return "진행중";
     if (status === "REFERRED_OUT") return "전원";
     if (status === "CLOSED") return "종결";
@@ -333,18 +330,10 @@ export default function PatientsPage() {
     return status;
   };
 
-  // 방문 상태 표시
-  const getVisitStatusLabel = (status: string) => {
-    if (status === "SCHEDULED") return "방문 예정";
-    if (status === "VISITED") return "방문 완료";
-    if (status === "NO_SHOW") return "미방문";
-    return status;
-  };
-
   // 예약 생성 주체 표시
   const getCreatedByTypeLabel = (type: string) => {
-    if (type === "PATIENT") return "환자";
-    if (type === "DOCTOR_ORDER") return "의사 오더";
+    if (type === "PATIENT") return "상담 예약";
+    if (type === "DOCTOR_ORDER") return "검사 예약";
     return type;
   };
 
@@ -381,7 +370,7 @@ export default function PatientsPage() {
               </span>
             </div>
             <p className="mt-2 text-sm text-slate-500">
-              환자의 기본정보와 Case 연결 현황을 관리합니다.
+              환자의 기본정보와 예약 및 검사 진행 정보를 관리합니다.
             </p>
           </div>
           <button
@@ -729,17 +718,13 @@ export default function PatientsPage() {
                 </p>
               </div>
 
-              {/* Case 정보 */}
+              {/* 현재 검사 */}
               <div className="mt-5 rounded-2xl border border-slate-100 p-5">
                 <h3 className="font-semibold text-slate-700">
-                  현재 Case
+                  현재 검사
                 </h3>
                 {selectedPatient.current_case ? (
                   <div className="mt-4 space-y-3 text-sm">
-                    <DetailRow
-                      label="Case ID"
-                      value={selectedPatient.current_case.case_code}
-                    />
                     <DetailRow
                       label="현재 단계"
                       value={getStageLabel(
@@ -747,15 +732,15 @@ export default function PatientsPage() {
                       )}
                     />
                     <DetailRow
-                      label="Case 상태"
-                      value={getCaseStatusLabel(
+                      label="진행 상태"
+                      value={getExamProgressStatusLabel(
                         selectedPatient.current_case.case_status
                       )}
                     />
                   </div>
                 ) : (
                   <p className="mt-3 text-sm text-slate-400">
-                    현재 진행 중인 Case가 없습니다.
+                    현재 진행 중인 검사가 없습니다.
                   </p>
                 )}
               </div>
@@ -782,14 +767,7 @@ export default function PatientsPage() {
                       )}
                     />
                     <DetailRow
-                      label="방문 상태"
-                      value={getVisitStatusLabel(
-                        selectedPatient.recent_appointment
-                          .visit_status
-                      )}
-                    />
-                    <DetailRow
-                      label="예약 생성"
+                      label="예약 구분"
                       value={getCreatedByTypeLabel(
                         selectedPatient.recent_appointment
                           .created_by_type
@@ -803,24 +781,13 @@ export default function PatientsPage() {
                 )}
               </div>
             </div>
-            <div className="flex gap-3 border-t border-slate-100 p-5">
+            <div className="border-t border-slate-100 p-5">
               <button
                 type="button"
                 onClick={openUpdateDrawer}
-                className="flex-1 rounded-xl border border-pink-200 px-4 py-3 text-sm font-medium text-pink-600 transition hover:bg-pink-50"
+                className="w-full rounded-xl border border-pink-200 px-4 py-3 text-sm font-medium text-pink-600 transition hover:bg-pink-50"
               >
                 환자정보 수정
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!selectedPatient.current_case) return;
-                  router.push(`/coordinator/cases/${selectedPatient.current_case.id}`);
-                }}
-                disabled={!selectedPatient.current_case}
-                className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-medium text-white transition hover:bg-pink-600 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-              >
-                Case 상세
               </button>
             </div>
           </div>

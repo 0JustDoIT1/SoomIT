@@ -11,6 +11,8 @@ export type PathologyWorkstationItem = {
   patient: { id: string; name: string; patient_code: string; birth_date: string; sex: string };
   case: { id: string; case_code: string; current_stage: string; case_status: string };
   specimen: { id: string; specimen_code: string; specimen_type: string; body_site: string | null; status: string } | null;
+  pathology_test_type: "SUBTYPE" | "PDL1" | "GENE" | null;
+  pathology_test_type_label: string | null;
   current_exam_or_task: string;
   task_type: string;
   status: string;
@@ -25,6 +27,21 @@ export type PathologyWorkstationItem = {
   diagnostic_review_status: string | null;
   workflow_status: PathologyWorkflowStatus;
   workflow_status_label: string;
+};
+
+export type PathologyWorkstationPage = {
+  count: number;
+  next: string | null;
+  previous: string | null;
+  results: PathologyWorkstationItem[];
+};
+
+type PathologyWorkstationParams = {
+  page: number;
+  workflowStatus?: string;
+  pathologyTestType?: string;
+  assignedTo?: string;
+  signal?: AbortSignal;
 };
 
 const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL?.replace(/\/$/, "");
@@ -44,10 +61,22 @@ async function readJson<T>(response: Response): Promise<T> {
   return response.json();
 }
 
-export async function fetchPathologyWorkstation(signal?: AbortSignal) {
-  const response = await staffAuthenticatedFetch(url("/api/pathology/workstation/"), { signal });
-  const data = await readJson<PathologyWorkstationItem[] | { results: PathologyWorkstationItem[] }>(response);
-  return Array.isArray(data) ? data : data.results;
+export async function fetchPathologyWorkstation({
+  page,
+  workflowStatus,
+  pathologyTestType,
+  assignedTo,
+  signal,
+}: PathologyWorkstationParams) {
+  const params = new URLSearchParams({ page: String(page) });
+  if (workflowStatus) params.set("workflow_status", workflowStatus);
+  if (pathologyTestType) params.set("pathology_test_type", pathologyTestType);
+  if (assignedTo) params.set("assigned_to", assignedTo);
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/workstation/?${params.toString()}`),
+    { signal },
+  );
+  return readJson<PathologyWorkstationPage>(response);
 }
 
 export async function fetchPathologyAnalyses(caseId: string, kind: "pathology" | "pdl1", signal?: AbortSignal) {

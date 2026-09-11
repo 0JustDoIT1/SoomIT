@@ -462,7 +462,10 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
     patient = serializers.SerializerMethodField()
     case = serializers.SerializerMethodField()
     specimen = serializers.SerializerMethodField()
-    current_exam_or_task = serializers.CharField(source="get_task_type_display", read_only=True)
+    pathology_test_type = serializers.SerializerMethodField()
+    pathology_test_type_label = serializers.SerializerMethodField()
+
+    current_exam_or_task = serializers.SerializerMethodField()
     requesting_doctor = serializers.SerializerMethodField()
     wsi_count = serializers.SerializerMethodField()
     latest_wsi = serializers.SerializerMethodField()
@@ -476,12 +479,29 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         model = PathologyWorkItem
         fields = [
             "id", "case_id", "patient", "case", "specimen",
+            "pathology_test_type", "pathology_test_type_label",
             "current_exam_or_task", "task_type", "status", "priority",
             "assigned_to_id", "assigned_to_name", "requesting_doctor",
             "wsi_count", "latest_wsi", "latest_ai_analysis", "latest_gene_analysis",
             "diagnostic_review_status", "workflow_status", "workflow_status_label",
             "due_at", "completed_at", "created_at", "updated_at",
         ]
+    def _pathology_order(self, obj):
+        if obj.specimen and obj.specimen.examination_order:
+            return obj.specimen.examination_order
+        orders = getattr(obj.case, "workstation_pathology_orders", [])
+        return orders[0] if orders else None
+
+    def get_pathology_test_type(self, obj):
+        order = self._pathology_order(obj)
+        return order.pathology_test_type if order else None
+
+    def get_pathology_test_type_label(self, obj):
+        order = self._pathology_order(obj)
+        return order.get_pathology_test_type_display() if order and order.pathology_test_type else None
+
+    def get_current_exam_or_task(self, obj):
+        return self.get_pathology_test_type_label(obj) or "-"
 
     def get_patient(self, obj):
         patient = obj.case.patient
@@ -496,7 +516,7 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         return {"id": obj.specimen_id, "specimen_code": obj.specimen.specimen_code, "specimen_type": obj.specimen.specimen_type, "body_site": obj.specimen.body_site, "status": obj.specimen.status}
 
     def get_requesting_doctor(self, obj):
-        order = obj.specimen.examination_order if obj.specimen else None
+        order = self._pathology_order(obj)
         if not order:
             return None
         return {"id": order.requesting_doctor_id, "name": order.requesting_doctor.name}

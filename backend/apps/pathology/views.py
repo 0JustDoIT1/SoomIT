@@ -5,6 +5,7 @@ from django.http import HttpResponse
 from django.utils import timezone
 from decimal import Decimal
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
@@ -14,7 +15,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnologist
 from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, ModelVersion, PDL1AiResult
-from apps.cases.models import LungCancerCase
+from apps.cases.models import ExaminationOrder, LungCancerCase
 from apps.clinical.models import ClinicalResult
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
@@ -32,6 +33,7 @@ from .serializers import (
 )
 from .services.pdl1_inference import PDL1InferenceError, request_pdl1_prediction
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
+from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
 
 
 PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
@@ -384,6 +386,10 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
         ).order_by("-confirmed_at", "-created_at")
         wsi_queryset = WholeSlideImage.objects.select_related("image_asset").order_by("-created_at")
+        pathology_order_queryset = ExaminationOrder.objects.filter(
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type__isnull=False,
+        ).select_related("requesting_doctor").order_by("-created_at")
 
         queryset = (
             PathologyWorkItem.objects.filter(
@@ -395,16 +401,48 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
             )
             .prefetch_related(
                 Prefetch("specimen__wsis", queryset=wsi_queryset, to_attr="workstation_wsis"),
+                Prefetch("case__examination_orders", queryset=pathology_order_queryset, to_attr="workstation_pathology_orders"),
                 Prefetch("case__ai_analyses", queryset=analysis_queryset, to_attr="workstation_analyses"),
                 Prefetch("case__pathology_work_items", queryset=review_queryset, to_attr="workstation_review_items"),
                 Prefetch("case__clinical_results", queryset=confirmed_queryset, to_attr="workstation_confirmed_results"),
             )
             .order_by("-updated_at")
         )
-        for field in ("status", "task_type", "assigned_to"):
-            value = self.request.query_params.get(field)
-            if value:
-                queryset = queryset.filter(**{field if field != "assigned_to" else "assigned_to_id": value})
+        workflow_status_value = self.request.query_params.get("workflow_status")
+        task_type_value = self.request.query_params.get("task_type")
+        assigned_to_value = self.request.query_params.get("assigned_to")
+        pathology_test_type_value = self.request.query_params.get("pathology_test_type")
+
+        if task_type_value:
+            queryset = queryset.filter(task_type=task_type_value)
+
+        if assigned_to_value:
+            queryset = queryset.filter(assigned_to_id=assigned_to_value)
+
+        if pathology_test_type_value:
+            queryset = queryset.filter(
+                Q(specimen__examination_order__pathology_test_type=pathology_test_type_value)
+                | Q(case__examination_orders__pathology_test_type=pathology_test_type_value)
+            ).distinct()
+
+        if workflow_status_value:
+            public_workflow_statuses = {
+                PathologyWorkflowStatus.SCHEDULED,
+                PathologyWorkflowStatus.SPECIMEN_COMPLETED,
+                PathologyWorkflowStatus.AI_COMPLETED,
+                PathologyWorkflowStatus.REVIEW_COMPLETED,
+            }
+            if workflow_status_value not in public_workflow_statuses:
+                raise ValidationError(
+                    {"workflow_status": "지원하지 않는 병리 workflow 상태입니다."}
+                )
+
+            queryset = [
+                work_item
+                for work_item in queryset
+                if calculate_workflow_status(work_item) == workflow_status_value
+            ]
+
         return queryset
 
 
