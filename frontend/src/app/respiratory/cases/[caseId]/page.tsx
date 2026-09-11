@@ -16,6 +16,7 @@ import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
 import { CaseOverviewPanel } from "./case-overview-panel";
 import { Pdl1ResultPanel } from "./pdl1-result-panel";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
+import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
@@ -550,8 +551,8 @@ export default function RespiratoryCaseDetailPage() {
         } else if (!controller.signal.aborted) {
           setAiResultError(
             tnmAnalysisRequest.status === "fulfilled"
-              ? getPanelFetchError(tnmAnalysisRequest.value.status, "AI 결과")
-              : getPanelNetworkError("AI 결과"),
+              ? getAiResultHttpError(tnmAnalysisRequest.value.status)
+              : getAiResultNetworkError(),
           );
         }
 
@@ -719,7 +720,7 @@ export default function RespiratoryCaseDetailPage() {
 
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/ai-results/`);
-      if (!response.ok) throw new Error(getPanelFetchError(response.status, "AI 결과"));
+      if (!response.ok) throw new Error(getAiResultHttpError(response.status));
 
       const payload: unknown = await response.json();
       if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
@@ -730,10 +731,10 @@ export default function RespiratoryCaseDetailPage() {
       if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
       setAiResultError(
         retryError instanceof TypeError
-          ? getPanelNetworkError("AI 결과")
+          ? getAiResultNetworkError()
           : retryError instanceof Error
             ? retryError.message
-            : getPanelNetworkError("AI 결과"),
+            : getAiResultNetworkError(),
       );
     } finally {
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
