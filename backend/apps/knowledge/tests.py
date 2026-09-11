@@ -109,6 +109,8 @@ class RagTests(TestCase):
         messages = mock_chat.call_args.args[0]
         self.assertEqual(messages[0]["role"], "system")
         self.assertIn("EGFR 변이 관련 치료 지침입니다.", messages[0]["content"])
+        self.assertIn("다른 병기나 조건의", messages[0]["content"])
+        self.assertIn("근거 청크 번호를 [1]", messages[0]["content"])
         self.assertEqual(messages[-1], {"role": "user", "content": "EGFR 변이 치료는 어떻게 하나요?"})
 
     @patch("apps.knowledge.services.rag.request_chat_completion")
