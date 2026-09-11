@@ -21,8 +21,8 @@ type Props = {
 
 export function CasePatientSidebar({ cases, selectedId, searchText, onSearchChange, onSelect }: Props) {
   return (
-    <aside className="flex w-[235px] shrink-0 flex-col border-r border-slate-200 bg-white">
-      <div className="border-b border-slate-100 p-3">
+    <aside className="flex h-full min-h-0 w-[235px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-white">
+      <div className="shrink-0 border-b border-slate-100 p-3">
         <h2 className="text-sm font-bold text-slate-900">담당 환자</h2>
         <input type="search" value={searchText} onChange={(event) => onSearchChange(event.target.value)} placeholder="환자명, 환자번호, Case 검색" className="mt-2 h-8 w-full rounded-md border border-slate-200 px-2.5 text-[11px] outline-none focus:border-blue-400" />
         <div className="mt-2 grid grid-cols-3 gap-1">
@@ -33,7 +33,7 @@ export function CasePatientSidebar({ cases, selectedId, searchText, onSearchChan
         <p className="mt-1.5 truncate text-[9px] text-slate-400">상태 필터는 규칙 API 연동 후 활성화됩니다.</p>
       </div>
 
-      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-auto p-2">
+      <div className="min-h-0 flex-1 space-y-1.5 overflow-y-scroll p-2 [scrollbar-gutter:stable]">
         {cases.map((item) => (
           <button key={item.id} type="button" onClick={() => onSelect(item.id)} className={`w-full rounded-md border px-3 py-2.5 text-left ${item.id === selectedId ? "border-blue-400 bg-blue-50 shadow-[inset_3px_0_0_#2563eb]" : "border-slate-200 bg-white"}`}>
             <div className="flex items-center justify-between gap-2">

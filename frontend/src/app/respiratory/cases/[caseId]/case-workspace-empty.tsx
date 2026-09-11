@@ -17,9 +17,9 @@ export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorM
   const [selectedMenu, setSelectedMenu] = useState<CaseInfoKey>("STAGING");
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-50">
+    <div className="fixed inset-x-0 bottom-0 top-[54px] flex min-h-0 w-full flex-col overflow-hidden bg-slate-50">
       <div className="relative"><CaseSummaryHeader caseData={{ patient_name: "-", patient_code: "-", case_code: "-", primary_doctor_name: null, current_stage: "-", case_status: "-" }} />{isPreview && <span className="absolute right-4 top-2 rounded-full bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-700">UI 미리보기 · 실제 의료 데이터 없음</span>}</div>
-      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(1040px,1fr)] overflow-x-auto overflow-y-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(0,1fr)] overflow-hidden">
         <CasePatientSidebar cases={[]} selectedId="" searchText="" onSearchChange={() => undefined} onSelect={() => undefined} />
         <CaseInfoMenu selected={selectedMenu} onSelect={setSelectedMenu} />
         <main className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0">
@@ -51,7 +51,7 @@ function PreviewWorkspace({ menu }: { menu: CaseInfoKey }) {
   if (["XRAY", "CT", "PATHOLOGY"].includes(menu)) return <ResultReviewPanel stage={menu} />;
   if (menu === "STAGING") return <TnmReviewWorkspace />;
   if (menu === "GENE") {
-    return <div className="space-y-3"><BiomarkerSourceHeader /><div className="grid grid-cols-2 gap-3"><PreviewEmpty title="유전자 결과 비교" message="확인 가능한 전문과 확정 결과와 AI 분석 후보가 없습니다." /><PreviewEmpty title="PD-L1 결과 비교" message="전문과 확정 TPS가 없으며 PD-L1 AI 후보는 인증 연결 전까지 조회되지 않습니다." /></div></div>;
+    return <div className="space-y-3"><BiomarkerSourceHeader /><PreviewEmpty title="PD-L1 결과 비교" message="전문과 확정 TPS가 없으며 PD-L1 AI 후보는 인증 연결 전까지 조회되지 않습니다." /></div>;
   }
   if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
     return <div><TreatmentPrescriptionOverview treatment={null} prescriptions={[]} /><CaseInfoWorkspace menu={menu} /></div>;
