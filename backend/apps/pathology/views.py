@@ -6,6 +6,7 @@ from django.utils import timezone
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -43,6 +44,10 @@ def pathology_hospital_id(request):
 class PathologyStaffAPIViewMixin:
     authentication_classes = [JWTAuthentication]
     permission_classes = PATHOLOGY_STAFF_PERMISSIONS
+
+
+class PathologyWorkstationPagination(PageNumberPagination):
+    page_size = 10
 
 
 class CasePathologyDiagnosisListAPIView(ListAPIView):
@@ -353,6 +358,7 @@ class PathologyWorkItemListAPIView(ListAPIView):
 
 class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     serializer_class = PathologyWorkstationSerializer
+    pagination_class = PathologyWorkstationPagination
 
     def get_queryset(self):
         analysis_queryset = (

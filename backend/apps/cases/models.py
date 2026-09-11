@@ -77,6 +77,11 @@ class ExaminationOrder(TimestampedUUIDModel):
         CT = "CT", "CT"
         WSI = "WSI", "WSI"
 
+    class PathologyTestType(models.TextChoices):
+        SUBTYPE = "SUBTYPE", "아형분류 검사"
+        PDL1 = "PDL1", "PD-L1 검사"
+        GENE = "GENE", "유전자 검사"
+
     class Priority(models.TextChoices):
         NORMAL = "NORMAL", "일반"
         URGENT = "URGENT", "긴급"
@@ -89,6 +94,12 @@ class ExaminationOrder(TimestampedUUIDModel):
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="examination_orders")
     exam_type = models.CharField(max_length=10, choices=ExamType.choices)
+    pathology_test_type = models.CharField(
+    max_length=20,
+    choices=PathologyTestType.choices,
+    null=True,
+    blank=True,
+)
     requesting_doctor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="requested_examinations")
     priority = models.CharField(max_length=10, choices=Priority.choices, default=Priority.NORMAL)
     purpose = models.TextField()
