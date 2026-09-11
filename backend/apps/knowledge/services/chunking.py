@@ -8,10 +8,18 @@ TARGET_CHUNK_CHARS = 800
 MIN_SPLITTABLE_CHARS = 20
 
 _SENTENCE_END_RE = re.compile(r"(?<=[.!?])\s+")
+# PDF에서 글머리표 목록을 추출하면 각 항목의 실제 텍스트는 앞 문단에 붙어버리고
+# '•' 글자만 항목 수만큼 줄줄이 남는 경우가 있다. 마침표가 없어 문장 경계로 안
+# 끊기기 때문에, 이런 신호 없는 구간은 청킹 전에 미리 지운다.
+_BULLET_RUN_RE = re.compile(r"(?:[•●▪]\s*){2,}")
+
+
+def clean_text(text):
+    return _BULLET_RUN_RE.sub(" ", text)
 
 
 def split_into_sentences(text):
-    text = text.strip()
+    text = clean_text(text).strip()
     if not text:
         return []
     return [sentence.strip() for sentence in _SENTENCE_END_RE.split(text) if sentence.strip()]

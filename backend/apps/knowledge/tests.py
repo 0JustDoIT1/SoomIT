@@ -28,6 +28,12 @@ class ChunkingTests(TestCase):
         chunks = chunk_text(text, target_chars=15)
         self.assertEqual(chunks, ["첫 문장입니다.", "두 번째 문장입니다.", "세 번째 문장입니다."])
 
+    def test_chunk_text_strips_pdf_bullet_marker_runs(self):
+        # PDF에서 글머리표 목록을 추출하면 항목 텍스트 없이 '•'만 남는 구간이 생긴다.
+        text = "Amivantamab. •\n•\n•\n•\n\n6. ALK inhibitors. Alectinib."
+        chunks = chunk_text(text, target_chars=200)
+        self.assertEqual(chunks, ["Amivantamab. 6. ALK inhibitors. Alectinib."])
+
     def test_split_in_half_prefers_sentence_boundary(self):
         left, right = split_in_half("문장 하나. 문장 둘. 문장 셋. 문장 넷.")
         self.assertEqual(left, "문장 하나. 문장 둘.")
