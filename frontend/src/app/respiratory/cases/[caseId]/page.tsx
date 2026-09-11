@@ -317,7 +317,7 @@ const resultSubMenus: {
   },
   {
     key: "GENE",
-    label: "유전자 & PD-L1",
+    label: "PD-L1",
   },
 ];
 
@@ -343,7 +343,7 @@ const aiSubMenus: {
   },
   {
     key: "GENE",
-    label: "유전자 & PD-L1",
+    label: "PD-L1",
   },
 ];
 
@@ -1197,9 +1197,9 @@ export default function RespiratoryCaseDetailPage() {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-slate-50">
+    <div className="fixed inset-x-0 bottom-0 top-[54px] flex min-h-0 w-full flex-col overflow-hidden bg-slate-50">
       <CaseSummaryHeader caseData={selectedCase} />
-      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(1040px,1fr)] overflow-x-auto overflow-y-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(0,1fr)] overflow-hidden">
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
 
       {/* A. 담당 환자 목록 */}
@@ -2693,7 +2693,7 @@ function getStageLabel(stage: string) {
     return "TNM";
 
   if (stage === "GENE")
-    return "유전자 & PD-L1";
+    return "PD-L1";
 
   if (stage === "TREATMENT")
     return "치료 결정";
@@ -2720,7 +2720,7 @@ function getResultMenuLabel(
     return "TNM";
 
   if (menu === "GENE")
-    return "유전자 & PD-L1";
+    return "PD-L1";
 
   return menu;
 }
@@ -2741,7 +2741,7 @@ function getAiMenuLabel(
     return "TNM";
 
   if (menu === "GENE")
-    return "유전자 & PD-L1";
+    return "PD-L1";
 
   return menu;
 }
@@ -2809,9 +2809,9 @@ function Pdl1AiPanel({
     : null;
 
   return (
-    <div className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)] items-start gap-4">
+    <div className="space-y-4">
       <BiomarkerSourceHeader />
-      <section className="rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
+      <section className="hidden rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
         <div className="flex items-start justify-between gap-3">
           <div><p className="text-[10px] font-semibold text-slate-500">유전자 검사</p><p className="mt-0.5 text-base font-bold text-slate-800">
             유전자 결과 비교

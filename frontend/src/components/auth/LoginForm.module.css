@@ -7,114 +7,124 @@
   justify-content: center;
 
   overflow: hidden;
-  padding: 38px 24px;
+  padding: 30px 20px;
 
-  /* 기본 청록 베이스 */
   background:
     linear-gradient(
       135deg,
-      #80e4df 0%,
-      #50d4d2 28%,
-      #b9f1ed 52%,
-      #48cfcd 76%,
-      #83e5df 100%
+      #7fe4df 0%,
+      #4fd4d1 28%,
+      #baf2ee 52%,
+      #49cfcd 76%,
+      #82e5df 100%
     );
 }
 
-/* 큰 스머징 레이어 */
+/* =========================
+   배경 스머징
+========================= */
+
 .page::before {
   content: "";
   position: absolute;
 
-  inset: -180px;
+  inset: -220px;
 
   background:
-    /* 중앙의 넓은 흰색 번짐 */
+    /* 중앙 흰색 번짐 */
     radial-gradient(
       ellipse at 50% 42%,
-      rgba(255, 255, 255, 0.95) 0%,
-      rgba(255, 255, 255, 0.78) 18%,
-      rgba(255, 255, 255, 0.4) 36%,
-      rgba(255, 255, 255, 0.12) 52%,
-      transparent 68%
+      rgba(255, 255, 255, 0.98) 0%,
+      rgba(255, 255, 255, 0.82) 20%,
+      rgba(255, 255, 255, 0.5) 38%,
+      rgba(255, 255, 255, 0.18) 56%,
+      transparent 74%
     ),
 
-    /* 좌측 청록 스머지 */
+    /* 왼쪽 청록 */
     radial-gradient(
-      circle at 4% 30%,
-      rgba(0, 191, 190, 0.88) 0%,
-      rgba(0, 191, 190, 0.55) 22%,
-      rgba(0, 191, 190, 0.2) 44%,
-      transparent 68%
+      circle at 3% 30%,
+      rgba(0, 190, 188, 0.88) 0%,
+      rgba(0, 190, 188, 0.52) 24%,
+      rgba(0, 190, 188, 0.18) 48%,
+      transparent 72%
     ),
 
-    /* 우측 위 청록 스머지 */
+    /* 오른쪽 위 */
     radial-gradient(
-      circle at 94% 20%,
-      rgba(0, 205, 197, 0.78) 0%,
-      rgba(0, 205, 197, 0.48) 24%,
-      rgba(0, 205, 197, 0.16) 46%,
+      circle at 96% 20%,
+      rgba(0, 205, 197, 0.8) 0%,
+      rgba(0, 205, 197, 0.46) 25%,
+      rgba(0, 205, 197, 0.14) 50%,
+      transparent 74%
+    ),
+
+    /* 왼쪽 아래 */
+    radial-gradient(
+      circle at 18% 88%,
+      rgba(51, 220, 207, 0.62) 0%,
+      rgba(51, 220, 207, 0.32) 30%,
       transparent 70%
     ),
 
-    /* 좌측 아래 민트 */
+    /* 오른쪽 아래 */
     radial-gradient(
-      circle at 18% 86%,
-      rgba(47, 216, 204, 0.65) 0%,
-      rgba(47, 216, 204, 0.35) 28%,
-      transparent 66%
-    ),
-
-    /* 우측 아래 진한 청록 */
-    radial-gradient(
-      circle at 88% 82%,
-      rgba(0, 159, 171, 0.7) 0%,
-      rgba(0, 159, 171, 0.35) 30%,
-      transparent 68%
+      circle at 88% 84%,
+      rgba(0, 158, 170, 0.68) 0%,
+      rgba(0, 158, 170, 0.32) 30%,
+      transparent 70%
     );
 
-  filter: blur(95px);
+  filter: blur(115px);
 
   transform: scale(1.12);
 
   pointer-events: none;
 }
 
-/* 추가 흰색 안개 레이어 */
+/* 중앙 안개층 */
 .page::after {
   content: "";
   position: absolute;
 
-  inset: -120px;
+  inset: -150px;
 
   background:
     radial-gradient(
-      ellipse at 50% 44%,
-      rgba(255, 255, 255, 0.62) 0%,
-      rgba(255, 255, 255, 0.42) 28%,
-      rgba(255, 255, 255, 0.12) 52%,
-      transparent 75%
+      ellipse at 50% 43%,
+      rgba(255, 255, 255, 0.68) 0%,
+      rgba(255, 255, 255, 0.44) 32%,
+      rgba(255, 255, 255, 0.13) 56%,
+      transparent 78%
     );
 
-  filter: blur(75px);
+  filter: blur(90px);
 
   pointer-events: none;
 }
 
-/* 전체 로그인 영역 */
+
+/* =========================
+   전체 로그인 영역
+========================= */
+
 .container {
   position: relative;
   z-index: 1;
 
   width: 100%;
-  max-width: 500px;
+  max-width: 470px;
 }
 
-/* 숨잇 로고 */
+
+/* =========================
+   상단 브랜드
+========================= */
+
 .brand {
   text-align: center;
 
-  margin-bottom: 50px;
+  margin-bottom: 34px;
 }
 
 .title {
@@ -126,7 +136,7 @@
     "Apple SD Gothic Neo",
     sans-serif;
 
-  font-size: 44px;
+  font-size: 40px;
   line-height: 1;
 
   font-weight: 800;
@@ -137,56 +147,62 @@
 }
 
 .subtitle {
-  margin: 13px 0 0;
+  margin: 11px 0 0;
 
   font-family:
     "Inter",
     "Pretendard",
     sans-serif;
 
-  font-size: 14px;
+  font-size: 12px;
   font-weight: 500;
 
   letter-spacing: 2px;
 
-  color: rgba(7, 80, 89, 0.62);
+  color: rgba(7, 80, 89, 0.64);
 }
 
-/* 로그인 외곽 박스 */
+
+/* =========================
+   로그인 외곽 박스
+========================= */
+
 .card {
   position: relative;
 
   width: 100%;
 
-  padding: 54px 38px 26px;
+  padding: 46px 32px 22px;
 
-  /*
-    기존보다 훨씬 투명하게
-    배경 스머징이 박스를 통해 자연스럽게 보이도록
-  */
-  border: 4px solid rgba(255, 255, 255, 0.94);
-  border-radius: 20px;
+  /* 배경과 자연스럽게 섞이도록 거의 투명 */
+  background: rgba(255, 255, 255, 0.025);
+
+  border: 4px solid rgba(255, 255, 255, 0.95);
+  border-radius: 19px;
 
   box-shadow:
-    0 16px 36px rgba(0, 102, 108, 0.05),
-    inset 0 0 24px rgba(255, 255, 255, 0.03);
+    0 14px 34px rgba(0, 102, 108, 0.045),
+    inset 0 0 22px rgba(255, 255, 255, 0.025);
 
-  backdrop-filter: blur(1.5px);
-  -webkit-backdrop-filter: blur(1.5px);
+  backdrop-filter: blur(1px);
+  -webkit-backdrop-filter: blur(1px);
 }
 
 
-/* 사람 아이콘 */
+/* =========================
+   사람 아이콘
+========================= */
+
 .card::before {
   content: "";
 
   position: absolute;
 
-  top: -41px;
+  top: -39px;
   left: 50%;
 
-  width: 76px;
-  height: 76px;
+  width: 72px;
+  height: 72px;
 
   transform: translateX(-50%);
 
@@ -195,7 +211,7 @@
 
   background:
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='36' r='15' fill='none' stroke='white' stroke-width='4'/%3E%3Cpath d='M25 79c2-18 12-28 25-28s23 10 25 28' fill='none' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E")
-      center / 62% 62% no-repeat,
+      center / 61% 61% no-repeat,
 
     linear-gradient(
       145deg,
@@ -205,13 +221,17 @@
     );
 
   box-shadow:
-    0 9px 24px rgba(0, 127, 136, 0.2),
-    0 0 26px rgba(43, 222, 211, 0.28);
+    0 8px 20px rgba(0, 127, 136, 0.18),
+    0 0 22px rgba(43, 222, 211, 0.24);
 }
 
-/* 로그인 */
+
+/* =========================
+   로그인 제목
+========================= */
+
 .cardTitle {
-  margin: 0 0 6px;
+  margin: 0 0 5px;
 
   text-align: center;
 
@@ -220,18 +240,18 @@
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 25px;
+  font-size: 24px;
   line-height: 1.3;
 
   font-weight: 700;
 
-  letter-spacing: -1px;
+  letter-spacing: -0.8px;
 
   color: #07525d;
 }
 
 .description {
-  margin: 0 0 22px;
+  margin: 0 0 16px;
 
   text-align: center;
 
@@ -240,19 +260,23 @@
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 13px;
+  font-size: 12px;
   line-height: 1.5;
 
-  color: rgba(8, 78, 87, 0.65);
+  color: rgba(8, 78, 87, 0.64);
 }
 
-/* Form */
+
+/* =========================
+   Form
+========================= */
+
 .form {
   display: flex;
 
   flex-direction: column;
 
-  gap: 12px;
+  gap: 10px;
 }
 
 .form label {
@@ -267,25 +291,29 @@
   color: #075963;
 }
 
-/* 입력창 */
+
+/* =========================
+   입력창
+========================= */
+
 .form input {
   min-height: 42px;
 
-  padding-left: 15px;
-  padding-right: 15px;
+  padding-left: 14px;
+  padding-right: 14px;
 
   font-family:
     "Pretendard",
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 13px;
+  font-size: 12px;
 
   color: #164e57;
 
-  background: rgba(255, 255, 255, 0.9);
+  background: rgba(255, 255, 255, 0.92);
 
-  border: 1px solid rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(164, 190, 193, 0.6);
 
   border-radius: 8px;
 
@@ -302,7 +330,7 @@
 }
 
 .form input:hover {
-  background: rgba(255, 255, 255, 0.96);
+  background: rgba(255, 255, 255, 0.97);
 }
 
 .form input:focus {
@@ -311,18 +339,22 @@
   border-color: #13bdbd;
 
   box-shadow:
-    0 0 0 3px rgba(0, 184, 181, 0.12),
-    0 5px 15px rgba(0, 128, 136, 0.07);
+    0 0 0 3px rgba(0, 184, 181, 0.1),
+    0 4px 12px rgba(0, 128, 136, 0.06);
 }
 
-/* 로그인 버튼 */
-.form button {
-  min-height: 44px;
 
-  margin-top: 0px;
+/* =========================
+   로그인 버튼
+========================= */
+
+.form button {
+  min-height: 43px;
+
+  margin-top: 1px;
 
   border: none;
-  border-radius: 9px;
+  border-radius: 8px;
 
   font-family:
     "Pretendard",
@@ -330,7 +362,6 @@
     sans-serif;
 
   font-size: 12px;
-
   font-weight: 700;
 
   color: #ffffff;
@@ -344,7 +375,7 @@
     );
 
   box-shadow:
-    0 8px 20px rgba(0, 139, 150, 0.18);
+    0 7px 17px rgba(0, 139, 150, 0.16);
 
   transition:
     transform 160ms ease,
@@ -353,12 +384,12 @@
 }
 
 .form button:hover:not(:disabled) {
-  transform: translateY(-20px);
+  transform: translateY(-1px);
 
   filter: saturate(1.08);
 
   box-shadow:
-    0 11px 24px rgba(0, 139, 150, 0.23);
+    0 9px 20px rgba(0, 139, 150, 0.21);
 }
 
 .form button:active:not(:disabled) {
@@ -367,8 +398,14 @@
 
 .form button:disabled {
   opacity: 0.65;
+
   box-shadow: none;
 }
+
+
+/* =========================
+   하단 안내
+========================= */
 
 .notice {
   margin: 1px 0 0;
@@ -380,35 +417,47 @@
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 
-  color: rgba(9, 78, 87, 0.55);
+  color: rgba(9, 78, 87, 0.5);
 }
 
-/* 태블릿 */
+
+/* =========================
+   태블릿
+========================= */
+
 @media (max-width: 768px) {
+  .page {
+    padding: 28px 20px;
+  }
+
   .container {
-    max-width: 590px;
+    max-width: 450px;
   }
 
   .brand {
-    margin-bottom: 56px;
+    margin-bottom: 42px;
   }
 
   .title {
-    font-size: 40px;
+    font-size: 38px;
   }
 
   .card {
-    padding: 62px 44px 34px;
+    padding: 48px 32px 24px;
   }
 }
 
-/* 모바일 */
+
+/* =========================
+   모바일
+========================= */
+
 @media (max-width: 480px) {
   .page {
-    padding: 28px 18px;
+    padding: 24px 16px;
   }
 
   .container {
@@ -416,41 +465,64 @@
   }
 
   .brand {
-    margin-bottom: 54px;
+    margin-bottom: 40px;
   }
 
   .title {
-    font-size: 34px;
+    font-size: 33px;
   }
 
   .subtitle {
-    font-size: 11px;
-    letter-spacing: 1.4px;
+    margin-top: 9px;
+
+    font-size: 10px;
+
+    letter-spacing: 1.3px;
   }
 
   .card {
     padding:
-      58px
-      22px
-      28px;
+      48px
+      20px
+      23px;
 
     border-width: 3px;
 
-    border-radius: 18px;
+    border-radius: 17px;
   }
 
   .card::before {
-    width: 86px;
-    height: 86px;
+    width: 68px;
+    height: 68px;
 
-    top: -46px;
+    top: -37px;
+
+    border-width: 4px;
   }
 
   .cardTitle {
-    font-size: 27px;
+    font-size: 23px;
   }
 
   .description {
-    margin-bottom: 22px;
+    margin-bottom: 18px;
+
+    font-size: 11px;
+  }
+
+  .form {
+    gap: 9px;
+  }
+
+  .form input {
+    min-height: 41px;
+  }
+
+  .form button {
+    min-height: 42px;
+  }
+
+  .notice {
+    font-size: 10px;
   }
 }

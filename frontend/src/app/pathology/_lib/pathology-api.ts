@@ -112,6 +112,12 @@ export type PathologyAiResultDetail = {
     confidence: string | number;
     probabilities: Record<"class_0" | "class_1" | "class_2", number>;
   };
+  genes?: Array<{
+    gene_symbol: string;
+    predicted_status: string;
+    predicted_status_label: string;
+    predicted_probability: string | number | null;
+  }>;
 };
 
 export type PathologyAiAnalysis = {

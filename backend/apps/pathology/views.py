@@ -1,15 +1,18 @@
 from django.db import transaction
-from django.db.models import Case, Count, IntegerField, Q, When
+from django.db.models import Case, Count, IntegerField, Prefetch, Q, When
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.utils import timezone
 from decimal import Decimal
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnologist
 from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, ModelVersion, PDL1AiResult
 from apps.cases.models import LungCancerCase
 from apps.clinical.models import ClinicalResult
@@ -24,10 +27,27 @@ from .serializers import (
     PathologyReportSerializer,
     PathologySpecimenSerializer,
     PathologyWorkItemSerializer,
+    PathologyWorkstationSerializer,
     WholeSlideImageSerializer,
 )
 from .services.pdl1_inference import PDL1InferenceError, request_pdl1_prediction
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
+
+
+PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
+
+
+def pathology_hospital_id(request):
+    return request.user.department_role.department.hospital_id
+
+
+class PathologyStaffAPIViewMixin:
+    authentication_classes = [JWTAuthentication]
+    permission_classes = PATHOLOGY_STAFF_PERMISSIONS
+
+
+class PathologyWorkstationPagination(PageNumberPagination):
+    page_size = 10
 
 
 class CasePathologyDiagnosisListAPIView(ListAPIView):
@@ -186,14 +206,14 @@ class CaseSpecimenAdequacyAiAnalysisListAPIView(ListAPIView):
         )
 
 
-class CasePDL1AiAnalysisListAPIView(ListAPIView):
+class CasePDL1AiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     serializer_class = PathologyAiAnalysisSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return (
             AiAnalysis.objects.filter(
                 case_id=self.kwargs["case_id"],
+                case__patient__hospital_id=pathology_hospital_id(self.request),
                 analysis_type="PDL1_CLASSIFICATION",
             )
             .select_related(
@@ -206,11 +226,14 @@ class CasePDL1AiAnalysisListAPIView(ListAPIView):
         )
 
 
-class CasePDL1AnalysisRunAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
 
     def post(self, request, case_id):
-        case = get_object_or_404(LungCancerCase, id=case_id)
+        case = get_object_or_404(
+            LungCancerCase,
+            id=case_id,
+            patient__hospital_id=pathology_hospital_id(request),
+        )
         serializer = PDL1AnalysisRunSerializer(
             data=request.data,
             context={"case": case},
@@ -333,6 +356,58 @@ class PathologyWorkItemListAPIView(ListAPIView):
         return queryset
 
 
+class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
+    serializer_class = PathologyWorkstationSerializer
+    pagination_class = PathologyWorkstationPagination
+
+    def get_queryset(self):
+        analysis_queryset = (
+            AiAnalysis.objects.filter(
+                analysis_type__in=[
+                    AnalysisType.PATHOLOGY_DIAGNOSIS,
+                    AnalysisType.PDL1_CLASSIFICATION,
+                    AnalysisType.GENE_PREDICTION,
+                ],
+            )
+            .select_related(
+                "model_version", "ai_result", "ai_result__pathology_detail",
+                "ai_result__pdl1_detail",
+            )
+            .prefetch_related("ai_result__gene_ai_results")
+            .order_by("-created_at")
+        )
+        review_queryset = PathologyWorkItem.objects.filter(
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        ).order_by("-created_at")
+        confirmed_queryset = ClinicalResult.objects.filter(
+            stage="PATHOLOGY",
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).order_by("-confirmed_at", "-created_at")
+        wsi_queryset = WholeSlideImage.objects.select_related("image_asset").order_by("-created_at")
+
+        queryset = (
+            PathologyWorkItem.objects.filter(
+                case__patient__hospital_id=pathology_hospital_id(self.request),
+            )
+            .select_related(
+                "case", "case__patient", "specimen", "specimen__examination_order",
+                "specimen__examination_order__requesting_doctor", "assigned_to",
+            )
+            .prefetch_related(
+                Prefetch("specimen__wsis", queryset=wsi_queryset, to_attr="workstation_wsis"),
+                Prefetch("case__ai_analyses", queryset=analysis_queryset, to_attr="workstation_analyses"),
+                Prefetch("case__pathology_work_items", queryset=review_queryset, to_attr="workstation_review_items"),
+                Prefetch("case__clinical_results", queryset=confirmed_queryset, to_attr="workstation_confirmed_results"),
+            )
+            .order_by("-updated_at")
+        )
+        for field in ("status", "task_type", "assigned_to"):
+            value = self.request.query_params.get(field)
+            if value:
+                queryset = queryset.filter(**{field if field != "assigned_to" else "assigned_to_id": value})
+        return queryset
+
+
 class PathologyWorkItemDetailAPIView(RetrieveAPIView):
     queryset = PathologyWorkItem.objects.select_related(
         "case",
@@ -346,14 +421,14 @@ class PathologyWorkItemDetailAPIView(RetrieveAPIView):
     lookup_field = "id"
 
 
-class CasePathologySpecimenListAPIView(ListAPIView):
+class CasePathologySpecimenListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     serializer_class = PathologySpecimenSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return (
             PathologySpecimen.objects.filter(
                 case_id=self.kwargs["case_id"],
+                case__patient__hospital_id=pathology_hospital_id(self.request),
             )
             .select_related(
                 "case",
@@ -371,14 +446,14 @@ class CasePathologySpecimenListAPIView(ListAPIView):
         )
 
 
-class SpecimenWholeSlideImageListAPIView(ListAPIView):
+class SpecimenWholeSlideImageListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     serializer_class = WholeSlideImageSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return (
             WholeSlideImage.objects.filter(
                 specimen_id=self.kwargs["specimen_id"],
+                specimen__case__patient__hospital_id=pathology_hospital_id(self.request),
             )
             .select_related(
                 "specimen",
@@ -389,11 +464,14 @@ class SpecimenWholeSlideImageListAPIView(ListAPIView):
         )
 
 
-class WholeSlideImagePyramidAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+class WholeSlideImagePyramidAPIView(PathologyStaffAPIViewMixin, APIView):
 
     def get(self, request, wsi_id):
-        wsi = get_object_or_404(WholeSlideImage, id=wsi_id)
+        wsi = get_object_or_404(
+            WholeSlideImage,
+            id=wsi_id,
+            specimen__case__patient__hospital_id=pathology_hospital_id(request),
+        )
         if not wsi.orthanc_series_id:
             return Response(
                 {"detail": "이 WSI에 Orthanc series가 연결되지 않았습니다."},
@@ -425,11 +503,14 @@ class WholeSlideImagePyramidAPIView(APIView):
         )
 
 
-class WholeSlideImageTileAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+class WholeSlideImageTileAPIView(PathologyStaffAPIViewMixin, APIView):
 
     def get(self, request, wsi_id, level, x, y):
-        wsi = get_object_or_404(WholeSlideImage, id=wsi_id)
+        wsi = get_object_or_404(
+            WholeSlideImage,
+            id=wsi_id,
+            specimen__case__patient__hospital_id=pathology_hospital_id(request),
+        )
         if not wsi.orthanc_series_id:
             return Response(
                 {"detail": "이 WSI에 Orthanc series가 연결되지 않았습니다."},

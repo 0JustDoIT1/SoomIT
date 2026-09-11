@@ -1,7 +1,8 @@
 from django.utils import timezone
 from rest_framework import serializers
 
-from apps.cases.models import ExaminationOrder
+from apps.ai_results.models import AiAnalysis
+from apps.cases.models import CaseImageAsset, ExaminationOrder
 
 from .services.workflow import (
     calculate_workflow_status,
@@ -93,6 +94,41 @@ class RadiologyImageAssetSummarySerializer(serializers.Serializer):
     created_at = serializers.DateTimeField(read_only=True)
 
 
+class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CaseImageAsset
+        fields = [
+            "id",
+            "storage_type",
+            "storage_uri",
+            "file_format",
+            "acquired_at",
+            "metadata",
+            "status",
+            "image_type",
+            "uploaded_stage",
+            "created_at",
+        ]
+        read_only_fields = [
+            "id",
+            "status",
+            "image_type",
+            "uploaded_stage",
+            "created_at",
+        ]
+
+    def validate_storage_uri(self, value):
+        order = self.context["order"]
+        if CaseImageAsset.objects.filter(
+            examination_order=order,
+            storage_uri=value,
+        ).exists():
+            raise serializers.ValidationError("동일한 영상 자산이 이미 등록되어 있습니다.")
+        if CaseImageAsset.objects.filter(storage_uri=value).exists():
+            raise serializers.ValidationError("이미 사용 중인 영상 저장 위치입니다.")
+        return value
+
+
 class RadiologyAiAnalysisSummarySerializer(serializers.Serializer):
     id = serializers.UUIDField(read_only=True)
     analysis_type = serializers.CharField(read_only=True)
@@ -104,6 +140,93 @@ class RadiologyAiAnalysisSummarySerializer(serializers.Serializer):
     completed_at = serializers.DateTimeField(read_only=True, allow_null=True)
     error_message = serializers.CharField(read_only=True, allow_null=True)
     created_at = serializers.DateTimeField(read_only=True)
+
+
+class RadiologyAiAnalysisDetailSerializer(serializers.ModelSerializer):
+    analysis_id = serializers.UUIDField(source="id", read_only=True)
+    case_id = serializers.UUIDField(read_only=True)
+    order_id = serializers.UUIDField(
+        source="source_image_asset.examination_order_id",
+        read_only=True,
+        allow_null=True,
+    )
+    model_version = serializers.SerializerMethodField()
+    source_image_asset = serializers.SerializerMethodField()
+
+    class Meta:
+        model = AiAnalysis
+        fields = [
+            "analysis_id",
+            "case_id",
+            "order_id",
+            "analysis_type",
+            "status",
+            "started_at",
+            "completed_at",
+            "error_message",
+            "model_version",
+            "source_image_asset",
+            "created_at",
+        ]
+
+    def get_model_version(self, obj):
+        return {
+            "id": obj.model_version_id,
+            "model_name": obj.model_version.model_name,
+            "version": obj.model_version.version,
+        }
+
+    def get_source_image_asset(self, obj):
+        asset = obj.source_image_asset
+        if asset is None:
+            return None
+        return {
+            "id": asset.id,
+            "image_type": asset.image_type,
+            "uploaded_stage": asset.uploaded_stage,
+            "storage_type": asset.storage_type,
+            "status": asset.status,
+        }
+
+
+class RadiologyAiResultSerializer(serializers.Serializer):
+    analysis_id = serializers.UUIDField(source="id", read_only=True)
+    analysis_type = serializers.CharField(read_only=True)
+    result = serializers.SerializerMethodField()
+
+    def get_result(self, obj):
+        ai_result = obj.ai_result
+        if obj.analysis_type == "XRAY_SCREENING" and hasattr(ai_result, "xray_detail"):
+            detail = ai_result.xray_detail
+            return {
+                "assessment": detail.assessment,
+                "assessment_label": detail.get_assessment_display(),
+                "suspicion_score": detail.suspicion_score,
+            }
+        if obj.analysis_type == "CT_NODULE" and hasattr(ai_result, "ct_detail"):
+            detail = ai_result.ct_detail
+            return {
+                "overall_malignancy_risk": detail.overall_malignancy_risk,
+                "nodules": [
+                    {
+                        "nodule_no": nodule.nodule_no,
+                        "detection_confidence": nodule.detection_confidence,
+                        "malignancy_risk": nodule.malignancy_risk,
+                        "finding_payload": nodule.finding_payload,
+                    }
+                    for nodule in detail.nodule_results.all()
+                ],
+            }
+        if obj.analysis_type == "TNM_STAGING" and hasattr(ai_result, "tnm_detail"):
+            detail = ai_result.tnm_detail
+            return {
+                "predicted_t": detail.predicted_t,
+                "predicted_n": detail.predicted_n,
+                "predicted_m": detail.predicted_m,
+                "predicted_stage_group": detail.predicted_stage_group,
+                "confidence": detail.confidence,
+            }
+        return None
 
 
 class RadiologyWorklistSerializer(serializers.Serializer):

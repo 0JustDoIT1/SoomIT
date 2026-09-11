@@ -2,6 +2,7 @@
 
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { staffAuthenticatedFetch } from "../../../lib/api";
 import type { LoginUser } from "@/types/auth";
 
 type ContextValue = { user: LoginUser | null; isAuthenticated: boolean; isReady: boolean; logout: () => void; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> };
@@ -46,24 +47,20 @@ export function RespiratoryAuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const authorizedFetch = useCallback((input: RequestInfo | URL, init: RequestInit = {}) => {
-    const accessToken = sessionStorage.getItem("accessToken");
-    if (!accessToken) {
-      if (PREVIEW_ENABLED) {
-        const headers = new Headers(init.headers);
-        headers.set("Accept", "application/json");
-        return fetch(input, { ...init, headers, cache: "no-store" });
-      }
-
-      router.replace("/login");
-      return Promise.reject(new Error("공통 로그인이 필요합니다."));
+    if (PREVIEW_ENABLED && !sessionStorage.getItem("accessToken")) {
+      const headers = new Headers(init.headers);
+      headers.set("Accept", "application/json");
+      return fetch(input, { ...init, headers, cache: "no-store" });
     }
 
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
-    headers.set("Authorization", `Bearer ${accessToken}`);
-
-    return fetch(input, { ...init, headers, cache: "no-store" });
-  }, [router]);
+    return staffAuthenticatedFetch(input, {
+      ...init,
+      headers,
+      cache: "no-store",
+    });
+  }, []);
 
   const value = useMemo(
     () => ({ user, isAuthenticated: Boolean(user) || PREVIEW_ENABLED, isReady, logout, authorizedFetch }),

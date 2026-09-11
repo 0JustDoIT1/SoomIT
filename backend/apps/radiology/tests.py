@@ -10,7 +10,15 @@ from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
-from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
+from apps.ai_results.models import (
+    AiAnalysis,
+    AiResult,
+    CtAiResult,
+    ModelVersion,
+    NoduleAiResult,
+    TnmAiResult,
+    XrayAiResult,
+)
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
 from apps.clinical.models import ClinicalResult
 from apps.patients.models import Appointment, Patient
@@ -356,3 +364,252 @@ class RadiologyWorklistAPITestCase(APITestCase):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         self.assertEqual(len(one_row_queries), len(multiple_row_queries))
+
+    def _image_payload(self, storage_uri="test://radiology/image-1"):
+        return {
+            "storage_type": CaseImageAsset.StorageType.GCS,
+            "storage_uri": storage_uri,
+            "file_format": "DICOM",
+            "metadata": {"source": "test"},
+        }
+
+    def test_create_xray_image_sets_server_managed_fields(self):
+        response = self.client.post(
+            reverse("radiology:order-image-create", kwargs={"order_id": self.order.id}),
+            self._image_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        asset = CaseImageAsset.objects.get(id=response.data["id"])
+        self.assertEqual(asset.image_type, CaseImageAsset.ImageType.XRAY)
+        self.assertEqual(asset.uploaded_stage, Stage.XRAY)
+        self.assertEqual(asset.status, CaseImageAsset.Status.READY)
+        self.assertEqual(asset.examination_order, self.order)
+
+    def test_create_ct_image_sets_server_managed_fields(self):
+        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.save(update_fields=["exam_type", "updated_at"])
+        response = self.client.post(
+            reverse("radiology:order-image-create", kwargs={"order_id": self.order.id}),
+            self._image_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        asset = CaseImageAsset.objects.get(id=response.data["id"])
+        self.assertEqual(asset.image_type, CaseImageAsset.ImageType.CT)
+        self.assertEqual(asset.uploaded_stage, Stage.CT)
+
+    def test_create_image_rejects_duplicate_and_other_hospital_order(self):
+        payload = self._image_payload()
+        first = self.client.post(
+            reverse("radiology:order-image-create", kwargs={"order_id": self.order.id}),
+            payload,
+            format="json",
+        )
+        duplicate = self.client.post(
+            reverse("radiology:order-image-create", kwargs={"order_id": self.order.id}),
+            payload,
+            format="json",
+        )
+        other = self.client.post(
+            reverse("radiology:order-image-create", kwargs={"order_id": self.other_order.id}),
+            self._image_payload("test://radiology/other"),
+            format="json",
+        )
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(other.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_create_image_returns_404_for_unknown_order(self):
+        response = self.client.post(
+            reverse("radiology:order-image-create", kwargs={"order_id": "00000000-0000-0000-0000-000000000000"}),
+            self._image_payload(),
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_start_analysis_requires_ready_asset(self):
+        response = self.client.post(
+            reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_start_xray_analysis_uses_matching_latest_model_and_pending_status(self):
+        latest_model = ModelVersion.objects.create(
+            model_name="xray-model",
+            version="2.0",
+            analysis_type="XRAY_SCREENING",
+        )
+        asset = self._create_asset(self.order)
+        response = self.client.post(
+            reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        analysis = AiAnalysis.objects.get(id=response.data["analysis_id"])
+        self.assertEqual(analysis.analysis_type, "XRAY_SCREENING")
+        self.assertEqual(analysis.model_version, latest_model)
+        self.assertEqual(analysis.source_image_asset, asset)
+        self.assertEqual(analysis.status, AiAnalysis.Status.PENDING)
+
+    def test_start_ct_and_tnm_analyses_choose_order_meaning(self):
+        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.save(update_fields=["exam_type", "updated_at"])
+        ct_model = ModelVersion.objects.create(
+            model_name="ct-model", version="1.0", analysis_type="CT_NODULE",
+        )
+        ct_asset = self._create_asset(
+            self.order,
+            image_type=CaseImageAsset.ImageType.CT,
+            uploaded_stage=Stage.CT,
+        )
+        ct_response = self.client.post(
+            reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
+            {}, format="json",
+        )
+        self.assertEqual(ct_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ct_response.data["analysis_type"], "CT_NODULE")
+        self.assertEqual(str(ct_model.id), str(ct_response.data["model_version"]["id"]))
+
+        tnm_order = self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        ModelVersion.objects.create(
+            model_name="tnm-model", version="1.0", analysis_type="TNM_STAGING",
+        )
+        self._create_asset(
+            tnm_order,
+            image_type=CaseImageAsset.ImageType.CT,
+            uploaded_stage=Stage.STAGING,
+            storage_uri="test://radiology/tnm",
+        )
+        tnm_response = self.client.post(
+            reverse("radiology:order-analysis-create", kwargs={"order_id": tnm_order.id}),
+            {}, format="json",
+        )
+        self.assertEqual(tnm_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(tnm_response.data["analysis_type"], "TNM_STAGING")
+
+    def test_start_analysis_blocks_active_duplicate_and_other_hospital(self):
+        asset = self._create_asset(self.order)
+        self._create_analysis(asset, AiAnalysis.Status.PENDING)
+        duplicate = self.client.post(
+            reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
+            {}, format="json",
+        )
+        other = self.client.post(
+            reverse("radiology:order-analysis-create", kwargs={"order_id": self.other_order.id}),
+            {}, format="json",
+        )
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(other.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_analysis_detail_is_hospital_scoped(self):
+        asset = self._create_asset(self.order)
+        analysis = self._create_analysis(asset, AiAnalysis.Status.PENDING)
+        response = self.client.get(
+            reverse("radiology:analysis-detail", kwargs={"analysis_id": analysis.id}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["order_id"], str(self.order.id))
+        self.assertNotIn("progress", response.data)
+
+        other_asset = self._create_asset(
+            self.other_order,
+            storage_uri="test://radiology/other-analysis",
+        )
+        other_analysis = self._create_analysis(other_asset, AiAnalysis.Status.PENDING)
+        denied = self.client.get(
+            reverse("radiology:analysis-detail", kwargs={"analysis_id": other_analysis.id}),
+        )
+        self.assertEqual(denied.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_result_returns_xray_detail(self):
+        asset = self._create_asset(self.order)
+        analysis = self._create_analysis(asset, AiAnalysis.Status.SUCCEEDED)
+        result = AiResult.objects.create(ai_analysis=analysis, schema_version="1.0", result_payload={})
+        XrayAiResult.objects.create(
+            ai_result=result,
+            assessment=XrayAiResult.Assessment.SUSPICIOUS,
+            suspicion_score="0.8123",
+        )
+        response = self.client.get(
+            reverse("radiology:analysis-result", kwargs={"analysis_id": analysis.id}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["result"]["assessment"], "SUSPICIOUS")
+        self.assertEqual(set(response.data["result"]), {"assessment", "assessment_label", "suspicion_score"})
+
+    def test_result_returns_ct_detail_without_interpreting_payload(self):
+        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.save(update_fields=["exam_type", "updated_at"])
+        asset = self._create_asset(
+            self.order,
+            image_type=CaseImageAsset.ImageType.CT,
+            uploaded_stage=Stage.CT,
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            source_image_asset=asset,
+            analysis_type="CT_NODULE",
+            model_version=ModelVersion.objects.create(
+                model_name="ct-result-model", version="1.0", analysis_type="CT_NODULE",
+            ),
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        result = AiResult.objects.create(ai_analysis=analysis, schema_version="1.0", result_payload={})
+        ct_result = CtAiResult.objects.create(ai_result=result, overall_malignancy_risk="31.25")
+        payload = {"opaque": {"value": 1}}
+        NoduleAiResult.objects.create(
+            ct_ai_result=ct_result,
+            nodule_no=1,
+            detection_confidence="0.9000",
+            malignancy_risk="22.50",
+            finding_payload=payload,
+        )
+        response = self.client.get(
+            reverse("radiology:analysis-result", kwargs={"analysis_id": analysis.id}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["result"]["nodules"][0]["finding_payload"], payload)
+
+    def test_result_returns_tnm_detail(self):
+        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.save(update_fields=["exam_type", "updated_at"])
+        asset = self._create_asset(
+            self.order,
+            image_type=CaseImageAsset.ImageType.CT,
+            uploaded_stage=Stage.STAGING,
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            source_image_asset=asset,
+            analysis_type="TNM_STAGING",
+            model_version=ModelVersion.objects.create(
+                model_name="tnm-result-model", version="1.0", analysis_type="TNM_STAGING",
+            ),
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        result = AiResult.objects.create(ai_analysis=analysis, schema_version="1.0", result_payload={})
+        TnmAiResult.objects.create(
+            ai_result=result,
+            predicted_t="T2a",
+            predicted_n="N1",
+            predicted_m="M0",
+            predicted_stage_group="IIB",
+            confidence="0.9140",
+        )
+        response = self.client.get(
+            reverse("radiology:analysis-result", kwargs={"analysis_id": analysis.id}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["result"]["predicted_stage_group"], "IIB")
+
+    def test_result_returns_conflict_before_result_is_created(self):
+        asset = self._create_asset(self.order)
+        analysis = self._create_analysis(asset, AiAnalysis.Status.PENDING)
+        response = self.client.get(
+            reverse("radiology:analysis-result", kwargs={"analysis_id": analysis.id}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)

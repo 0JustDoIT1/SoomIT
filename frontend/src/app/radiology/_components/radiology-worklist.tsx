@@ -121,13 +121,13 @@ export function RadiologyWorklist({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto">
-        <table className="w-full min-w-[680px] border-collapse text-left text-sm">
+        <table className="w-full min-w-[420px] border-collapse text-left text-xs">
           <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
             <tr className="border-b border-slate-200">
-              <th className="w-[26%] px-5 py-3">환자명</th>
-              <th className="w-[24%] px-5 py-3">환자코드</th>
-              <th className="w-[25%] px-5 py-3">검사</th>
-              <th className="w-[25%] px-5 py-3">상태</th>
+              <th className="w-[26%] px-3 py-2.5">환자명</th>
+              <th className="w-[24%] px-3 py-2.5">환자코드</th>
+              <th className="w-[25%] px-3 py-2.5">검사</th>
+              <th className="w-[25%] px-3 py-2.5">상태</th>
             </tr>
           </thead>
 
@@ -140,8 +140,8 @@ export function RadiologyWorklist({
                   key={orderId}
                   tabIndex={0}
                   aria-selected={selectedId === orderId}
-                  className={`cursor-pointer border-b border-slate-100 outline-none transition-colors hover:bg-blue-50/50 focus:bg-blue-50 ${
-                    selectedId === orderId ? "bg-blue-50" : "bg-white"
+                  className={`cursor-pointer border-b border-slate-100 border-l-[3px] outline-none transition-colors hover:bg-blue-50/50 focus:bg-blue-50 ${
+                    selectedId === orderId ? "border-l-blue-600 bg-blue-50" : "border-l-transparent bg-white"
                   }`}
                   onClick={() => onSelect(item)}
                   onKeyDown={(event) => {
@@ -151,19 +151,19 @@ export function RadiologyWorklist({
                     }
                   }}
                 >
-                  <td className="px-5 py-3 font-semibold text-slate-800">
+                  <td className="px-3 py-2.5 font-semibold text-slate-800">
                     {item.patient.name}
                   </td>
 
-                  <td className="px-5 py-3 text-slate-600">
+                  <td className="px-3 py-2.5 text-slate-600">
                     {item.patient.patient_code}
                   </td>
 
-                  <td className="px-5 py-3 text-slate-700">
+                  <td className="px-3 py-2.5 text-slate-700">
                     {item.examination_order.exam_type_label}
                   </td>
 
-                  <td className="px-5 py-3">
+                  <td className="px-3 py-2.5">
                     <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
                       {workflowLabels[item.workflow_status]}
                     </span>

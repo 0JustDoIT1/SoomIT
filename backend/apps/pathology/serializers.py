@@ -5,6 +5,7 @@ from apps.ai_results.serializers import DoctorAiAnalysisSerializer
 from apps.clinical.models import ClinicalResult, PathologyResult
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
+from .services.workflow import calculate_workflow_status, workflow_label
 
 
 class PathologyAiAnalysisSerializer(DoctorAiAnalysisSerializer):
@@ -454,3 +455,83 @@ class PathologyWorkItemSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+
+class PathologyWorkstationSerializer(serializers.ModelSerializer):
+    assigned_to_name = serializers.CharField(source="assigned_to.name", read_only=True, allow_null=True)
+    patient = serializers.SerializerMethodField()
+    case = serializers.SerializerMethodField()
+    specimen = serializers.SerializerMethodField()
+    current_exam_or_task = serializers.CharField(source="get_task_type_display", read_only=True)
+    requesting_doctor = serializers.SerializerMethodField()
+    wsi_count = serializers.SerializerMethodField()
+    latest_wsi = serializers.SerializerMethodField()
+    latest_ai_analysis = serializers.SerializerMethodField()
+    latest_gene_analysis = serializers.SerializerMethodField()
+    diagnostic_review_status = serializers.SerializerMethodField()
+    workflow_status = serializers.SerializerMethodField()
+    workflow_status_label = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PathologyWorkItem
+        fields = [
+            "id", "case_id", "patient", "case", "specimen",
+            "current_exam_or_task", "task_type", "status", "priority",
+            "assigned_to_id", "assigned_to_name", "requesting_doctor",
+            "wsi_count", "latest_wsi", "latest_ai_analysis", "latest_gene_analysis",
+            "diagnostic_review_status", "workflow_status", "workflow_status_label",
+            "due_at", "completed_at", "created_at", "updated_at",
+        ]
+
+    def get_patient(self, obj):
+        patient = obj.case.patient
+        return {"id": patient.id, "name": patient.name, "patient_code": patient.patient_code, "birth_date": patient.birth_date, "sex": patient.sex}
+
+    def get_case(self, obj):
+        return {"id": obj.case_id, "case_code": obj.case.case_code, "current_stage": obj.case.current_stage, "case_status": obj.case.case_status}
+
+    def get_specimen(self, obj):
+        if not obj.specimen:
+            return None
+        return {"id": obj.specimen_id, "specimen_code": obj.specimen.specimen_code, "specimen_type": obj.specimen.specimen_type, "body_site": obj.specimen.body_site, "status": obj.specimen.status}
+
+    def get_requesting_doctor(self, obj):
+        order = obj.specimen.examination_order if obj.specimen else None
+        if not order:
+            return None
+        return {"id": order.requesting_doctor_id, "name": order.requesting_doctor.name}
+
+    def _wsis(self, obj):
+        return getattr(obj.specimen, "workstation_wsis", []) if obj.specimen else []
+
+    def get_wsi_count(self, obj):
+        return len(self._wsis(obj))
+
+    def get_latest_wsi(self, obj):
+        wsis = self._wsis(obj)
+        return WholeSlideImageSerializer(wsis[0]).data if wsis else None
+
+    def get_latest_ai_analysis(self, obj):
+        analyses = getattr(obj.case, "workstation_analyses", [])
+        return PathologyAiAnalysisSerializer(analyses[0]).data if analyses else None
+
+    def get_latest_gene_analysis(self, obj):
+        analysis = next(
+            (
+                item
+                for item in getattr(obj.case, "workstation_analyses", [])
+                if item.analysis_type == "GENE_PREDICTION"
+            ),
+            None,
+        )
+        return PathologyAiAnalysisSerializer(analysis).data if analysis else None
+
+    def get_diagnostic_review_status(self, obj):
+        items = getattr(obj.case, "workstation_review_items", [])
+        return items[0].status if items else None
+
+    def get_workflow_status(self, obj):
+        return calculate_workflow_status(obj)
+
+    def get_workflow_status_label(self, obj):
+        return workflow_label(calculate_workflow_status(obj))

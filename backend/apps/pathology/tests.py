@@ -40,8 +40,8 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.department_role = DepartmentRole.objects.create(
             department=self.department,
-            role=DepartmentRole.Role.DOCTOR,
-            display_name="병리과 전문의",
+            role=DepartmentRole.Role.TECHNOLOGIST,
+            display_name="임상병리사",
         )
 
         self.user = User.objects.create_user(
@@ -204,6 +204,96 @@ class PathologyReadAPITestCase(APITestCase):
             histologic_type="NSCLC",
             subtype="Adenocarcinoma",
             diagnosis_summary="Confirmed pathology diagnosis",
+        )
+
+    def test_pathology_workstation_is_hospital_scoped(self):
+        other_hospital = Hospital.objects.create(
+            name="다른 테스트병원",
+            code="OTHER-HOSPITAL",
+        )
+        other_patient = Patient.objects.create(
+            hospital=other_hospital,
+            patient_code="OTHER-P001",
+            name="다른 병원 환자",
+            birth_date=date(1970, 1, 1),
+            sex=Patient.Sex.FEMALE,
+            phone_number="010-1111-1111",
+            phone_number_hash="other-phone-hash",
+        )
+        other_case = LungCancerCase.objects.create(
+            patient=other_patient,
+            case_code="OTHER-CASE-001",
+            current_stage=Stage.PATHOLOGY,
+        )
+        PathologyWorkItem.objects.create(
+            case=other_case,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+        )
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.get(reverse("pathology:workstation-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(str(response.data[0]["id"]), str(self.work_item.id))
+        self.assertEqual(response.data[0]["workflow_status"], "REVIEW_COMPLETED")
+
+    def test_non_pathology_staff_cannot_access_workstation(self):
+        other_department = Department.objects.create(
+            hospital=self.hospital,
+            code="ADMINISTRATION",
+            name="원무과",
+        )
+        other_role = DepartmentRole.objects.create(
+            department=other_department,
+            role=DepartmentRole.Role.MEDICAL_STAFF,
+            display_name="원무 직원",
+        )
+        other_user = User.objects.create_user(
+            login_id="administration_test",
+            password="test-password",
+            name="원무 테스트",
+            department_role=other_role,
+            account_status=User.AccountStatus.ACTIVE,
+        )
+        self.client.force_authenticate(user=other_user)
+
+        response = self.client.get(reverse("pathology:workstation-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        protected_get_urls = [
+            reverse(
+                "pathology:case-pdl1-result-list",
+                kwargs={"case_id": self.case.id},
+            ),
+            reverse(
+                "pathology:case-specimen-list",
+                kwargs={"case_id": self.case.id},
+            ),
+            reverse(
+                "pathology:specimen-wsi-list",
+                kwargs={"specimen_id": self.specimen.id},
+            ),
+            reverse(
+                "pathology:wsi-pyramid",
+                kwargs={"wsi_id": self.wsi.id},
+            ),
+        ]
+        for url in protected_get_urls:
+            with self.subTest(url=url):
+                self.assertEqual(
+                    self.client.get(url).status_code,
+                    status.HTTP_403_FORBIDDEN,
+                )
+
+        run_url = reverse(
+            "pathology:case-pdl1-analysis-run",
+            kwargs={"case_id": self.case.id},
+        )
+        self.assertEqual(
+            self.client.post(run_url, {}, format="multipart").status_code,
+            status.HTTP_403_FORBIDDEN,
         )
 
     def test_unauthenticated_user_cannot_access_work_items(self):

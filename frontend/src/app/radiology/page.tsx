@@ -5,7 +5,7 @@ import { useEffect, useState } from "react";
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
 
-import { RadiologyDetail } from "./_components/radiology-detail";
+import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
 import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
   fetchRadiologyWorklist,
@@ -204,33 +204,32 @@ export default function RadiologyWorklistPage() {
 
       <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
         {activeTab === "worklist" ? (
-          <div
-            className={`grid overflow-hidden border border-slate-200 bg-white transition-[grid-template-columns] duration-200 xl:h-[calc(100vh-141px)] xl:min-h-[560px] ${
-              selectedItem
-                ? "xl:grid-cols-[minmax(520px,62fr)_minmax(420px,38fr)] xl:divide-x xl:divide-slate-200"
-                : "xl:grid-cols-1"
-            }`}
-          >
-            <RadiologyWorklist
-              items={pagedItems}
-              selectedId={selectedItem?.examination_order.id ?? null}
-              onSelect={handleSelectItem}
-              viewStatus={viewStatus}
-              errorMessage={errorMessage}
-              filters={filters}
-              onFiltersChange={handleFiltersChange}
-              currentPage={currentPage}
-              totalPages={totalPages}
-              totalItems={worklistItems.length}
-              onPageChange={handlePageChange}
-            />
-            {selectedItem ? (
-              <RadiologyDetail
-                key={selectedItem.examination_order.id}
-                item={selectedItem}
-                onClose={() => setSelectedItem(null)}
+          <div className="grid overflow-hidden border border-slate-200 bg-white xl:h-[calc(100vh-141px)] xl:min-h-[560px] xl:grid-cols-[minmax(420px,32fr)_minmax(0,68fr)] xl:divide-x xl:divide-slate-200">
+            <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] divide-y divide-slate-200">
+              <RadiologyWorklist
+                items={pagedItems}
+                selectedId={selectedItem?.examination_order.id ?? null}
+                onSelect={handleSelectItem}
+                viewStatus={viewStatus}
+                errorMessage={errorMessage}
+                filters={filters}
+                onFiltersChange={handleFiltersChange}
+                currentPage={currentPage}
+                totalPages={totalPages}
+                totalItems={worklistItems.length}
+                onPageChange={handlePageChange}
               />
-            ) : null}
+              {selectedItem ? (
+                <RadiologyPatientSummary item={selectedItem} onClear={() => setSelectedItem(null)} />
+              ) : (
+                <StateMessage variant="empty" title="환자를 선택하세요" description="Worklist에서 검사 항목을 선택하면 환자 정보가 표시됩니다." className="m-4" />
+              )}
+            </div>
+            {selectedItem ? (
+              <RadiologyDetail key={selectedItem.examination_order.id} item={selectedItem} />
+            ) : (
+              <StateMessage variant="empty" title="영상 작업을 시작할 환자를 선택하세요" description="선택한 검사의 영상 선택, AI 분석 상태와 결과가 이 영역에 표시됩니다." className="m-6 self-start" />
+            )}
           </div>
         ) : null}
         {activeTab === "ai" ? (
