@@ -1,7 +1,12 @@
 from unittest.mock import patch
 
 from django.test import TestCase
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
+from rest_framework_simplejwt.tokens import AccessToken
 
+from apps.accounts.models import User
 from apps.knowledge.models import KnowledgeChunk, KnowledgeDocument
 from apps.knowledge.services.chunking import chunk_text, split_in_half
 from apps.knowledge.services.embedding_client import EmbeddingServiceError, InputTooLong
@@ -108,3 +113,44 @@ class RagTests(TestCase):
             with patch("apps.knowledge.services.search.request_embeddings") as mock_embed:
                 mock_embed.return_value = fake_embed_response(["질문"])
                 answer_with_rag("질문")
+
+
+class AskKnowledgeAPITests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(login_id="tester", password="test-pass-1234")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(self.user)}")
+        self.url = reverse("knowledge:ask")
+
+    def test_requires_authentication(self):
+        self.client.credentials()
+
+        response = self.client.post(self.url, {"question": "질문"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_rejects_blank_question(self):
+        response = self.client.post(self.url, {"question": ""}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("apps.knowledge.views.answer_with_rag")
+    def test_returns_answer_and_sources(self, mock_answer):
+        mock_answer.return_value = {
+            "answer": "답변입니다.",
+            "sources": [{"document": "테스트 문서", "chunk_index": 0, "distance": 0.12}],
+        }
+
+        response = self.client.post(self.url, {"question": "EGFR 치료는?"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["answer"], "답변입니다.")
+        self.assertEqual(response.data["sources"][0]["document"], "테스트 문서")
+        mock_answer.assert_called_once_with("EGFR 치료는?", top_k=5)
+
+    @patch("apps.knowledge.views.answer_with_rag")
+    def test_medgemma_failure_returns_502(self, mock_answer):
+        mock_answer.side_effect = MedgemmaServiceError("연결 실패")
+
+        response = self.client.post(self.url, {"question": "질문"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
