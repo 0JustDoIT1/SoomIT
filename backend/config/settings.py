@@ -32,6 +32,7 @@ INSTALLED_APPS = [
     "apps.annotations",
     "apps.notifications",
     "apps.audit",
+    "apps.knowledge",
     "rest_framework",
     "corsheaders",
 ]
