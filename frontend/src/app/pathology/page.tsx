@@ -7,6 +7,7 @@ import {
   fetchPathologyAnalyses,
   fetchPathologyWorkstation,
   runPdl1Analysis,
+  submitPathologyForReview,
   type PathologyWorkstationItem,
 } from "./_lib/pathology-workstation-api";
 
@@ -294,6 +295,9 @@ function WorkArea({
   const [featureFile, setFeatureFile] = useState<File | null>(null);
   const [runningPdl1, setRunningPdl1] = useState(false);
   const [isResultOpen, setIsResultOpen] = useState(false);
+  const [submittingReview, setSubmittingReview] = useState(false);
+  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [reviewSubmissionError, setReviewSubmissionError] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -375,6 +379,30 @@ function WorkArea({
   const isPdl1 = currentTestType === "PDL1";
   const isGene = currentTestType === "GENE";
   const isKnownTestType = isSubtype || isPdl1 || isGene;
+  const currentAnalysis = isSubtype
+    ? item.latest_ai_analysis
+    : isPdl1
+      ? pdl1
+      : isGene
+        ? item.latest_gene_analysis
+        : null;
+  const expectedAnalysisType = isSubtype
+    ? "PATHOLOGY_DIAGNOSIS"
+    : isPdl1
+      ? "PDL1_CLASSIFICATION"
+      : isGene
+        ? "GENE_PREDICTION"
+        : null;
+  const alreadySubmitted =
+    reviewSubmitted ||
+    item.diagnostic_review_status === "PENDING" ||
+    item.diagnostic_review_status === "IN_PROGRESS";
+  const canSubmitForReview =
+    currentAnalysis?.status === "SUCCEEDED" &&
+    currentAnalysis.analysis_type === expectedAnalysisType &&
+    item.workflow_status !== "REVIEW_COMPLETED" &&
+    !alreadySubmitted &&
+    !submittingReview;
   const testTitle = isSubtype
     ? "아형분류 검사"
     : isPdl1
@@ -389,6 +417,30 @@ function WorkArea({
       : isGene
         ? "8개 유전자 변이 분석"
         : "현재 오더의 검사 종류를 확인할 수 없습니다.";
+
+  async function handleSubmitForReview() {
+    if (!canSubmitForReview || !currentAnalysis) return;
+
+    setSubmittingReview(true);
+    setReviewSubmissionError("");
+
+    try {
+      await submitPathologyForReview(
+        item.case_id,
+        item.id,
+        currentAnalysis.id,
+      );
+      setReviewSubmitted(true);
+    } catch (reason) {
+      setReviewSubmissionError(
+        reason instanceof Error
+          ? reason.message
+          : "의사에게 제출하지 못했습니다.",
+      );
+    } finally {
+      setSubmittingReview(false);
+    }
+  }
 
   return (
     <main className="min-h-0 overflow-y-auto bg-white">
@@ -866,10 +918,15 @@ function WorkArea({
                 <p className="text-sm font-semibold text-slate-700">
                   {item.workflow_status === "REVIEW_COMPLETED"
                     ? "의사 판독 완료"
-                    : "의사 제출 API 연결 대기"}
+                    : alreadySubmitted
+                      ? "의사에게 제출 완료"
+                      : "AI 분석 결과를 의사 판독 대상으로 제출합니다."}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  현재 단계에서는 결과 제출 요청을 전송하지 않습니다.
+                  {reviewSubmissionError ||
+                    (alreadySubmitted
+                      ? "동일한 판독 작업은 중복 생성되지 않습니다."
+                      : "완료된 현재 검사 결과만 제출할 수 있습니다.")}
                 </p>
               </div>
 
@@ -883,10 +940,15 @@ function WorkArea({
                 </button>
                 <button
                   type="button"
-                  disabled
+                  disabled={!canSubmitForReview}
+                  onClick={handleSubmitForReview}
                   className="rounded-md bg-blue-700 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
                 >
-                  의사에게 제출
+                  {submittingReview
+                    ? "제출 중"
+                    : alreadySubmitted
+                      ? "의사에게 제출 완료"
+                      : "의사에게 제출"}
                 </button>
               </div>
             </footer>

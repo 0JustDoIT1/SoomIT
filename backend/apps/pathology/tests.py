@@ -16,7 +16,7 @@ from apps.ai_results.models import (
     PDL1AiResult,
     SpecimenAdequacyAiResult,
 )
-from apps.cases.models import CaseImageAsset, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
 from apps.clinical.models import ClinicalResult, PathologyResult
 from apps.patients.models import Patient
 from apps.pathology.models import (
@@ -24,6 +24,7 @@ from apps.pathology.models import (
     PathologyWorkItem,
     WholeSlideImage,
 )
+from apps.pathology.services.workflow import calculate_workflow_status
 
 
 class PathologyReadAPITestCase(APITestCase):
@@ -78,8 +79,18 @@ class PathologyReadAPITestCase(APITestCase):
             current_stage=Stage.PATHOLOGY,
         )
 
+        self.pathology_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.SUBTYPE,
+            requesting_doctor=self.user,
+            purpose="Test pathology order",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+
         self.specimen = PathologySpecimen.objects.create(
             case=self.case,
+            examination_order=self.pathology_order,
             specimen_code="SPECIMEN-001",
             specimen_type=PathologySpecimen.SpecimenType.BIOPSY,
             body_site="Lung",
@@ -89,6 +100,7 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.image_asset = CaseImageAsset.objects.create(
             case=self.case,
+            examination_order=self.pathology_order,
             uploaded_stage=Stage.PATHOLOGY,
             image_type=CaseImageAsset.ImageType.WSI,
             storage_type=CaseImageAsset.StorageType.GCS,
@@ -112,6 +124,7 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.work_item = PathologyWorkItem.objects.create(
             case=self.case,
+            examination_order=self.pathology_order,
             specimen=self.specimen,
             wsi=self.wsi,
             task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
@@ -127,6 +140,7 @@ class PathologyReadAPITestCase(APITestCase):
         )
         self.ai_analysis = AiAnalysis.objects.create(
             case=self.case,
+            examination_order=self.pathology_order,
             source_image_asset=self.image_asset,
             model_version=self.model_version,
             analysis_type="PATHOLOGY_DIAGNOSIS",
@@ -177,6 +191,7 @@ class PathologyReadAPITestCase(APITestCase):
         )
         self.pdl1_analysis = AiAnalysis.objects.create(
             case=self.case,
+            examination_order=self.pathology_order,
             source_image_asset=self.image_asset,
             model_version=self.pdl1_model_version,
             analysis_type="PDL1_CLASSIFICATION",
@@ -201,6 +216,7 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.clinical_result = ClinicalResult.objects.create(
             case=self.case,
+            examination_order=self.pathology_order,
             stage=Stage.PATHOLOGY,
             source_image_asset=self.image_asset,
             reviewed_ai_result=self.ai_result,
@@ -214,6 +230,306 @@ class PathologyReadAPITestCase(APITestCase):
             subtype="Adenocarcinoma",
             diagnosis_summary="Confirmed pathology diagnosis",
         )
+
+    def prepare_review_submission(self):
+        self.clinical_result.delete()
+        self.work_item.task_type = PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS
+        self.work_item.status = PathologyWorkItem.Status.COMPLETED
+        self.work_item.save(update_fields=["task_type", "status", "updated_at"])
+        self.authenticate_pathology_user()
+        return reverse(
+            "pathology:case-submit-for-review",
+            kwargs={"case_id": self.case.id},
+        )
+
+    def test_pathology_staff_can_submit_succeeded_analysis_for_review(self):
+        url = self.prepare_review_submission()
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["submitted"])
+        review = PathologyWorkItem.objects.get(id=response.data["review_work_item_id"])
+        self.assertEqual(review.task_type, PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW)
+        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
+        self.assertIsNone(review.assigned_to_id)
+        self.assertEqual(review.specimen_id, self.work_item.specimen_id)
+        self.assertEqual(review.wsi_id, self.work_item.wsi_id)
+        self.assertFalse(
+            ClinicalResult.objects.filter(
+                case=self.case,
+                result_status=ClinicalResult.ResultStatus.DRAFT,
+            ).exists()
+        )
+
+    def test_review_submission_rejects_running_analysis(self):
+        url = self.prepare_review_submission()
+        self.ai_analysis.status = AiAnalysis.Status.RUNNING
+        self.ai_analysis.save(update_fields=["status"])
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_review_submission_rejects_analysis_from_another_case(self):
+        url = self.prepare_review_submission()
+        other_patient = Patient.objects.create(
+            hospital=self.hospital,
+            patient_code="TEST-P002",
+            name="Other patient",
+            birth_date=date(1970, 1, 1),
+            sex=Patient.Sex.FEMALE,
+            phone_number="010-9999-9999",
+            phone_number_hash="other-case-phone-hash",
+        )
+        other_case = LungCancerCase.objects.create(
+            patient=other_patient,
+            case_code="TEST-CASE-002",
+            current_stage=Stage.PATHOLOGY,
+        )
+        self.ai_analysis.case = other_case
+        self.ai_analysis.save(update_fields=["case"])
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_review_submission_rejects_other_hospital_case(self):
+        self.prepare_review_submission()
+        other_hospital = Hospital.objects.create(name="Other hospital", code="OTHER-REVIEW")
+        other_patient = Patient.objects.create(
+            hospital=other_hospital,
+            patient_code="OTHER-REVIEW-P001",
+            name="Other hospital patient",
+            birth_date=date(1970, 1, 1),
+            sex=Patient.Sex.FEMALE,
+            phone_number="010-8888-8888",
+            phone_number_hash="other-hospital-review-hash",
+        )
+        other_case = LungCancerCase.objects.create(
+            patient=other_patient,
+            case_code="OTHER-REVIEW-CASE",
+            current_stage=Stage.PATHOLOGY,
+        )
+
+        response = self.client.post(
+            reverse("pathology:case-submit-for-review", kwargs={"case_id": other_case.id}),
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_review_submission_rejects_analysis_type_mismatch(self):
+        url = self.prepare_review_submission()
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.pdl1_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_review_submission_is_idempotent_and_keeps_ai_completed(self):
+        url = self.prepare_review_submission()
+        payload = {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id}
+
+        first = self.client.post(url, payload, format="json")
+        second = self.client.post(url, payload, format="json")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertFalse(second.data["submitted"])
+        self.assertEqual(first.data["review_work_item_id"], second.data["review_work_item_id"])
+        self.assertEqual(
+            PathologyWorkItem.objects.filter(
+                case=self.case,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            ).count(),
+            1,
+        )
+
+        review = PathologyWorkItem.objects.get(id=first.data["review_work_item_id"])
+        self.case.workstation_confirmed_results = []
+        self.case.workstation_review_items = [review]
+        self.case.workstation_analyses = [self.ai_analysis]
+        self.assertEqual(calculate_workflow_status(self.work_item), "AI_COMPLETED")
+
+    def test_legacy_null_order_uses_unambiguous_relationships(self):
+        url = self.prepare_review_submission()
+        self.work_item.examination_order = None
+        self.work_item.save(update_fields=["examination_order", "updated_at"])
+        self.ai_analysis.examination_order = None
+        self.ai_analysis.save(update_fields=["examination_order"])
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        review = PathologyWorkItem.objects.get(id=response.data["review_work_item_id"])
+        self.assertEqual(review.examination_order_id, self.pathology_order.id)
+
+    def test_workflow_and_review_submission_are_scoped_to_examination_order(self):
+        self.work_item.status = PathologyWorkItem.Status.COMPLETED
+        self.work_item.save(update_fields=["status", "updated_at"])
+        pdl1_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            requesting_doctor=self.user,
+            purpose="PD-L1 follow-up",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        pdl1_specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            specimen_code="SPECIMEN-PDL1",
+            specimen_type=PathologySpecimen.SpecimenType.BIOPSY,
+            status=PathologySpecimen.Status.READY,
+            created_by_user=self.user,
+        )
+        pdl1_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            specimen=pdl1_specimen,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+            status=PathologyWorkItem.Status.COMPLETED,
+        )
+        self.case.workstation_confirmed_results = [self.clinical_result]
+        self.case.workstation_review_items = [self.work_item]
+        self.case.workstation_analyses = [self.ai_analysis]
+        self.assertNotEqual(calculate_workflow_status(pdl1_work_item), "REVIEW_COMPLETED")
+
+        pdl1_asset = CaseImageAsset.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            uploaded_stage=Stage.PATHOLOGY,
+            image_type=CaseImageAsset.ImageType.WSI,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gcs://test-bucket/pdl1-slide.svs",
+            file_format="SVS",
+            status=CaseImageAsset.Status.READY,
+        )
+        pdl1_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            source_image_asset=pdl1_asset,
+            model_version=self.pdl1_model_version,
+            analysis_type="PDL1_CLASSIFICATION",
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        AiResult.objects.create(
+            ai_analysis=pdl1_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        self.case.workstation_analyses = [pdl1_analysis, self.ai_analysis]
+        self.assertEqual(calculate_workflow_status(pdl1_work_item), "AI_COMPLETED")
+
+        self.authenticate_pathology_user()
+        url = reverse(
+            "pathology:case-submit-for-review",
+            kwargs={"case_id": self.case.id},
+        )
+        payload = {"work_item_id": pdl1_work_item.id, "ai_analysis_id": pdl1_analysis.id}
+        first = self.client.post(url, payload, format="json")
+        second = self.client.post(url, payload, format="json")
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            PathologyWorkItem.objects.filter(
+                case=self.case,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            ).count(),
+            2,
+        )
+
+        gene_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.GENE,
+            requesting_doctor=self.user,
+            purpose="Gene follow-up",
+        )
+        gene_specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            specimen_code="SPECIMEN-GENE",
+            specimen_type=PathologySpecimen.SpecimenType.BIOPSY,
+            created_by_user=self.user,
+        )
+        gene_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            specimen=gene_specimen,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+        )
+        pdl1_review = PathologyWorkItem.objects.get(id=first.data["review_work_item_id"])
+        self.case.workstation_review_items = [pdl1_review, self.work_item]
+        self.case.workstation_confirmed_results = [self.clinical_result]
+        self.case.workstation_analyses = [pdl1_analysis, self.ai_analysis]
+        self.assertNotIn(
+            calculate_workflow_status(gene_work_item),
+            {"AI_COMPLETED", "REVIEW_COMPLETED"},
+        )
+
+    def test_review_and_diagnosis_reject_ai_result_from_another_order(self):
+        pdl1_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            requesting_doctor=self.user,
+            purpose="PD-L1 follow-up",
+        )
+        pdl1_specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            specimen_code="SPECIMEN-PDL1-MISMATCH",
+            specimen_type=PathologySpecimen.SpecimenType.BIOPSY,
+            created_by_user=self.user,
+        )
+        pdl1_review = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            specimen=pdl1_specimen,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        )
+        self.authenticate_pathology_user()
+
+        submit_response = self.client.post(
+            reverse("pathology:case-submit-for-review", kwargs={"case_id": self.case.id}),
+            {"work_item_id": pdl1_review.id, "ai_analysis_id": self.pdl1_analysis.id},
+            format="json",
+        )
+        self.assertEqual(submit_response.status_code, status.HTTP_400_BAD_REQUEST)
+
+        self.client.force_authenticate(user=self.user)
+        diagnosis_response = self.client.post(
+            reverse("pathology:case-diagnosis-list", kwargs={"case_id": self.case.id}),
+            {
+                "work_item_id": pdl1_review.id,
+                "malignancy_status": "MALIGNANT",
+                "reviewed_ai_result_id": self.ai_result.id,
+            },
+            format="json",
+        )
+        self.assertEqual(diagnosis_response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_pathology_workstation_is_hospital_scoped(self):
         other_hospital = Hospital.objects.create(
@@ -331,6 +647,21 @@ class PathologyReadAPITestCase(APITestCase):
         )
         self.assertEqual(
             self.client.post(run_url, {}, format="multipart").status_code,
+            status.HTTP_403_FORBIDDEN,
+        )
+        submit_url = reverse(
+            "pathology:case-submit-for-review",
+            kwargs={"case_id": self.case.id},
+        )
+        self.assertEqual(
+            self.client.post(
+                submit_url,
+                {
+                    "work_item_id": self.work_item.id,
+                    "ai_analysis_id": self.ai_analysis.id,
+                },
+                format="json",
+            ).status_code,
             status.HTTP_403_FORBIDDEN,
         )
 

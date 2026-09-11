@@ -25,6 +25,7 @@ from .serializers import (
     PathologyDiagnosisSerializer,
     PathologyDiagnosisConfirmSerializer,
     PathologyDiagnosisWriteSerializer,
+    PathologyReviewSubmissionSerializer,
     PathologyReportSerializer,
     PathologySpecimenSerializer,
     PathologyWorkItemSerializer,
@@ -32,6 +33,7 @@ from .serializers import (
     WholeSlideImageSerializer,
 )
 from .services.pdl1_inference import PDL1InferenceError, request_pdl1_prediction
+from .services.review_submission import ReviewSubmissionError, submit_for_review
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
 
@@ -244,8 +246,22 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
         feature_file = serializer.validated_data["feature_file"]
         wsi_id = serializer.validated_data.get("wsi_id")
         source_image_asset = None
+        examination_order = None
         if wsi_id:
-            source_image_asset = WholeSlideImage.objects.get(id=wsi_id).image_asset
+            wsi = WholeSlideImage.objects.select_related(
+                "image_asset__examination_order",
+                "specimen__examination_order",
+            ).get(id=wsi_id)
+            source_image_asset = wsi.image_asset
+            order_ids = {
+                source_image_asset.examination_order_id,
+                wsi.specimen.examination_order_id,
+            }
+            order_ids.discard(None)
+            if len(order_ids) > 1:
+                raise ValidationError({"wsi_id": "WSI의 병리 오더 연결이 일치하지 않습니다."})
+            if order_ids:
+                examination_order = ExaminationOrder.objects.get(id=order_ids.pop())
 
         model_version, _ = ModelVersion.objects.get_or_create(
             model_name="pdl1-amd-mil",
@@ -254,6 +270,7 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         analysis = AiAnalysis.objects.create(
             case=case,
+            examination_order=examination_order,
             source_image_asset=source_image_asset,
             analysis_type=AnalysisType.PDL1_CLASSIFICATION,
             model_version=model_version,
@@ -372,6 +389,7 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
                 ],
             )
             .select_related(
+                "examination_order", "source_image_asset__examination_order",
                 "model_version", "ai_result", "ai_result__pathology_detail",
                 "ai_result__pdl1_detail",
             )
@@ -380,10 +398,16 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
         )
         review_queryset = PathologyWorkItem.objects.filter(
             task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        ).select_related(
+            "examination_order", "specimen__examination_order", "wsi__specimen__examination_order",
         ).order_by("-created_at")
         confirmed_queryset = ClinicalResult.objects.filter(
             stage="PATHOLOGY",
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).select_related(
+            "examination_order", "source_image_asset__examination_order",
+            "reviewed_ai_result__ai_analysis__examination_order",
+            "reviewed_ai_result__ai_analysis__source_image_asset__examination_order",
         ).order_by("-confirmed_at", "-created_at")
         wsi_queryset = WholeSlideImage.objects.select_related("image_asset").order_by("-created_at")
         pathology_order_queryset = ExaminationOrder.objects.filter(
@@ -396,7 +420,8 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
                 case__patient__hospital_id=pathology_hospital_id(self.request),
             )
             .select_related(
-                "case", "case__patient", "specimen", "specimen__examination_order",
+                "case", "case__patient", "examination_order", "specimen", "specimen__examination_order",
+                "wsi__specimen__examination_order",
                 "specimen__examination_order__requesting_doctor", "assigned_to",
             )
             .prefetch_related(
@@ -444,6 +469,110 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
             ]
 
         return queryset
+
+
+class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
+    analysis_types_by_test = {
+        ExaminationOrder.PathologyTestType.SUBTYPE: AnalysisType.PATHOLOGY_DIAGNOSIS,
+        ExaminationOrder.PathologyTestType.PDL1: AnalysisType.PDL1_CLASSIFICATION,
+        ExaminationOrder.PathologyTestType.GENE: AnalysisType.GENE_PREDICTION,
+    }
+
+    def post(self, request, case_id):
+        serializer = PathologyReviewSubmissionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        hospital_id = pathology_hospital_id(request)
+
+        case = get_object_or_404(
+            LungCancerCase.objects.select_related("patient"),
+            id=case_id,
+            patient__hospital_id=hospital_id,
+        )
+        work_item = get_object_or_404(
+            PathologyWorkItem.objects.select_related(
+                "examination_order",
+                "specimen__examination_order",
+                "wsi__specimen__examination_order",
+            ),
+            id=serializer.validated_data["work_item_id"],
+            case=case,
+        )
+
+        order = (
+            work_item.examination_order
+            or (
+                work_item.specimen.examination_order
+                if work_item.specimen and work_item.specimen.examination_order
+                else None
+            )
+        )
+        expected_analysis_type = self.analysis_types_by_test.get(
+            order.pathology_test_type if order else None,
+        )
+        if expected_analysis_type is None:
+            raise ValidationError(
+                {"pathology_test_type": "현재 오더의 검사 종류를 확인할 수 없습니다."}
+            )
+
+        analysis = get_object_or_404(
+            AiAnalysis.objects.select_related(
+                "ai_result",
+                "examination_order",
+                "source_image_asset__examination_order",
+            ),
+            id=serializer.validated_data["ai_analysis_id"],
+            case=case,
+        )
+        if analysis.analysis_type != expected_analysis_type:
+            raise ValidationError(
+                {"ai_analysis_id": "현재 검사 종류와 일치하는 AI 분석이 아닙니다."}
+            )
+        analysis_order_id = analysis.examination_order_id
+        if analysis_order_id is None and analysis.source_image_asset_id:
+            analysis_order_id = analysis.source_image_asset.examination_order_id
+        if analysis_order_id != order.id:
+            raise ValidationError(
+                {"ai_analysis_id": "현재 병리 오더의 AI 분석이 아닙니다."}
+            )
+        if analysis.status != AiAnalysis.Status.SUCCEEDED or not hasattr(analysis, "ai_result"):
+            raise ValidationError(
+                {"ai_analysis_id": "완료된 AI 분석 결과만 제출할 수 있습니다."}
+            )
+
+        latest_analysis = (
+            AiAnalysis.objects.filter(
+                case=case,
+                analysis_type=expected_analysis_type,
+            )
+            .filter(
+                Q(examination_order=order)
+                | Q(
+                    examination_order__isnull=True,
+                    source_image_asset__examination_order=order,
+                )
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if latest_analysis is None or latest_analysis.id != analysis.id:
+            raise ValidationError(
+                {"ai_analysis_id": "현재 검사의 최신 AI 분석만 제출할 수 있습니다."}
+            )
+
+        try:
+            review_work_item, created = submit_for_review(work_item)
+        except ReviewSubmissionError as exc:
+            raise ValidationError({"work_item_id": str(exc)}) from exc
+        return Response(
+            {
+                "review_work_item_id": review_work_item.id,
+                "case_id": review_work_item.case_id,
+                "status": review_work_item.status,
+                "task_type": review_work_item.task_type,
+                "submitted": created,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class PathologyWorkItemDetailAPIView(RetrieveAPIView):

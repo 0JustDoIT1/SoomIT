@@ -173,6 +173,13 @@ class PathologyWorkItem(TimestampedUUIDModel):
         on_delete=models.PROTECT,
         related_name="pathology_work_items",
     )
+    examination_order = models.ForeignKey(
+        ExaminationOrder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pathology_work_items",
+    )
     specimen = models.ForeignKey(
         PathologySpecimen,
         on_delete=models.PROTECT,

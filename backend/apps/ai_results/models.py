@@ -3,7 +3,7 @@ import uuid
 from django.db import models
 from django.db.models import Q
 
-from apps.cases.models import LungCancerCase, CaseImageAsset
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase
 from apps.common.models import CreatedOnlyUUIDModel
 
 
@@ -45,6 +45,13 @@ class AiAnalysis(CreatedOnlyUUIDModel):
         FAILED = "FAILED", "실패"
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="ai_analyses")
+    examination_order = models.ForeignKey(
+        ExaminationOrder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="ai_analyses",
+    )
     source_image_asset = models.ForeignKey(
         CaseImageAsset, on_delete=models.PROTECT, null=True, blank=True, related_name="ai_analyses"
     )

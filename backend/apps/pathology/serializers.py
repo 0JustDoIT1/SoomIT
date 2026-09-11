@@ -39,6 +39,11 @@ class PDL1AnalysisRunSerializer(serializers.Serializer):
         return value
 
 
+class PathologyReviewSubmissionSerializer(serializers.Serializer):
+    work_item_id = serializers.UUIDField()
+    ai_analysis_id = serializers.UUIDField()
+
+
 class PathologyDiagnosisSerializer(serializers.ModelSerializer):
     result_status_label = serializers.CharField(
         source="get_result_status_display",
@@ -144,26 +149,59 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
                     {"work_item_id": "진행할 수 있는 상태의 판독 작업이 아닙니다."},
                 )
             self.context["work_item"] = work_item
+            order_ids = {work_item.examination_order_id}
+            if work_item.specimen_id:
+                order_ids.add(work_item.specimen.examination_order_id)
+            order_ids.discard(None)
+            if len(order_ids) != 1:
+                raise serializers.ValidationError(
+                    {"work_item_id": "판독 작업의 병리 오더를 확인할 수 없습니다."},
+                )
+            examination_order_id = order_ids.pop()
+            examination_order = (
+                work_item.examination_order
+                if work_item.examination_order_id == examination_order_id
+                else work_item.specimen.examination_order
+            )
+            self.context["examination_order"] = examination_order
         elif work_item_id is not None:
             raise serializers.ValidationError(
                 {"work_item_id": "초안 수정 시 작업 ID를 변경할 수 없습니다."},
             )
 
         source_image_asset_id = attrs.get("source_image_asset_id")
-        if source_image_asset_id and not case.image_assets.filter(
-            id=source_image_asset_id,
-        ).exists():
-            raise serializers.ValidationError(
-                {"source_image_asset_id": "해당 Case의 이미지가 아닙니다."},
-            )
+        if source_image_asset_id:
+            source_image_asset = case.image_assets.filter(id=source_image_asset_id).first()
+            if source_image_asset is None:
+                raise serializers.ValidationError(
+                    {"source_image_asset_id": "해당 Case의 이미지가 아닙니다."},
+                )
+            if self.instance is None and source_image_asset.examination_order_id != self.context["examination_order"].id:
+                raise serializers.ValidationError(
+                    {"source_image_asset_id": "현재 병리 오더의 이미지가 아닙니다."},
+                )
 
         reviewed_ai_result_id = attrs.get("reviewed_ai_result_id")
-        if reviewed_ai_result_id and not case.ai_analyses.filter(
-            ai_result__id=reviewed_ai_result_id,
-        ).exists():
-            raise serializers.ValidationError(
-                {"reviewed_ai_result_id": "해당 Case의 AI 결과가 아닙니다."},
+        if reviewed_ai_result_id:
+            analysis = (
+                case.ai_analyses.select_related(
+                    "examination_order",
+                    "source_image_asset__examination_order",
+                )
+                .filter(ai_result__id=reviewed_ai_result_id)
+                .first()
             )
+            if analysis is None:
+                raise serializers.ValidationError(
+                    {"reviewed_ai_result_id": "해당 Case의 AI 결과가 아닙니다."},
+                )
+            analysis_order_id = analysis.examination_order_id
+            if analysis_order_id is None and analysis.source_image_asset_id:
+                analysis_order_id = analysis.source_image_asset.examination_order_id
+            if self.instance is None and analysis_order_id != self.context["examination_order"].id:
+                raise serializers.ValidationError(
+                    {"reviewed_ai_result_id": "현재 병리 오더의 AI 결과가 아닙니다."},
+                )
 
         return attrs
 
@@ -180,6 +218,7 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
         }
         clinical_result = ClinicalResult.objects.create(
             case=case,
+            examination_order=self.context["examination_order"],
             stage="PATHOLOGY",
             result_status=ClinicalResult.ResultStatus.DRAFT,
             **validated_data,
@@ -487,6 +526,8 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             "due_at", "completed_at", "created_at", "updated_at",
         ]
     def _pathology_order(self, obj):
+        if obj.examination_order:
+            return obj.examination_order
         if obj.specimen and obj.specimen.examination_order:
             return obj.specimen.examination_order
         orders = getattr(obj.case, "workstation_pathology_orders", [])
@@ -532,14 +573,14 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         return WholeSlideImageSerializer(wsis[0]).data if wsis else None
 
     def get_latest_ai_analysis(self, obj):
-        analyses = getattr(obj.case, "workstation_analyses", [])
+        analyses = self._order_analyses(obj)
         return PathologyAiAnalysisSerializer(analyses[0]).data if analyses else None
 
     def get_latest_gene_analysis(self, obj):
         analysis = next(
             (
                 item
-                for item in getattr(obj.case, "workstation_analyses", [])
+                for item in self._order_analyses(obj)
                 if item.analysis_type == "GENE_PREDICTION"
             ),
             None,
@@ -547,8 +588,41 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         return PathologyAiAnalysisSerializer(analysis).data if analysis else None
 
     def get_diagnostic_review_status(self, obj):
-        items = getattr(obj.case, "workstation_review_items", [])
+        order = self._pathology_order(obj)
+        items = [
+            item
+            for item in getattr(obj.case, "workstation_review_items", [])
+            if order and self._work_item_order_id(item) == order.id
+        ]
         return items[0].status if items else None
+
+    def _order_analyses(self, obj):
+        order = self._pathology_order(obj)
+        if order is None:
+            return getattr(obj.case, "workstation_analyses", [])
+        return [
+            analysis
+            for analysis in getattr(obj.case, "workstation_analyses", [])
+            if self._analysis_order_id(analysis) == order.id
+        ]
+
+    @staticmethod
+    def _analysis_order_id(analysis):
+        if analysis.examination_order_id:
+            return analysis.examination_order_id
+        if analysis.source_image_asset_id:
+            return analysis.source_image_asset.examination_order_id
+        return None
+
+    @staticmethod
+    def _work_item_order_id(work_item):
+        if work_item.examination_order_id:
+            return work_item.examination_order_id
+        if work_item.specimen_id:
+            return work_item.specimen.examination_order_id
+        if work_item.wsi_id:
+            return work_item.wsi.specimen.examination_order_id
+        return None
 
     def get_workflow_status(self, obj):
         return calculate_workflow_status(obj)

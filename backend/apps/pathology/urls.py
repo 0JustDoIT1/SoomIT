@@ -11,6 +11,7 @@ from .views import (
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
     PathologyWorkstationListAPIView,
+    PathologySubmitForReviewAPIView,
     PathologyDiagnosisConfirmAPIView,
     PathologyDiagnosisDetailAPIView,
     SpecimenWholeSlideImageListAPIView,
@@ -21,6 +22,11 @@ from .views import (
 app_name = "pathology"
 
 urlpatterns = [
+    path(
+        "cases/<uuid:case_id>/submit-for-review/",
+        PathologySubmitForReviewAPIView.as_view(),
+        name="case-submit-for-review",
+    ),
     path(
         "workstation/",
         PathologyWorkstationListAPIView.as_view(),

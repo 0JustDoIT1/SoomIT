@@ -36,6 +36,14 @@ export type PathologyWorkstationPage = {
   results: PathologyWorkstationItem[];
 };
 
+export type PathologyReviewSubmission = {
+  review_work_item_id: string;
+  case_id: string;
+  status: string;
+  task_type: string;
+  submitted: boolean;
+};
+
 type PathologyWorkstationParams = {
   page: number;
   workflowStatus?: string;
@@ -54,8 +62,19 @@ function url(path: string) {
 async function readJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const data: unknown = await response.json().catch(() => null);
-    const message = data && typeof data === "object" && "detail" in data && typeof data.detail === "string"
-      ? data.detail : `병리 API 요청에 실패했습니다. (${response.status})`;
+    let message = `병리 API 요청에 실패했습니다. (${response.status})`;
+    if (data && typeof data === "object") {
+      if ("detail" in data && typeof data.detail === "string") {
+        message = data.detail;
+      } else {
+        const firstError = Object.values(data)[0];
+        if (Array.isArray(firstError) && typeof firstError[0] === "string") {
+          message = firstError[0];
+        } else if (typeof firstError === "string") {
+          message = firstError;
+        }
+      }
+    }
     throw new Error(message);
   }
   return response.json();
@@ -94,4 +113,23 @@ export async function runPdl1Analysis(caseId: string, featureFile: File, wsiId?:
     { method: "POST", body },
   );
   return readJson<PathologyAiAnalysis>(response);
+}
+
+export async function submitPathologyForReview(
+  caseId: string,
+  workItemId: string,
+  aiAnalysisId: string,
+) {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/submit-for-review/`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        work_item_id: workItemId,
+        ai_analysis_id: aiAnalysisId,
+      }),
+    },
+  );
+  return readJson<PathologyReviewSubmission>(response);
 }

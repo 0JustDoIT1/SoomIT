@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models import Q
 
 from apps.accounts.models import User
-from apps.cases.models import LungCancerCase, CaseImageAsset, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
 from apps.ai_results.models import AiResult
 from apps.common.models import TimestampedUUIDModel
 
@@ -19,6 +19,13 @@ class ClinicalResult(TimestampedUUIDModel):
     STAGE_CHOICES = [c for c in Stage.choices if c[0] != "PRESCRIPTION"]
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="clinical_results")
+    examination_order = models.ForeignKey(
+        ExaminationOrder,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="clinical_results",
+    )
     stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
     source_image_asset = models.ForeignKey(
         CaseImageAsset, on_delete=models.PROTECT, null=True, blank=True, related_name="clinical_results"
