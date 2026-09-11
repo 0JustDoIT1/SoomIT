@@ -446,7 +446,7 @@ export default function RespiratoryCaseDetailPage() {
   const [regimenLoadError, setRegimenLoadError] = useState("");
   const [treatmentLoadError, setTreatmentLoadError] = useState("");
   const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
-  const [panelRetrying, setPanelRetrying] = useState<"REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
+  const [panelRetrying, setPanelRetrying] = useState<"AI" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
   useEffect(() => { activeCaseIdRef.current = caseId; }, [caseId]);
 
@@ -530,13 +530,14 @@ export default function RespiratoryCaseDetailPage() {
         if (!controller.signal.aborted) { setCases(caseListData); setSelectedCase(caseDetailData); }
         setPdl1Results([]);
 
-        const [tnmAnalysisResponse, tnmClinicalResponse] =
-          await Promise.all([
+        const [tnmAnalysisRequest, tnmClinicalRequest] =
+          await Promise.allSettled([
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
           ]);
 
-        if (tnmAnalysisResponse.ok) {
+        if (tnmAnalysisRequest.status === "fulfilled" && tnmAnalysisRequest.value.ok) {
+          const tnmAnalysisResponse = tnmAnalysisRequest.value;
           const aiAnalysisPayload: unknown = await tnmAnalysisResponse.json();
           const tnmAnalysisData = Array.isArray(aiAnalysisPayload)
             ? aiAnalysisPayload as TnmAnalysisResult[]
@@ -547,16 +548,25 @@ export default function RespiratoryCaseDetailPage() {
             setPdl1Results(selectPdl1Results(aiAnalysisPayload));
           }
         } else if (!controller.signal.aborted) {
-          setAiResultError(getPanelFetchError(tnmAnalysisResponse.status, "AI 결과"));
+          setAiResultError(
+            tnmAnalysisRequest.status === "fulfilled"
+              ? getPanelFetchError(tnmAnalysisRequest.value.status, "AI 결과")
+              : getPanelNetworkError("AI 결과"),
+          );
         }
 
-        if (tnmClinicalResponse.ok) {
+        if (tnmClinicalRequest.status === "fulfilled" && tnmClinicalRequest.value.ok) {
+          const tnmClinicalResponse = tnmClinicalRequest.value;
           const tnmClinicalData: TnmClinicalResult[] =
             await tnmClinicalResponse.json();
 
           if (!controller.signal.aborted) setTnmClinicalResults(tnmClinicalData);
         } else if (!controller.signal.aborted) {
-          setClinicalResultError(getPanelFetchError(tnmClinicalResponse.status, "전문과 결과"));
+          setClinicalResultError(
+            tnmClinicalRequest.status === "fulfilled"
+              ? getPanelFetchError(tnmClinicalRequest.value.status, "전문과 결과")
+              : getPanelNetworkError("전문과 결과"),
+          );
         }
 
         const regimenCandidateResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal });
@@ -697,6 +707,34 @@ export default function RespiratoryCaseDetailPage() {
       if (panel === "REGIMEN") setRegimenLoadError(message);
       else if (panel === "TREATMENT") setTreatmentLoadError(message);
       else setPrescriptionLoadError(message);
+    } finally {
+      if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
+    }
+  };
+
+  const retryAiResults = async () => {
+    const requestCaseId = caseId;
+    setPanelRetrying("AI");
+    setAiResultError("");
+
+    try {
+      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/ai-results/`);
+      if (!response.ok) throw new Error(getPanelFetchError(response.status, "AI 결과"));
+
+      const payload: unknown = await response.json();
+      if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+
+      setTnmAnalysisResults(Array.isArray(payload) ? payload as TnmAnalysisResult[] : []);
+      setPdl1Results(selectPdl1Results(payload));
+    } catch (retryError) {
+      if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      setAiResultError(
+        retryError instanceof TypeError
+          ? getPanelNetworkError("AI 결과")
+          : retryError instanceof Error
+            ? retryError.message
+            : getPanelNetworkError("AI 결과"),
+      );
     } finally {
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
     }
@@ -2316,7 +2354,13 @@ export default function RespiratoryCaseDetailPage() {
         </div>
         ) : selectedMainMenu === "AI" &&
         selectedAiMenu === "GENE" ? (
-        <Pdl1ResultPanel aiResult={latestPdl1Result} clinicalResult={geneClinicalResult} />
+        <Pdl1ResultPanel
+          aiResult={latestPdl1Result}
+          clinicalResult={geneClinicalResult}
+          aiError={aiResultError}
+          retrying={panelRetrying === "AI"}
+          onRetry={retryAiResults}
+        />
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
@@ -2709,6 +2753,10 @@ function getPanelFetchError(status: number, label: string) {
   if (status === 401) return `${label} 인증이 만료되었습니다. 다시 로그인해 주세요.`;
   if (status === 403) return `${label} 조회 권한이 없습니다.`;
   return `${label}를 불러오지 못했습니다.`;
+}
+
+function getPanelNetworkError(label: string) {
+  return `${label} 서버에 연결할 수 없습니다. 네트워크 연결을 확인한 뒤 다시 시도해 주세요.`;
 }
 
 function formatBirthDate(value: string) {

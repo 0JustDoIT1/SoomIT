@@ -25,7 +25,19 @@ type Pdl1ClinicalResult = {
   };
 };
 
-export function Pdl1ResultPanel({ aiResult, clinicalResult }: { aiResult: Pdl1AiResult | null; clinicalResult?: Pdl1ClinicalResult }) {
+export function Pdl1ResultPanel({
+  aiResult,
+  clinicalResult,
+  aiError = "",
+  retrying = false,
+  onRetry,
+}: {
+  aiResult: Pdl1AiResult | null;
+  clinicalResult?: Pdl1ClinicalResult;
+  aiError?: string;
+  retrying?: boolean;
+  onRetry?: () => void;
+}) {
   const ai = aiResult?.result_detail.pdl1;
   const clinical = clinicalResult?.result_detail.pdl1;
   const confidenceValue = ai?.confidence === undefined ? null : Number(ai.confidence);
@@ -49,7 +61,18 @@ export function Pdl1ResultPanel({ aiResult, clinicalResult }: { aiResult: Pdl1Ai
           {aiResult?.status_label && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{aiResult.status_label}</span>}
         </header>
 
-        {!aiResult && (
+        {aiError && (
+          <div role="alert" className="mx-5 mt-4 flex items-center justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">
+            <span>{aiError}</span>
+            {onRetry && (
+              <button type="button" disabled={retrying} onClick={onRetry} className="whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-50">
+                {retrying ? "재시도 중" : "PD-L1 결과 다시 시도"}
+              </button>
+            )}
+          </div>
+        )}
+
+        {!aiResult && !aiError && (
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
             PD-L1 AI 결과는 인증 연결 전까지 조회할 수 없습니다. 전문과 확정 TPS는 임상 결과에서 계속 표시됩니다.
           </p>

@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { Pdl1ResultPanel } from "./pdl1-result-panel";
 
@@ -40,5 +40,14 @@ describe("Pdl1ResultPanel", () => {
     expect(screen.getAllByText("1–49%").length).toBeGreaterThan(0);
     expect(screen.getByText("35%")).toBeTruthy();
     expect(screen.getByText("AI 결과는 TPS 예측 구간이며 전문과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.")).toBeTruthy();
+  });
+
+  it("shows an AI error separately and retries only the AI result request", async () => {
+    const onRetry = vi.fn();
+    render(<Pdl1ResultPanel aiResult={null} aiError="AI 결과 조회 권한이 없습니다." onRetry={onRetry} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("AI 결과 조회 권한이 없습니다.");
+    screen.getByRole("button", { name: "PD-L1 결과 다시 시도" }).click();
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });
