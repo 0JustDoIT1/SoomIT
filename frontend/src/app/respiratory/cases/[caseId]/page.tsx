@@ -15,6 +15,7 @@ import { BottomActionBar } from "./bottom-action-bar";
 import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
 import { CaseOverviewPanel } from "./case-overview-panel";
 import { Pdl1ResultPanel } from "./pdl1-result-panel";
+import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
@@ -42,32 +43,6 @@ type CaseItem = {
     decided_by: string;
     decided_at: string;
   } | null;
-};
-
-type Pdl1Result = {
-  id: string;
-  analysis_type: string;
-  analysis_type_label: string;
-  status: string;
-  status_label: string;
-  model_name: string;
-  model_version_name: string;
-  completed_at: string | null;
-  error_message: string | null;
-  result_detail: {
-    pdl1?: {
-      predicted_class: number;
-      predicted_tps_range: string;
-      predicted_tps_range_label: string;
-      confidence: string | number;
-      probabilities: {
-        class_0: number;
-        class_1: number;
-        class_2: number;
-      };
-    };
-  };
-  created_at: string;
 };
 
 type TnmAnalysisResult = {
@@ -562,10 +537,15 @@ export default function RespiratoryCaseDetailPage() {
           ]);
 
         if (tnmAnalysisResponse.ok) {
-          const tnmAnalysisData: TnmAnalysisResult[] =
-            await tnmAnalysisResponse.json();
+          const aiAnalysisPayload: unknown = await tnmAnalysisResponse.json();
+          const tnmAnalysisData = Array.isArray(aiAnalysisPayload)
+            ? aiAnalysisPayload as TnmAnalysisResult[]
+            : [];
 
-          if (!controller.signal.aborted) setTnmAnalysisResults(tnmAnalysisData);
+          if (!controller.signal.aborted) {
+            setTnmAnalysisResults(tnmAnalysisData);
+            setPdl1Results(selectPdl1Results(aiAnalysisPayload));
+          }
         } else if (!controller.signal.aborted) {
           setAiResultError(getPanelFetchError(tnmAnalysisResponse.status, "AI 결과"));
         }

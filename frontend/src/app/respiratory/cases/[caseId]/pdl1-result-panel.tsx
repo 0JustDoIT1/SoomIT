@@ -1,15 +1,15 @@
 import { BiomarkerSourceHeader } from "./biomarker-source-header";
 
 type Pdl1AiResult = {
-  status_label: string;
-  model_name: string;
-  model_version_name: string;
-  completed_at: string | null;
+  status_label?: string;
+  model_name?: string;
+  model_version_name?: string;
+  completed_at?: string | null;
   result_detail: {
-    pdl1?: {
-      predicted_tps_range_label: string;
-      confidence: string | number;
-      probabilities: { class_0: number; class_1: number; class_2: number };
+    pdl1: {
+      predicted_tps_range_label?: string;
+      confidence?: string | number;
+      probabilities?: { class_0?: number; class_1?: number; class_2?: number };
     };
   };
 };
@@ -28,9 +28,12 @@ type Pdl1ClinicalResult = {
 export function Pdl1ResultPanel({ aiResult, clinicalResult }: { aiResult: Pdl1AiResult | null; clinicalResult?: Pdl1ClinicalResult }) {
   const ai = aiResult?.result_detail.pdl1;
   const clinical = clinicalResult?.result_detail.pdl1;
-  const confidence = ai ? Number(ai.confidence) * 100 : null;
-  const probabilities = ai
-    ? [ai.probabilities.class_0, ai.probabilities.class_1, ai.probabilities.class_2].map((value) => value * 100)
+  const confidenceValue = ai?.confidence === undefined ? null : Number(ai.confidence);
+  const confidence = confidenceValue !== null && Number.isFinite(confidenceValue) ? confidenceValue * 100 : null;
+  const probabilities = ai?.probabilities
+    ? [ai.probabilities.class_0, ai.probabilities.class_1, ai.probabilities.class_2].map((value) =>
+        typeof value === "number" ? value * 100 : null,
+      )
     : null;
 
   return (
@@ -43,7 +46,7 @@ export function Pdl1ResultPanel({ aiResult, clinicalResult }: { aiResult: Pdl1Ai
             <h2 className="mt-0.5 text-base font-bold text-slate-800">PD-L1 결과 비교</h2>
             <p className="mt-1 text-xs text-slate-400">전문과 확정 TPS와 AI 예측 구간을 서로 다른 출처로 표시합니다.</p>
           </div>
-          {aiResult && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{aiResult.status_label}</span>}
+          {aiResult?.status_label && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{aiResult.status_label}</span>}
         </header>
 
         {!aiResult && (
@@ -68,7 +71,7 @@ export function Pdl1ResultPanel({ aiResult, clinicalResult }: { aiResult: Pdl1Ai
           <Detail label="전문과 확정 해석" value={clinical?.interpretation ?? "확정 결과 없음"} />
           <Detail label="전문과 판독 소견" value={clinical?.note ?? "-"} />
           <Detail label="결과일" value={clinicalResult?.result_date ?? "-"} />
-          <Detail label="AI 모델" value={aiResult ? `${aiResult.model_name} ${aiResult.model_version_name}` : "-"} />
+          <Detail label="AI 모델" value={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" ") || "-"} />
           <Detail label="AI 분석 완료일" value={aiResult?.completed_at ?? "-"} />
         </dl>
 
@@ -85,8 +88,8 @@ function ResultCard({ source, label, value, tone }: { source: string; label: str
   return <div className={`rounded-xl border p-4 ${colors}`}><p className="text-[10px] font-semibold">{source}</p><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-2 text-xl font-bold">{value}</p></div>;
 }
 
-function ProbabilityCard({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-base font-bold text-slate-800">{value.toFixed(2)}%</p></div>;
+function ProbabilityCard({ label, value }: { label: string; value: number | null }) {
+  return <div className="rounded-lg bg-slate-50 p-3"><p className="text-xs text-slate-500">{label}</p><p className="mt-1 text-base font-bold text-slate-800">{value === null ? "-" : `${value.toFixed(2)}%`}</p></div>;
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
