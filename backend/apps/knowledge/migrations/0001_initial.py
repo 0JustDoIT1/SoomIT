@@ -5,6 +5,7 @@ import pgvector.django.vector
 import uuid
 from django.conf import settings
 from django.db import migrations, models
+from pgvector.django import VectorExtension
 
 
 class Migration(migrations.Migration):
@@ -16,6 +17,9 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        # VM DB에는 이미 설치돼 있지만(운영에선 no-op), 새로 생기는 테스트 DB 등에는
+        # 이 확장이 없으므로 CREATE EXTENSION IF NOT EXISTS vector 를 명시적으로 실행한다.
+        VectorExtension(),
         migrations.CreateModel(
             name="KnowledgeDocument",
             fields=[
