@@ -1,10 +1,70 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import Image from "next/image";
 
 import { StatusBadge } from "@/components/workspace/status-badge";
 
-import type { RadiologyWorklistItem } from "../_lib/radiology-api";
+import {
+  fetchRadiologyAnalysis,
+  fetchRadiologyAnalysisResult,
+  RadiologyApiError,
+  startRadiologyAnalysis,
+  type RadiologyAnalysisDetail,
+  type RadiologyAnalysisResult,
+  type RadiologyWorklistItem,
+} from "../_lib/radiology-api";
+
+type TrackedAnalysis = Pick<
+  RadiologyAnalysisDetail,
+  "analysis_id" | "analysis_type" | "status" | "started_at" | "completed_at" | "error_message"
+> & {
+  model_name: string;
+  model_version: string;
+};
+
+function getInitialAnalysis(item: RadiologyWorklistItem): TrackedAnalysis | null {
+  const analysis = item.latest_ai_analysis;
+  if (!analysis) return null;
+  return {
+    analysis_id: analysis.id,
+    analysis_type: analysis.analysis_type,
+    status: analysis.status as TrackedAnalysis["status"],
+    started_at: analysis.started_at,
+    completed_at: analysis.completed_at,
+    error_message: analysis.error_message,
+    model_name: analysis.model_name,
+    model_version: analysis.model_version,
+  };
+}
+
+function trackAnalysis(analysis: RadiologyAnalysisDetail): TrackedAnalysis {
+  return {
+    analysis_id: analysis.analysis_id,
+    analysis_type: analysis.analysis_type,
+    status: analysis.status,
+    started_at: analysis.started_at,
+    completed_at: analysis.completed_at,
+    error_message: analysis.error_message,
+    model_name: analysis.model_version.model_name,
+    model_version: analysis.model_version.version,
+  };
+}
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getFileExtension(file: File) {
+  const extension = file.name.split(".").pop();
+  return extension && extension !== file.name ? extension.toUpperCase() : "형식 미확인";
+}
+
+function isPreviewableImage(file: File) {
+  return file.type === "image/jpeg" || file.type === "image/png";
+}
 
 function formatDateTime(value: string | null) {
   if (!value) return "-";
@@ -34,56 +94,170 @@ function getAnalysisLabel(item: RadiologyWorklistItem) {
   return item.examination_order.exam_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
 }
 
-export function RadiologyDetail({ item, onClose }: {
+function formatPercent(value: string | null, scale = 100) {
+  if (value === null) return "-";
+  const number = Number(value);
+  return Number.isFinite(number) ? `${(number * scale).toFixed(1)}%` : value;
+}
+
+function AnalysisResultView({ data }: { data: RadiologyAnalysisResult }) {
+  if ("assessment" in data.result) {
+    return <dl className="grid grid-cols-2 gap-3 text-xs"><div><dt className="text-slate-500">분류 결과</dt><dd className="mt-1 font-semibold text-slate-800">{data.result.assessment_label}</dd></div><div><dt className="text-slate-500">의심 점수</dt><dd className="mt-1 text-slate-800">{formatPercent(data.result.suspicion_score)}</dd></div></dl>;
+  }
+  if ("nodules" in data.result) {
+    return <div className="space-y-3 text-xs"><p><span className="text-slate-500">전체 악성 위험도</span><span className="ml-2 font-semibold text-slate-800">{formatPercent(data.result.overall_malignancy_risk, 1)}</span></p>{data.result.nodules.map((nodule) => <div key={nodule.nodule_no} className="border-t border-blue-200 pt-2 text-slate-700">결절 {nodule.nodule_no} · 검출 신뢰도 {formatPercent(nodule.detection_confidence)} · 악성 위험도 {formatPercent(nodule.malignancy_risk, 1)}</div>)}</div>;
+  }
+  return <dl className="grid grid-cols-2 gap-4 text-xs sm:grid-cols-4"><div><dt className="text-slate-500">T</dt><dd className="mt-1 text-lg font-bold text-slate-900">{data.result.predicted_t ?? "-"}</dd></div><div><dt className="text-slate-500">N</dt><dd className="mt-1 text-lg font-bold text-slate-900">{data.result.predicted_n ?? "-"}</dd></div><div><dt className="text-slate-500">M</dt><dd className="mt-1 text-lg font-bold text-slate-900">{data.result.predicted_m ?? "-"}</dd></div><div><dt className="text-slate-500">Stage</dt><dd className="mt-1 text-lg font-bold text-slate-900">{data.result.predicted_stage_group ?? "-"}</dd></div><div className="col-span-2 border-t border-blue-200 pt-3 sm:col-span-4"><dt className="text-slate-500">Confidence</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(data.result.confidence)}</dd></div></dl>;
+}
+
+export function RadiologyPatientSummary({ item, onClear }: {
   item: RadiologyWorklistItem;
-  onClose: () => void;
+  onClear: () => void;
 }) {
-  const [showResultNotice, setShowResultNotice] = useState(false);
   const order = item.examination_order;
-  const image = item.latest_image_asset;
-  const analysis = item.latest_ai_analysis;
-  const analysisCompleted = analysis?.status === "SUCCEEDED" &&
-    ["REVIEW_PENDING", "REVIEW_COMPLETED"].includes(item.workflow_status);
-  const analysisRunning = analysis?.status === "RUNNING" || analysis?.status === "PENDING";
 
   return (
-    <aside aria-label="환자 작업" className="min-h-0 min-w-0 overflow-y-auto bg-white">
+    <section aria-labelledby="selected-patient-heading" className="min-h-0 overflow-y-auto bg-slate-50">
+      <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">선택 환자</p>
+          <h2 id="selected-patient-heading" className="mt-0.5 truncate text-sm font-bold text-slate-900">{item.patient.name}</h2>
+        </div>
+        <button type="button" onClick={onClear} className="shrink-0 text-xs font-semibold text-slate-500 hover:text-slate-800">선택 해제</button>
+      </div>
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-2.5 px-4 py-3 text-xs">
+        <div><dt className="text-slate-500">환자코드</dt><dd className="mt-0.5 text-slate-800">{item.patient.patient_code}</dd></div>
+        <div><dt className="text-slate-500">성별 / 생년월일</dt><dd className="mt-0.5 text-slate-800">{item.patient.sex} / {item.patient.birth_date}</dd></div>
+        <div><dt className="text-slate-500">Case</dt><dd className="mt-0.5 break-words text-slate-800">{item.case.case_code}</dd></div>
+        <div><dt className="text-slate-500">현재 검사</dt><dd className="mt-0.5 font-semibold text-slate-800">{order.exam_type_label}</dd></div>
+        <div><dt className="text-slate-500">현재 상태</dt><dd className="mt-1"><StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} /></dd></div>
+        <div><dt className="text-slate-500">오더 상태</dt><dd className="mt-1"><StatusBadge status={order.status} label={order.status_label} /></dd></div>
+        <div><dt className="text-slate-500">요청 의사</dt><dd className="mt-0.5 text-slate-800">{item.requesting_doctor.name}</dd></div>
+        <div><dt className="text-slate-500">검사 예정</dt><dd className="mt-0.5 text-slate-800">{formatDateTime(item.scheduled_at)}</dd></div>
+        <div className="col-span-2 border-t border-slate-200 pt-2.5"><dt className="text-slate-500">검사 목적</dt><dd className="mt-1 whitespace-pre-wrap break-words leading-5 text-slate-700">{order.purpose || "-"}</dd></div>
+      </dl>
+      <div className="border-t border-slate-200 px-4 py-3">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Patient Journey</p>
+        <p className="mt-2 whitespace-nowrap text-xs font-medium text-slate-700">X-ray → CT → PET-CT → 병리</p>
+      </div>
+    </section>
+  );
+}
+
+export function RadiologyDetail({ item }: {
+  item: RadiologyWorklistItem;
+}) {
+  const [showResultNotice, setShowResultNotice] = useState(false);
+  const [startingAnalysis, setStartingAnalysis] = useState(false);
+  const [loadingResult, setLoadingResult] = useState(false);
+  const [actionMessage, setActionMessage] = useState("");
+  const [actionError, setActionError] = useState("");
+  const [analysisResult, setAnalysisResult] = useState<RadiologyAnalysisResult | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
+  const order = item.examination_order;
+  const image = item.latest_image_asset;
+  const isXray = order.exam_type === "XRAY" && order.exam_type_label !== "PET-CT / TNM";
+  const previewFile = isXray ? selectedFiles.find(isPreviewableImage) ?? null : null;
+  const previewUrl = useMemo(
+    () => previewFile ? URL.createObjectURL(previewFile) : null,
+    [previewFile],
+  );
+  const selectedFileSize = selectedFiles.reduce((total, file) => total + file.size, 0);
+  const selectedFileTypes = Array.from(new Set(selectedFiles.map(getFileExtension)));
+  const analysisCompleted = trackedAnalysis?.status === "SUCCEEDED";
+  const analysisRunning = trackedAnalysis?.status === "RUNNING" || trackedAnalysis?.status === "PENDING";
+  const canStartAnalysis = image?.status === "READY" && trackedAnalysis === null;
+  const trackedAnalysisId = trackedAnalysis?.analysis_id;
+  const trackedAnalysisStatus = trackedAnalysis?.status;
+
+  useEffect(() => {
+    return () => {
+      if (previewUrl) URL.revokeObjectURL(previewUrl);
+    };
+  }, [previewUrl]);
+
+  useEffect(() => {
+    if (!trackedAnalysisId || !trackedAnalysisStatus || !["PENDING", "RUNNING"].includes(trackedAnalysisStatus)) return;
+
+    const controller = new AbortController();
+    const analysisId = trackedAnalysisId;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+
+    async function pollAnalysis() {
+      try {
+        const nextAnalysis = await fetchRadiologyAnalysis(analysisId, controller.signal);
+        if (controller.signal.aborted) return;
+        setTrackedAnalysis(trackAnalysis(nextAnalysis));
+        if (["PENDING", "RUNNING"].includes(nextAnalysis.status)) {
+          timer = setTimeout(() => void pollAnalysis(), 5000);
+        }
+      } catch (error) {
+        if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) return;
+        setActionError(error instanceof Error ? error.message : "AI 분석 상태를 확인하지 못했습니다.");
+      }
+    }
+
+    timer = setTimeout(() => void pollAnalysis(), 5000);
+    return () => {
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [trackedAnalysisId, trackedAnalysisStatus]);
+
+  async function handleStartAnalysis() {
+    setStartingAnalysis(true);
+    setActionError("");
+    setActionMessage("");
+    try {
+      const created = await startRadiologyAnalysis(order.id);
+      setTrackedAnalysis(trackAnalysis(created));
+      setAnalysisResult(null);
+      setShowResultNotice(false);
+      setActionMessage(created.status === "PENDING" ? "AI 분석이 실행 대기 상태로 등록되었습니다." : "AI 분석이 등록되었습니다.");
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "AI 분석을 등록하지 못했습니다.");
+    } finally {
+      setStartingAnalysis(false);
+    }
+  }
+
+  async function handleLoadResult() {
+    if (!trackedAnalysis) return;
+    if (analysisResult) {
+      setShowResultNotice((current) => !current);
+      return;
+    }
+    setLoadingResult(true);
+    setActionError("");
+    try {
+      const result = await fetchRadiologyAnalysisResult(trackedAnalysis.analysis_id);
+      setAnalysisResult(result);
+      setShowResultNotice(true);
+    } catch (error) {
+      setActionError(error instanceof RadiologyApiError ? error.message : "AI 결과를 불러오지 못했습니다.");
+    } finally {
+      setLoadingResult(false);
+    }
+  }
+
+  return (
+    <main aria-label="영상 및 AI 작업" className="min-h-0 min-w-0 overflow-y-auto bg-white">
       <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-4">
         <div className="flex items-start gap-4">
           <div className="min-w-0 flex-1">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">환자 작업</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">영상 및 AI 작업</p>
             <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-              <h2 className="text-lg font-bold text-slate-900">{item.patient.name}</h2>
-              <span className="text-xs text-slate-500">{item.patient.patient_code}</span>
-              <span className="text-xs font-semibold text-slate-700">{order.exam_type_label}</span>
+              <h2 className="text-lg font-bold text-slate-900">{order.exam_type_label === "PET-CT / TNM" ? "PET-CT 영상 / TNM AI 분석" : `${order.exam_type_label} 영상 / AI 분석`}</h2>
               <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
             </div>
+            <p className="mt-1 text-xs text-slate-500">{item.patient.name} · {item.patient.patient_code}</p>
+            {order.exam_type_label === "PET-CT / TNM" ? <p className="mt-1 text-xs font-medium text-slate-600">PET-CT 영상 → TNM AI 분석 → TNM 결과</p> : null}
           </div>
-          <button type="button" onClick={onClose} aria-label="환자 작업 닫기" className="rounded-md border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
-            닫기
-          </button>
         </div>
       </div>
 
       <div className="divide-y divide-slate-200 px-5">
-        <section className="py-5" aria-labelledby="patient-information-heading">
-          <h3 id="patient-information-heading" className="text-sm font-bold text-slate-800">환자 및 검사 정보</h3>
-          <dl className="mt-4 grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
-            <div><dt className="text-xs text-slate-500">환자명</dt><dd className="mt-1 text-slate-800">{item.patient.name}</dd></div>
-            <div><dt className="text-xs text-slate-500">환자코드</dt><dd className="mt-1 text-slate-800">{item.patient.patient_code}</dd></div>
-            <div><dt className="text-xs text-slate-500">생년월일</dt><dd className="mt-1 text-slate-700">{item.patient.birth_date}</dd></div>
-            <div><dt className="text-xs text-slate-500">성별</dt><dd className="mt-1 text-slate-700">{item.patient.sex}</dd></div>
-            <div><dt className="text-xs text-slate-500">Case code</dt><dd className="mt-1 break-words text-slate-700">{item.case.case_code}</dd></div>
-            <div><dt className="text-xs text-slate-500">현재 검사</dt><dd className="mt-1 font-semibold text-slate-800">{order.exam_type_label}</dd></div>
-            <div><dt className="text-xs text-slate-500">오더 상태</dt><dd className="mt-1"><StatusBadge status={order.status} label={order.status_label} /></dd></div>
-            <div><dt className="text-xs text-slate-500">요청 의사</dt><dd className="mt-1 text-slate-700">{item.requesting_doctor.name}</dd></div>
-            <div><dt className="text-xs text-slate-500">검사 예정 시각</dt><dd className="mt-1 text-slate-700">{formatDateTime(item.scheduled_at)}</dd></div>
-            <div className="col-span-2"><dt className="text-xs text-slate-500">검사 목적</dt><dd className="mt-1 whitespace-pre-wrap break-words text-slate-700">{order.purpose || "-"}</dd></div>
-          </dl>
-          <p className="mt-4 text-xs text-slate-500">X-ray → CT → PET-CT → 병리</p>
-          {order.exam_type_label === "PET-CT / TNM" ? <p className="mt-1 text-xs text-slate-500">PET-CT 영상에서 TNM AI 분석을 수행하는 하나의 검사 작업입니다.</p> : null}
-        </section>
-
         <section className="py-5" aria-labelledby="image-upload-heading">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -94,25 +268,56 @@ export function RadiologyDetail({ item, onClose }: {
                   <span>{image.image_type}</span><span>촬영 {formatDateTime(image.acquired_at)}</span><span>영상 자산 {item.image_asset_count}건</span>
                 </div>
               ) : <p className="mt-3 text-xs text-slate-500">연결된 영상 자산이 없습니다.</p>}
-              <p className="mt-2 text-xs leading-5 text-slate-500">영상 업로드·연결 API가 아직 제공되지 않습니다.</p>
+              <p className="mt-2 text-xs leading-5 text-slate-500">영상 저장소 연결 후 등록됩니다.</p>
             </div>
-            <button type="button" disabled className="shrink-0 rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-400 disabled:cursor-not-allowed">영상 업로드 준비 중</button>
+            <label className="shrink-0 cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
+              로컬 영상 선택
+              <input
+                type="file"
+                multiple={!isXray}
+                accept=".dcm,.dicom,image/jpeg,image/png,application/dicom"
+                className="sr-only"
+                onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+              />
+            </label>
           </div>
+          {selectedFiles.length === 0 ? <div className="mt-4 flex min-h-72 flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-100 px-6 text-center"><p className="text-sm font-semibold text-slate-700">영상 미리보기</p><p className="mt-2 text-xs text-slate-500">로컬 영상을 선택하면 이 영역에서 미리보기 또는 Series 요약을 확인할 수 있습니다.</p></div> : null}
+          {selectedFiles.length > 0 ? (
+            <div className="mt-4 border-l-2 border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="font-semibold text-slate-800">선택 영상 {selectedFiles.length}건 · {formatFileSize(selectedFileSize)}</p>
+                <StatusBadge status="IMAGE_PENDING" label="영상 연결 대기" />
+              </div>
+              <p className="mt-1 text-slate-500">파일 형식: {selectedFileTypes.join(", ")}</p>
+              {previewUrl ? <div className="mt-3 flex min-h-72 items-center justify-center border border-slate-200 bg-slate-950"><Image src={previewUrl} alt="선택한 X-ray 영상 미리보기" width={960} height={640} unoptimized className="max-h-[420px] h-auto w-auto max-w-full object-contain" /></div> : null}
+              {isXray && !previewUrl ? <div className="mt-3 flex min-h-72 items-center justify-center border border-dashed border-slate-300 bg-slate-100 px-3 text-center text-slate-500">DICOM 파일은 이 화면에서 미리보기를 제공하지 않습니다.</div> : null}
+              {!isXray ? (
+                <div className="mt-3">
+                  <div className="flex min-h-72 flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-100 text-center text-slate-600"><p className="text-sm font-semibold">선택된 DICOM Series</p><p className="mt-2 text-2xl font-bold text-slate-800">{selectedFiles.length} files</p></div>
+                  <div className="mt-3 space-y-1">
+                  {selectedFiles.slice(0, 3).map((file) => <p key={`${file.name}-${file.lastModified}`} className="truncate">{file.name} · {formatFileSize(file.size)}</p>)}
+                  {selectedFiles.length > 3 ? <p className="text-slate-500">외 {selectedFiles.length - 3}개 파일</p> : null}
+                  </div>
+                </div>
+              ) : null}
+              <p className="mt-3 text-slate-500">선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다.</p>
+            </div>
+          ) : null}
         </section>
 
         <section className="py-5" aria-labelledby="ai-analysis-heading">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
               <h3 id="ai-analysis-heading" className="text-sm font-bold text-slate-800">{getAnalysisLabel(item)}</h3>
-              {analysis ? (
+              {trackedAnalysis ? (
                 <div className="mt-3 space-y-2 text-xs text-slate-600">
-                  <div className="flex flex-wrap items-center gap-2"><StatusBadge status={analysis.status} label={analysis.status_label} /><span>{analysis.model_name} · {analysis.model_version}</span></div>
-                  <p>시작 {formatDateTime(analysis.started_at)} · 완료 {formatDateTime(analysis.completed_at)}</p>
-                  {analysis.error_message ? <p className="break-words text-red-700">{analysis.error_message}</p> : null}
+                  <div className="flex flex-wrap items-center gap-2"><StatusBadge status={trackedAnalysis.status} label={trackedAnalysis.status === "PENDING" ? "실행 대기" : trackedAnalysis.status === "RUNNING" ? "분석 중" : trackedAnalysis.status === "SUCCEEDED" ? "분석 완료" : "분석 실패"} /><span>{trackedAnalysis.model_name} · {trackedAnalysis.model_version}</span></div>
+                  <p>시작 {formatDateTime(trackedAnalysis.started_at)} · 완료 {formatDateTime(trackedAnalysis.completed_at)}</p>
+                  {trackedAnalysis.error_message ? <p className="break-words text-red-700">{trackedAnalysis.error_message}</p> : null}
                 </div>
               ) : <p className="mt-3 text-xs text-slate-500">AI 분석 이력이 없습니다.</p>}
             </div>
-            <button type="button" disabled className="shrink-0 rounded-md bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">AI 분석 실행</button>
+            <button type="button" disabled={!canStartAnalysis || startingAnalysis} onClick={handleStartAnalysis} className="shrink-0 rounded-md bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">{startingAnalysis ? "등록 중" : "AI 분석 실행"}</button>
           </div>
 
           {analysisRunning ? (
@@ -121,14 +326,17 @@ export function RadiologyDetail({ item, onClose }: {
               <div className="h-1.5 overflow-hidden bg-slate-200"><div className="h-full w-1/3 animate-pulse bg-blue-600" /></div>
             </div>
           ) : null}
-          <p className="mt-3 text-xs leading-5 text-slate-500">AI 실행·재실행 API가 아직 제공되지 않아 현재 버튼은 사용할 수 없습니다.</p>
+          {trackedAnalysis?.status === "FAILED" ? <p className="mt-4 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">AI 분석에 실패했습니다.{trackedAnalysis.error_message ? ` ${trackedAnalysis.error_message}` : ""}</p> : null}
+          <p className="mt-3 text-xs leading-5 text-slate-500">READY 영상에서 분석 요청을 등록합니다. 실제 AI 추론은 아직 연결되지 않아 PENDING 상태로 생성됩니다.</p>
+          {actionMessage ? <p className="mt-3 border-l-2 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-blue-800">{actionMessage}</p> : null}
+          {actionError ? <p className="mt-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p> : null}
 
           {analysisCompleted ? (
             <div className="mt-4 border-l-2 border-blue-600 bg-blue-50 px-4 py-3">
               <p className="text-sm font-semibold text-blue-900">AI 분석이 완료되었습니다.</p>
-              <p className="mt-1 text-xs text-blue-700">현재 상태: {getWorkflowLabel(item.workflow_status)}</p>
-              <button type="button" onClick={() => setShowResultNotice((current) => !current)} className="mt-3 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">AI 결과 보기</button>
-              {showResultNotice ? <p className="mt-3 border-t border-blue-200 pt-3 text-xs leading-5 text-slate-600">방사선사 Worklist 응답에는 AI 결과 상세 필드가 포함되지 않아 분석 상태와 모델 정보만 확인할 수 있습니다.</p> : null}
+              <p className="mt-1 text-xs text-blue-700">AI 결과를 조회할 수 있습니다.</p>
+              <button type="button" disabled={loadingResult} onClick={handleLoadResult} className="mt-3 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50">{loadingResult ? "결과 조회 중" : "AI 결과 보기"}</button>
+              {showResultNotice && analysisResult ? <div className="mt-3 border-t border-blue-200 pt-3"><AnalysisResultView data={analysisResult} /></div> : null}
             </div>
           ) : null}
         </section>
@@ -143,6 +351,6 @@ export function RadiologyDetail({ item, onClose }: {
           </div>
         </section>
       </div>
-    </aside>
+    </main>
   );
 }

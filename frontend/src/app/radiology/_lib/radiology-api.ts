@@ -87,6 +87,73 @@ export type RadiologyWorklistItem = {
   workflow_status_label: string;
 };
 
+export type RadiologyAnalysisDetail = {
+  analysis_id: string;
+  case_id: string;
+  order_id: string | null;
+  analysis_type: string;
+  status: "PENDING" | "RUNNING" | "SUCCEEDED" | "FAILED";
+  started_at: string | null;
+  completed_at: string | null;
+  error_message: string | null;
+  model_version: {
+    id: string;
+    model_name: string;
+    version: string;
+  };
+  source_image_asset: {
+    id: string;
+    image_type: string;
+    uploaded_stage: string;
+    storage_type: string;
+    status: string;
+  } | null;
+  created_at: string;
+};
+
+export type RadiologyAnalysisResult = {
+  analysis_id: string;
+  analysis_type: "XRAY_SCREENING" | "CT_NODULE" | "TNM_STAGING";
+  result:
+    | {
+        assessment: string;
+        assessment_label: string;
+        suspicion_score: string | null;
+      }
+    | {
+        overall_malignancy_risk: string | null;
+        nodules: Array<{
+          nodule_no: number;
+          detection_confidence: string | null;
+          malignancy_risk: string | null;
+          finding_payload: unknown;
+        }>;
+      }
+    | {
+        predicted_t: string | null;
+        predicted_n: string | null;
+        predicted_m: string | null;
+        predicted_stage_group: string | null;
+        confidence: string | null;
+      };
+};
+
+export type RadiologyImageRegistration = {
+  storage_type: "ORTHANC" | "GCS";
+  storage_uri: string;
+  file_format: string;
+  acquired_at?: string | null;
+  metadata?: unknown;
+};
+
+export type RadiologyRegisteredImage = RadiologyImageRegistration & {
+  id: string;
+  status: string;
+  image_type: string;
+  uploaded_stage: string;
+  created_at: string;
+};
+
 export class RadiologyApiError extends Error {
   status: number | null;
 
@@ -150,4 +217,55 @@ export async function fetchRadiologyWorklist(
   }
 
   return response.json();
+}
+
+async function radiologyRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await staffAuthenticatedFetch(`${getApiBaseUrl()}${path}`, {
+    ...init,
+    headers: {
+      Accept: "application/json",
+      ...(init.body ? { "Content-Type": "application/json" } : {}),
+      ...init.headers,
+    },
+  });
+  if (!response.ok) {
+    const errorData: unknown = await response.json().catch(() => null);
+    throw new RadiologyApiError(
+      getErrorMessage(errorData) ?? "영상의학과 요청을 처리하지 못했습니다.",
+      response.status,
+    );
+  }
+  return response.json();
+}
+
+export function registerRadiologyImage(
+  orderId: string,
+  data: RadiologyImageRegistration,
+  signal?: AbortSignal,
+) {
+  return radiologyRequest<RadiologyRegisteredImage>(
+    `/api/radiology/orders/${orderId}/images/`,
+    { method: "POST", body: JSON.stringify(data), signal },
+  );
+}
+
+export function startRadiologyAnalysis(orderId: string, signal?: AbortSignal) {
+  return radiologyRequest<RadiologyAnalysisDetail>(
+    `/api/radiology/orders/${orderId}/analyses/`,
+    { method: "POST", body: JSON.stringify({}), signal },
+  );
+}
+
+export function fetchRadiologyAnalysis(analysisId: string, signal?: AbortSignal) {
+  return radiologyRequest<RadiologyAnalysisDetail>(
+    `/api/radiology/analyses/${analysisId}/`,
+    { method: "GET", signal },
+  );
+}
+
+export function fetchRadiologyAnalysisResult(analysisId: string, signal?: AbortSignal) {
+  return radiologyRequest<RadiologyAnalysisResult>(
+    `/api/radiology/analyses/${analysisId}/result/`,
+    { method: "GET", signal },
+  );
 }
