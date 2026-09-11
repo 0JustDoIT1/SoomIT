@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../_lib/respiratory-api";
+import { getCaseListFetchError, getCaseListHttpError } from "./case-list-errors";
 
 type CaseItem = {
   id: string;
@@ -63,21 +64,14 @@ export default function RespiratoryCasesPage() {
         { signal },
       );
       if (!response.ok) {
-        if (response.status === 403) {
-          throw new Error("호흡기내과 Case 조회 권한이 없습니다.");
-        }
-        throw new Error("담당 Case 목록을 불러오지 못했습니다.");
+        throw new Error(getCaseListHttpError(response.status));
       }
       setCases(readCaseList(await response.json()));
     } catch (fetchError) {
       if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
         return;
       }
-      setError(
-        fetchError instanceof Error
-          ? fetchError.message
-          : "Case 목록 조회 중 오류가 발생했습니다.",
-      );
+      setError(getCaseListFetchError(fetchError));
     } finally {
       if (!signal?.aborted) setLoading(false);
     }

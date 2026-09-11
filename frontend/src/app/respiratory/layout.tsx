@@ -54,6 +54,14 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
         <div className="flex items-center gap-2">
           <button
             type="button"
+            onClick={() => router.push("/respiratory/schedules")}
+            className="rounded-md px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700"
+          >
+            진료 일정
+          </button>
+
+          <button
+            type="button"
             onClick={() => router.push("/respiratory/dashboard")}
             className="rounded-md px-3 py-2 text-xs font-semibold text-slate-600 transition hover:bg-blue-50 hover:text-blue-700"
           >

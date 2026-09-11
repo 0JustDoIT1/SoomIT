@@ -14,7 +14,7 @@ import { CasePatientSidebar } from "./case-patient-sidebar";
 import { BottomActionBar } from "./bottom-action-bar";
 import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
 import { CaseOverviewPanel } from "./case-overview-panel";
-import { BiomarkerSourceHeader } from "./biomarker-source-header";
+import { Pdl1ResultPanel } from "./pdl1-result-panel";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
@@ -107,18 +107,6 @@ type TnmClinicalResult = {
       note: string | null;
     };
   };
-};
-
-type GeneAnalysisResult = {
-  analysis_type: string;
-  result_detail: {
-    genes?: {
-      gene_symbol: string;
-      predicted_status: string;
-      predicted_status_label: string;
-      predicted_probability: number | string | null;
-    }[];
-  } | null;
 };
 
 type GeneClinicalResult = {
@@ -777,10 +765,6 @@ export default function RespiratoryCaseDetailPage() {
 
   const tnmClinical =
     tnmClinicalResult?.result_detail?.tnm;
-
-  const geneAnalysisResult = tnmAnalysisResults.find(
-    (result) => result.analysis_type === "GENE_PREDICTION"
-  ) as GeneAnalysisResult | undefined;
 
   const geneClinicalResult = tnmClinicalResults.find(
     (result) => result.exam_type === "GENE"
@@ -1453,11 +1437,6 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
-          <span className="shrink-0 whitespace-nowrap rounded-full border border-blue-200 bg-blue-50 px-3 py-1 text-[10px] font-semibold text-blue-700">
-            {getStageLabel(
-              selectedCase.current_stage
-            )}
-          </span>
         </div>
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
@@ -2357,11 +2336,7 @@ export default function RespiratoryCaseDetailPage() {
         </div>
         ) : selectedMainMenu === "AI" &&
         selectedAiMenu === "GENE" ? (
-        <Pdl1AiPanel
-          result={latestPdl1Result}
-          geneAnalysisResult={geneAnalysisResult}
-          geneClinicalResult={geneClinicalResult}
-        />
+        <Pdl1ResultPanel aiResult={latestPdl1Result} clinicalResult={geneClinicalResult} />
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
@@ -2767,266 +2742,4 @@ function formatBirthDate(value: string) {
   }
 
   return `${year}.${month}.${day}`;
-}
-
-function Pdl1AiPanel({
-  result,
-  geneAnalysisResult,
-  geneClinicalResult,
-}: {
-  result: Pdl1Result | null;
-  geneAnalysisResult?: GeneAnalysisResult;
-  geneClinicalResult?: GeneClinicalResult;
-}) {
-  const genes =
-    geneAnalysisResult?.result_detail?.genes ?? [];
-  const geneFindings =
-    geneClinicalResult?.result_detail.gene?.findings ?? [];
-  const geneSymbols = Array.from(
-    new Set([
-      ...genes.map((gene) => gene.gene_symbol),
-      ...geneFindings.map((finding) => finding.gene_symbol),
-    ])
-  );
-  const pdl1 = result?.result_detail?.pdl1;
-  const clinicalPdl1 =
-    geneClinicalResult?.result_detail.pdl1;
-
-  const confidence = pdl1
-    ? Number(pdl1.confidence) * 100
-    : null;
-
-  const class0 = pdl1
-    ? pdl1.probabilities.class_0 * 100
-    : null;
-
-  const class1 = pdl1
-    ? pdl1.probabilities.class_1 * 100
-    : null;
-
-  const class2 = pdl1
-    ? pdl1.probabilities.class_2 * 100
-    : null;
-
-  return (
-    <div className="space-y-4">
-      <BiomarkerSourceHeader />
-      <section className="hidden rounded-2xl border border-emerald-100 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div><p className="text-[10px] font-semibold text-slate-500">유전자 검사</p><p className="mt-0.5 text-base font-bold text-slate-800">
-            유전자 결과 비교
-          </p>
-          <p className="mt-1 text-xs text-slate-400">
-            전문과 확정 결과와 유전자 AI 분석 결과를 항목별로 비교합니다.
-          </p>
-          </div>
-          <span className="whitespace-nowrap rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-semibold text-emerald-700">확정 결과 우선</span>
-        </div>
-
-        <div className="mt-4 overflow-hidden rounded-xl border border-slate-100">
-          <div className="grid grid-cols-[0.8fr_1fr_0.7fr_1fr] gap-2 bg-slate-50 px-3 py-2 text-[11px] font-semibold text-slate-500">
-            <span>유전자</span>
-            <span>AI 분석 결과</span>
-            <span>AI 확률</span>
-            <span>전문과 확정</span>
-          </div>
-          {geneSymbols.map((geneSymbol) => {
-            const gene = genes.find(
-              (item) => item.gene_symbol === geneSymbol
-            );
-            const finding = geneFindings.find(
-              (item) => item.gene_symbol === geneSymbol
-            );
-
-            return (
-              <div
-                key={geneSymbol}
-                className="grid grid-cols-[0.8fr_1fr_0.7fr_1fr] gap-2 border-t border-slate-100 px-3 py-2.5 text-xs"
-              >
-                <span className="font-bold text-slate-700">
-                  {geneSymbol}
-                </span>
-                <span className="text-emerald-700">
-                  {gene?.predicted_status_label ?? "AI 결과 없음"}
-                </span>
-                <span className="text-slate-500">
-                  {gene?.predicted_probability !== null &&
-                  gene?.predicted_probability !== undefined
-                    ? Number(gene.predicted_probability) <= 1
-                      ? `${(
-                          Number(gene.predicted_probability) * 100
-                        ).toFixed(1)}%`
-                      : `${Number(gene.predicted_probability)}%`
-                    : "-"}
-                </span>
-                <span className="text-sky-700">
-                  {finding?.assessment_label ?? "확정 결과 없음"}
-                </span>
-                {finding?.note && (
-                  <span
-                    title={finding.note}
-                    className="col-span-4 truncate text-[11px] text-slate-400"
-                  >
-                    {finding.note}
-                  </span>
-                )}
-              </div>
-            );
-          })}
-          {geneSymbols.length === 0 && (
-            <div className="border-t border-slate-100 px-3 py-8 text-center text-xs text-slate-400">
-              조회된 유전자 AI 분석 결과와 전문과 확정 결과가 없습니다.
-            </div>
-          )}
-        </div>
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div className="rounded-xl bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-semibold text-slate-400">
-              전문과 종합 해석
-            </p>
-            <p className="mt-1 break-words text-xs text-slate-600">
-              {geneClinicalResult?.result_detail.gene?.interpretation ??
-                "확정 결과 없음"}
-            </p>
-          </div>
-          <div className="rounded-xl bg-slate-50 px-4 py-3">
-            <p className="text-[11px] font-semibold text-slate-400">
-              전문과 추가 검사 권고
-            </p>
-            <p className="mt-1 text-xs font-semibold text-slate-600">
-              {geneClinicalResult?.result_detail.gene
-                ? geneClinicalResult.result_detail.gene
-                    .additional_test_recommended
-                  ? "필요"
-                  : "없음"
-                : "확정 결과 없음"}
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <section className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-[10px] font-semibold text-slate-500">PD-L1 검사</p>
-            <p className="mt-0.5 text-base font-bold text-slate-800">
-              PD-L1 결과 비교
-            </p>
-            <p className="mt-1 text-xs text-slate-400">
-              전문과 확정 TPS와 AI 예측 구간을 서로 다른 출처로 표시합니다.
-            </p>
-          </div>
-          {result && (
-            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
-              {result.status_label}
-            </span>
-          )}
-        </div>
-
-        <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-          PD-L1 AI 결과는 인증 연결 전까지 조회할 수 없습니다. 전문과 확정 TPS는 임상 결과에서 계속 표시됩니다.
-        </p>
-
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
-            <p className="text-[10px] font-semibold text-blue-600">PD-L1 AI 분석 후보</p>
-            <p className="text-xs font-medium text-slate-500">
-              예측 TPS 구간
-            </p>
-            <p className="mt-2 text-xl font-bold text-blue-700">
-              {pdl1?.predicted_tps_range_label ?? "인증 연동 대기"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4">
-            <p className="text-[10px] font-semibold text-blue-600">PD-L1 AI 분석 후보</p>
-            <p className="text-xs font-medium text-slate-500">
-              분석 신뢰도
-            </p>
-            <p className="mt-2 text-xl font-bold text-slate-700">
-              {confidence !== null ? `${confidence.toFixed(2)}%` : "-"}
-            </p>
-          </div>
-          <div className="rounded-xl border border-emerald-100 bg-emerald-50/60 p-4">
-            <p className="text-[10px] font-semibold text-emerald-600">전문과 확정 결과</p>
-            <p className="text-xs font-medium text-slate-500">
-              확정 TPS
-            </p>
-            <p className="mt-2 text-xl font-bold text-emerald-700">
-              {clinicalPdl1?.tps_percent !== null &&
-              clinicalPdl1?.tps_percent !== undefined
-                ? `${clinicalPdl1.tps_percent}%`
-                : "확정 결과 없음"}
-            </p>
-          </div>
-        </div>
-
-        {pdl1 && class0 !== null && class1 !== null && class2 !== null && (
-          <div className="mt-3 rounded-xl border border-slate-100 px-4 py-3">
-            <div className="grid grid-cols-3 gap-2">
-              <ProbabilityCard label="<1%" value={class0} />
-              <ProbabilityCard label="1–49%" value={class1} />
-              <ProbabilityCard label="≥50%" value={class2} />
-            </div>
-          </div>
-        )}
-
-        <div className="mt-3 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
-          <div className="flex justify-between gap-3">
-            <span className="text-slate-400">전문과 확정 해석</span>
-            <span className="min-w-0 break-words text-right font-medium text-slate-600">
-              {clinicalPdl1?.interpretation ?? "확정 결과 없음"}
-            </span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-slate-400">전문과 판독 소견</span>
-            <span className="min-w-0 break-words text-right font-medium text-slate-600">
-              {clinicalPdl1?.note ?? "-"}
-            </span>
-          </div>
-          <div className="flex justify-between gap-3">
-            <span className="text-slate-400">결과일</span>
-            <span className="text-right font-medium text-slate-600">
-              {geneClinicalResult?.result_date ?? "-"}
-            </span>
-          </div>
-        </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 rounded-xl border border-slate-100 px-4 py-3 text-xs">
-          <span className="text-slate-400">모델</span>
-          <span className="text-right font-medium text-slate-600">
-            {result ? `${result.model_name} ${result.model_version_name}` : "-"}
-          </span>
-          <span className="text-slate-400">완료일</span>
-          <span className="text-right font-medium text-slate-600">
-            {result?.completed_at ?? "-"}
-          </span>
-        </div>
-
-        <p className="mt-3 text-[11px] leading-5 text-amber-700">
-          AI 결과는 TPS 예측 구간이며 전문과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.
-        </p>
-      </section>
-    </div>
-  );
-}
-
-function ProbabilityCard({
-  label,
-  value,
-}: {
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="rounded-xl bg-slate-50 p-4">
-      <p className="text-xs text-slate-500">
-        {label}
-      </p>
-
-      <p className="mt-2 text-lg font-bold text-slate-800">
-        {value.toFixed(2)}%
-      </p>
-    </div>
-  );
 }
