@@ -29,3 +29,4 @@ model_validation/
 *.pth
 
 gcs-key.json
+.knowledge-deps/

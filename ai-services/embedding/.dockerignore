@@ -1,0 +1,6 @@
+**
+!requirements.txt
+!encoder.py
+!server.py
+!download_model.py
+!Dockerfile

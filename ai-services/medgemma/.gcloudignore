@@ -1,5 +1,0 @@
-**
-!Dockerfile
-!cloudbuild.yaml
-!.dockerignore
-!.gcloudignore
