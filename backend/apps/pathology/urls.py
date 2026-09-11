@@ -10,6 +10,7 @@ from .views import (
     CaseSpecimenAdequacyAiAnalysisListAPIView,
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
+    PathologyWorkstationListAPIView,
     PathologyDiagnosisConfirmAPIView,
     PathologyDiagnosisDetailAPIView,
     SpecimenWholeSlideImageListAPIView,
@@ -20,6 +21,11 @@ from .views import (
 app_name = "pathology"
 
 urlpatterns = [
+    path(
+        "workstation/",
+        PathologyWorkstationListAPIView.as_view(),
+        name="workstation-list",
+    ),
     path(
         "work-items/",
         PathologyWorkItemListAPIView.as_view(),

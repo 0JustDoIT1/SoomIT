@@ -140,8 +140,8 @@ export function RadiologyWorklist({
                   key={orderId}
                   tabIndex={0}
                   aria-selected={selectedId === orderId}
-                  className={`cursor-pointer border-b border-slate-100 outline-none transition-colors hover:bg-blue-50/50 focus:bg-blue-50 ${
-                    selectedId === orderId ? "bg-blue-50" : "bg-white"
+                  className={`cursor-pointer border-b border-slate-100 border-l-[3px] outline-none transition-colors hover:bg-blue-50/50 focus:bg-blue-50 ${
+                    selectedId === orderId ? "border-l-blue-600 bg-blue-50" : "border-l-transparent bg-white"
                   }`}
                   onClick={() => onSelect(item)}
                   onKeyDown={(event) => {
