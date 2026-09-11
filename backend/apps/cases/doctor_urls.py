@@ -14,6 +14,7 @@ from apps.clinical.views import (
 )
 
 from .views import (
+    DoctorMedicalOpinionAPIView,
     DoctorLungCancerCaseDetailAPIView,
     DoctorLungCancerCaseListAPIView,
 )
@@ -34,6 +35,11 @@ urlpatterns = [
         "<uuid:id>/",
         DoctorLungCancerCaseDetailAPIView.as_view(),
         name="doctor-case-detail",
+    ),
+    path(
+        "<uuid:case_id>/medical-opinion/",
+        DoctorMedicalOpinionAPIView.as_view(),
+        name="doctor-medical-opinion",
     ),
     path(
         "<uuid:case_id>/clinical-results/",

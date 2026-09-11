@@ -3,6 +3,26 @@ from rest_framework import serializers
 from .models import ClinicianDecision, LungCancerCase
 
 
+class MedicalOpinionRequestSerializer(serializers.Serializer):
+    instruction = serializers.CharField(
+        required=False,
+        allow_blank=False,
+        max_length=2000,
+        default="임상 결과를 종합한 간결한 소견 초안을 작성해주세요.",
+    )
+
+
+class MedicalOpinionSourceSerializer(serializers.Serializer):
+    id = serializers.UUIDField()
+    stage = serializers.CharField()
+    confirmed_at = serializers.DateTimeField(allow_null=True)
+
+
+class MedicalOpinionResponseSerializer(serializers.Serializer):
+    opinion = serializers.CharField()
+    source_results = MedicalOpinionSourceSerializer(many=True)
+
+
 # 원무과 - Case 목록 조회용
 class LungCancerCaseSerializer(serializers.ModelSerializer):
     patient_code = serializers.CharField(

@@ -25,6 +25,7 @@ x-django-base: &django-base
     MEDGEMMA_SERVICE_URL: ${MEDGEMMA_SERVICE_URL:?Set MEDGEMMA_SERVICE_URL}
     MEDGEMMA_SERVICE_TIMEOUT_SECONDS: ${MEDGEMMA_SERVICE_TIMEOUT_SECONDS:-290}
     MEDGEMMA_SERVICE_USE_ID_TOKEN: ${MEDGEMMA_SERVICE_USE_ID_TOKEN:-0}
+    AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?Set AI_SERVICE_TOKEN}
   depends_on:
     redis:
       condition: service_healthy
@@ -75,6 +76,8 @@ services:
         '0.0.0.0:8000',
         '--workers',
         '3',
+        '--timeout',
+        '310',
       ]
     ports:
       - '127.0.0.1:8000:8000'

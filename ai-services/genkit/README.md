@@ -1,0 +1,21 @@
+# SoomIT Genkit chatbot
+
+The patient chatbot uses Gemini for response generation and tool orchestration.
+For lung-cancer questions it retrieves guideline chunks from Django/pgvector and
+grounds the Gemini answer in those chunks. MedGemma clinician opinions are a
+separate Django workflow and are not part of this service.
+
+The default Gemini model is `gemini-3.8-flash` through the Google AI Studio
+Gemini Developer API.
+
+## Local setup
+
+1. Copy `.env.example` to `.env` and set the secrets.
+2. Use the same random value for Django `AI_SERVICE_TOKEN` and Genkit
+   `DJANGO_SERVICE_TOKEN`.
+3. Run `npm install`, then `npm run dev`.
+4. Call `POST /chat` with JSON containing `message` and optional `history`.
+
+The registered Genkit flows and tools can be inspected from an MCP-aware
+development client by running `npm run mcp`. The production `/chat` route uses
+Gemini function calling to run the guideline-search tool.

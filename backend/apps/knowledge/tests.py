@@ -1,9 +1,9 @@
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APIClient, APITestCase
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.accounts.models import User
@@ -162,3 +162,46 @@ class AskKnowledgeAPITests(APITestCase):
         response = self.client.post(self.url, {"question": "질문"}, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+
+
+@override_settings(AI_SERVICE_TOKEN="test-ai-service-token")
+class AIServiceKnowledgeAPITests(SimpleTestCase):
+    def setUp(self):
+        self.client = APIClient()
+        self.ask_url = reverse("ai-knowledge:ask")
+        self.search_url = reverse("ai-knowledge:search")
+
+    def test_service_endpoint_rejects_wrong_token(self):
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer wrong-token")
+
+        response = self.client.post(self.ask_url, {"question": "question"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    @patch("apps.knowledge.views.answer_with_rag")
+    def test_service_ask_returns_rag_answer(self, mock_answer):
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer test-ai-service-token")
+        mock_answer.return_value = {"answer": "answer", "sources": []}
+
+        response = self.client.post(self.ask_url, {"question": "question"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, {"answer": "answer", "sources": []})
+        mock_answer.assert_called_once_with("question", top_k=5)
+
+    @patch("apps.knowledge.views.search_knowledge")
+    def test_service_search_returns_chunk_content(self, mock_search):
+        self.client.credentials(HTTP_AUTHORIZATION="Bearer test-ai-service-token")
+        document = type("Document", (), {"title": "NCI PDQ"})()
+        chunk = type(
+            "Chunk",
+            (),
+            {"document": document, "chunk_index": 7, "content": "evidence", "distance": 0.1},
+        )()
+        mock_search.return_value = [chunk]
+
+        response = self.client.post(self.search_url, {"query": "stage IA"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["chunks"][0]["content"], "evidence")
+        mock_search.assert_called_once_with("stage IA", top_k=5)

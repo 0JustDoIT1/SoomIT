@@ -17,6 +17,7 @@ venv/
 
 # Build outputs
 **/build/
+**/dist/
 
 # IDE / OS
 .vscode/

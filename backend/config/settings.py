@@ -140,6 +140,9 @@ MEDGEMMA_SERVICE_URL = os.environ[
 MEDGEMMA_SERVICE_TIMEOUT_SECONDS = float(os.environ.get("MEDGEMMA_SERVICE_TIMEOUT_SECONDS", "120"))
 MEDGEMMA_SERVICE_USE_ID_TOKEN = os.environ.get("MEDGEMMA_SERVICE_USE_ID_TOKEN", "0") == "1"
 
+# Shared only by Django and trusted AI orchestrators such as Genkit.
+AI_SERVICE_TOKEN = os.environ.get("AI_SERVICE_TOKEN", "")
+
 #CORS_ALLOWED_ORIGINS = [
 #    "http://localhost:3000",
 #]
