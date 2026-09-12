@@ -26,6 +26,9 @@ x-django-base: &django-base
     MEDGEMMA_SERVICE_TIMEOUT_SECONDS: ${MEDGEMMA_SERVICE_TIMEOUT_SECONDS:-290}
     MEDGEMMA_SERVICE_USE_ID_TOKEN: ${MEDGEMMA_SERVICE_USE_ID_TOKEN:-0}
     AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?Set AI_SERVICE_TOKEN}
+    GENKIT_SERVICE_URL: ${GENKIT_SERVICE_URL:-}
+    GENKIT_SERVICE_TIMEOUT_SECONDS: ${GENKIT_SERVICE_TIMEOUT_SECONDS:-300}
+    GENKIT_SERVICE_USE_ID_TOKEN: ${GENKIT_SERVICE_USE_ID_TOKEN:-0}
   depends_on:
     redis:
       condition: service_healthy
@@ -114,9 +117,11 @@ services:
     restart: unless-stopped
     ports:
       - '80:80'
+      - '443:443'
     volumes:
       - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - certbot_www:/var/www/certbot:ro
+      - certbot_conf:/etc/letsencrypt:ro
     depends_on:
       django:
         condition: service_started

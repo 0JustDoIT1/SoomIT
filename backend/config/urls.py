@@ -10,6 +10,7 @@ urlpatterns = [
     path("api/system-admin/", include("apps.accounts.system_admin_urls")),
     path("api/hospital-admin/", include("apps.accounts.hospital_admin_urls")),
     path("api/patients/", include("apps.patients.urls")),
+    path("api/patient/", include("apps.patients.chat_urls")),
     path("api/pathology/", include("apps.pathology.urls")),
     path("api/radiology/", include("apps.radiology.urls")),
     path("api/cases/", include("apps.cases.urls")),
