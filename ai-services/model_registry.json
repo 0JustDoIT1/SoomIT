@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "project": "soomit-506909",
+  "bucket": "gs://soomit-bucket/models",
+  "services": [
+    {
+      "service": "xray-serve",
+      "status": "deployed",
+      "artifact_storage": "gcs",
+      "manifest": "gs://soomit-bucket/models/xray/xray-v1/model_manifest.json"
+    },
+    {
+      "service": "ct-detection-serve",
+      "status": "deployed",
+      "artifact_storage": "gcs",
+      "manifest": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/model_manifest.json"
+    }
+  ]
+}

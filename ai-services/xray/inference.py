@@ -14,6 +14,8 @@ from torchvision import transforms
 from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
 from torchvision.transforms.functional import to_tensor
 
+from artifact import ensure_gcs_artifact
+
 
 DETECTOR_CLASS_NAMES = [
     "Background",
@@ -117,6 +119,22 @@ class XrayModels:
         detector_path = Path(os.environ.get("DETECTOR_MODEL_PATH", "/models/detector_final_model.pth"))
         classifier_path = Path(
             os.environ.get("CLASSIFICATION_MODEL_PATH", "/models/classification_final_model.pth")
+        )
+        self.detector_sha256 = ensure_gcs_artifact(
+            os.environ.get("DETECTOR_MODEL_GCS_URI"),
+            detector_path,
+            os.environ.get(
+                "DETECTOR_MODEL_SHA256",
+                "bf80f1d0052e745f477bc4d92a0de52c05c30090449df7875d90093505d1f3c2",
+            ),
+        )
+        self.classifier_sha256 = ensure_gcs_artifact(
+            os.environ.get("CLASSIFICATION_MODEL_GCS_URI"),
+            classifier_path,
+            os.environ.get(
+                "CLASSIFICATION_MODEL_SHA256",
+                "7f3cec7f00860cebb9497a956dc46b1b1645f8c2ff8676754041db4e716bd5b1",
+            ),
         )
         self.detector = build_detector(detector_path).to(self.device)
         self.classifier = build_classifier(classifier_path).to(self.device)

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "service": "ct-detection-serve",
+  "model": "CPMNetv2_HN25",
+  "model_version": "cpmnetv2-hn25-v1.0.0",
+  "deployment_status": "deployed",
+  "artifacts": [
+    {
+      "name": "best_val_loss.pt",
+      "gcs_uri": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/best_val_loss.pt",
+      "size_bytes": 198605683,
+      "sha256": "4d1036ba7bdb7aec132d13ce8d0b760d277146e48511d459e6379c0651d1a009",
+      "status": "uploaded_and_verified"
+    },
+    {
+      "name": "inference_config.json",
+      "gcs_uri": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/inference_config.json"
+    },
+    {
+      "name": "output_schema.json",
+      "gcs_uri": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/output_schema.json"
+    }
+  ],
+  "source": {
+    "repository": "https://github.com/zunzhumu/CPMNetv2",
+    "commit": "5d433717f2d615f20bd1a8ce379c59bdf6b6153d"
+  },
+  "image": "gcr.io/soomit-506909/ct-detection-serve:cpmnetv2-hn25-v1.0.0",
+  "image_digest": "sha256:3e45388eae8083770f7cee680090141c57f52dc9f5fef4e664c1ccfc6f3494e7",
+  "input": {
+    "source_storage": "ORTHANC",
+    "transport": "backend sends an Orthanc series ID; the service downloads a request-scoped temporary series archive",
+    "production_endpoint": "/v1/detect/orthanc",
+    "accepted_formats": ["DICOM_ZIP", "NIFTI"]
+  },
+  "cloud_run": {
+    "service": "ct-detection-serve",
+    "revision": "ct-detection-serve-00003-2fv",
+    "region": "asia-southeast1",
+    "url": "https://ct-detection-serve-hd73edty7a-as.a.run.app",
+    "cold_start_model_load_verified": true,
+    "orthanc_vpc_connectivity_verified": true
+  }
+}

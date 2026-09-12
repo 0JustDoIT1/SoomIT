@@ -1,6 +1,8 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
-.venv/
-README.md
+tests/
+docs/
+*.md
+external/CPMNetv2/.git/
 models/

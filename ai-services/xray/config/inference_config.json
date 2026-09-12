@@ -1,0 +1,33 @@
+{
+  "model_revision": "xray-v1",
+  "detector": {
+    "architecture": "fasterrcnn_resnet50_fpn_v2",
+    "score_threshold_default": 0.3,
+    "min_size": 1200,
+    "max_size": 1333,
+    "class_names": [
+      "Background",
+      "Atelectasis",
+      "Calcification",
+      "Cardiomegaly",
+      "Consolidation",
+      "Diffuse Nodule",
+      "Effusion",
+      "Emphysema",
+      "Fibrosis",
+      "Fracture",
+      "Mass",
+      "Nodule",
+      "Pleural Thickening",
+      "Pneumothorax"
+    ]
+  },
+  "classifier": {
+    "architecture": "swin_base_patch4_window7_224",
+    "resize": 256,
+    "center_crop": 224,
+    "normalization_mean": [0.485, 0.456, 0.406],
+    "normalization_std": [0.229, 0.224, 0.225],
+    "class_names": ["Normal", "Other Lung Disease", "Suspicious Lung Cancer"]
+  }
+}

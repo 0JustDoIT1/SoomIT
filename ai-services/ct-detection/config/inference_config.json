@@ -1,0 +1,44 @@
+{
+  "model": {
+    "name": "CPMNetv2_HN25",
+    "version": "1.0.0",
+    "checkpoint_relative_path": "../final_detection_research/model/best_val_loss.pt",
+    "backbone": "3D ResNet18"
+  },
+  "detection_preprocessing": {
+    "target_spacing_xyz_mm": [1.0, 1.0, 1.0],
+    "hu_clip": [-1200.0, 600.0],
+    "normalization": "linear_minus1_plus1",
+    "normalized_range": [-1.0, 1.0],
+    "resample_interpolation": "linear",
+    "resample_default_hu": -1200.0
+  },
+  "detection_inference": {
+    "crop_size_zyx": [64, 128, 128],
+    "overlap_size_zyx": [16, 32, 32],
+    "batch_size": 4,
+    "crop_score_threshold": 0.01,
+    "crop_post_topk": 120,
+    "crop_post_num_topk": 60,
+    "crop_nms_threshold": 0.05,
+    "final_nms_threshold": 0.05,
+    "final_topk_per_scan": 300
+  },
+  "reference_operating_points": {
+    "validation_best_f1_threshold": 0.9612025618553162,
+    "reference_fixed_threshold": 0.5
+  },
+  "coordinate_system": {
+    "internal_volume": "ZYX",
+    "detection_center": "ZYX",
+    "detection_size": "DHW",
+    "simpleitk_index": "XYZ",
+    "world_coordinate": "XYZ_mm"
+  },
+  "visualization": {
+    "window_center_hu": -600.0,
+    "window_width_hu": 1500.0,
+    "default_max_png_nodules": 20,
+    "viewer_annotation_coordinate_system": "patient_physical_XYZ_mm"
+  }
+}

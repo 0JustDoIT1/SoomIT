@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "service": "xray-serve",
+  "model_version": "xray-v1",
+  "artifacts": [
+    {
+      "name": "detector_final_model.pth",
+      "gcs_uri": "gs://soomit-bucket/models/xray/xray-v1/detector_final_model.pth",
+      "size_bytes": 173656989,
+      "sha256": "bf80f1d0052e745f477bc4d92a0de52c05c30090449df7875d90093505d1f3c2"
+    },
+    {
+      "name": "classification_final_model.pth",
+      "gcs_uri": "gs://soomit-bucket/models/xray/xray-v1/classification_final_model.pth",
+      "size_bytes": 347118369,
+      "sha256": "7f3cec7f00860cebb9497a956dc46b1b1645f8c2ff8676754041db4e716bd5b1"
+    },
+    {
+      "name": "inference_config.json",
+      "gcs_uri": "gs://soomit-bucket/models/xray/xray-v1/inference_config.json"
+    }
+  ],
+  "deployed_image_digest": "sha256:e98bf50480d4101a0b4edc1168b86ef02421b61f46bbbdec24397bba0629cd91",
+  "input": {
+    "source_storage": "ORTHANC",
+    "transport": "backend reads the source from Orthanc, converts it to PNG/JPEG, and sends image bytes",
+    "accepted_formats": ["PNG", "JPEG"]
+  },
+  "cloud_run": {
+    "service": "xray-serve",
+    "revision": "xray-serve-00002-b6q",
+    "region": "asia-southeast1",
+    "url": "https://xray-serve-461462459694.asia-southeast1.run.app",
+    "cold_start_model_load_verified": true,
+    "inference_smoke_test_verified": true
+  }
+}

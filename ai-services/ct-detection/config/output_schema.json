@@ -1,0 +1,56 @@
+{
+  "final_detections": {
+    "status": "SUCCESS",
+    "case_id": "string|null",
+    "series_uid": "string|null",
+    "model": "CPMNetv2_HN25",
+    "nodule_count": "integer",
+    "nodules": [
+      {
+        "nodule_id": "NODULE_001",
+        "rank": "integer",
+        "score": "float",
+        "resampled_voxel": {
+          "center_zyx": ["z", "y", "x"],
+          "size_dhw": ["d", "h", "w"],
+          "bbox_min_zyx": ["z_min", "y_min", "x_min"],
+          "bbox_max_zyx": ["z_max", "y_max", "x_max"]
+        },
+        "physical_world": {
+          "center_xyz_mm": ["x_mm", "y_mm", "z_mm"],
+          "size_dhw_mm": ["d_mm", "h_mm", "w_mm"],
+          "bbox_min_xyz_mm": ["x_min_mm", "y_min_mm", "z_min_mm"],
+          "bbox_max_xyz_mm": ["x_max_mm", "y_max_mm", "z_max_mm"],
+          "bbox_corners_xyz_mm": "8 x [x,y,z]"
+        },
+        "original_voxel": {
+          "center_xyz": ["x", "y", "z"],
+          "center_zyx": ["z", "y", "x"],
+          "bbox_min_xyz": ["x_min", "y_min", "z_min"],
+          "bbox_max_xyz": ["x_max", "y_max", "z_max"],
+          "bbox_min_zyx": ["z_min", "y_min", "x_min"],
+          "bbox_max_zyx": ["z_max", "y_max", "x_max"]
+        },
+        "viewer_helper": {
+          "original_slice_range_z": ["z_start", "z_end"]
+        }
+      }
+    ]
+  },
+  "viewer_annotations": {
+    "annotation_coordinate_system": "patient physical XYZ mm",
+    "annotations": [
+      {
+        "annotation_id": "NODULE_001",
+        "type": "3D_BOUNDING_BOX",
+        "score": "float",
+        "center_world_xyz_mm": ["x", "y", "z"],
+        "bbox_world": {
+          "min_xyz_mm": ["x", "y", "z"],
+          "max_xyz_mm": ["x", "y", "z"],
+          "corners_xyz_mm": "8 x [x,y,z]"
+        }
+      }
+    ]
+  }
+}

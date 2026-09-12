@@ -1,0 +1,9 @@
+fastapi==0.115.12
+uvicorn[standard]==0.34.2
+numpy==1.26.4
+scipy==1.11.4
+scikit-image==0.22.0
+pandas==2.2.3
+SimpleITK==2.4.1
+matplotlib==3.10.1
+google-cloud-storage==3.13.0
