@@ -3,7 +3,7 @@ from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -13,6 +13,12 @@ from .models import Department, Hospital, HospitalAdmin
 from .permissions import IsSystemAdmin
 from .services.hospital_admin_provisioning import provision_hospital_admin
 from .services.hospital_provisioning import provision_hospital
+from .services.kakao_local import (
+    KakaoAddressNotFoundError,
+    KakaoGeocodingConfigurationError,
+    KakaoGeocodingServiceError,
+    geocode_road_address,
+)
 from .system_admin_serializers import (
     HospitalAdminCreateSerializer,
     HospitalAdminListQuerySerializer,
@@ -66,8 +72,23 @@ class SystemAdminHospitalCreateAPIView(APIView):
         serializer = HospitalCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        hospital_data = dict(serializer.validated_data)
         try:
-            hospital = provision_hospital(**serializer.validated_data)
+            latitude, longitude = geocode_road_address(hospital_data["address"])
+        except KakaoAddressNotFoundError as exc:
+            raise ValidationError({"address": str(exc)}) from exc
+        except KakaoGeocodingConfigurationError as exc:
+            error = APIException(str(exc))
+            error.status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+            raise error from exc
+        except KakaoGeocodingServiceError as exc:
+            error = APIException(str(exc))
+            error.status_code = status.HTTP_502_BAD_GATEWAY
+            raise error from exc
+
+        hospital_data.update(latitude=latitude, longitude=longitude)
+        try:
+            hospital = provision_hospital(**hospital_data)
         except IntegrityError as exc:
             raise ValidationError({"code": "이미 사용 중인 병원 코드입니다."}) from exc
 

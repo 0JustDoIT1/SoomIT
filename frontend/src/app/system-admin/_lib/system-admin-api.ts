@@ -17,9 +17,9 @@ export type HospitalDetail = Hospital & {
 export type HospitalCreateRequest = {
   name: string;
   code: string;
-  address: string | null;
+  address: string;
   address_detail: string | null;
-  postal_code: string | null;
+  postal_code: string;
   phone: string | null;
 };
 export type HospitalCreateResponse = { hospital: Hospital; departments: Department[] };

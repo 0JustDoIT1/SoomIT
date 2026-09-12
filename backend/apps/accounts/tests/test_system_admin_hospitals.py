@@ -1,3 +1,6 @@
+from decimal import Decimal
+from unittest.mock import patch
+
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -12,6 +15,10 @@ from apps.accounts.models import (
     SystemAdmin,
     User,
 )
+from apps.accounts.services.kakao_local import (
+    KakaoAddressNotFoundError,
+    KakaoGeocodingServiceError,
+)
 
 
 class SystemAdminHospitalCreateAPITestCase(APITestCase):
@@ -24,12 +31,23 @@ class SystemAdminHospitalCreateAPITestCase(APITestCase):
             account_status=User.AccountStatus.ACTIVE,
         )
         SystemAdmin.objects.create(user=self.system_user)
+        geocode_patcher = patch(
+            "apps.accounts.system_admin_views.geocode_road_address",
+            return_value=(Decimal("37.566295"), Decimal("126.977945")),
+        )
+        self.geocode = geocode_patcher.start()
+        self.addCleanup(geocode_patcher.stop)
 
     def authenticate(self, user):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {AccessToken.for_user(user)}")
 
     def payload(self, **overrides):
-        payload = {"name": "숨잇병원", "code": "soomit-01"}
+        payload = {
+            "name": "숨잇병원",
+            "code": "soomit-01",
+            "address": "서울특별시 중구 세종대로 110",
+            "postal_code": "04524",
+        }
         payload.update(overrides)
         return payload
 
@@ -74,14 +92,55 @@ class SystemAdminHospitalCreateAPITestCase(APITestCase):
         self.assertEqual(response.data["hospital"]["latitude"], "37.566295")
         self.assertEqual(response.data["hospital"]["longitude"], "126.977945")
 
-    def test_address_detail_and_postal_code_remain_optional(self):
+    def test_address_detail_remains_optional(self):
         self.authenticate(self.system_user)
         response = self.client.post(self.url, self.payload(), format="json")
 
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         hospital = Hospital.objects.get(code="SOOMIT-01")
         self.assertIsNone(hospital.address_detail)
-        self.assertIsNone(hospital.postal_code)
+
+    def test_client_coordinates_are_ignored(self):
+        self.authenticate(self.system_user)
+        response = self.client.post(
+            self.url,
+            self.payload(latitude="1.000000", longitude="2.000000"),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        hospital = Hospital.objects.get(code="SOOMIT-01")
+        self.assertEqual(hospital.latitude, Decimal("37.566295"))
+        self.assertEqual(hospital.longitude, Decimal("126.977945"))
+
+    def test_address_and_postal_code_are_required(self):
+        self.authenticate(self.system_user)
+        for missing_field in ("address", "postal_code"):
+            payload = self.payload()
+            payload.pop(missing_field)
+            response = self.client.post(self.url, payload, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn(missing_field, response.data)
+
+    def test_empty_geocoding_result_does_not_create_hospital(self):
+        self.authenticate(self.system_user)
+        self.geocode.side_effect = KakaoAddressNotFoundError("좌표 없음")
+
+        response = self.client.post(self.url, self.payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(Hospital.objects.filter(code="SOOMIT-01").exists())
+        self.assertEqual(Department.objects.count(), 0)
+
+    def test_geocoding_service_error_does_not_create_hospital(self):
+        self.authenticate(self.system_user)
+        self.geocode.side_effect = KakaoGeocodingServiceError("서비스 오류")
+
+        response = self.client.post(self.url, self.payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertFalse(Hospital.objects.filter(code="SOOMIT-01").exists())
+        self.assertEqual(Department.objects.count(), 0)
 
     def test_unauthenticated_request_is_rejected(self):
         response = self.client.post(self.url, self.payload(), format="json")
