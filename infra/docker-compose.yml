@@ -65,6 +65,7 @@ services:
     <<: *django-base
     environment:
       <<: *common-environment
+      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?Set KAKAO_REST_API_KEY}
       ORTHANC_BASE_URL: http://orthanc:8042
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
       ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
