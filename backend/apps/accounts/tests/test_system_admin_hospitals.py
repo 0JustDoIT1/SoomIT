@@ -47,6 +47,42 @@ class SystemAdminHospitalCreateAPITestCase(APITestCase):
             sum(len(template.roles) for template in DEFAULT_DEPARTMENT_TEMPLATES),
         )
 
+    def test_hospital_address_fields_are_saved_and_returned(self):
+        self.authenticate(self.system_user)
+        response = self.client.post(
+            self.url,
+            self.payload(
+                address="서울특별시 중구 세종대로 110",
+                address_detail="본관 3층",
+                postal_code="04524",
+                latitude="37.566295",
+                longitude="126.977945",
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        hospital = Hospital.objects.get(code="SOOMIT-01")
+        self.assertEqual(hospital.address, "서울특별시 중구 세종대로 110")
+        self.assertEqual(hospital.address_detail, "본관 3층")
+        self.assertEqual(hospital.postal_code, "04524")
+        self.assertEqual(str(hospital.latitude), "37.566295")
+        self.assertEqual(str(hospital.longitude), "126.977945")
+        self.assertEqual(response.data["hospital"]["address"], hospital.address)
+        self.assertEqual(response.data["hospital"]["address_detail"], hospital.address_detail)
+        self.assertEqual(response.data["hospital"]["postal_code"], hospital.postal_code)
+        self.assertEqual(response.data["hospital"]["latitude"], "37.566295")
+        self.assertEqual(response.data["hospital"]["longitude"], "126.977945")
+
+    def test_address_detail_and_postal_code_remain_optional(self):
+        self.authenticate(self.system_user)
+        response = self.client.post(self.url, self.payload(), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        hospital = Hospital.objects.get(code="SOOMIT-01")
+        self.assertIsNone(hospital.address_detail)
+        self.assertIsNone(hospital.postal_code)
+
     def test_unauthenticated_request_is_rejected(self):
         response = self.client.post(self.url, self.payload(), format="json")
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)

@@ -29,6 +29,8 @@ class SystemAdminQueryAPITestCase(APITestCase):
             name="첫 번째 병원",
             code="FIRST",
             address="첫 번째 주소",
+            address_detail="첫 번째 상세 주소",
+            postal_code="01234",
             phone="02-0000-0001",
         )
         self.second_hospital = Hospital.objects.create(
@@ -90,8 +92,13 @@ class SystemAdminQueryAPITestCase(APITestCase):
         self.assertEqual([item["code"] for item in response.data], ["FIRST", "SECOND"])
         self.assertEqual(
             set(response.data[0]),
-            {"id", "name", "code", "address", "latitude", "longitude", "phone"},
+            {
+                "id", "name", "code", "address", "address_detail", "postal_code",
+                "latitude", "longitude", "phone",
+            },
         )
+        self.assertEqual(response.data[0]["address_detail"], "첫 번째 상세 주소")
+        self.assertEqual(response.data[0]["postal_code"], "01234")
 
     def test_hospital_list_requires_authentication(self):
         response = self.client.get(self.hospital_list_url)
@@ -113,6 +120,8 @@ class SystemAdminQueryAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["id"], str(self.first_hospital.id))
+        self.assertEqual(response.data["address_detail"], "첫 번째 상세 주소")
+        self.assertEqual(response.data["postal_code"], "01234")
         self.assertEqual(response.data["departments"][0]["code"], "RADIOLOGY")
         self.assertEqual(
             response.data["departments"][0]["roles"][0]["role"],

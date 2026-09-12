@@ -64,6 +64,18 @@ class HospitalCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     code = serializers.CharField(max_length=30)
     address = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    address_detail = serializers.CharField(
+        max_length=255,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
+    postal_code = serializers.CharField(
+        max_length=10,
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+    )
     latitude = serializers.DecimalField(
         max_digits=9,
         decimal_places=6,
@@ -111,6 +123,8 @@ class HospitalProvisioningSerializer(serializers.ModelSerializer):
             "name",
             "code",
             "address",
+            "address_detail",
+            "postal_code",
             "latitude",
             "longitude",
             "phone",

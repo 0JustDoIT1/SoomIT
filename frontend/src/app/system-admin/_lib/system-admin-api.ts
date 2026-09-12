@@ -2,6 +2,7 @@ import type { SystemAdminUser } from "./system-admin-session";
 
 export type Hospital = {
   id: string; name: string; code: string; address: string | null;
+  address_detail: string | null; postal_code: string | null;
   latitude: string | null; longitude: string | null; phone: string | null;
 };
 export type DepartmentRole = { id: string; role: string; display_name: string };
@@ -13,7 +14,14 @@ export type HospitalAdmin = {
 export type HospitalDetail = Hospital & {
   created_at: string; departments: Department[]; hospital_admins: HospitalAdmin[];
 };
-export type HospitalCreateRequest = Omit<Hospital, "id">;
+export type HospitalCreateRequest = {
+  name: string;
+  code: string;
+  address: string | null;
+  address_detail: string | null;
+  postal_code: string | null;
+  phone: string | null;
+};
 export type HospitalCreateResponse = { hospital: Hospital; departments: Department[] };
 export type HospitalAdminCreateRequest = {
   hospital_id: string; login_id: string; name: string; password: string;
