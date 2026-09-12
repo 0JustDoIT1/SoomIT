@@ -28,6 +28,14 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </div>
       </header>
 
+      <div className="border-b border-slate-200 bg-slate-50/50 px-4 py-3">
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
+          <p className="whitespace-nowrap text-[10px] text-slate-400">화면에서 바로 확인하고 필요할 때 크게 볼 수 있습니다.</p>
+        </div>
+        <div className="overflow-x-auto"><EvidenceViewerPanel /></div>
+      </div>
+
       <div className="grid grid-cols-2 divide-x divide-slate-200">
         <SourcePanel eyebrow={config.department} title="전문과 확정 결과" meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
           {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 전문과 확정 결과가 없습니다. 결과가 확정되면 판독과·판독자·확정 시각과 핵심 소견이 표시됩니다." />}
@@ -37,13 +45,6 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </SourcePanel>
       </div>
 
-      <div className="border-t border-slate-200 bg-slate-50/50 px-4 py-3">
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div><p className="text-[10px] font-semibold text-slate-500">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상 및 근거</h2></div>
-          <p className="whitespace-nowrap text-[10px] text-slate-400">원본 영상은 전체 화면 영상 보기에서 확인합니다.</p>
-        </div>
-        <div className="overflow-x-auto"><EvidenceViewerPanel /></div>
-      </div>
     </section>
   );
 }

@@ -17,7 +17,7 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText(/확인 가능한 전문과 확정 결과가 없습니다/)).toBeTruthy();
     expect(screen.getByText("현재 검사에 연결된 AI 분석 후보가 없습니다.")).toBeTruthy();
     expect(screen.getByText("Annotation API 연동 대기")).toBeTruthy();
-    expect(screen.getByText("연결된 영상 주석이 없습니다.")).toBeTruthy();
+    expect(screen.getByText("연결된 영상이 없습니다.")).toBeTruthy();
   });
 
   it("keeps the successful AI panel when the clinical result request fails", () => {
@@ -46,6 +46,6 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
     expect(screen.getByText("확정 결과 없음")).toBeTruthy();
     expect(screen.getByText("AI 후보 없음")).toBeTruthy();
-    expect(screen.getByText("원본 영상 및 근거")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "원본 영상" })).toBeTruthy();
   });
 });

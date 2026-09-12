@@ -38,11 +38,12 @@ export function TnmReviewWorkspace({ aiTnm, clinicalTnm, modelName, modelVersion
       <div className="grid h-full min-w-[820px] grid-rows-[40px_minmax(0,1fr)]">
         <header className="flex items-center justify-between border-b border-slate-200 px-3"><div className="flex items-center gap-2"><h1 className="whitespace-nowrap text-sm font-bold text-slate-900">TNM 후보 검토 및 의료진 확정</h1><span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700">TNM 개별 소견 저장 API 연동 대기</span></div><p className="truncate text-[10px] text-slate-500">AI 후보 · 전문과 확정 근거 · 호흡기내과 결정을 구분해 검토합니다.</p></header>
         <div className="grid min-h-0 grid-cols-[minmax(560px,1fr)_260px]">
-          <main className="grid min-h-0 grid-rows-[34px_minmax(130px,1fr)_28px_108px] border-r border-slate-200">
+          <main className="grid min-h-0 grid-rows-[34px_360px_minmax(130px,1fr)_28px] border-r border-slate-200">
             <nav role="tablist" aria-label="TNM 범주" className="grid grid-cols-4 border-b border-slate-200">
               {(["T", "N", "M"] as TnmCategory[]).map((item) => <button ref={(node) => { tabRefs.current[item] = node; }} key={item} id={`tnm-tab-${item}`} role="tab" aria-selected={category === item} aria-controls={`tnm-panel-${item}`} tabIndex={category === item ? 0 : -1} type="button" onClick={() => selectCategory(item)} onKeyDown={handleTabKeyDown} className={`whitespace-nowrap border-r border-slate-200 px-2 text-[11px] font-bold ${category === item ? "bg-blue-50 text-blue-700 shadow-[inset_0_-2px_0_#2563eb]" : "text-slate-500"}`}>{META[item]} <span className="font-normal">{confirmedFor(item, clinicalTnm) ? "· 결과 있음" : "· 미확인"}</span>{drafts[item].dirty && <span className="ml-1 text-amber-600" aria-label="저장되지 않은 변경사항">●</span>}</button>)}
               <button type="button" disabled aria-describedby={saveReasonId} className="whitespace-nowrap text-[11px] font-bold text-slate-400">TNM 종합 · 잠김</button>
             </nav>
+            <EvidenceViewerPanel />
             <section id={`tnm-panel-${category}`} role="tabpanel" aria-labelledby={`tnm-tab-${category}`} className="min-h-0 p-2">
               <div className="grid h-full grid-cols-3 gap-2">
                 <ReviewCard title="A. AI·규칙 후보" source="AI 분석 후보"><Field label={`${category} 후보`} value={aiValue} /><Field label="Confidence" value={aiTnm?.confidence} /><Field label="모델명·버전" value={[modelName, modelVersion].filter(Boolean).join(" · ")} /><button type="button" disabled aria-describedby={saveReasonId} className="mt-auto rounded border border-slate-200 py-1 text-[9px] text-slate-400">모델 근거 API 연동 대기</button></ReviewCard>
@@ -51,7 +52,6 @@ export function TnmReviewWorkspace({ aiTnm, clinicalTnm, modelName, modelVersion
               </div>
             </section>
             <ResultDifference aiValue={aiValue} clinicalValue={clinicalValue} />
-            <EvidenceViewerPanel />
           </main>
           <ReviewSidebar category={category} onSelect={selectCategory} aiTnm={aiTnm} clinicalTnm={clinicalTnm} reasonId={saveReasonId} />
         </div>
