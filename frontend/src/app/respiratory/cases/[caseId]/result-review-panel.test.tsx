@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ResultReviewPanel } from "./result-review-panel";
 
 describe("ResultReviewPanel", () => {
@@ -21,10 +21,20 @@ describe("ResultReviewPanel", () => {
   });
 
   it("keeps the successful AI panel when the clinical result request fails", () => {
-    render(<ResultReviewPanel stage="CT" clinicalError="전문과 결과를 불러오지 못했습니다." aiResult={{ analysis_type: "CT", status: "COMPLETED", result_detail: { ct: { overall_malignancy_risk: "HIGH" } } }} />);
+    const onRetryClinical = vi.fn();
+    render(<ResultReviewPanel stage="CT" clinicalError="전문과 결과를 불러오지 못했습니다." onRetryClinical={onRetryClinical} aiResult={{ analysis_type: "CT", status: "COMPLETED", result_detail: { ct: { overall_malignancy_risk: "HIGH" } } }} />);
     expect(screen.getByRole("alert")).toHaveTextContent("전문과 결과를 불러오지 못했습니다.");
     expect(screen.getByText("HIGH")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "이 패널 다시 시도" })).toBeEnabled();
+    screen.getByRole("button", { name: "이 결과 다시 시도" }).click();
+    expect(onRetryClinical).toHaveBeenCalledOnce();
+  });
+
+  it("retries the AI panel independently", () => {
+    const onRetryAi = vi.fn();
+    render(<ResultReviewPanel stage="CT" aiError="AI 결과를 불러오지 못했습니다." onRetryAi={onRetryAi} />);
+
+    screen.getByRole("button", { name: "이 결과 다시 시도" }).click();
+    expect(onRetryAi).toHaveBeenCalledOnce();
   });
 
   it.each([

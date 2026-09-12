@@ -17,6 +17,7 @@ import { CaseOverviewPanel } from "./case-overview-panel";
 import { Pdl1ResultPanel } from "./pdl1-result-panel";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
+import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
@@ -447,7 +448,7 @@ export default function RespiratoryCaseDetailPage() {
   const [regimenLoadError, setRegimenLoadError] = useState("");
   const [treatmentLoadError, setTreatmentLoadError] = useState("");
   const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
-  const [panelRetrying, setPanelRetrying] = useState<"AI" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
+  const [panelRetrying, setPanelRetrying] = useState<"AI" | "CLINICAL" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
   useEffect(() => { activeCaseIdRef.current = caseId; }, [caseId]);
 
@@ -461,7 +462,6 @@ export default function RespiratoryCaseDetailPage() {
   const [error, setError] = useState("");
   const [clinicalResultError, setClinicalResultError] = useState("");
   const [aiResultError, setAiResultError] = useState("");
-  const [resultRetryVersion, setResultRetryVersion] = useState(0);
   const [tnmDirty, setTnmDirty] = useState(false);
   const [pendingCaseId, setPendingCaseId] = useState<string | null>(null);
   const [prescriptionItemDirty, setPrescriptionItemDirty] = useState<Record<string, boolean>>({});
@@ -565,8 +565,8 @@ export default function RespiratoryCaseDetailPage() {
         } else if (!controller.signal.aborted) {
           setClinicalResultError(
             tnmClinicalRequest.status === "fulfilled"
-              ? getPanelFetchError(tnmClinicalRequest.value.status, "전문과 결과")
-              : getPanelNetworkError("전문과 결과"),
+              ? getClinicalResultHttpError(tnmClinicalRequest.value.status)
+              : getClinicalResultNetworkError(),
           );
         }
 
@@ -637,7 +637,7 @@ export default function RespiratoryCaseDetailPage() {
       fetchData();
     }
     return () => controller.abort();
-  }, [authorizedFetch, caseId, isPreview, resultRetryVersion]);
+  }, [authorizedFetch, caseId, isPreview]);
 
   const filteredCases = cases.filter((item) => {
     const keyword = searchText.trim().toLowerCase();
@@ -735,6 +735,31 @@ export default function RespiratoryCaseDetailPage() {
           : retryError instanceof Error
             ? retryError.message
             : getAiResultNetworkError(),
+      );
+    } finally {
+      if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
+    }
+  };
+
+  const retryClinicalResults = async () => {
+    const requestCaseId = caseId;
+    setPanelRetrying("CLINICAL");
+    setClinicalResultError("");
+
+    try {
+      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/clinical-results/`);
+      if (!response.ok) throw new Error(getClinicalResultHttpError(response.status));
+
+      const data: TnmClinicalResult[] = await response.json();
+      if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setTnmClinicalResults(data);
+    } catch (retryError) {
+      if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      setClinicalResultError(
+        retryError instanceof TypeError
+          ? getClinicalResultNetworkError()
+          : retryError instanceof Error
+            ? retryError.message
+            : getClinicalResultNetworkError(),
       );
     } finally {
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
@@ -2369,7 +2394,10 @@ export default function RespiratoryCaseDetailPage() {
           aiResult={selectedAiResult}
           clinicalError={clinicalResultError}
           aiError={aiResultError}
-          onRetry={() => setResultRetryVersion((current) => current + 1)}
+          clinicalRetrying={panelRetrying === "CLINICAL"}
+          aiRetrying={panelRetrying === "AI"}
+          onRetryClinical={retryClinicalResults}
+          onRetryAi={retryAiResults}
         />
         ) : (
         <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
@@ -2754,10 +2782,6 @@ function getPanelFetchError(status: number, label: string) {
   if (status === 401) return `${label} 인증이 만료되었습니다. 다시 로그인해 주세요.`;
   if (status === 403) return `${label} 조회 권한이 없습니다.`;
   return `${label}를 불러오지 못했습니다.`;
-}
-
-function getPanelNetworkError(label: string) {
-  return `${label} 서버에 연결할 수 없습니다. 네트워크 연결을 확인한 뒤 다시 시도해 주세요.`;
 }
 
 function formatBirthDate(value: string) {
