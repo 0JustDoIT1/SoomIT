@@ -511,6 +511,9 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
     latest_ai_analysis = serializers.SerializerMethodField()
     latest_gene_analysis = serializers.SerializerMethodField()
     diagnostic_review_status = serializers.SerializerMethodField()
+    diagnostic_review = serializers.SerializerMethodField()
+    clinical_result = serializers.SerializerMethodField()
+    examination_order = serializers.SerializerMethodField()
     workflow_status = serializers.SerializerMethodField()
     workflow_status_label = serializers.SerializerMethodField()
 
@@ -522,7 +525,8 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             "current_exam_or_task", "task_type", "status", "priority",
             "assigned_to_id", "assigned_to_name", "requesting_doctor",
             "wsi_count", "latest_wsi", "latest_ai_analysis", "latest_gene_analysis",
-            "diagnostic_review_status", "workflow_status", "workflow_status_label",
+            "diagnostic_review_status", "diagnostic_review", "clinical_result",
+            "examination_order", "workflow_status", "workflow_status_label",
             "due_at", "completed_at", "created_at", "updated_at",
         ]
     def _pathology_order(self, obj):
@@ -530,8 +534,9 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             return obj.examination_order
         if obj.specimen and obj.specimen.examination_order:
             return obj.specimen.examination_order
-        orders = getattr(obj.case, "workstation_pathology_orders", [])
-        return orders[0] if orders else None
+        if obj.wsi and obj.wsi.specimen.examination_order:
+            return obj.wsi.specimen.examination_order
+        return None
 
     def get_pathology_test_type(self, obj):
         order = self._pathology_order(obj)
@@ -596,10 +601,53 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         ]
         return items[0].status if items else None
 
+    def get_diagnostic_review(self, obj):
+        order = self._pathology_order(obj)
+        items = [
+            item
+            for item in getattr(obj.case, "workstation_review_items", [])
+            if order and self._work_item_order_id(item) == order.id
+        ]
+        if not items:
+            return None
+        review = items[0]
+        return {
+            "id": review.id,
+            "status": review.status,
+            "assigned_to_id": review.assigned_to_id,
+            "completed_at": review.completed_at,
+        }
+
+    def get_clinical_result(self, obj):
+        order = self._pathology_order(obj)
+        results = [
+            result
+            for result in getattr(obj.case, "workstation_confirmed_results", [])
+            if order and self._clinical_result_order_id(result) == order.id
+        ]
+        return PathologyDiagnosisSerializer(results[0]).data if results else None
+
+    def get_examination_order(self, obj):
+        order = self._pathology_order(obj)
+        if order is None:
+            return None
+        return {
+            "id": order.id,
+            "status": order.status,
+            "priority": order.priority,
+            "pathology_test_type": order.pathology_test_type,
+            "pathology_test_type_label": (
+                order.get_pathology_test_type_display()
+                if order.pathology_test_type
+                else None
+            ),
+            "created_at": order.created_at,
+        }
+
     def _order_analyses(self, obj):
         order = self._pathology_order(obj)
         if order is None:
-            return getattr(obj.case, "workstation_analyses", [])
+            return []
         return [
             analysis
             for analysis in getattr(obj.case, "workstation_analyses", [])
@@ -623,6 +671,24 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         if work_item.wsi_id:
             return work_item.wsi.specimen.examination_order_id
         return None
+
+    @classmethod
+    def _clinical_result_order_id(cls, result):
+        if result.examination_order_id:
+            return result.examination_order_id
+        source_order_id = (
+            result.source_image_asset.examination_order_id
+            if result.source_image_asset_id
+            else None
+        )
+        analysis_order_id = (
+            cls._analysis_order_id(result.reviewed_ai_result.ai_analysis)
+            if result.reviewed_ai_result_id
+            else None
+        )
+        if source_order_id and analysis_order_id and source_order_id != analysis_order_id:
+            return None
+        return source_order_id or analysis_order_id
 
     def get_workflow_status(self, obj):
         return calculate_workflow_status(obj)

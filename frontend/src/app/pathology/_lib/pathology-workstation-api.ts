@@ -25,8 +25,29 @@ export type PathologyWorkstationItem = {
   latest_ai_analysis: PathologyAiAnalysis | null;
   latest_gene_analysis: PathologyAiAnalysis | null;
   diagnostic_review_status: string | null;
+  diagnostic_review: {
+    id: string;
+    status: string;
+    assigned_to_id: string | null;
+    completed_at: string | null;
+  } | null;
+  clinical_result: unknown | null;
+  examination_order: {
+    id: string;
+    status: string;
+    priority: string;
+    pathology_test_type: "SUBTYPE" | "PDL1" | "GENE" | null;
+    pathology_test_type_label: string | null;
+    created_at: string;
+  } | null;
   workflow_status: PathologyWorkflowStatus;
   workflow_status_label: string;
+};
+
+export type PathologyCaseWorkflow = {
+  case: PathologyWorkstationItem["case"];
+  patient: PathologyWorkstationItem["patient"];
+  orders: PathologyWorkstationItem[];
 };
 
 export type PathologyWorkstationPage = {
@@ -98,10 +119,15 @@ export async function fetchPathologyWorkstation({
   return readJson<PathologyWorkstationPage>(response);
 }
 
-export async function fetchPathologyAnalyses(caseId: string, kind: "pathology" | "pdl1", signal?: AbortSignal) {
-  const suffix = kind === "pathology" ? "ai-results" : "pdl1-results";
-  const response = await staffAuthenticatedFetch(url(`/api/pathology/cases/${encodeURIComponent(caseId)}/${suffix}/`), { signal });
-  return readJson<PathologyAiAnalysis[]>(response);
+export async function fetchPathologyCaseWorkflow(
+  caseId: string,
+  signal?: AbortSignal,
+) {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/workflow/`),
+    { signal },
+  );
+  return readJson<PathologyCaseWorkflow>(response);
 }
 
 export async function runPdl1Analysis(caseId: string, featureFile: File, wsiId?: string) {

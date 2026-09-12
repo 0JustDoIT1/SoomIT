@@ -4,11 +4,12 @@ import { useEffect, useMemo, useState } from "react";
 import { StateMessage } from "@/components/workspace/state-message";
 
 import {
-  fetchPathologyAnalyses,
+  fetchPathologyCaseWorkflow,
   fetchPathologyWorkstation,
   runPdl1Analysis,
   submitPathologyForReview,
   type PathologyWorkstationItem,
+  type PathologyCaseWorkflow,
 } from "./_lib/pathology-workstation-api";
 
 import type { PathologyAiAnalysis } from "./_lib/pathology-api";
@@ -281,16 +282,18 @@ function PatientSummary({
 
 function WorkArea({
   item,
+  sectionNumber,
 }: {
   item: PathologyWorkstationItem;
+  sectionNumber: number;
 }) {
-  const [pathologyAnalyses, setPathologyAnalyses] = useState<
-    PathologyAiAnalysis[]
-  >([]);
-
   const [pdl1Analyses, setPdl1Analyses] = useState<
     PathologyAiAnalysis[]
-  >([]);
+  >(
+    item.pathology_test_type === "PDL1" && item.latest_ai_analysis
+      ? [item.latest_ai_analysis]
+      : [],
+  );
 
   const [featureFile, setFeatureFile] = useState<File | null>(null);
   const [runningPdl1, setRunningPdl1] = useState(false);
@@ -301,40 +304,8 @@ function WorkArea({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  useEffect(() => {
-    const controller = new AbortController();
-
-    void Promise.all([
-      fetchPathologyAnalyses(
-        item.case_id,
-        "pathology",
-        controller.signal,
-      ),
-      fetchPathologyAnalyses(
-        item.case_id,
-        "pdl1",
-        controller.signal,
-      ),
-    ])
-      .then(([pathology, pdl1]) => {
-        setPathologyAnalyses(pathology);
-        setPdl1Analyses(pdl1);
-        setError("");
-      })
-      .catch((reason: unknown) => {
-        if (!controller.signal.aborted) {
-          setError(
-            reason instanceof Error
-              ? reason.message
-              : "AI 결과를 불러오지 못했습니다.",
-          );
-        }
-      });
-
-    return () => controller.abort();
-  }, [item.case_id]);
-
-  const pathology = pathologyAnalyses[0] ?? null;
+  const pathology =
+    item.pathology_test_type === "SUBTYPE" ? item.latest_ai_analysis : null;
   const pdl1 = pdl1Analyses[0] ?? null;
   const pdl1Status = runningPdl1 ? "RUNNING" : pdl1?.status;
   const pathologyResult = pathology?.result_detail?.pathology;
@@ -343,7 +314,7 @@ function WorkArea({
     item.latest_gene_analysis?.result_detail?.genes ?? [];
 
   async function handlePdl1Run() {
-    if (!featureFile) return;
+    if (!featureFile || !item.latest_wsi) return;
 
     setRunningPdl1(true);
     setError("");
@@ -443,13 +414,15 @@ function WorkArea({
   }
 
   return (
-    <main className="min-h-0 overflow-y-auto bg-white">
-      <header className="sticky top-0 z-10 border-b border-[#E2E5F2] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
+    <section className="border-b border-[#E2E5F2] bg-white last:border-b-0">
+      <header className="border-b border-[#E2E5F2] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
           병리 분석 Workstation
         </p>
 
-        <h2 className="mt-1 text-lg font-bold text-[#3446B8]">{testTitle}</h2>
+        <h2 className="mt-1 text-lg font-bold text-[#3446B8]">
+          {String(sectionNumber).padStart(2, "0")} · {testTitle}
+        </h2>
 
         <p className="mt-1 text-xs text-slate-500">
           {testDescription} · {item.patient.name} ·{" "}
@@ -606,6 +579,7 @@ function WorkArea({
                 <input
                   type="file"
                   accept=".pt"
+                  disabled={!item.latest_wsi}
                   className="sr-only"
                   onChange={(event) =>
                     setFeatureFile(
@@ -617,7 +591,7 @@ function WorkArea({
 
               <button
                 type="button"
-                disabled={!featureFile || runningPdl1}
+                disabled={!item.latest_wsi || !featureFile || runningPdl1}
                 onClick={handlePdl1Run}
                 className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F] disabled:bg-slate-300"
               >
@@ -955,7 +929,7 @@ function WorkArea({
           </section>
         </div>
       ) : null}
-    </main>
+    </section>
   );
 }
 
@@ -967,6 +941,12 @@ export default function PathologyDashboardPage() {
   const [selectedId, setSelectedId] = useState<
     string | null
   >(null);
+
+  const [selectedWorkflow, setSelectedWorkflow] = useState<
+    PathologyCaseWorkflow | null
+  >(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState("");
 
   const [tab, setTab] =
     useState<Tab>("worklist");
@@ -1026,7 +1006,7 @@ export default function PathologyDashboardPage() {
 
         setSelectedId((current) =>
           nextItems.some(
-            (item) => item.id === current,
+            (item) => item.case_id === current,
           )
             ? current
             : null,
@@ -1054,6 +1034,31 @@ export default function PathologyDashboardPage() {
     page,
     tab,
   ]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      return;
+    }
+
+    const controller = new AbortController();
+
+    void fetchPathologyCaseWorkflow(selectedId, controller.signal)
+      .then(setSelectedWorkflow)
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setDetailError(
+            reason instanceof Error
+              ? reason.message
+              : "병리 검사 상세를 불러오지 못했습니다.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setDetailLoading(false);
+      });
+
+    return () => controller.abort();
+  }, [selectedId]);
 
   const visible = useMemo(() => {
     const nonCancelled = items.filter(
@@ -1084,7 +1089,7 @@ export default function PathologyDashboardPage() {
 
   const selected =
     items.find(
-      (item) => item.id === selectedId,
+      (item) => item.case_id === selectedId,
     ) ?? null;
 
   const totalPages = Math.max(
@@ -1298,12 +1303,15 @@ export default function PathologyDashboardPage() {
                     <tbody>
                       {visible.map((item) => (
                         <tr
-                          key={item.id}
+                          key={item.case_id}
                           tabIndex={0}
                           onClick={() =>
-                            setSelectedId(
-                              item.id,
-                            )
+                            (() => {
+                              setDetailLoading(true);
+                              setDetailError("");
+                              setSelectedWorkflow(null);
+                              setSelectedId(item.case_id);
+                            })()
                           }
                           onKeyDown={(
                             event,
@@ -1312,14 +1320,15 @@ export default function PathologyDashboardPage() {
                               event.key ===
                               "Enter"
                             ) {
-                              setSelectedId(
-                                item.id,
-                              );
+                              setDetailLoading(true);
+                              setDetailError("");
+                              setSelectedWorkflow(null);
+                              setSelectedId(item.case_id);
                             }
                           }}
                           className={`cursor-pointer border-b border-l-[3px] border-[#E8EAF3] transition hover:bg-[#F7F8FF] ${
                             selectedId ===
-                            item.id
+                            item.case_id
                               ? "border-l-[#3446B8] bg-[#F1F3FF]"
                               : "border-l-transparent"
                           }`}
@@ -1339,7 +1348,7 @@ export default function PathologyDashboardPage() {
                           </td>
 
                           <td className="px-3 py-2.5">
-                            {item.pathology_test_type_label ?? "-"}
+                            병리검사
                           </td>
 
                           <td className="px-3 py-2.5">
@@ -1448,11 +1457,35 @@ export default function PathologyDashboardPage() {
             )}
           </div>
 
-          {selected ? (
-            <WorkArea
-              key={selected.id}
-              item={selected}
+          {detailLoading ? (
+            <StateMessage
+              variant="loading"
+              title="병리 검사 상세를 불러오는 중입니다."
+              className="m-6 self-start"
             />
+          ) : detailError ? (
+            <StateMessage
+              variant="error"
+              title={detailError}
+              className="m-6 self-start"
+            />
+          ) : selected && selectedWorkflow ? (
+            <main className="min-h-0 overflow-y-auto bg-white">
+              {selectedWorkflow.orders.map((order, index) => (
+                <WorkArea
+                  key={order.examination_order?.id ?? order.id}
+                  item={order}
+                  sectionNumber={index + 1}
+                />
+              ))}
+              {selectedWorkflow.orders.length === 0 ? (
+                <StateMessage
+                  variant="empty"
+                  title="표시할 병리 검사 오더가 없습니다."
+                  className="m-6"
+                />
+              ) : null}
+            </main>
           ) : (
             <StateMessage
               variant="empty"

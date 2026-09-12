@@ -1,6 +1,23 @@
 from rest_framework import serializers
 
-from .models import ClinicianDecision, LungCancerCase
+from .models import ClinicianDecision, ExaminationOrder, LungCancerCase
+
+
+class FollowUpPathologyOrderCreateSerializer(serializers.Serializer):
+    pathology_test_type = serializers.ChoiceField(
+        choices=[
+            ExaminationOrder.PathologyTestType.PDL1,
+            ExaminationOrder.PathologyTestType.GENE,
+        ]
+    )
+    priority = serializers.ChoiceField(
+        choices=ExaminationOrder.Priority.choices,
+        default=ExaminationOrder.Priority.NORMAL,
+    )
+    purpose = serializers.CharField()
+    clinical_note = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, default=""
+    )
 
 
 class MedicalOpinionRequestSerializer(serializers.Serializer):

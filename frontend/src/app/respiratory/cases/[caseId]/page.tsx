@@ -14,6 +14,7 @@ import { CasePatientSidebar } from "./case-patient-sidebar";
 import { BottomActionBar } from "./bottom-action-bar";
 import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
 import { CaseOverviewPanel } from "./case-overview-panel";
+import { CaseCoordinationPanels } from "./case-coordination-panels";
 import { Pdl1ResultPanel } from "./pdl1-result-panel";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
@@ -380,6 +381,7 @@ export default function RespiratoryCaseDetailPage() {
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [selectedCase, setSelectedCase] =
     useState<CaseItem | null>(null);
+  const [caseRefreshVersion, setCaseRefreshVersion] = useState(0);
 
   const [searchText, setSearchText] = useState("");
 
@@ -637,7 +639,7 @@ export default function RespiratoryCaseDetailPage() {
       fetchData();
     }
     return () => controller.abort();
-  }, [authorizedFetch, caseId, isPreview]);
+  }, [authorizedFetch, caseId, isPreview, caseRefreshVersion]);
 
   const filteredCases = cases.filter((item) => {
     const keyword = searchText.trim().toLowerCase();
@@ -1488,7 +1490,14 @@ export default function RespiratoryCaseDetailPage() {
         )}
 
         {selectedInfoMenu === "OVERVIEW" ? (
-          <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
+          <div>
+            <CaseCoordinationPanels
+              caseId={caseId}
+              decision={selectedCase.latest_clinician_decision}
+              onOrderCreated={() => setCaseRefreshVersion((current) => current + 1)}
+            />
+            <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
+          </div>
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
           <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">

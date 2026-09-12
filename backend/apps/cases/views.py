@@ -5,9 +5,10 @@ from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 
-from .models import LungCancerCase
+from .models import ExaminationOrder, LungCancerCase
 from .serializers import (
     DoctorLungCancerCaseDetailSerializer,
     DoctorLungCancerCaseSerializer,
@@ -15,8 +16,15 @@ from .serializers import (
     LungCancerCaseSerializer,
     MedicalOpinionRequestSerializer,
     MedicalOpinionResponseSerializer,
+    FollowUpPathologyOrderCreateSerializer,
 )
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
+from .services.pathology_orders import (
+    PathologyOrderCreationError,
+    create_follow_up_pathology_order,
+    has_active_pathology_order,
+    has_confirmed_subtype_result,
+)
 
 
 # 원무과 - Case 목록 조회
@@ -112,4 +120,76 @@ class DoctorMedicalOpinionAPIView(APIView):
         return Response(
             MedicalOpinionResponseSerializer(result).data,
             status=status.HTTP_200_OK,
+        )
+
+
+class DoctorFollowUpPathologyOrderAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get_case(self, request, case_id):
+        return (
+            LungCancerCase.objects.filter(
+                id=case_id,
+                primary_doctor=request.user,
+                case_status=LungCancerCase.CaseStatus.ACTIVE,
+            )
+            .first()
+        )
+
+    def get(self, request, case_id):
+        case = self.get_case(request, case_id)
+        if case is None:
+            return Response(
+                {"detail": "담당 중인 활성 Case를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        subtype_completed = has_confirmed_subtype_result(case)
+        return Response(
+            {
+                "subtype_review_completed": subtype_completed,
+                "active_orders": {
+                    ExaminationOrder.PathologyTestType.PDL1: has_active_pathology_order(
+                        case, ExaminationOrder.PathologyTestType.PDL1
+                    ),
+                    ExaminationOrder.PathologyTestType.GENE: has_active_pathology_order(
+                        case, ExaminationOrder.PathologyTestType.GENE
+                    ),
+                },
+            }
+        )
+
+    def post(self, request, case_id):
+        case = self.get_case(request, case_id)
+        if case is None:
+            return Response(
+                {"detail": "담당 중인 활성 Case를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        serializer = FollowUpPathologyOrderCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            examination_order, work_item = create_follow_up_pathology_order(
+                case=case,
+                requesting_doctor=request.user,
+                **serializer.validated_data,
+            )
+        except PathologyOrderCreationError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "examination_order_id": examination_order.id,
+                "pathology_work_item_id": work_item.id,
+                "pathology_test_type": examination_order.pathology_test_type,
+                "pathology_test_type_label": examination_order.get_pathology_test_type_display(),
+                "order_status": examination_order.status,
+                "created_at": examination_order.created_at,
+            },
+            status=status.HTTP_201_CREATED,
         )

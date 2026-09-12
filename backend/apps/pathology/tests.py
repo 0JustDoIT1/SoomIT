@@ -489,6 +489,91 @@ class PathologyReadAPITestCase(APITestCase):
             {"AI_COMPLETED", "REVIEW_COMPLETED"},
         )
 
+    def test_follow_up_orders_without_specimens_use_direct_order_in_workstation(self):
+        pdl1_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            requesting_doctor=self.user,
+            purpose="PD-L1 follow-up",
+        )
+        gene_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.GENE,
+            requesting_doctor=self.user,
+            purpose="Gene follow-up",
+        )
+        pdl1_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+        )
+        gene_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+        )
+        self.authenticate_pathology_user()
+
+        response = self.client.get(reverse("pathology:workstation-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(str(response.data["results"][0]["case_id"]), str(self.case.id))
+
+        detail_response = self.client.get(
+            reverse("pathology:case-workflow", kwargs={"case_id": self.case.id})
+        )
+        self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            [item["pathology_test_type"] for item in detail_response.data["orders"]],
+            ["SUBTYPE", "PDL1", "GENE"],
+        )
+        results = {
+            item["pathology_test_type"]: item for item in detail_response.data["orders"]
+        }
+        pdl1_row = results["PDL1"]
+        gene_row = results["GENE"]
+        self.assertEqual(pdl1_row["pathology_test_type"], "PDL1")
+        self.assertEqual(pdl1_row["pathology_test_type_label"], "PD-L1 검사")
+        self.assertEqual(pdl1_row["current_exam_or_task"], "PD-L1 검사")
+        self.assertEqual(pdl1_row["requesting_doctor"]["id"], self.user.id)
+        self.assertIsNone(pdl1_row["specimen"])
+        self.assertIsNone(pdl1_row["latest_wsi"])
+        self.assertIsNone(pdl1_row["latest_ai_analysis"])
+        self.assertEqual(pdl1_row["workflow_status"], "SCHEDULED")
+        self.assertEqual(gene_row["pathology_test_type"], "GENE")
+        self.assertEqual(gene_row["pathology_test_type_label"], "유전자 검사")
+        self.assertEqual(gene_row["current_exam_or_task"], "유전자 검사")
+        self.assertIsNone(gene_row["specimen"])
+        self.assertIsNone(gene_row["latest_wsi"])
+        self.assertIsNone(gene_row["latest_ai_analysis"])
+
+    def test_pathology_test_filter_does_not_include_other_orders_from_same_case(self):
+        pdl1_order = ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            requesting_doctor=self.user,
+            purpose="PD-L1 follow-up",
+        )
+        pdl1_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+        )
+        self.authenticate_pathology_user()
+
+        response = self.client.get(
+            reverse("pathology:workstation-list"),
+            {"pathology_test_type": "PDL1"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(str(response.data["results"][0]["id"]), str(pdl1_work_item.id))
+
     def test_review_and_diagnosis_reject_ai_result_from_another_order(self):
         pdl1_order = ExaminationOrder.objects.create(
             case=self.case,
@@ -888,7 +973,9 @@ class PathologyReadAPITestCase(APITestCase):
                 "class_2": 0.9977335929870605,
             },
         }
-        self.client.force_authenticate(user=self.user)
+        self.pathology_order.pathology_test_type = ExaminationOrder.PathologyTestType.PDL1
+        self.pathology_order.save(update_fields=["pathology_test_type", "updated_at"])
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:case-pdl1-analysis-run",
             kwargs={"case_id": self.case.id},
@@ -923,13 +1010,13 @@ class PathologyReadAPITestCase(APITestCase):
         mock_predict.assert_called_once_with(b"serialized-features")
 
     @patch("apps.pathology.views.request_pdl1_prediction")
-    def test_failed_pdl1_service_call_is_recorded(self, mock_predict):
+    def test_pdl1_analysis_requires_wsi_from_pdl1_order(self, mock_predict):
         from apps.pathology.services.pdl1_inference import PDL1InferenceError
 
         mock_predict.side_effect = PDL1InferenceError(
             "추론 서비스에 연결할 수 없습니다.",
         )
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:case-pdl1-analysis-run",
             kwargs={"case_id": self.case.id},
@@ -943,11 +1030,9 @@ class PathologyReadAPITestCase(APITestCase):
             format="multipart",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
-        analysis = AiAnalysis.objects.get(id=response.data["analysis_id"])
-        self.assertEqual(analysis.status, AiAnalysis.Status.FAILED)
-        self.assertIsNotNone(analysis.completed_at)
-        self.assertFalse(hasattr(analysis, "ai_result"))
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("wsi_id", response.data)
+        mock_predict.assert_not_called()
 
     def test_pdl1_analysis_rejects_non_pt_file(self):
         self.client.force_authenticate(user=self.user)

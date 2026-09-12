@@ -54,6 +54,70 @@ class PathologyWorkstationPagination(PageNumberPagination):
     page_size = 10
 
 
+def _pathology_order(work_item):
+    if work_item.examination_order_id:
+        return work_item.examination_order
+    if work_item.specimen_id:
+        return work_item.specimen.examination_order
+    if work_item.wsi_id:
+        return work_item.wsi.specimen.examination_order
+    return None
+
+
+def _workstation_queryset(request):
+    analysis_queryset = (
+        AiAnalysis.objects.filter(
+            analysis_type__in=[
+                AnalysisType.PATHOLOGY_DIAGNOSIS,
+                AnalysisType.PDL1_CLASSIFICATION,
+                AnalysisType.GENE_PREDICTION,
+            ],
+        )
+        .select_related(
+            "examination_order", "source_image_asset__examination_order",
+            "model_version", "ai_result", "ai_result__pathology_detail",
+            "ai_result__pdl1_detail",
+        )
+        .prefetch_related("ai_result__gene_ai_results")
+        .order_by("-created_at")
+    )
+    review_queryset = PathologyWorkItem.objects.filter(
+        task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+    ).select_related(
+        "examination_order", "specimen__examination_order",
+        "wsi__specimen__examination_order",
+    ).order_by("-created_at")
+    confirmed_queryset = ClinicalResult.objects.filter(
+        stage="PATHOLOGY",
+        result_status=ClinicalResult.ResultStatus.CONFIRMED,
+    ).select_related(
+        "pathology_detail", "confirmed_by_user", "examination_order",
+        "source_image_asset__examination_order",
+        "reviewed_ai_result__ai_analysis__examination_order",
+        "reviewed_ai_result__ai_analysis__source_image_asset__examination_order",
+    ).order_by("-confirmed_at", "-created_at")
+    wsi_queryset = WholeSlideImage.objects.select_related("image_asset").order_by("-created_at")
+    return (
+        PathologyWorkItem.objects.filter(
+            case__patient__hospital_id=pathology_hospital_id(request),
+        )
+        .select_related(
+            "case", "case__patient", "examination_order",
+            "examination_order__requesting_doctor", "specimen",
+            "specimen__examination_order", "specimen__examination_order__requesting_doctor",
+            "wsi__specimen__examination_order",
+            "wsi__specimen__examination_order__requesting_doctor", "assigned_to",
+        )
+        .prefetch_related(
+            Prefetch("specimen__wsis", queryset=wsi_queryset, to_attr="workstation_wsis"),
+            Prefetch("case__ai_analyses", queryset=analysis_queryset, to_attr="workstation_analyses"),
+            Prefetch("case__pathology_work_items", queryset=review_queryset, to_attr="workstation_review_items"),
+            Prefetch("case__clinical_results", queryset=confirmed_queryset, to_attr="workstation_confirmed_results"),
+        )
+        .order_by("-updated_at")
+    )
+
+
 class CasePathologyDiagnosisListAPIView(ListAPIView):
     serializer_class = PathologyDiagnosisSerializer
     permission_classes = [IsAuthenticated]
@@ -263,6 +327,15 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
             if order_ids:
                 examination_order = ExaminationOrder.objects.get(id=order_ids.pop())
 
+        if (
+            examination_order is None
+            or examination_order.pathology_test_type
+            != ExaminationOrder.PathologyTestType.PDL1
+        ):
+            raise ValidationError(
+                {"wsi_id": "현재 PD-L1 검사 오더에 연결된 WSI가 필요합니다."}
+            )
+
         model_version, _ = ModelVersion.objects.get_or_create(
             model_name="pdl1-amd-mil",
             version="final_model",
@@ -380,59 +453,7 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     pagination_class = PathologyWorkstationPagination
 
     def get_queryset(self):
-        analysis_queryset = (
-            AiAnalysis.objects.filter(
-                analysis_type__in=[
-                    AnalysisType.PATHOLOGY_DIAGNOSIS,
-                    AnalysisType.PDL1_CLASSIFICATION,
-                    AnalysisType.GENE_PREDICTION,
-                ],
-            )
-            .select_related(
-                "examination_order", "source_image_asset__examination_order",
-                "model_version", "ai_result", "ai_result__pathology_detail",
-                "ai_result__pdl1_detail",
-            )
-            .prefetch_related("ai_result__gene_ai_results")
-            .order_by("-created_at")
-        )
-        review_queryset = PathologyWorkItem.objects.filter(
-            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
-        ).select_related(
-            "examination_order", "specimen__examination_order", "wsi__specimen__examination_order",
-        ).order_by("-created_at")
-        confirmed_queryset = ClinicalResult.objects.filter(
-            stage="PATHOLOGY",
-            result_status=ClinicalResult.ResultStatus.CONFIRMED,
-        ).select_related(
-            "examination_order", "source_image_asset__examination_order",
-            "reviewed_ai_result__ai_analysis__examination_order",
-            "reviewed_ai_result__ai_analysis__source_image_asset__examination_order",
-        ).order_by("-confirmed_at", "-created_at")
-        wsi_queryset = WholeSlideImage.objects.select_related("image_asset").order_by("-created_at")
-        pathology_order_queryset = ExaminationOrder.objects.filter(
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type__isnull=False,
-        ).select_related("requesting_doctor").order_by("-created_at")
-
-        queryset = (
-            PathologyWorkItem.objects.filter(
-                case__patient__hospital_id=pathology_hospital_id(self.request),
-            )
-            .select_related(
-                "case", "case__patient", "examination_order", "specimen", "specimen__examination_order",
-                "wsi__specimen__examination_order",
-                "specimen__examination_order__requesting_doctor", "assigned_to",
-            )
-            .prefetch_related(
-                Prefetch("specimen__wsis", queryset=wsi_queryset, to_attr="workstation_wsis"),
-                Prefetch("case__examination_orders", queryset=pathology_order_queryset, to_attr="workstation_pathology_orders"),
-                Prefetch("case__ai_analyses", queryset=analysis_queryset, to_attr="workstation_analyses"),
-                Prefetch("case__pathology_work_items", queryset=review_queryset, to_attr="workstation_review_items"),
-                Prefetch("case__clinical_results", queryset=confirmed_queryset, to_attr="workstation_confirmed_results"),
-            )
-            .order_by("-updated_at")
-        )
+        queryset = _workstation_queryset(self.request)
         workflow_status_value = self.request.query_params.get("workflow_status")
         task_type_value = self.request.query_params.get("task_type")
         assigned_to_value = self.request.query_params.get("assigned_to")
@@ -446,9 +467,35 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
 
         if pathology_test_type_value:
             queryset = queryset.filter(
-                Q(specimen__examination_order__pathology_test_type=pathology_test_type_value)
-                | Q(case__examination_orders__pathology_test_type=pathology_test_type_value)
+                Q(examination_order__pathology_test_type=pathology_test_type_value)
+                | Q(
+                    examination_order__isnull=True,
+                    specimen__examination_order__pathology_test_type=pathology_test_type_value,
+                )
+                | Q(
+                    examination_order__isnull=True,
+                    specimen__examination_order__isnull=True,
+                    wsi__specimen__examination_order__pathology_test_type=pathology_test_type_value,
+                )
             ).distinct()
+
+        representatives = []
+        seen_case_ids = set()
+        ordered_work_items = sorted(
+            queryset,
+            key=lambda item: (
+                _pathology_order(item).created_at
+                if _pathology_order(item) is not None
+                else item.created_at,
+                item.updated_at,
+            ),
+            reverse=True,
+        )
+        for work_item in ordered_work_items:
+            if work_item.case_id in seen_case_ids:
+                continue
+            seen_case_ids.add(work_item.case_id)
+            representatives.append(work_item)
 
         if workflow_status_value:
             public_workflow_statuses = {
@@ -462,13 +509,65 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
                     {"workflow_status": "지원하지 않는 병리 workflow 상태입니다."}
                 )
 
-            queryset = [
+            representatives = [
                 work_item
-                for work_item in queryset
+                for work_item in representatives
                 if calculate_workflow_status(work_item) == workflow_status_value
             ]
 
-        return queryset
+        return representatives
+
+
+class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
+    order_rank = {
+        ExaminationOrder.PathologyTestType.SUBTYPE: 0,
+        ExaminationOrder.PathologyTestType.PDL1: 1,
+        ExaminationOrder.PathologyTestType.GENE: 2,
+    }
+
+    def get(self, request, case_id):
+        case = get_object_or_404(
+            LungCancerCase.objects.select_related("patient"),
+            id=case_id,
+            patient__hospital_id=pathology_hospital_id(request),
+        )
+        work_items_by_order = {}
+        for work_item in _workstation_queryset(request).filter(case=case):
+            order = _pathology_order(work_item)
+            if order is None or order.pathology_test_type not in self.order_rank:
+                continue
+            current = work_items_by_order.get(order.id)
+            if current is None or (
+                current.task_type == PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW
+                and work_item.task_type != PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW
+            ):
+                work_items_by_order[order.id] = work_item
+
+        work_items = sorted(
+            work_items_by_order.values(),
+            key=lambda item: (
+                self.order_rank[_pathology_order(item).pathology_test_type],
+                _pathology_order(item).created_at,
+            ),
+        )
+        return Response(
+            {
+                "case": {
+                    "id": case.id,
+                    "case_code": case.case_code,
+                    "current_stage": case.current_stage,
+                    "case_status": case.case_status,
+                },
+                "patient": {
+                    "id": case.patient_id,
+                    "name": case.patient.name,
+                    "patient_code": case.patient.patient_code,
+                    "birth_date": case.patient.birth_date,
+                    "sex": case.patient.sex,
+                },
+                "orders": PathologyWorkstationSerializer(work_items, many=True).data,
+            }
+        )
 
 
 class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):

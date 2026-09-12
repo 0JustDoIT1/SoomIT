@@ -1,3 +1,13 @@
+"use client";
+
+import { useCallback, useEffect, useState } from "react";
+import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
+import {
+  createFollowUpPathologyOrder,
+  fetchFollowUpPathologyOrderAvailability,
+  type FollowUpPathologyOrderAvailability,
+  type FollowUpPathologyTestType,
+} from "../../_lib/respiratory-api";
 import { getDecisionTypeLabel } from "./clinical-display-labels";
 
 type ClinicianDecision = {
@@ -9,52 +19,104 @@ type ClinicianDecision = {
   decided_at: string;
 };
 
-export function CaseCoordinationPanels({ decision }: { decision?: ClinicianDecision | null }) {
+export function CaseCoordinationPanels({ caseId, decision, onOrderCreated }: {
+  caseId: string;
+  decision?: ClinicianDecision | null;
+  onOrderCreated?: () => void;
+}) {
+  const { authorizedFetch } = useRespiratoryAuth();
+  const [availability, setAvailability] = useState<FollowUpPathologyOrderAvailability | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [creating, setCreating] = useState<FollowUpPathologyTestType | null>(null);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+
+  const loadAvailability = useCallback(async () => {
+    try {
+      setAvailability(await fetchFollowUpPathologyOrderAvailability(authorizedFetch, caseId));
+      setError("");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "검사 처방 상태를 불러오지 못했습니다.");
+    } finally {
+      setLoading(false);
+    }
+  }, [authorizedFetch, caseId]);
+
+  useEffect(() => {
+    let active = true;
+    void fetchFollowUpPathologyOrderAvailability(authorizedFetch, caseId)
+      .then((result) => {
+        if (!active) return;
+        setAvailability(result);
+        setError("");
+      })
+      .catch((reason: unknown) => {
+        if (!active) return;
+        setError(reason instanceof Error ? reason.message : "검사 처방 상태를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => { active = false; };
+  }, [authorizedFetch, caseId]);
+
+  async function createOrder(testType: FollowUpPathologyTestType) {
+    setCreating(testType);
+    setMessage("");
+    setError("");
+    try {
+      const result = await createFollowUpPathologyOrder(authorizedFetch, caseId, testType);
+      setMessage(`${result.pathology_test_type_label} 오더가 생성되었습니다.`);
+      await loadAvailability();
+      onOrderCreated?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "검사 오더 생성에 실패했습니다.");
+    } finally {
+      setCreating(null);
+    }
+  }
+
+  const subtypeCompleted = availability?.subtype_review_completed ?? false;
+
   return (
     <div className="mb-3 grid grid-cols-2 gap-3">
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold text-violet-700">호흡기내과 최종 판단</p>
-            <h2 className="mt-1 text-base font-bold text-slate-900">단계 진행 결정</h2>
-          </div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">저장 기능 준비 중</span>
-        </div>
-
+        <p className="text-xs font-semibold text-violet-700">호흡기내과 최종 판단</p>
+        <h2 className="mt-1 text-base font-bold text-slate-900">단계 진행 결정</h2>
         {decision ? (
-          <dl className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-slate-50 p-4 text-xs">
-            <DecisionValue label="검토 단계" value={decision.source_stage} />
+          <dl className="mt-4 grid grid-cols-2 gap-3 bg-slate-50 p-4 text-xs">
+            <DecisionValue label="검사 단계" value={decision.source_stage} />
             <DecisionValue label="진행 결정" value={getDecisionTypeLabel(decision.decision_type)} />
             <DecisionValue label="다음 단계" value={decision.target_stage || "-"} />
             <DecisionValue label="확정자" value={decision.decided_by || "-"} />
             <div className="col-span-2"><DecisionValue label="판단 근거" value={decision.reason || "-"} /></div>
             <div className="col-span-2"><DecisionValue label="확정 시각" value={formatDateTime(decision.decided_at)} /></div>
           </dl>
-        ) : (
-          <p className="mt-4 rounded-xl bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">저장된 clinician decision이 없습니다.</p>
-        )}
-
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="text-xs text-slate-500">진행 결정<select disabled className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-500"><option>API 연동 대기</option></select></label>
-          <label className="text-xs text-slate-500">다음 단계<select disabled className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-500"><option>API 연동 대기</option></select></label>
-        </div>
-        <textarea disabled rows={3} placeholder="판단 및 핵심 근거" className="mt-3 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm placeholder:text-slate-400" />
-        <div className="mt-3 grid grid-cols-2 gap-2"><button disabled className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-400">결정 검토</button><button disabled className="rounded-lg bg-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-400">결정 저장</button></div>
+        ) : <p className="mt-4 bg-slate-50 px-4 py-6 text-center text-sm text-slate-400">저장된 진행 결정이 없습니다.</p>}
       </section>
 
       <section className="rounded-lg border border-slate-200 bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div><p className="text-xs font-semibold text-blue-700">검사 요청</p><h2 className="mt-1 text-base font-bold text-slate-900">검사 오더</h2></div>
-          <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-medium text-amber-700">기능 준비 중</span>
+        <p className="text-xs font-semibold text-blue-700">추가 병리 검사</p>
+        <h2 className="mt-1 text-base font-bold text-slate-900">검사 오더</h2>
+        <p className="mt-2 text-xs leading-5 text-slate-500">SUBTYPE 판독 완료 후 PD-L1 검사와 유전자 검사를 각각 독립적으로 처방할 수 있습니다.</p>
+        {!loading && !subtypeCompleted ? <p className="mt-3 border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-700">아형분류 판독 완료 후 추가 검사를 처방할 수 있습니다.</p> : null}
+        {message ? <p className="mt-3 bg-blue-50 px-3 py-2 text-xs text-blue-700">{message}</p> : null}
+        {error ? <p className="mt-3 bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p> : null}
+        <div className="mt-4 grid grid-cols-2 gap-2">
+          {(["PDL1", "GENE"] as const).map((testType) => {
+            const hasActiveOrder = availability?.active_orders[testType] ?? false;
+            return (
+              <button key={testType} type="button"
+                disabled={loading || !subtypeCompleted || hasActiveOrder || creating !== null}
+                onClick={() => void createOrder(testType)}
+                className="rounded-lg bg-blue-600 px-3 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400">
+                {creating === testType ? "생성 중..." : testType === "PDL1" ? "PD-L1 검사 오더" : "유전자 검사 오더"}
+              </button>
+            );
+          })}
         </div>
-        <p className="mt-3 text-xs leading-5 text-slate-500">검사 종류·목적·임상 소견·우선순위를 입력하고 기존 오더와 중복 여부를 확인한 뒤 확정하는 영역입니다.</p>
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <label className="text-xs text-slate-500">검사 종류<select disabled className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-500"><option>조회·생성 API 필요</option></select></label>
-          <label className="text-xs text-slate-500">우선순위<select disabled className="mt-1.5 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-slate-500"><option>NORMAL / URGENT</option></select></label>
-        </div>
-        <input disabled placeholder="검사 목적" className="mt-3 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm placeholder:text-slate-400" />
-        <textarea disabled rows={2} placeholder="임상 소견" className="mt-3 w-full resize-none rounded-lg border border-slate-200 bg-slate-50 p-3 text-sm placeholder:text-slate-400" />
-        <div className="mt-3 grid grid-cols-2 gap-2"><button disabled className="rounded-lg border border-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-400">중복 확인</button><button disabled className="rounded-lg bg-slate-200 px-3 py-2.5 text-sm font-semibold text-slate-400">오더 확정</button></div>
+        {availability?.active_orders.PDL1 ? <p className="mt-2 text-[11px] text-slate-500">PD-L1 미완료 오더가 이미 있습니다.</p> : null}
+        {availability?.active_orders.GENE ? <p className="mt-1 text-[11px] text-slate-500">유전자 검사 미완료 오더가 이미 있습니다.</p> : null}
       </section>
     </div>
   );
