@@ -1,8 +1,10 @@
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import ListAPIView
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -11,17 +13,63 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from apps.cases.models import ClinicianDecision, LungCancerCase
 from apps.patients.models import CurrentMedication, LabResult, Patient, PatientHealthProfile
 
-from .models import ClinicalResult, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TreatmentDecision, TreatmentRule
+from .models import ClinicalResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TreatmentDecision, TreatmentRule
 from .serializers import (
     DoctorClinicalResultSerializer,
     DoctorPrescriptionSerializer,
+    PrescriptionItemUpdateSerializer,
     DoctorTreatmentDecisionSerializer,
     PatientClinicalResultSerializer,
     TreatmentRuleCandidateSerializer,
 )
 
-from decimal import Decimal
-from math import sqrt
+from decimal import Decimal, ROUND_HALF_UP
+
+
+def _dose_decimal(value, field, *, positive=False):
+    try:
+        number = Decimal(str(value))
+    except (ValueError, ArithmeticError):
+        raise ValidationError({field: "A finite numeric value is required."})
+    if not number.is_finite() or number < 0 or (positive and number == 0):
+        raise ValidationError({field: "A valid positive value is required."})
+    return number
+
+
+def calculate_bsa(height_cm, weight_kg):
+    height = _dose_decimal(height_cm, "height_cm", positive=True)
+    weight = _dose_decimal(weight_kg, "weight_kg", positive=True)
+    return (height * weight / Decimal(3600)).sqrt()
+
+
+def calculate_dose(dose_basis, standard_dose, height_cm=None, weight_kg=None, egfr=None):
+    """egfr is indexed mL/min/1.73m2; renal_value is de-indexed mL/min.
+
+    Use raw Decimal BSA for arithmetic; round only at the defined boundaries.
+    final_dose remains a separate clinician input. No renal estimator is used.
+    """
+    if dose_basis not in {"FIXED", "MG_PER_M2", "AUC"}:
+        raise ValidationError({"dose_basis": "Unsupported dose basis."})
+    dose = _dose_decimal(standard_dose, "target_auc" if dose_basis == "AUC" else "standard_dose",
+                         positive=dose_basis == "AUC")
+    values = dict(patient_bsa=None, target_auc=None, renal_value=None, renal_value_type=None,
+                  calculated_dose=None, final_dose=None)
+    if dose_basis == "FIXED":
+        values["calculated_dose"] = dose
+    elif dose_basis == "MG_PER_M2":
+        bsa = calculate_bsa(height_cm, weight_kg)
+        values["patient_bsa"] = bsa.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        values["calculated_dose"] = (dose * bsa).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+    else:
+        bsa = calculate_bsa(height_cm, weight_kg)
+        raw_adjusted = _dose_decimal(egfr, "egfr") * bsa / Decimal("1.73")
+        renal = raw_adjusted.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+        values.update(target_auc=dose, renal_value=renal,
+                      renal_value_type="BSA_ADJUSTED_EGFR",
+                      patient_bsa=bsa.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP),
+                      calculated_dose=(dose * (renal + Decimal(25))).quantize(
+                          Decimal("1"), rounding=ROUND_HALF_UP))
+    return values
 
 
 
@@ -168,12 +216,15 @@ class DoctorTreatmentDecisionAPIView(APIView):
                 status=404,
             )
 
-        clinical_result, _ = ClinicalResult.objects.get_or_create(case=case, stage="TREATMENT", defaults={"result_status": "DRAFT"})
+        clinical_result = ClinicalResult.objects.filter(case=case, stage="TREATMENT").first()
 
-        if clinical_result.result_status == "CONFIRMED":
+        if clinical_result and clinical_result.result_status == "CONFIRMED":
             return Response({"detail": "이미 확정된 치료 결정은 수정할 수 없습니다."}, status=400)
 
-        treatment_decision = TreatmentDecision.objects.filter(clinical_result=clinical_result).first()
+        treatment_decision = (
+            TreatmentDecision.objects.filter(clinical_result=clinical_result).first()
+            if clinical_result else None
+        )
 
         serializer = DoctorTreatmentDecisionSerializer(
             treatment_decision,
@@ -182,9 +233,17 @@ class DoctorTreatmentDecisionAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
 
-        serializer.save(
-            clinical_result=clinical_result,
+        selected_regimen = serializer.validated_data.get(
+            "selected_regimen", getattr(treatment_decision, "selected_regimen", None)
         )
+        DoctorRegimenCandidateListAPIView.validate_selected_regimen(request, case_id, selected_regimen)
+
+        with transaction.atomic():
+            if clinical_result is None:
+                clinical_result = ClinicalResult.objects.create(
+                    case=case, stage="TREATMENT", result_status="DRAFT",
+                )
+            serializer.save(clinical_result=clinical_result)
 
         return Response(
             serializer.data,
@@ -269,6 +328,10 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 status=400,
             )
 
+        DoctorRegimenCandidateListAPIView.validate_selected_regimen(
+            request, case_id, treatment_decision.selected_regimen,
+        )
+
         clinical_result.result_status = "CONFIRMED"
         clinical_result.confirmed_by_user = request.user
         clinical_result.confirmed_at = timezone.now()
@@ -312,16 +375,11 @@ class DoctorPrescriptionAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
-    def get_case(self, case_id, user):
-        return (
-            LungCancerCase.objects
-            .filter(
-                id=case_id,
-                primary_doctor=user,
-                case_status="ACTIVE",
-            )
-            .first()
-        )
+    def get_case(self, case_id, user, *, lock=False):
+        cases = LungCancerCase.objects.all()
+        if lock:
+            cases = cases.select_for_update(of=("self",))
+        return cases.filter(id=case_id, primary_doctor=user, case_status="ACTIVE").first()
 
     # 처방 목록 조회
     @extend_schema(
@@ -366,7 +424,7 @@ class DoctorPrescriptionAPIView(APIView):
     )
     @transaction.atomic
     def post(self, request, case_id):
-        case = self.get_case(case_id, request.user)
+        case = self.get_case(case_id, request.user, lock=True)
 
         if case is None:
             return Response(
@@ -412,11 +470,24 @@ class DoctorPrescriptionAPIView(APIView):
         if Prescription.objects.filter(case=case, regimen=regimen, cycle_number=cycle_number).exists():
             return Response({"detail": "같은 Regimen의 동일 cycle_number 처방이 이미 존재합니다."}, status=400)
 
-        if phase == "INDUCTION" and regimen.induction_cycles and cycle_number > regimen.induction_cycles:
+        if phase == "INDUCTION" and regimen.induction_cycles is not None and cycle_number > regimen.induction_cycles:
             return Response(
                 {"detail": f"INDUCTION 처방은 최대 {regimen.induction_cycles} cycle까지 가능합니다."},
                 status=400,
             )
+
+        regimen_drugs = list(
+            RegimenDrug.objects
+            .filter(
+                regimen=treatment_decision.selected_regimen,
+                phase=phase,
+            )
+            .select_related("drug")
+            .order_by("sequence")
+        )
+
+        if not regimen_drugs:
+            raise ValidationError({"phase": "No regimen drugs exist for the selected regimen and phase."})
 
         prescription = serializer.save(
             case=case,
@@ -427,90 +498,31 @@ class DoctorPrescriptionAPIView(APIView):
             prescribed_at=timezone.now(),
         )
 
-        regimen_drugs = (
-            RegimenDrug.objects
-            .filter(
-                regimen=treatment_decision.selected_regimen,
-                phase=prescription.phase,
-            )
-            .select_related("drug")
-            .order_by("sequence")
-        )
-
         patient_profile = PatientHealthProfile.objects.filter(
             patient=case.patient,
         ).first()
 
-        patient_bsa = None
-
-        if (
-            patient_profile
-            and patient_profile.height_cm
-            and patient_profile.weight_kg
-        ):
-            patient_bsa = Decimal(
-                str(
-                    round(
-                        sqrt(
-                            (
-                                float(patient_profile.height_cm)
-                                * float(patient_profile.weight_kg)
-                            )
-                            / 3600
-                        ),
-                        3,
-                    )
-                )
-            )
-
-        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at").first()
+        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at", "-id").first()
 
         for regimen_drug in regimen_drugs:
-            calculated_dose = None
-            final_dose = None
-            target_auc = None
-            renal_value = None
-            patient_weight = None
-
-            if patient_profile and patient_profile.weight_kg:
-                patient_weight = Decimal(str(patient_profile.weight_kg))
-
-            if regimen_drug.dose_basis == "FIXED":
-                calculated_dose = regimen_drug.dose
-                final_dose = calculated_dose
-
-            elif regimen_drug.dose_basis == "MG_PER_M2" and patient_bsa is not None:
-                calculated_dose = (regimen_drug.dose * patient_bsa).quantize(Decimal("0.001"))
-                final_dose = calculated_dose
-
-            elif regimen_drug.dose_basis == "MG_PER_KG" and patient_weight is not None:
-                calculated_dose = (regimen_drug.dose * patient_weight).quantize(Decimal("0.001"))
-                final_dose = calculated_dose
-
-            elif regimen_drug.dose_basis == "AUC":
-                target_auc = regimen_drug.dose
-
-                if latest_lab and latest_lab.egfr is not None:
-                    renal_value = latest_lab.egfr
-
-                calculated_dose = None
-                final_dose = None
-
-            elif regimen_drug.dose_basis == "OTHER":
-                calculated_dose = None
-                final_dose = None
+            dose_values = calculate_dose(
+                regimen_drug.dose_basis, regimen_drug.dose,
+                getattr(patient_profile, "height_cm", None),
+                getattr(patient_profile, "weight_kg", None),
+                getattr(latest_lab, "egfr", None),
+            )
+            if not regimen_drug.result_unit:
+                raise ValidationError({"result_unit": "A result unit is required."})
+            if regimen_drug.dose_basis == "AUC" and regimen_drug.result_unit != "mg":
+                raise ValidationError({"result_unit": "Calvert dose must be expressed in mg."})
 
             PrescriptionItem.objects.create(
                 prescription=prescription,
                 drug=regimen_drug.drug,
                 standard_dose=regimen_drug.dose,
                 dose_basis=regimen_drug.dose_basis,
-                patient_bsa=patient_bsa,
-                target_auc=target_auc,
-                renal_value=renal_value,
-                calculated_dose=calculated_dose,
-                final_dose=final_dose,
-                unit=regimen_drug.drug.strength_unit or "mg",
+                **dose_values,
+                unit=regimen_drug.result_unit,
                 route=regimen_drug.route,
                 administration_day=regimen_drug.administration_day,
                 frequency=regimen_drug.frequency,
@@ -548,6 +560,7 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
     def post(self, request, case_id, prescription_id):
         prescription = (
             Prescription.objects
+            .select_for_update(of=("self",))
             .select_related(
                 "case",
                 "treatment_decision",
@@ -654,6 +667,7 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
     def post(self, request, case_id, prescription_id):
         prescription = (
             Prescription.objects
+            .select_for_update(of=("self",))
             .select_related(
                 "case",
                 "treatment_decision",
@@ -738,9 +752,11 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
         },
         responses={200: DoctorPrescriptionSerializer},
     )
+    @transaction.atomic
     def patch(self, request, case_id, prescription_id, item_id):
         prescription = (
             Prescription.objects
+            .select_for_update(of=("self",))
             .filter(
                 id=prescription_id,
                 case_id=case_id,
@@ -777,19 +793,10 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
                 status=404,
             )
 
-        if "final_dose" in request.data:
-            try:
-                final_dose = Decimal(str(request.data["final_dose"]))
-            except Exception:
-                return Response({"detail": "final_dose는 숫자여야 합니다."}, status=400)
-
-            if final_dose < 0:
-                return Response({"detail": "final_dose는 0 이상이어야 합니다."}, status=400)
-
-            item.final_dose = final_dose
-
-        if "instructions" in request.data:
-            item.instructions = request.data["instructions"]
+        serializer = PrescriptionItemUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        for field, value in serializer.validated_data.items():
+            setattr(item, field, value)
 
         item.save(
             update_fields=[
@@ -833,6 +840,7 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
     def post(self, request, case_id, prescription_id):
         prescription = (
             Prescription.objects
+            .select_for_update(of=("self",))
             .select_related("case", "case__patient")
             .prefetch_related("items__drug")
             .filter(
@@ -993,133 +1001,222 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
 
+    @classmethod
+    def validate_selected_regimen(cls, request, case_id, regimen):
+        # Optional/no-regimen treatments retain their existing policy. Any supplied
+        # regimen, including one retained by a partial update, must be a candidate.
+        if regimen is None:
+            return
+        view = cls()
+        view.request = request
+        view.kwargs = {"case_id": case_id}
+        candidate_ids = {rule.regimen_id for rule in view.get_queryset()}
+        if regimen.pk not in candidate_ids:
+            raise ValidationError({
+                "selected_regimen": "선택한 Regimen은 현재 확정 임상정보에 따른 치료 후보가 아닙니다. 후보를 다시 확인해주세요.",
+            })
+
+    # Codes describe manually verified molecular findings, never AI predictions.
+    SUPPORTED_ALTERATIONS = {
+        "EGFR": frozenset({"EGFR_EX19_DEL", "EGFR_L858R"}),
+        "BRAF": frozenset({"BRAF_V600E"}),
+        "MET": frozenset({"MET_EXON14_SKIPPING"}),
+    }
+    TARGET_RULES = {"TR01": "EGFR", "TR04": "BRAF", "TR05": "MET"}
+    CONTEXT_GENES = frozenset({"TP53", "KEAP1", "STK11"})
+    HISTOLOGY_ALIASES = {
+        "adenocarcinoma": "adenocarcinoma", "선암": "adenocarcinoma",
+        "squamous cell carcinoma": "squamous", "squamous": "squamous",
+        "편평상피암": "squamous",
+        "non-squamous": "non-squamous", "non_squamous": "non-squamous",
+        "비편평": "non-squamous",
+        "nsclc": "nsclc", "non-small cell lung cancer": "nsclc",
+        "비소세포폐암": "nsclc",
+        "sclc": "sclc", "small cell lung cancer": "sclc", "소세포폐암": "sclc",
+    }
+    CANCER_TYPES = {
+        "adenocarcinoma": "NSCLC", "squamous": "NSCLC",
+        "non-squamous": "NSCLC", "nsclc": "NSCLC", "sclc": "SCLC",
+    }
+
+    @classmethod
+    def _histology(cls, value):
+        return cls.HISTOLOGY_ALIASES.get(value.strip().casefold()) if isinstance(value, str) else None
+
+    def _candidate_input(self):
+        if hasattr(self, "_candidate_input_cache"):
+            return self._candidate_input_cache
+        case = LungCancerCase.objects.filter(
+            id=self.kwargs["case_id"], primary_doctor=self.request.user,
+            case_status="ACTIVE",
+        ).first()
+        data = dict(case=case, histology=None, cancer_type=None, stage_group=None,
+                    findings=[], pdl1_tps=None, treatment_line=None, ecog=None)
+        if case is not None:
+            confirmed = ClinicalResult.objects.filter(case=case, result_status="CONFIRMED")
+            ordering = (F("confirmed_at").desc(nulls_last=True), "-updated_at", "-id")
+            pathology = confirmed.filter(
+                stage="PATHOLOGY", pathology_detail__isnull=False,
+            ).select_related("pathology_detail").order_by(*ordering).first()
+            staging = confirmed.filter(
+                stage="STAGING", tnm_detail__isnull=False,
+            ).select_related("tnm_detail").order_by(*ordering).first()
+            gene = confirmed.filter(
+                stage="GENE", gene_detail__isnull=False,
+            ).select_related("gene_detail").prefetch_related(
+                "gene_detail__gene_findings",
+            ).order_by(*ordering).first()
+            if pathology and pathology.pathology_detail.malignancy_status == "MALIGNANT":
+                data["histology"] = self._histology(pathology.pathology_detail.histologic_type)
+                data["cancer_type"] = self.CANCER_TYPES.get(data["histology"])
+            if staging:
+                data["stage_group"] = staging.tnm_detail.stage_group
+            if gene:
+                data["findings"] = list(gene.gene_detail.gene_findings.all())
+            pdl1 = PDL1Result.objects.filter(
+                clinical_result__case=case,
+                clinical_result__result_status="CONFIRMED",
+            ).order_by(
+                F("clinical_result__confirmed_at").desc(nulls_last=True),
+                "-clinical_result__updated_at", "-clinical_result_id",
+            ).first()
+            if pdl1 is not None:
+                data["pdl1_tps"] = pdl1.tps_percent
+        self._candidate_input_cache = data
+        return data
+
+    @staticmethod
+    def _condition(value, allowed):
+        if value is None:
+            return {}
+        if not isinstance(value, dict) or not set(value).issubset(allowed):
+            raise ValueError("Unsupported condition")
+        return value
+
+    @staticmethod
+    def _strings(value):
+        if not isinstance(value, list) or not value or any(
+            not isinstance(item, str) or not item.strip() for item in value
+        ):
+            raise ValueError("Expected nonempty string list")
+        return value
+
+    @staticmethod
+    def _range_matches(condition, value, upper):
+        bounds = {}
+        for key, bound in condition.items():
+            if isinstance(bound, bool) or not isinstance(bound, (int, float, Decimal)):
+                raise ValueError("Invalid numeric bound")
+            number = Decimal(str(bound))
+            if not number.is_finite() or not 0 <= number <= upper:
+                raise ValueError("Out of range")
+            bounds[key] = number
+        if bounds.get("min", 0) > bounds.get("max", upper):
+            raise ValueError("Reversed range")
+        if not condition:
+            return True
+        if value is None:
+            return False
+        number = Decimal(str(value))
+        return number.is_finite() and bounds.get("min", 0) <= number <= bounds.get("max", upper)
+
+    def _match_rule(self, rule, data):
+        """Return reasons only for a complete match; None includes missing inputs."""
+        if rule.rule_code == "TR03":
+            return None  # Negative-test coverage/unsupported-driver contract is pending.
+        try:
+            stage = self._condition(rule.stage_condition, {"stage"})
+            biomarker = self._condition(rule.biomarker_condition, {"positive", "alterations"})
+            pdl1 = self._condition(rule.pdl1_condition, {"min", "max"})
+            ecog = self._condition(rule.ecog_condition, {"min", "max"})
+            reasons = []
+            if rule.cancer_type:
+                if rule.cancer_type.strip().upper() != data["cancer_type"]:
+                    return None
+                reasons.append(f"암종 일치: {data['cancer_type']}")
+            if rule.histology and rule.histology.strip():
+                expected = self._histology(rule.histology)
+                if expected is None or expected != data["histology"]:
+                    return None
+                reasons.append(f"조직형 일치: {expected}")
+            if "stage" in stage:
+                if data["stage_group"] not in self._strings(stage["stage"]):
+                    return None
+                reasons.append(f"병기 일치: {data['stage_group']}")
+            if rule.treatment_line and rule.treatment_line.strip():
+                if data["treatment_line"] is None or rule.treatment_line != data["treatment_line"]:
+                    return None
+                reasons.append(f"치료 차수 일치: {data['treatment_line']}")
+            if not self._range_matches(pdl1, data["pdl1_tps"], 100):
+                return None
+            if not self._range_matches(ecog, data["ecog"], 5):
+                return None
+            if pdl1:
+                reasons.append(f"PD-L1 TPS {data['pdl1_tps']}%: 조건 충족")
+            if ecog:
+                reasons.append(f"ECOG {data['ecog']}: 조건 충족")
+
+            pairs = set()
+            molecular_uncertain = not data["findings"]
+            for finding in data["findings"]:
+                gene = finding.gene_symbol.strip().upper()
+                if gene in self.CONTEXT_GENES:
+                    continue
+                code = finding.alteration_code
+                if (finding.assessment == "LIKELY_POSITIVE"
+                        and code in self.SUPPORTED_ALTERATIONS.get(gene, ())):
+                    pairs.add((gene, code))
+                elif finding.assessment != "LIKELY_NEGATIVE" or code:
+                    molecular_uncertain = True
+            # No unsupported/ambiguous driver may fall through to another candidate.
+            if molecular_uncertain:
+                return None
+
+            required = set()
+            if "positive" in biomarker:
+                required.update(g.upper() for g in self._strings(biomarker["positive"]))
+            if rule.rule_code in self.TARGET_RULES:
+                required.add(self.TARGET_RULES[rule.rule_code])
+            alterations = biomarker.get("alterations", {})
+            if not isinstance(alterations, dict) or ("alterations" in biomarker and not alterations):
+                return None
+            for gene, codes in alterations.items():
+                if gene not in self.SUPPORTED_ALTERATIONS:
+                    return None
+                codes = set(self._strings(codes))
+                if not codes.issubset(self.SUPPORTED_ALTERATIONS[gene]):
+                    return None
+                if not any((gene, code) in pairs for code in codes):
+                    return None
+                required.add(gene)
+            for gene in sorted(required):
+                if gene not in self.SUPPORTED_ALTERATIONS:
+                    return None
+                matched = sorted(code for symbol, code in pairs if symbol == gene)
+                if not matched:
+                    return None
+                reasons.append(f"바이오마커 일치: {gene} / {', '.join(matched)}")
+            # TR02 cannot infer adequate negative coverage from missing supported pairs.
+            # Keep it closed until a molecular exclusion/negative-input contract exists.
+            if rule.rule_code == "TR02" or (not required and pairs):
+                return None
+            return reasons
+        except (ValueError, TypeError, ArithmeticError):
+            return None
+
     def get_queryset(self):
-        case = LungCancerCase.objects.filter(id=self.kwargs["case_id"], primary_doctor=self.request.user, case_status="ACTIVE").first()
-
-        if case is None:
+        data = self._candidate_input()
+        self._match_reasons = {}
+        if data["case"] is None:
             return TreatmentRule.objects.none()
-
         rules = TreatmentRule.objects.select_related("regimen").all()
-
-        pathology_result = ClinicalResult.objects.filter(case=case, stage="PATHOLOGY", result_status="CONFIRMED").select_related("pathology_detail").order_by("-confirmed_at").first()
-
-        tnm_result = ClinicalResult.objects.filter(case=case, stage="STAGING", result_status="CONFIRMED").select_related("tnm_detail").order_by("-confirmed_at").first()
-
-        gene_result = ClinicalResult.objects.filter(case=case, stage="GENE", result_status="CONFIRMED").select_related("gene_detail", "pdl1_detail").prefetch_related("gene_detail__gene_findings").order_by("-confirmed_at").first()
-
-        histology = None
-        stage_group = None
-        positive_genes = set()
-        pdl1_tps = None
-
-        if pathology_result and hasattr(pathology_result, "pathology_detail"):
-            histology = pathology_result.pathology_detail.histologic_type
-
-        if tnm_result and hasattr(tnm_result, "tnm_detail"):
-            stage_group = tnm_result.tnm_detail.stage_group
-
-        if gene_result and hasattr(gene_result, "gene_detail"):
-            positive_genes = {
-                finding.gene_symbol.upper()
-                for finding in gene_result.gene_detail.gene_findings.all()
-                if finding.assessment == "LIKELY_POSITIVE"
-            }
-
-        if gene_result and hasattr(gene_result, "pdl1_detail"):
-            pdl1_tps = gene_result.pdl1_detail.tps_percent
-
-        if histology:
-            rules = rules.filter(histology__iexact=histology)
-
-        matched_rule_ids = []
-
         for rule in rules:
-            stage_condition = rule.stage_condition or {}
-            allowed_stages = stage_condition.get("stage", [])
-
-            if stage_group and allowed_stages and stage_group not in allowed_stages:
-                continue
-
-            biomarker_condition = rule.biomarker_condition or {}
-            required_positive_genes = {
-                str(gene).upper()
-                for gene in biomarker_condition.get("positive", [])
-            }
-
-            if required_positive_genes and not required_positive_genes.issubset(positive_genes):
-                continue
-
-            pdl1_condition = rule.pdl1_condition or {}
-
-            if pdl1_tps is not None:
-                minimum = pdl1_condition.get("min")
-                maximum = pdl1_condition.get("max")
-
-                if minimum is not None and pdl1_tps < minimum:
-                    continue
-
-                if maximum is not None and pdl1_tps > maximum:
-                    continue
-
-            matched_rule_ids.append(rule.id)
-
-        return rules.filter(id__in=matched_rule_ids).order_by("priority", "rule_code")
-    
+            reasons = self._match_rule(rule, data)
+            if reasons is not None:
+                self._match_reasons[rule.id] = reasons
+        return rules.filter(id__in=self._match_reasons).order_by("priority", "rule_code")
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
-
-        case = LungCancerCase.objects.filter(
-            id=self.kwargs["case_id"],
-            primary_doctor=self.request.user,
-            case_status="ACTIVE",
-        ).first()
-
-        histology = None
-        stage_group = None
-        positive_genes = set()
-        pdl1_tps = None
-
-        if case:
-            pathology_result = ClinicalResult.objects.filter(
-                case=case,
-                stage="PATHOLOGY",
-                result_status="CONFIRMED",
-            ).select_related("pathology_detail").order_by("-confirmed_at").first()
-
-            tnm_result = ClinicalResult.objects.filter(
-                case=case,
-                stage="STAGING",
-                result_status="CONFIRMED",
-            ).select_related("tnm_detail").order_by("-confirmed_at").first()
-
-            gene_result = ClinicalResult.objects.filter(
-                case=case,
-                stage="GENE",
-                result_status="CONFIRMED",
-            ).select_related("gene_detail", "pdl1_detail").prefetch_related("gene_detail__gene_findings").order_by("-confirmed_at").first()
-
-            if pathology_result and hasattr(pathology_result, "pathology_detail"):
-                histology = pathology_result.pathology_detail.histologic_type
-
-            if tnm_result and hasattr(tnm_result, "tnm_detail"):
-                stage_group = tnm_result.tnm_detail.stage_group
-
-            if gene_result and hasattr(gene_result, "gene_detail"):
-                positive_genes = {
-                    finding.gene_symbol.upper()
-                    for finding in gene_result.gene_detail.gene_findings.all()
-                    if finding.assessment == "LIKELY_POSITIVE"
-                }
-
-            if gene_result and hasattr(gene_result, "pdl1_detail"):
-                pdl1_tps = gene_result.pdl1_detail.tps_percent
-
-        context.update({
-            "histology": histology,
-            "stage_group": stage_group,
-            "positive_genes": positive_genes,
-            "pdl1_tps": pdl1_tps,
-        })
-
+        context["match_reasons_by_id"] = getattr(self, "_match_reasons", {})
         return context

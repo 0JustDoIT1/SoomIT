@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 
 from .models import ClinicalResult
@@ -179,6 +181,7 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
                 "findings": [
                     {
                         "gene_symbol": finding.gene_symbol,
+                        "alteration_code": finding.alteration_code,
                         "assessment": finding.assessment,
                         "assessment_label": finding.get_assessment_display(),
                         "note": finding.note,
@@ -286,6 +289,7 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
             "patient_bsa",
             "target_auc",
             "renal_value",
+            "renal_value_type",
             "calculated_dose",
             "final_dose",
             "unit",
@@ -327,6 +331,11 @@ class SafetyCheckResultSerializer(serializers.ModelSerializer):
 
 
 class DoctorPrescriptionSerializer(serializers.ModelSerializer):
+    def validate_cycle_number(self, value):
+        if value < 1:
+            raise serializers.ValidationError("Cycle 번호는 1 이상의 정수여야 합니다.")
+        return value
+
     regimen_detail = RegimenSummarySerializer(
         source="regimen",
         read_only=True,
@@ -380,6 +389,17 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
             "prescribed_at",
         ]
 
+class PrescriptionItemUpdateSerializer(serializers.Serializer):
+    final_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("final_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("final_dose").decimal_places,
+        min_value=Decimal("0"), required=False,
+    )
+    instructions = serializers.CharField(
+        required=False, allow_blank=True, allow_null=True, trim_whitespace=False,
+    )
+
+
 class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
     regimen_detail = RegimenSummarySerializer(source="regimen", read_only=True)
     match_reasons = serializers.SerializerMethodField()
@@ -404,36 +424,4 @@ class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
         ]
 
     def get_match_reasons(self, obj):
-        context = self.context
-
-        histology = context.get("histology")
-        stage_group = context.get("stage_group")
-        positive_genes = context.get("positive_genes", set())
-        pdl1_tps = context.get("pdl1_tps")
-
-        reasons = []
-
-        if histology and obj.histology:
-            reasons.append(f"조직형 일치: {histology}")
-
-        allowed_stages = (obj.stage_condition or {}).get("stage", [])
-        if stage_group and stage_group in allowed_stages:
-            reasons.append(f"병기 일치: {stage_group}")
-
-        required_genes = (obj.biomarker_condition or {}).get("positive", [])
-        for gene in required_genes:
-            if str(gene).upper() in positive_genes:
-                reasons.append(f"바이오마커 일치: {str(gene).upper()} 양성")
-
-        pdl1_condition = obj.pdl1_condition or {}
-        if pdl1_tps is not None and pdl1_condition:
-            minimum = pdl1_condition.get("min")
-            maximum = pdl1_condition.get("max")
-
-            if minimum is not None:
-                reasons.append(f"PD-L1 TPS {pdl1_tps}% ≥ {minimum}%")
-
-            if maximum is not None:
-                reasons.append(f"PD-L1 TPS {pdl1_tps}% ≤ {maximum}%")
-
-        return reasons
+        return self.context.get("match_reasons_by_id", {}).get(obj.id, [])

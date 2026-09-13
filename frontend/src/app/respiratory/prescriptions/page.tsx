@@ -459,6 +459,7 @@ function RespiratoryPrescriptionsContent() {
             >
               <option value="INDUCTION">INDUCTION</option>
               <option value="MAINTENANCE">MAINTENANCE</option>
+              <option value="CONTINUOUS">지속치료</option>
             </select>
           </Field>
 

@@ -1,0 +1,16 @@
+regimen_code,ingredient_name,dose,dose_unit,result_unit,dose_basis,route,administration_day,frequency,sequence,phase
+R1,Osimertinib,80,mg,mg,FIXED,ORAL,DAILY,once daily,1,CONTINUOUS
+R2,Osimertinib,80,mg,mg,FIXED,ORAL,DAILY,once daily,1,INDUCTION
+R2,Pemetrexed,500,mg,mg,MG_PER_M2,INTRAVENOUS,D1,every 21 days,2,INDUCTION
+R2,Carboplatin,5,AUC,mg,AUC,INTRAVENOUS,D1,every 21 days,3,INDUCTION
+R2,Osimertinib,80,mg,mg,FIXED,ORAL,DAILY,once daily,1,MAINTENANCE
+R2,Pemetrexed,500,mg,mg,MG_PER_M2,INTRAVENOUS,D1,every 21 days,2,MAINTENANCE
+R3,Pembrolizumab,200,mg,mg,FIXED,INTRAVENOUS,D1,every 21 days,1,CONTINUOUS
+R4,Pembrolizumab,200,mg,mg,FIXED,INTRAVENOUS,D1,every 21 days,1,INDUCTION
+R4,Pemetrexed,500,mg,mg,MG_PER_M2,INTRAVENOUS,D1,every 21 days,2,INDUCTION
+R4,Carboplatin,5,AUC,mg,AUC,INTRAVENOUS,D1,every 21 days,3,INDUCTION
+R4,Pembrolizumab,200,mg,mg,FIXED,INTRAVENOUS,D1,every 21 days,1,MAINTENANCE
+R4,Pemetrexed,500,mg,mg,MG_PER_M2,INTRAVENOUS,D1,every 21 days,2,MAINTENANCE
+R5,Dabrafenib,150,mg,mg,FIXED,ORAL,DAILY,twice daily,1,CONTINUOUS
+R5,Trametinib,2,mg,mg,FIXED,ORAL,DAILY,once daily,2,CONTINUOUS
+R6,Capmatinib,400,mg,mg,FIXED,ORAL,DAILY,twice daily,1,CONTINUOUS

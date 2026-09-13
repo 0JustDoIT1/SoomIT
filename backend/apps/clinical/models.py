@@ -231,7 +231,18 @@ class GeneFinding(models.Model):
     gene_result = models.ForeignKey(GeneResult, on_delete=models.CASCADE, related_name="gene_findings")
     gene_symbol = models.CharField(max_length=30)
     assessment = models.CharField(max_length=20, choices=Assessment.choices)
+    alteration_code = models.CharField(max_length=64, null=True, blank=True)
     note = models.TextField(null=True, blank=True)
+
+    def clean(self):
+        super().clean()
+        if self.alteration_code is not None:
+            self.alteration_code = self.alteration_code.strip() or None
+
+    def save(self, *args, **kwargs):
+        if self.alteration_code is not None:
+            self.alteration_code = self.alteration_code.strip() or None
+        return super().save(*args, **kwargs)
 
     class Meta:
         db_table = "gene_findings"
@@ -311,6 +322,7 @@ class DoseBasis(models.TextChoices):
 class TreatmentPhase(models.TextChoices):
     INDUCTION = "INDUCTION", "초기치료"
     MAINTENANCE = "MAINTENANCE", "유지요법"
+    CONTINUOUS = "CONTINUOUS", "지속치료"
 
 
 # ── 6-2. drugs ───────────────────────────────────────────────────
@@ -346,7 +358,7 @@ class Regimen(TimestampedUUIDModel):
     cancer_type = models.CharField(max_length=100)
     histology = models.CharField(max_length=100, null=True, blank=True)
     treatment_line = models.CharField(max_length=30, null=True, blank=True)
-    cycle_length_days = models.SmallIntegerField()
+    cycle_length_days = models.SmallIntegerField(null=True, blank=True)
     induction_cycles = models.SmallIntegerField(null=True, blank=True)
     maintenance_yn = models.BooleanField(default=False)
     source = models.CharField(max_length=255, null=True, blank=True)
@@ -368,6 +380,8 @@ class RegimenDrug(TimestampedUUIDModel):
     regimen = models.ForeignKey(Regimen, on_delete=models.PROTECT, related_name="regimen_drugs")
     drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name="regimen_drugs")
     dose = models.DecimalField(max_digits=12, decimal_places=3)
+    dose_unit = models.CharField(max_length=30, null=True, blank=False)
+    result_unit = models.CharField(max_length=30, null=True, blank=True)
     dose_basis = models.CharField(max_length=10, choices=DoseBasis.choices)
     route = models.CharField(max_length=15, choices=DrugRoute.choices)
     administration_day = models.CharField(max_length=50)
@@ -449,6 +463,7 @@ class PrescriptionItem(TimestampedUUIDModel):
     patient_bsa = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     target_auc = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)
     renal_value = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)
+    renal_value_type = models.CharField(max_length=20, null=True, blank=True)
     calculated_dose = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     final_dose = models.DecimalField(max_digits=12, decimal_places=3, null=True, blank=True)
     unit = models.CharField(max_length=30)

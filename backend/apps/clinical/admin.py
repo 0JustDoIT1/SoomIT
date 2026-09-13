@@ -58,7 +58,17 @@ class RegimenDrugInline(admin.TabularInline):
 
 @admin.register(RegimenDrug)
 class RegimenDrugAdmin(admin.ModelAdmin):
-    list_display = ("regimen", "drug", "dose", "dose_basis", "route", "administration_day", "phase")
+    list_display = (
+        "regimen",
+        "drug",
+        "dose",
+        "dose_unit",
+        "result_unit",
+        "dose_basis",
+        "route",
+        "administration_day",
+        "phase",
+    )
     list_filter = ("phase", "dose_basis")
 
 

@@ -1774,6 +1774,7 @@ export default function RespiratoryCaseDetailPage() {
                   >
                     <option value="INDUCTION">INDUCTION</option>
                     <option value="MAINTENANCE">MAINTENANCE</option>
+                    <option value="CONTINUOUS">지속치료</option>
                   </select>
                 </label>
 

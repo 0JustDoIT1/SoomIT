@@ -1,0 +1,8 @@
+drug_name,ingredient_name,hira_ingredient_code,product_code,standard_code,mfds_item_seq,dur_ingredient_code,strength,strength_unit,dosage_form,route,efficacy_class_code,atc_code
+Osimertinib,Osimertinib,,,,,,,,,,421,L01EB04
+Pemetrexed,Pemetrexed,,,,,,,,,,421,L01BA04
+Carboplatin,Carboplatin,,,,,,,,,,421,L01XA02
+Pembrolizumab,Pembrolizumab,,,,,,,,,,421,L01FF02
+Dabrafenib,Dabrafenib,,,,,,,,,,421,L01EC02
+Trametinib,Trametinib,,,,,,,,,,421,L01EE01
+Capmatinib,Capmatinib,,,,,,,,,,421,L01EX17

@@ -1,0 +1,7 @@
+regimen_code,regimen_name,cancer_type,histology,treatment_line,cycle_length_days,induction_cycles,maintenance_yn,source,source_version
+R1,Osimertinib,NSCLC,,,,,False,FDA TAGRISSO label,2024 s033
+R2,Osimertinib + Pemetrexed + Carboplatin,NSCLC,,,21,4,True,FDA TAGRISSO label / FLAURA2,2024 s033
+R3,Pembrolizumab,NSCLC,,,21,,False,FDA KEYTRUDA label,2026 s194
+R4,Pembrolizumab + Pemetrexed + Carboplatin,NSCLC,,,21,4,True,FDA KEYTRUDA label / KEYNOTE-189,2026 s194
+R5,Dabrafenib + Trametinib,NSCLC,,,,,False,FDA TAFINLAR label,2025
+R6,Capmatinib,NSCLC,,,,,False,FDA TABRECTA label,2024 s011
