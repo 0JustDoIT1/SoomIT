@@ -1,4 +1,5 @@
 import io
+import threading
 import unittest
 
 import torch
@@ -23,6 +24,9 @@ class PredictorTests(unittest.TestCase):
         self.predictor = PDL1Predictor.__new__(PDL1Predictor)
         self.predictor.device = torch.device("cpu")
         self.predictor.max_patches = 5000
+        self.predictor.model_revision = "final_model"
+        self.predictor.model_sha256 = "test-sha256"
+        self.predictor._lock = threading.Lock()
         self.predictor.model = FakeModel()
 
     def test_predicts_three_class_result_without_numeric_tps(self) -> None:
@@ -33,30 +37,26 @@ class PredictorTests(unittest.TestCase):
                 "pdl1_image_id": "slide-1",
             }
         )
-
         result = self.predictor.predict_bytes(content)
-
         self.assertEqual(result["predicted_class"], 2)
         self.assertEqual(result["predicted_tps_range"], "GE_50")
         self.assertEqual(result["predicted_tps_range_label"], "≥50%")
+        self.assertEqual(result["model_revision"], "final_model")
         self.assertNotIn("tps_percent", result)
         self.assertAlmostEqual(sum(result["probabilities"].values()), 1.0)
 
     def test_rejects_wrong_feature_shape(self) -> None:
-        content = serialize({"features": torch.ones((2, 1280))})
-
         with self.assertRaisesRegex(InvalidFeatureFile, r"\[N, 2560\]"):
-            self.predictor.predict_bytes(content)
+            self.predictor.predict_bytes(serialize({"features": torch.ones((2, 1280))}))
 
     def test_rejects_non_finite_features(self) -> None:
         features = torch.ones((2, 2560))
         features[0, 0] = torch.nan
-
-        with self.assertRaisesRegex(InvalidFeatureFile, "유한한 실수"):
+        with self.assertRaisesRegex(InvalidFeatureFile, "finite floating-point"):
             self.predictor.predict_bytes(serialize({"features": features}))
 
     def test_rejects_unsafe_or_invalid_serialized_content(self) -> None:
-        with self.assertRaisesRegex(InvalidFeatureFile, "PyTorch feature"):
+        with self.assertRaisesRegex(InvalidFeatureFile, "safe PyTorch feature"):
             self.predictor.predict_bytes(b"not-a-pt")
 
 

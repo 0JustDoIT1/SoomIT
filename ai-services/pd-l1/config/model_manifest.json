@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "service": "pdl1-serve",
+  "model": "AMD-MIL",
+  "model_version": "final_model",
+  "deployment_status": "deployed",
+  "artifacts": [
+    {
+      "name": "final_model.pth",
+      "gcs_uri": "gs://soomit-bucket/models/pdl1/final_model/final_model.pth",
+      "size_bytes": 12340940,
+      "sha256": "db0e812ab9b38c77b9bbf3725f9d92482b774e2a18cb5361147c793913b7a376",
+      "status": "uploaded_and_verified"
+    },
+    {
+      "name": "model_report.json",
+      "gcs_uri": "gs://soomit-bucket/models/pdl1/final_model/model_report.json",
+      "status": "uploaded"
+    }
+  ],
+  "image": "gcr.io/soomit-506909/pdl1-serve:final_model",
+  "image_digest": "sha256:5f073034c5cbd5b985c1d6d10e63fbbd4ef07f8dc9621884a860c421aa394dff",
+  "input": {
+    "media_type": "application/octet-stream",
+    "format": "safe PyTorch dictionary",
+    "required_tensor": "features",
+    "shape": "[N, 2560]",
+    "patch_count": "1-5000",
+    "feature_extractor": "Virchow2"
+  },
+  "cloud_run": {
+    "service": "pdl1-serve",
+    "revision": "pdl1-serve-00001-9md",
+    "region": "asia-southeast1",
+    "url": "https://pdl1-serve-461462459694.asia-southeast1.run.app",
+    "cold_start_model_load_verified": true,
+    "sample_inference_verified": true
+  }
+}

@@ -16,6 +16,17 @@ CLASS_TO_RANGE = {
 }
 
 
+def _fetch_id_token():
+    import google.auth.transport.requests
+    import google.oauth2.id_token
+
+    request = google.auth.transport.requests.Request()
+    return google.oauth2.id_token.fetch_id_token(
+        request,
+        settings.PDL1_INFERENCE_SERVICE_URL,
+    )
+
+
 def _validate_probability(value, field_name):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise PDL1InferenceError(f"추론 응답의 {field_name} 값이 숫자가 아닙니다.")
@@ -59,10 +70,13 @@ def validate_prediction(payload):
 
 
 def request_pdl1_prediction(feature_content):
+    headers = {"Content-Type": "application/octet-stream"}
+    if settings.PDL1_INFERENCE_SERVICE_USE_ID_TOKEN:
+        headers["Authorization"] = f"Bearer {_fetch_id_token()}"
     request = Request(
         f"{settings.PDL1_INFERENCE_SERVICE_URL}/v1/predict",
         data=feature_content,
-        headers={"Content-Type": "application/octet-stream"},
+        headers=headers,
         method="POST",
     )
     try:

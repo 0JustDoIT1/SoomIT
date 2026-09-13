@@ -373,6 +373,8 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
                 ai_analysis=analysis,
                 schema_version="1.0",
                 result_payload={
+                    "model_revision": prediction.get("model_revision"),
+                    "model_sha256": prediction.get("model_sha256"),
                     "main_index": prediction.get("main_index"),
                     "pdl1_image_id": prediction.get("pdl1_image_id"),
                     "patch_count": prediction.get("patch_count"),

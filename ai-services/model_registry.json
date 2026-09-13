@@ -14,6 +14,12 @@
       "status": "deployed",
       "artifact_storage": "gcs",
       "manifest": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/model_manifest.json"
+    },
+    {
+      "service": "pdl1-serve",
+      "status": "deployed",
+      "artifact_storage": "gcs",
+      "manifest": "gs://soomit-bucket/models/pdl1/final_model/model_manifest.json"
     }
   ]
 }

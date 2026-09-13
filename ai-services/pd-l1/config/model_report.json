@@ -1,0 +1,38 @@
+{
+  "model": {
+    "feature_extractor": "Virchow2",
+    "mil_model": "AMD-MIL",
+    "input_dim": 2560,
+    "num_classes": 3
+  },
+  "tps_classes": {"0": "<1%", "1": "1-49%", "2": ">=50%"},
+  "training": {
+    "development_cases": 125,
+    "final_test_cases": 32,
+    "learning_rate": 0.0002,
+    "dropout": 0.2,
+    "agent_num": 128,
+    "loss": "Focal Loss",
+    "focal_gamma": 1.5,
+    "sampling": "inverse-frequency weighted sampling",
+    "sampling_alpha": 1.0,
+    "optimizer": "AdamW",
+    "weight_decay": 0.00001,
+    "final_epochs": 5,
+    "seed": 42
+  },
+  "cross_validation": {
+    "folds": 5,
+    "macro_f1": 0.93061,
+    "macro_auc": 0.969853,
+    "accuracy": 0.936,
+    "balanced_accuracy": 0.93037
+  },
+  "final_test": {
+    "macro_f1": 0.861111111111111,
+    "macro_auc": 0.9567044213096844,
+    "accuracy": 0.875,
+    "balanced_accuracy": 0.8733211233211233,
+    "confusion_matrix": [[11, 1, 0], [1, 6, 0], [0, 2, 11]]
+  }
+}

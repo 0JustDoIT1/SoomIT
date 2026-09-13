@@ -1,0 +1,11 @@
+.gcloudignore
+.git
+.gitignore
+.dockerignore
+model_validation/
+models/
+tests/
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
