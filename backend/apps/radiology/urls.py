@@ -3,6 +3,9 @@ from django.urls import path
 from .views import (
     RadiologyAnalysisDetailAPIView,
     RadiologyAnalysisResultAPIView,
+    RadiologyAnalysisSubmitForReviewAPIView,
+    RadiologyCaseWorkflowAPIView,
+    RadiologyCaseWorklistAPIView,
     RadiologyOrderAnalysisCreateAPIView,
     RadiologyOrderImageCreateAPIView,
     RadiologyWorklistAPIView,
@@ -13,6 +16,12 @@ app_name = "radiology"
 
 urlpatterns = [
     path("worklist/", RadiologyWorklistAPIView.as_view(), name="worklist"),
+    path("cases/", RadiologyCaseWorklistAPIView.as_view(), name="case-worklist"),
+    path(
+        "cases/<uuid:case_id>/workflow/",
+        RadiologyCaseWorkflowAPIView.as_view(),
+        name="case-workflow",
+    ),
     path(
         "orders/<uuid:order_id>/images/",
         RadiologyOrderImageCreateAPIView.as_view(),
@@ -32,5 +41,10 @@ urlpatterns = [
         "analyses/<uuid:analysis_id>/result/",
         RadiologyAnalysisResultAPIView.as_view(),
         name="analysis-result",
+    ),
+    path(
+        "analyses/<uuid:analysis_id>/submit-for-review/",
+        RadiologyAnalysisSubmitForReviewAPIView.as_view(),
+        name="analysis-submit-for-review",
     ),
 ]

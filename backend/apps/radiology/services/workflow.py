@@ -6,6 +6,7 @@ WORKFLOW_STATUS_LABELS = {
     "CANCELLED": "취소됨",
     "REVIEW_COMPLETED": "판독 완료",
     "REVIEW_PENDING": "의사 판독 대기",
+    "AI_COMPLETED": "AI 분석 완료",
     "AI_FAILED": "AI 실패",
     "AI_RUNNING": "AI 분석 중",
     "AI_READY": "AI 실행 대기",
@@ -37,9 +38,14 @@ def calculate_workflow_status(order, image_assets, latest_ai_analysis):
             if ai_result is None:
                 # 저장된 SUCCEEDED 값은 유지하고, 비정상 조합을 표시상 실패로만 계산한다.
                 return "AI_FAILED"
-            if getattr(latest_ai_analysis, "has_confirmed_review", False):
+            if (
+                getattr(latest_ai_analysis, "has_completed_review", False)
+                or getattr(latest_ai_analysis, "has_confirmed_review", False)
+            ):
                 return "REVIEW_COMPLETED"
-            return "REVIEW_PENDING"
+            if getattr(latest_ai_analysis, "has_radiology_review", False):
+                return "REVIEW_PENDING"
+            return "AI_COMPLETED"
 
         if latest_ai_analysis.status == AiAnalysis.Status.FAILED:
             return "AI_FAILED"

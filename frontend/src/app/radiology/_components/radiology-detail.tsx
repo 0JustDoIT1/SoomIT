@@ -10,6 +10,7 @@ import {
   fetchRadiologyAnalysisResult,
   RadiologyApiError,
   startRadiologyAnalysis,
+  submitRadiologyAnalysisForReview,
   type RadiologyAnalysisDetail,
   type RadiologyAnalysisResult,
   type RadiologyWorklistItem,
@@ -82,15 +83,16 @@ function getWorkflowLabel(status: RadiologyWorklistItem["workflow_status"]) {
     IMAGE_PENDING: "영상 연결 대기",
     AI_READY: "분석 대기 중",
     AI_RUNNING: "AI 분석 중",
+    AI_COMPLETED: "AI 분석 완료",
     AI_FAILED: "AI 실패",
-    REVIEW_PENDING: "의사 판독 중",
+    REVIEW_PENDING: "의사 판독 대기",
     REVIEW_COMPLETED: "판독 완료",
   };
   return labels[status];
 }
 
 function getAnalysisLabel(item: RadiologyWorklistItem) {
-  if (item.examination_order.exam_type_label === "PET-CT / TNM") return "TNM AI 분석";
+  if (item.examination_order.exam_type_label === "PET-CT") return "TNM AI 분석";
   return item.examination_order.exam_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
 }
 
@@ -102,12 +104,12 @@ function formatPercent(value: string | null, scale = 100) {
 
 function AnalysisResultView({ data }: { data: RadiologyAnalysisResult }) {
   if ("assessment" in data.result) {
-    return <dl className="grid grid-cols-2 divide-x divide-slate-200 text-xs"><div className="pr-5"><dt className="text-slate-500">판정</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.assessment_label}</dd></div><div className="pl-5"><dt className="text-slate-500">의심 점수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.suspicion_score)}</dd></div></dl>;
+    return <dl className="grid gap-3 text-xs sm:grid-cols-2"><div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">판정</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.assessment_label}</dd></div><div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">의심 점수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.suspicion_score)}</dd></div></dl>;
   }
   if ("nodules" in data.result) {
-    return <div className="text-xs"><dl className="grid grid-cols-2 divide-x divide-slate-200"><div className="pr-5"><dt className="text-slate-500">전체 악성 위험도</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.overall_malignancy_risk, 1)}</dd></div><div className="pl-5"><dt className="text-slate-500">결절 개수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.nodules.length}</dd></div></dl><div className="mt-4 divide-y divide-slate-200 border-t border-slate-200">{data.result.nodules.map((nodule) => <div key={nodule.nodule_no} className="grid gap-1 py-3 text-slate-700 sm:grid-cols-[100px_1fr_1fr]"><strong className="text-slate-800">결절 {nodule.nodule_no}</strong><span>검출 신뢰도 {formatPercent(nodule.detection_confidence)}</span><span>악성 위험도 {formatPercent(nodule.malignancy_risk, 1)}</span></div>)}</div></div>;
+    return <div className="text-xs"><dl className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">전체 악성 위험도</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.overall_malignancy_risk, 1)}</dd></div><div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">결절 개수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.nodules.length}</dd></div></dl><div className="mt-3 grid gap-2">{data.result.nodules.map((nodule) => <div key={nodule.nodule_no} className="grid gap-1 rounded-lg border border-slate-100 bg-white px-4 py-3 text-slate-700 sm:grid-cols-[100px_1fr_1fr]"><strong className="text-slate-800">결절 {nodule.nodule_no}</strong><span>검출 신뢰도 {formatPercent(nodule.detection_confidence)}</span><span>악성 위험도 {formatPercent(nodule.malignancy_risk, 1)}</span></div>)}</div></div>;
   }
-  return <dl className="grid grid-cols-2 text-xs sm:grid-cols-4 sm:divide-x sm:divide-slate-200"><div className="pb-3 sm:pr-5"><dt className="text-slate-500">T</dt><dd className="mt-2 text-xl font-bold text-slate-900">{data.result.predicted_t ?? "-"}</dd></div><div className="pb-3 sm:px-5"><dt className="text-slate-500">N</dt><dd className="mt-2 text-xl font-bold text-slate-900">{data.result.predicted_n ?? "-"}</dd></div><div className="pb-3 sm:px-5"><dt className="text-slate-500">M</dt><dd className="mt-2 text-xl font-bold text-slate-900">{data.result.predicted_m ?? "-"}</dd></div><div className="pb-3 sm:pl-5"><dt className="text-slate-500">Stage</dt><dd className="mt-2 text-xl font-bold text-slate-900">{data.result.predicted_stage_group ?? "-"}</dd></div><div className="col-span-2 border-t border-slate-200 pt-3 sm:col-span-4"><dt className="text-slate-500">Confidence</dt><dd className="mt-1 text-base font-bold text-slate-900">{formatPercent(data.result.confidence)}</dd></div></dl>;
+  return <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">{[["T", data.result.predicted_t], ["N", data.result.predicted_n], ["M", data.result.predicted_m], ["Stage", data.result.predicted_stage_group], ["Confidence", formatPercent(data.result.confidence)]].map(([label, value]) => <div key={label} className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-blue-50/50 p-4"><dt className="text-violet-600">{label}</dt><dd className="mt-2 text-xl font-bold text-slate-900">{value ?? "-"}</dd></div>)}</dl>;
 }
 
 export function RadiologyPatientSummary({ item, onClear }: {
@@ -117,26 +119,26 @@ export function RadiologyPatientSummary({ item, onClear }: {
   const order = item.examination_order;
 
   return (
-    <section aria-labelledby="selected-patient-heading" className="min-h-0 overflow-y-auto bg-slate-50">
-      <div className="flex items-center gap-3 border-b border-slate-200 px-4 py-3">
+    <section aria-labelledby="selected-patient-heading" className="min-h-0 overflow-y-auto bg-gradient-to-b from-violet-50/50 to-blue-50/30 p-4">
+      <div className="flex items-center gap-3 rounded-t-2xl border border-violet-100 bg-gradient-to-r from-white to-violet-50/70 px-5 py-4 shadow-sm">
         <div className="min-w-0 flex-1">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">선택 환자</p>
-          <div className="mt-1 flex min-w-0 items-baseline gap-2"><h2 id="selected-patient-heading" className="truncate text-base font-bold text-slate-900">{item.patient.name}</h2><span className="shrink-0 text-xs text-slate-500">{item.patient.patient_code}</span></div>
+          <div className="mt-1 flex min-w-0 items-baseline gap-2"><h2 id="selected-patient-heading" className="truncate text-lg font-bold text-slate-900">{item.patient.name}</h2><span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{item.patient.patient_code}</span></div>
         </div>
         <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
         <button type="button" onClick={onClear} className="shrink-0 text-xs font-semibold text-slate-500 hover:text-slate-800">선택 해제</button>
       </div>
-      <dl className="divide-y divide-slate-200 px-4 text-xs">
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">환자코드</dt><dd className="text-slate-800">{item.patient.patient_code}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">성별 / 생년월일</dt><dd className="text-slate-800">{item.patient.sex} / {item.patient.birth_date}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">Case</dt><dd className="break-words text-slate-800">{item.case.case_code}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">현재 검사</dt><dd className="font-semibold text-slate-800">{order.exam_type_label}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">현재 상태</dt><dd className="text-slate-800">{getWorkflowLabel(item.workflow_status)}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">요청 의사</dt><dd className="text-slate-800">{item.requesting_doctor.name}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">검사 예정 시각</dt><dd className="text-slate-800">{formatDateTime(item.scheduled_at)}</dd></div>
-        <div className="grid grid-cols-[112px_minmax(0,1fr)] py-2"><dt className="text-slate-500">검사 목적</dt><dd className="whitespace-pre-wrap break-words leading-5 text-slate-700">{order.purpose || "-"}</dd></div>
+      <dl className="grid gap-x-4 gap-y-3 border-x border-violet-100 bg-white px-5 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        <div><dt className="text-[11px] text-slate-400">환자코드</dt><dd className="mt-1 font-medium text-slate-800">{item.patient.patient_code}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">성별 / 생년월일</dt><dd className="mt-1 font-medium text-slate-800">{item.patient.sex} / {item.patient.birth_date}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">Case</dt><dd className="mt-1 break-words font-medium text-slate-800">{item.case.case_code}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">현재 검사</dt><dd className="mt-1 font-semibold text-violet-700">{order.exam_type_label}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">현재 상태</dt><dd className="mt-1 font-medium text-slate-800">{getWorkflowLabel(item.workflow_status)}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">요청 의사</dt><dd className="mt-1 font-medium text-slate-800">{item.requesting_doctor.name}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">검사 예정 시각</dt><dd className="mt-1 font-medium text-slate-800">{formatDateTime(item.scheduled_at)}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">검사 목적</dt><dd className="mt-1 whitespace-pre-wrap break-words leading-5 text-slate-700">{order.purpose || "-"}</dd></div>
       </dl>
-      <div className="border-t border-slate-200 px-4 py-3">
+      <div className="rounded-b-2xl border border-violet-100 bg-blue-50/40 px-5 py-3 shadow-sm">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">Patient Journey</p>
         <p className="mt-2 whitespace-nowrap text-xs font-medium text-slate-700">X-ray → CT → PET-CT → 병리</p>
       </div>
@@ -144,12 +146,17 @@ export function RadiologyPatientSummary({ item, onClear }: {
   );
 }
 
-export function RadiologyDetail({ item }: {
+export function RadiologyDetail({ item, embedded = false }: {
   item: RadiologyWorklistItem;
+  embedded?: boolean;
 }) {
   const [showResultNotice, setShowResultNotice] = useState(false);
   const [startingAnalysis, setStartingAnalysis] = useState(false);
   const [loadingResult, setLoadingResult] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(
+    item.workflow_status === "REVIEW_PENDING" || item.workflow_status === "REVIEW_COMPLETED",
+  );
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
   const [analysisResult, setAnalysisResult] = useState<RadiologyAnalysisResult | null>(null);
@@ -157,7 +164,7 @@ export function RadiologyDetail({ item }: {
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
   const order = item.examination_order;
   const image = item.latest_image_asset;
-  const isXray = order.exam_type === "XRAY" && order.exam_type_label !== "PET-CT / TNM";
+  const isXray = order.exam_type === "XRAY";
   const previewFile = isXray ? selectedFiles.find(isPreviewableImage) ?? null : null;
   const previewUrl = useMemo(
     () => previewFile ? URL.createObjectURL(previewFile) : null,
@@ -241,22 +248,52 @@ export function RadiologyDetail({ item }: {
     }
   }
 
+  async function handleSubmitForReview() {
+    if (!trackedAnalysis || trackedAnalysis.status !== "SUCCEEDED" || submitted) return;
+    setSubmitting(true);
+    setActionError("");
+    try {
+      const response = await submitRadiologyAnalysisForReview(trackedAnalysis.analysis_id);
+      setSubmitted(true);
+      setActionMessage(
+        response.submitted
+          ? "AI 결과를 담당 의사에게 제출했습니다."
+          : "이미 담당 의사에게 제출된 AI 결과입니다.",
+      );
+    } catch (error) {
+      setActionError(error instanceof RadiologyApiError ? error.message : "AI 결과를 제출하지 못했습니다.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    <main aria-label="영상 및 AI 작업" className="min-h-0 min-w-0 overflow-y-auto bg-white">
-      <div className="sticky top-0 z-10 border-b border-slate-200 bg-white px-5 py-4">
+    <main aria-label="영상 및 AI 작업" className={embedded ? "min-w-0 rounded-b-2xl border border-t-0 border-violet-100 bg-gradient-to-b from-white to-blue-50/30" : "min-h-0 min-w-0 overflow-y-auto bg-slate-50/60"}>
+      {!embedded ? <div className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 px-6 py-5 backdrop-blur">
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">영상 및 AI 작업</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-900">{order.exam_type_label === "PET-CT / TNM" ? "PET-CT 영상 / TNM AI 분석" : `${order.exam_type_label} 영상 / AI 분석`}</h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">{order.exam_type_label === "PET-CT" ? "PET-CT 영상 / TNM AI 분석" : `${order.exam_type_label} 영상 / AI 분석`}</h2>
             <p className="mt-1 text-xs text-slate-500">{item.patient.name} · {item.patient.patient_code}</p>
-            {order.exam_type_label === "PET-CT / TNM" ? <p className="mt-1 text-xs font-medium text-slate-600">PET-CT 영상 → TNM AI 분석 → TNM 결과</p> : null}
+            {order.exam_type_label === "PET-CT" ? <p className="mt-1 text-xs font-medium text-slate-600">PET-CT 영상 → TNM AI 분석 → 결과 확인</p> : null}
           </div>
           <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
         </div>
-      </div>
+      </div> : null}
 
-      <div className="divide-y divide-slate-200 px-5">
-        <section className="py-5" aria-labelledby="image-upload-heading">
+      <div className="space-y-4 p-5">
+        <div className="relative grid grid-cols-2 gap-2 rounded-xl border border-violet-100 bg-gradient-to-r from-violet-50/70 via-white to-blue-50/70 p-3 shadow-sm sm:grid-cols-4">
+          {[
+            ["01", "영상 준비", Boolean(image)],
+            ["02", "AI 분석", analysisCompleted || analysisRunning],
+            ["03", "결과 확인", Boolean(analysisResult)],
+            ["04", "의사에게 제출", submitted],
+          ].map(([number, label, completed], index) => {
+            const active = index === 0 ? !image : index === 1 ? Boolean(image) && !analysisCompleted : index === 2 ? analysisCompleted && !analysisResult : analysisCompleted && !submitted;
+            return <div key={String(number)} className={`relative rounded-xl border px-3 py-3 transition-colors ${completed ? "border-emerald-200 bg-emerald-50/90 text-emerald-700" : active ? "border-violet-300 bg-violet-100/80 text-violet-700 shadow-sm" : "border-slate-100 bg-white/70 text-slate-400"}`}><span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${completed ? "bg-emerald-100" : active ? "bg-violet-200" : "bg-slate-100"}`}>{number}</span><p className="mt-1.5 text-xs font-semibold">{label}</p></div>;
+          })}
+        </div>
+        <section className="rounded-xl border border-blue-100 bg-white p-5 shadow-sm" aria-labelledby="image-upload-heading">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <h3 id="image-upload-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-blue-700">01</span>영상 준비</h3>
@@ -279,7 +316,7 @@ export function RadiologyDetail({ item }: {
               />
             </label>
           </div>
-          {selectedFiles.length === 0 ? <div className="mt-4 flex min-h-72 flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-50 px-6 text-center"><p className="text-sm font-semibold text-slate-700">영상 미리보기</p><p className="mt-2 max-w-sm text-xs leading-5 text-slate-500">로컬 영상을 선택하면<br />미리보기 또는 Series 정보를 확인할 수 있습니다.</p></div> : null}
+          {selectedFiles.length === 0 ? <div className="mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 px-6 text-center"><span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl text-blue-300 shadow-sm" aria-hidden="true">＋</span><p className="mt-3 text-sm font-semibold text-slate-700">영상 미리보기</p><p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">로컬 영상을 선택하면 미리보기 또는 Series 정보를 확인할 수 있습니다.</p></div> : null}
           {selectedFiles.length > 0 ? (
             <div className="mt-4 border-l-2 border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
               <div className="flex flex-wrap items-center justify-between gap-2">
@@ -304,7 +341,7 @@ export function RadiologyDetail({ item }: {
           <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p>
         </section>
 
-        <section className="py-5" aria-labelledby="ai-analysis-heading">
+        <section className="rounded-xl border border-violet-100 bg-gradient-to-br from-white to-violet-50/30 p-5 shadow-sm" aria-labelledby="ai-analysis-heading">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
               <h3 id="ai-analysis-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-blue-700">02</span>{getAnalysisLabel(item)}</h3>
@@ -315,7 +352,7 @@ export function RadiologyDetail({ item }: {
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">현재 상태: AI 분석 이력 없음</p>}
             </div>
-            <button type="button" disabled={!canStartAnalysis || startingAnalysis} onClick={handleStartAnalysis} className="shrink-0 rounded-md bg-blue-700 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">{startingAnalysis ? "등록 중" : "AI 분석 실행"}</button>
+            <button type="button" disabled={!canStartAnalysis || startingAnalysis} onClick={handleStartAnalysis} className="shrink-0 rounded-lg bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white shadow-sm hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none">{startingAnalysis ? "등록 중" : "AI 분석 실행"}</button>
           </div>
 
           {analysisRunning ? (
@@ -331,26 +368,29 @@ export function RadiologyDetail({ item }: {
           {actionError ? <p className="mt-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p> : null}
 
           {analysisCompleted ? (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-l-2 border-blue-600 bg-blue-50 px-4 py-3">
-              <div><p className="text-sm font-semibold text-blue-900">AI 분석 완료</p><p className="mt-1 text-xs text-blue-700">분석 결과를 확인할 수 있습니다.</p></div>
-              <button type="button" disabled={loadingResult} onClick={handleLoadResult} className="rounded-md bg-blue-700 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-800 disabled:cursor-not-allowed disabled:opacity-50">{loadingResult ? "결과 조회 중" : "AI 결과 보기"}</button>
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-blue-50 px-4 py-3">
+              <div><p className="text-sm font-semibold text-emerald-800">AI 분석 완료</p><p className="mt-1 text-xs text-slate-600">분석 결과를 확인할 수 있습니다.</p></div>
+              <button type="button" disabled={loadingResult} onClick={handleLoadResult} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">{loadingResult ? "결과 조회 중" : "AI 결과 보기"}</button>
             </div>
           ) : null}
         </section>
 
-        <section className="py-5" aria-labelledby="ai-result-heading">
-          <h3 id="ai-result-heading" className="text-sm font-bold text-slate-800">AI 분석 결과</h3>
-          {showResultNotice && analysisResult ? <div className="mt-4 border-t border-slate-200 pt-4"><AnalysisResultView data={analysisResult} /></div> : <p className="mt-3 text-xs text-slate-500">분석 완료 후 결과가 표시됩니다.</p>}
+        <section className="rounded-xl border border-violet-100 bg-white p-5 shadow-sm" aria-labelledby="ai-result-heading">
+          <h3 id="ai-result-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-violet-600">03</span>AI 분석 결과</h3>
+          {showResultNotice && analysisResult ? <div className="mt-4"><AnalysisResultView data={analysisResult} /></div> : <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">분석 완료 후 결과가 표시됩니다.</div>}
         </section>
 
-        <section className="py-5" aria-labelledby="review-heading">
-          <h3 id="review-heading" className="text-sm font-bold text-slate-800">판독 진행</h3>
-          <div className="mt-3 flex flex-wrap items-center gap-3">
-            <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
-            <p className="text-xs text-slate-500">
-              {item.workflow_status === "REVIEW_COMPLETED" ? "호흡기내과 의사의 판독이 완료되었습니다." : item.workflow_status === "REVIEW_PENDING" ? "AI 결과가 생성되어 호흡기내과 의사의 판독을 기다리고 있습니다." : "AI 결과 생성 후 의사 판독 단계가 표시됩니다."}
-            </p>
+        <section className={`rounded-xl border p-5 shadow-sm ${item.workflow_status === "REVIEW_COMPLETED" ? "border-emerald-200 bg-emerald-50/60" : "border-violet-200 bg-gradient-to-r from-violet-50/90 to-blue-50/70"}`} aria-labelledby="review-heading">
+          <h3 id="review-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-violet-600">04</span>의사에게 제출</h3>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/80 bg-white/65 p-4">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">{submitted ? "제출 완료" : "AI 분석 결과를 담당 호흡기내과 의사에게 제출합니다."}</p>
+              <p className="mt-1 text-xs text-slate-500">담당 의사: {item.responsible_doctor?.name ?? "미지정"}</p>
+            </div>
+            {submitted ? <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700">제출 완료</span> : <button type="button" onClick={handleSubmitForReview} disabled={!analysisCompleted || !item.responsible_doctor || submitting} className="rounded-lg bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300">{submitting ? "제출 중" : "의사에게 제출"}</button>}
           </div>
+          {!analysisCompleted ? <p className="mt-2 text-xs text-slate-500">AI 분석이 완료된 후 제출할 수 있습니다.</p> : null}
+          {analysisCompleted && !item.responsible_doctor ? <p className="mt-2 text-xs text-amber-700">현재 Case에 연결된 담당 의사가 없어 제출할 수 없습니다.</p> : null}
         </section>
       </div>
     </main>

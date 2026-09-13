@@ -44,6 +44,7 @@ export type RadiologyWorkflowStatus =
   | "REVIEW_PENDING"
   | "AI_FAILED"
   | "AI_RUNNING"
+  | "AI_COMPLETED"
   | "AI_READY"
   | "IMAGE_PENDING"
   | "EXAM_PENDING";
@@ -79,12 +80,43 @@ export type RadiologyWorklistItem = {
     id: string;
     name: string;
   };
+  responsible_doctor: {
+    id: string;
+    name: string;
+  } | null;
   scheduled_at: string | null;
   image_asset_count: number;
   latest_image_asset: RadiologyImageAsset | null;
   latest_ai_analysis: RadiologyAiAnalysis | null;
   workflow_status: RadiologyWorkflowStatus;
   workflow_status_label: string;
+};
+
+export type RadiologyCaseWorklistItem = {
+  patient: RadiologyWorklistItem["patient"];
+  case: RadiologyWorklistItem["case"];
+  responsible_doctor: RadiologyWorklistItem["responsible_doctor"];
+  exam_count: number;
+  current_exam: RadiologyWorklistItem;
+  workflow_status: RadiologyWorkflowStatus;
+  workflow_status_label: string;
+};
+
+export type RadiologyWorkflowExam = RadiologyWorklistItem & {
+  ai_result: RadiologyAnalysisResult["result"] | null;
+  review: {
+    id: string;
+    status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+    assigned_doctor: { id: string; name: string };
+    submitted_at: string;
+  } | null;
+};
+
+export type RadiologyCaseWorkflow = {
+  case: RadiologyWorklistItem["case"];
+  patient: RadiologyWorklistItem["patient"];
+  responsible_doctor: RadiologyWorklistItem["responsible_doctor"];
+  exams: RadiologyWorkflowExam[];
 };
 
 export type RadiologyAnalysisDetail = {
@@ -136,6 +168,17 @@ export type RadiologyAnalysisResult = {
         predicted_stage_group: string | null;
         confidence: string | null;
       };
+};
+
+export type RadiologyReviewSubmission = {
+  submitted: boolean;
+  review_id: string;
+  case_id: string;
+  examination_order_id: string;
+  analysis_id: string;
+  assigned_doctor: { id: string; name: string };
+  review_status: "PENDING" | "IN_PROGRESS" | "COMPLETED";
+  submitted_at: string;
 };
 
 export type RadiologyImageRegistration = {
@@ -219,6 +262,28 @@ export async function fetchRadiologyWorklist(
   return response.json();
 }
 
+export async function fetchRadiologyCaseWorklist(
+  filters: RadiologyWorklistFilters,
+  signal: AbortSignal,
+): Promise<RadiologyCaseWorklistItem[]> {
+  const query = new URLSearchParams();
+  if (filters.exam_type) query.set("exam_type", filters.exam_type);
+  if (filters.status) query.set("status", filters.status);
+  if (filters.priority) query.set("priority", filters.priority);
+  const queryString = query.toString();
+  return radiologyRequest<RadiologyCaseWorklistItem[]>(
+    `/api/radiology/cases/${queryString ? `?${queryString}` : ""}`,
+    { method: "GET", signal },
+  );
+}
+
+export function fetchRadiologyCaseWorkflow(caseId: string, signal?: AbortSignal) {
+  return radiologyRequest<RadiologyCaseWorkflow>(
+    `/api/radiology/cases/${caseId}/workflow/`,
+    { method: "GET", signal },
+  );
+}
+
 async function radiologyRequest<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await staffAuthenticatedFetch(`${getApiBaseUrl()}${path}`, {
     ...init,
@@ -267,5 +332,12 @@ export function fetchRadiologyAnalysisResult(analysisId: string, signal?: AbortS
   return radiologyRequest<RadiologyAnalysisResult>(
     `/api/radiology/analyses/${analysisId}/result/`,
     { method: "GET", signal },
+  );
+}
+
+export function submitRadiologyAnalysisForReview(analysisId: string, signal?: AbortSignal) {
+  return radiologyRequest<RadiologyReviewSubmission>(
+    `/api/radiology/analyses/${analysisId}/submit-for-review/`,
+    { method: "POST", body: JSON.stringify({}), signal },
   );
 }

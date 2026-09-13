@@ -2,7 +2,7 @@ import { StateMessage } from "@/components/workspace/state-message";
 
 import type {
   RadiologyWorklistFilters,
-  RadiologyWorklistItem,
+  RadiologyCaseWorklistItem,
   RadiologyWorkflowStatus,
 } from "../_lib/radiology-api";
 
@@ -12,8 +12,9 @@ const workflowLabels: Record<RadiologyWorkflowStatus, string> = {
   IMAGE_PENDING: "영상 연결 대기",
   AI_READY: "분석 대기 중",
   AI_RUNNING: "AI 분석 중",
+  AI_COMPLETED: "AI 분석 완료",
   AI_FAILED: "AI 실패",
-  REVIEW_PENDING: "의사 판독 중",
+  REVIEW_PENDING: "의사 판독 대기",
   REVIEW_COMPLETED: "판독 완료",
 };
 
@@ -25,9 +26,9 @@ export type WorklistViewStatus =
   | "unauthorized";
 
 type RadiologyWorklistProps = {
-  items: RadiologyWorklistItem[];
+  items: RadiologyCaseWorklistItem[];
   selectedId: string | null;
-  onSelect: (item: RadiologyWorklistItem) => void;
+  onSelect: (item: RadiologyCaseWorklistItem) => void;
   viewStatus: WorklistViewStatus;
   errorMessage: string;
   filters: RadiologyWorklistFilters;
@@ -67,8 +68,8 @@ export function RadiologyWorklist({
   }
 
   return (
-    <section aria-labelledby="worklist-heading" className="flex min-h-0 min-w-0 flex-col">
-      <div className="flex min-h-14 flex-wrap items-center gap-3 border-b border-slate-200 px-5 py-2">
+    <section aria-labelledby="worklist-heading" className="flex min-h-0 min-w-0 flex-col bg-white">
+      <div className="flex min-h-14 flex-wrap items-center gap-3 border-b border-violet-100 bg-gradient-to-r from-white to-violet-50/50 px-5 py-2">
         <h2
           id="worklist-heading"
           className="mr-auto text-sm font-bold text-slate-800"
@@ -88,12 +89,12 @@ export function RadiologyWorklist({
                   | "",
               )
             }
-            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-violet-300"
           >
             <option value="">전체</option>
             <option value="XRAY">X-ray</option>
             <option value="CT">CT</option>
-            <option value="STAGING">PET-CT / TNM</option>
+            <option value="STAGING">PET-CT</option>
           </select>
         </label>
 
@@ -109,7 +110,7 @@ export function RadiologyWorklist({
                   | "",
               )
             }
-            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs text-slate-700"
+            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-violet-300"
           >
             <option value="">전체</option>
             <option value="ORDERED">요청됨</option>
@@ -122,7 +123,7 @@ export function RadiologyWorklist({
 
       <div className="min-h-0 flex-1 overflow-auto">
         <table className="w-full min-w-[420px] border-collapse text-left text-xs">
-          <thead className="bg-slate-50 text-xs font-semibold text-slate-500">
+          <thead className="bg-violet-50/40 text-xs font-semibold text-slate-500">
             <tr className="border-b border-slate-200">
               <th className="w-[26%] px-3 py-2.5">환자명</th>
               <th className="w-[24%] px-3 py-2.5">환자코드</th>
@@ -133,15 +134,15 @@ export function RadiologyWorklist({
 
           <tbody>
             {items.map((item) => {
-              const orderId = item.examination_order.id;
+              const caseId = item.case.id;
 
               return (
                 <tr
-                  key={orderId}
+                  key={caseId}
                   tabIndex={0}
-                  aria-selected={selectedId === orderId}
-                  className={`cursor-pointer border-b border-slate-100 border-l-[3px] outline-none transition-colors hover:bg-blue-50/50 focus:bg-blue-50 ${
-                    selectedId === orderId ? "border-l-blue-600 bg-blue-50" : "border-l-transparent bg-white"
+                  aria-selected={selectedId === caseId}
+                  className={`cursor-pointer border-b border-slate-100 border-l-4 outline-none transition-colors hover:bg-blue-50/60 focus:bg-violet-50 ${
+                    selectedId === caseId ? "border-l-violet-500 bg-violet-100/70" : "border-l-transparent bg-white"
                   }`}
                   onClick={() => onSelect(item)}
                   onKeyDown={(event) => {
@@ -160,11 +161,21 @@ export function RadiologyWorklist({
                   </td>
 
                   <td className="px-3 py-2.5 text-slate-700">
-                    {item.examination_order.exam_type_label}
+                    {item.current_exam.examination_order.exam_type_label}
                   </td>
 
                   <td className="px-3 py-2.5">
-                    <span className="inline-flex rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                      item.workflow_status === "REVIEW_COMPLETED"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : item.workflow_status === "REVIEW_PENDING"
+                          ? "bg-cyan-50 text-cyan-700"
+                          : item.workflow_status === "AI_COMPLETED"
+                            ? "bg-violet-100 text-violet-700"
+                            : item.workflow_status === "AI_RUNNING" || item.workflow_status === "AI_READY"
+                              ? "bg-blue-50 text-blue-700"
+                              : "bg-slate-100 text-slate-700"
+                    }`}>
                       {workflowLabels[item.workflow_status]}
                     </span>
                   </td>
@@ -232,7 +243,7 @@ export function RadiologyWorklist({
                 onClick={() => onPageChange(page)}
                 className={`h-8 min-w-8 rounded-md px-2 text-xs font-semibold ${
                   currentPage === page
-                    ? "bg-blue-700 text-white"
+                    ? "bg-violet-600 text-white"
                     : "border border-slate-300 bg-white text-slate-600"
                 }`}
               >

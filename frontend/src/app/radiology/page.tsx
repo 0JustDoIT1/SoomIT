@@ -8,10 +8,12 @@ import { StatusBadge } from "@/components/workspace/status-badge";
 import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
 import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
-  fetchRadiologyWorklist,
+  fetchRadiologyCaseWorkflow,
+  fetchRadiologyCaseWorklist,
   RadiologyApiError,
+  type RadiologyCaseWorklistItem,
+  type RadiologyCaseWorkflow,
   type RadiologyWorklistFilters,
-  type RadiologyWorklistItem,
 } from "./_lib/radiology-api";
 
 type WorkstationTab = "worklist" | "ai" | "history";
@@ -28,7 +30,7 @@ function RadiologyStatusTable({
   emptyTitle,
 }: {
   title: string;
-  items: RadiologyWorklistItem[];
+  items: RadiologyCaseWorklistItem[];
   emptyTitle: string;
 }) {
   return (
@@ -53,14 +55,14 @@ function RadiologyStatusTable({
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.examination_order.id} className="border-b border-slate-100 bg-white">
+                <tr key={item.case.id} className="border-b border-slate-100 bg-white">
                   <td className="px-4 py-3 font-semibold text-slate-800">{item.patient.name}</td>
                   <td className="px-4 py-3 text-slate-600">{item.patient.patient_code}</td>
-                  <td className="px-4 py-3 text-slate-700">{item.examination_order.exam_type_label}</td>
+                  <td className="px-4 py-3 text-slate-700">{item.current_exam.examination_order.exam_type_label}</td>
                   <td className="px-4 py-3">
-                    {item.latest_ai_analysis ? <StatusBadge status={item.latest_ai_analysis.status} label={item.latest_ai_analysis.status_label} /> : "-"}
+                    {item.current_exam.latest_ai_analysis ? <StatusBadge status={item.current_exam.latest_ai_analysis.status} label={item.current_exam.latest_ai_analysis.status_label} /> : "-"}
                   </td>
-                  <td className="px-4 py-3 text-slate-600">{item.requesting_doctor.name}</td>
+                  <td className="px-4 py-3 text-slate-600">{item.current_exam.requesting_doctor.name}</td>
                   <td className="px-4 py-3"><StatusBadge status={item.workflow_status} label={item.workflow_status_label} /></td>
                 </tr>
               ))}
@@ -72,10 +74,69 @@ function RadiologyStatusTable({
   );
 }
 
+function RadiologyCaseDetail({ item }: { item: RadiologyCaseWorklistItem }) {
+  const [workflow, setWorkflow] = useState<RadiologyCaseWorkflow | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchRadiologyCaseWorkflow(item.case.id, controller.signal)
+      .then(setWorkflow)
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : "검사 흐름을 불러오지 못했습니다.");
+        }
+      });
+    return () => controller.abort();
+  }, [item.case.id]);
+
+  if (error) return <StateMessage variant="error" title={error} className="m-6" />;
+  if (!workflow) return <StateMessage variant="loading" title="검사 흐름을 불러오는 중입니다." className="m-6" />;
+  if (workflow.exams.length === 0) return <StateMessage variant="empty" title="표시할 영상 검사가 없습니다." className="m-6" />;
+
+  return (
+    <main className="min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+      <header className="mb-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-xs font-semibold text-violet-600">선택 환자 영상검사</p>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">
+              {workflow.patient.name}
+              <span className="ml-2 text-sm font-medium text-slate-500">{workflow.patient.patient_code}</span>
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              {workflow.patient.sex} · {workflow.patient.birth_date} · {workflow.case.case_code}
+            </p>
+          </div>
+          <div className="text-right text-xs text-slate-500">
+            <p>담당 의사</p>
+            <p className="mt-1 font-semibold text-slate-800">{workflow.responsible_doctor?.name ?? "-"}</p>
+            <p className="mt-2 text-violet-600">검사 오더 {workflow.exams.length}건</p>
+          </div>
+        </div>
+      </header>
+      <div className="space-y-5">
+        {workflow.exams.map((exam, index) => (
+          <section key={exam.examination_order.id}>
+            <div className="flex items-center justify-between gap-3 rounded-t-xl border border-b-0 border-violet-100 bg-gradient-to-r from-violet-50 to-blue-50/60 px-5 py-3">
+              <p className="text-sm font-bold text-slate-800">
+                <span className="mr-2 text-xs text-violet-600">{String(index + 1).padStart(2, "0")}</span>
+                {exam.examination_order.exam_type_label}
+              </p>
+              <StatusBadge status={exam.workflow_status} label={exam.workflow_status_label} />
+            </div>
+            <RadiologyDetail item={exam} embedded />
+          </section>
+        ))}
+      </div>
+    </main>
+  );
+}
+
 export default function RadiologyWorklistPage() {
   const pageSize = 10;
-  const [worklistItems, setWorklistItems] = useState<RadiologyWorklistItem[]>([]);
-  const [selectedItem, setSelectedItem] = useState<RadiologyWorklistItem | null>(null);
+  const [worklistItems, setWorklistItems] = useState<RadiologyCaseWorklistItem[]>([]);
+  const [selectedItem, setSelectedItem] = useState<RadiologyCaseWorklistItem | null>(null);
   const [filters, setFilters] = useState<RadiologyWorklistFilters>({});
   const [viewStatus, setViewStatus] = useState<WorklistViewStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
@@ -88,13 +149,13 @@ export default function RadiologyWorklistPage() {
     currentPage * pageSize,
   );
   const aiItems = worklistItems.filter((item) =>
-    ["AI_READY", "AI_RUNNING", "AI_FAILED"].includes(item.workflow_status),
+    ["AI_READY", "AI_RUNNING", "AI_FAILED", "AI_COMPLETED", "REVIEW_PENDING"].includes(item.workflow_status),
   );
   const completedItems = worklistItems.filter(
     (item) => item.workflow_status === "REVIEW_COMPLETED",
   );
 
-  function handleSelectItem(item: RadiologyWorklistItem) {
+  function handleSelectItem(item: RadiologyCaseWorklistItem) {
     setSelectedItem(item);
   }
 
@@ -113,7 +174,7 @@ export default function RadiologyWorklistPage() {
     if (
       selectedItem &&
       !nextItems.some(
-        (item) => item.examination_order.id === selectedItem.examination_order.id,
+        (item) => item.case.id === selectedItem.case.id,
       )
     ) {
       setSelectedItem(null);
@@ -139,7 +200,7 @@ export default function RadiologyWorklistPage() {
       setErrorMessage("");
 
       try {
-        const nextItems = await fetchRadiologyWorklist(filters, controller.signal);
+        const nextItems = await fetchRadiologyCaseWorklist(filters, controller.signal);
         if (controller.signal.aborted) return;
 
         setWorklistItems(nextItems);
@@ -148,7 +209,7 @@ export default function RadiologyWorklistPage() {
 
           const retainedItem = (
             nextItems.find(
-              (item) => item.examination_order.id === currentItem.examination_order.id,
+              (item) => item.case.id === currentItem.case.id,
             ) ?? null
           );
           return retainedItem;
@@ -183,7 +244,7 @@ export default function RadiologyWorklistPage() {
   }, [filters]);
 
   return (
-    <div className="min-w-0">
+    <div className="min-w-0 bg-slate-50/60">
       <nav aria-label="영상의학과 작업" className="overflow-x-auto border-b border-slate-200 bg-white">
         <div className="mx-auto w-full max-w-[1760px] px-4 sm:px-6">
           <div className="flex min-w-max gap-7">
@@ -193,7 +254,7 @@ export default function RadiologyWorklistPage() {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 aria-current={activeTab === tab.id ? "page" : undefined}
-                className={`border-b-2 px-1 py-3 text-sm font-semibold transition-colors ${activeTab === tab.id ? "border-blue-600 text-blue-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+                className={`border-b-2 px-2 py-3 text-sm font-semibold transition-colors ${activeTab === tab.id ? "border-violet-400 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
               >
                 {tab.label}
               </button>
@@ -204,11 +265,11 @@ export default function RadiologyWorklistPage() {
 
       <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
         {activeTab === "worklist" ? (
-          <div className="grid overflow-hidden border border-slate-200 bg-white xl:h-[calc(100vh-141px)] xl:min-h-[560px] xl:grid-cols-[minmax(420px,32fr)_minmax(0,68fr)] xl:divide-x xl:divide-slate-200">
-            <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] divide-y divide-slate-200">
+          <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(400px,31fr)_minmax(0,69fr)]">
+            <div className="grid min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm grid-rows-[minmax(0,62fr)_minmax(0,38fr)] divide-y divide-slate-100">
               <RadiologyWorklist
                 items={pagedItems}
-                selectedId={selectedItem?.examination_order.id ?? null}
+                selectedId={selectedItem?.case.id ?? null}
                 onSelect={handleSelectItem}
                 viewStatus={viewStatus}
                 errorMessage={errorMessage}
@@ -220,15 +281,15 @@ export default function RadiologyWorklistPage() {
                 onPageChange={handlePageChange}
               />
               {selectedItem ? (
-                <RadiologyPatientSummary item={selectedItem} onClear={() => setSelectedItem(null)} />
+                <RadiologyPatientSummary item={selectedItem.current_exam} onClear={() => setSelectedItem(null)} />
               ) : (
                 <StateMessage variant="empty" title="환자를 선택하세요" description="Worklist에서 검사 항목을 선택하면 환자 정보가 표시됩니다." className="m-4" />
               )}
             </div>
             {selectedItem ? (
-              <RadiologyDetail key={selectedItem.examination_order.id} item={selectedItem} />
+              <RadiologyCaseDetail key={selectedItem.case.id} item={selectedItem} />
             ) : (
-              <StateMessage variant="empty" title="영상 작업을 시작할 환자를 선택하세요" description="선택한 검사의 영상 선택, AI 분석 상태와 결과가 이 영역에 표시됩니다." className="m-6 self-start" />
+              <StateMessage variant="empty" title="영상 작업을 시작할 환자를 선택하세요" description="Worklist에서 환자를 선택하면 X-ray / CT / PET-CT-TNM 검사 흐름을 확인할 수 있습니다." className="m-8 self-center rounded-xl border border-slate-200 bg-white shadow-sm" />
             )}
           </div>
         ) : null}

@@ -36,18 +36,21 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="flex min-h-screen min-w-0 flex-col bg-slate-50 text-slate-900">
-      <header className="h-16 shrink-0 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex h-full w-full max-w-[1760px] items-center px-4 sm:px-6">
+      <header className="shrink-0 border-b border-violet-100 bg-gradient-to-r from-violet-100/80 via-blue-50 to-emerald-50/50">
+        <div className="mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
           <div>
-            <p className="text-sm font-semibold text-slate-800">영상의학과</p>
-            <p className="text-xs text-slate-500">Radiology Workstation</p>
+            <p className="text-xs font-bold tracking-[0.16em] text-violet-600">영상의학과</p>
+            <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Radiology Workstation</p>
           </div>
-          <div className="ml-auto flex items-center gap-4">
+          <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <span className="hidden rounded-full border border-violet-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-violet-700 shadow-sm sm:inline-flex">
+              영상검사 업무
+            </span>
             <div className="text-right">
-              <p className="text-sm font-semibold text-slate-700">{userName}</p>
-              <p className="text-xs text-slate-500">방사선사</p>
+              <p className="text-sm font-bold text-slate-800">{userName}</p>
+              <p className="mt-0.5 text-xs text-slate-500">방사선사</p>
             </div>
-            <button type="button" onClick={handleLogout} className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50">
+            <button type="button" onClick={handleLogout} className="rounded-lg border border-violet-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-300 hover:bg-white hover:text-violet-700">
               로그아웃
             </button>
           </div>

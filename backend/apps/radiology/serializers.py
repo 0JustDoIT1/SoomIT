@@ -80,7 +80,7 @@ class RadiologyExaminationOrderSummarySerializer(serializers.ModelSerializer):
 
     def get_exam_type_label(self, obj):
         if is_pet_ct_tnm_order(obj.worklist_image_assets):
-            return "PET-CT / TNM"
+            return "PET-CT"
         return obj.get_exam_type_display()
 
 
@@ -234,6 +234,7 @@ class RadiologyWorklistSerializer(serializers.Serializer):
     case = serializers.SerializerMethodField()
     examination_order = serializers.SerializerMethodField()
     requesting_doctor = RadiologyDoctorSummarySerializer(read_only=True)
+    responsible_doctor = serializers.SerializerMethodField()
     scheduled_at = serializers.SerializerMethodField()
     image_asset_count = serializers.SerializerMethodField()
     latest_image_asset = serializers.SerializerMethodField()
@@ -249,6 +250,10 @@ class RadiologyWorklistSerializer(serializers.Serializer):
 
     def get_examination_order(self, obj):
         return RadiologyExaminationOrderSummarySerializer(obj).data
+
+    def get_responsible_doctor(self, obj):
+        doctor = obj.case.primary_doctor
+        return RadiologyDoctorSummarySerializer(doctor).data if doctor else None
 
     def get_scheduled_at(self, obj):
         appointments = obj.worklist_appointments

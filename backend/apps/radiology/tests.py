@@ -21,6 +21,7 @@ from apps.ai_results.models import (
 )
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
 from apps.clinical.models import ClinicalResult
+from apps.radiology.models import RadiologyReview
 from apps.patients.models import Appointment, Patient
 
 
@@ -136,11 +137,11 @@ class RadiologyWorklistAPITestCase(APITestCase):
         values.update(overrides)
         return CaseImageAsset.objects.create(**values)
 
-    def _create_analysis(self, asset, status_value):
+    def _create_analysis(self, asset, status_value, analysis_type="XRAY_SCREENING"):
         return AiAnalysis.objects.create(
             case=asset.case,
             source_image_asset=asset,
-            analysis_type="XRAY_SCREENING",
+            analysis_type=analysis_type,
             model_version=self.model_version,
             status=status_value,
         )
@@ -231,7 +232,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         self.assertEqual(
             staging_response.data[0]["examination_order"]["exam_type_label"],
-            "PET-CT / TNM",
+            "PET-CT",
         )
 
         ct_response = self.client.get(self.url, {"exam_type": "CT"})
@@ -281,6 +282,68 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(row["latest_ai_analysis"]["id"], str(analysis.id))
         self.assertEqual(row["workflow_status"], "AI_RUNNING")
 
+    def test_case_worklist_groups_multiple_orders_into_one_case_row(self):
+        url = reverse("radiology:case-worklist")
+        xray_response = self.client.get(url)
+        self.assertEqual(
+            xray_response.data[0]["current_exam"]["examination_order"]["exam_type_label"],
+            "X-ray",
+        )
+
+        self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        ct_response = self.client.get(url)
+        self.assertEqual(
+            ct_response.data[0]["current_exam"]["examination_order"]["exam_type_label"],
+            "CT",
+        )
+
+        pet_order = self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        pet_asset = self._create_asset(
+            pet_order,
+            uploaded_stage=Stage.STAGING,
+            image_type=CaseImageAsset.ImageType.CT,
+        )
+        self._create_analysis(
+            pet_asset,
+            AiAnalysis.Status.RUNNING,
+            analysis_type="TNM_STAGING",
+        )
+
+        response = self.client.get(url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        case_rows = [row for row in response.data if row["case"]["id"] == str(self.case.id)]
+        self.assertEqual(len(case_rows), 1)
+        self.assertEqual(case_rows[0]["exam_count"], 3)
+        self.assertEqual(
+            case_rows[0]["current_exam"]["examination_order"]["exam_type_label"],
+            "PET-CT",
+        )
+
+    def test_case_workflow_returns_only_actual_order_scoped_exams(self):
+        xray_asset = self._create_asset(self.order)
+        xray_analysis = self._create_analysis(xray_asset, AiAnalysis.Status.RUNNING)
+        ct_order = self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        ct_asset = self._create_asset(ct_order, uploaded_stage=Stage.CT)
+        ct_analysis = self._create_analysis(
+            ct_asset,
+            AiAnalysis.Status.RUNNING,
+            analysis_type="CT_NODULE",
+        )
+
+        response = self.client.get(
+            reverse("radiology:case-workflow", kwargs={"case_id": self.case.id})
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["exams"]), 2)
+        self.assertEqual(
+            [item["examination_order"]["id"] for item in response.data["exams"]],
+            [str(self.order.id), str(ct_order.id)],
+        )
+        self.assertEqual(response.data["exams"][0]["latest_ai_analysis"]["id"], str(xray_analysis.id))
+        self.assertEqual(response.data["exams"][1]["latest_ai_analysis"]["id"], str(ct_analysis.id))
+
     def test_workflow_status_uses_only_current_ai_result_review(self):
         asset = self._create_asset(self.order)
         analysis = self._create_analysis(asset, AiAnalysis.Status.SUCCEEDED)
@@ -294,15 +357,22 @@ class RadiologyWorklistAPITestCase(APITestCase):
             stage=Stage.XRAY,
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
         )
+        completed_response = self.client.get(self.url)
+        self.assertEqual(completed_response.data[0]["workflow_status"], "AI_COMPLETED")
+
+        review = RadiologyReview.objects.create(
+            case=self.case,
+            examination_order=self.order,
+            ai_analysis=analysis,
+            assigned_doctor=self.doctor,
+            submitted_by=self.user,
+            submitted_at=timezone.now(),
+        )
         pending_response = self.client.get(self.url)
         self.assertEqual(pending_response.data[0]["workflow_status"], "REVIEW_PENDING")
 
-        ClinicalResult.objects.create(
-            case=self.case,
-            stage=Stage.XRAY,
-            reviewed_ai_result=ai_result,
-            result_status=ClinicalResult.ResultStatus.CONFIRMED,
-        )
+        review.status = RadiologyReview.Status.COMPLETED
+        review.save(update_fields=["status", "updated_at"])
         completed_response = self.client.get(self.url)
         self.assertEqual(completed_response.data[0]["workflow_status"], "REVIEW_COMPLETED")
 
@@ -613,3 +683,94 @@ class RadiologyWorklistAPITestCase(APITestCase):
             reverse("radiology:analysis-result", kwargs={"analysis_id": analysis.id}),
         )
         self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+
+    def test_submit_succeeded_analysis_for_review_is_order_scoped_and_idempotent(self):
+        asset = self._create_asset(self.order)
+        analysis = self._create_analysis(asset, AiAnalysis.Status.SUCCEEDED)
+        AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        url = reverse(
+            "radiology:analysis-submit-for-review",
+            kwargs={"analysis_id": analysis.id},
+        )
+
+        first = self.client.post(url, {}, format="json")
+        second = self.client.post(url, {}, format="json")
+
+        self.assertEqual(first.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(first.data["submitted"])
+        self.assertEqual(second.status_code, status.HTTP_200_OK)
+        self.assertFalse(second.data["submitted"])
+        self.assertEqual(first.data["review_id"], second.data["review_id"])
+        review = RadiologyReview.objects.get(ai_analysis=analysis)
+        self.assertEqual(review.case, self.case)
+        self.assertEqual(review.examination_order, self.order)
+        self.assertEqual(review.assigned_doctor, self.case.primary_doctor)
+        self.assertEqual(review.submitted_by, self.user)
+        self.assertEqual(review.status, RadiologyReview.Status.PENDING)
+        self.assertFalse(
+            ClinicalResult.objects.filter(reviewed_ai_result__ai_analysis=analysis).exists()
+        )
+
+    def test_submit_rejects_unfinished_and_other_hospital_analysis(self):
+        asset = self._create_asset(self.order)
+        pending = self._create_analysis(asset, AiAnalysis.Status.PENDING)
+        pending_response = self.client.post(
+            reverse(
+                "radiology:analysis-submit-for-review",
+                kwargs={"analysis_id": pending.id},
+            ),
+            {},
+            format="json",
+        )
+        self.assertEqual(pending_response.status_code, status.HTTP_409_CONFLICT)
+
+        other_asset = self._create_asset(
+            self.other_order,
+            storage_uri="test://radiology/other-submit",
+        )
+        other_analysis = self._create_analysis(other_asset, AiAnalysis.Status.SUCCEEDED)
+        AiResult.objects.create(
+            ai_analysis=other_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        denied = self.client.post(
+            reverse(
+                "radiology:analysis-submit-for-review",
+                kwargs={"analysis_id": other_analysis.id},
+            ),
+            {},
+            format="json",
+        )
+        self.assertEqual(denied.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_submit_rejects_missing_primary_doctor_and_wrong_role(self):
+        asset = self._create_asset(self.order)
+        analysis = self._create_analysis(asset, AiAnalysis.Status.SUCCEEDED)
+        AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        url = reverse(
+            "radiology:analysis-submit-for-review",
+            kwargs={"analysis_id": analysis.id},
+        )
+
+        self.case.primary_doctor = None
+        self.case.save(update_fields=["primary_doctor", "updated_at"])
+        self.assertEqual(self.client.post(url, {}, format="json").status_code, status.HTTP_409_CONFLICT)
+
+        self.case.primary_doctor = self.doctor
+        self.case.save(update_fields=["primary_doctor", "updated_at"])
+        self._authenticate(
+            self.pathology_user,
+            self.hospital,
+            department_code="PATHOLOGY",
+            role="TECHNOLOGIST",
+        )
+        self.assertEqual(self.client.post(url, {}, format="json").status_code, status.HTTP_403_FORBIDDEN)
