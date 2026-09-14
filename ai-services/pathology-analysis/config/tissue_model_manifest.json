@@ -1,0 +1,10 @@
+{
+  "model_revision": "pathology-analysis-v1",
+  "model": "CLAM",
+  "task": "tissue_classification",
+  "file": "clam_model_full.pt",
+  "gcs_uri": "gs://soomit-bucket/models/pathology-analysis/tissue/clam_model_full.pt",
+  "sha256": "d24bc8dc6929778bf9faf31a67bec83e4b05a010b292085c7c9fb15271e9cf25",
+  "input": {"backbone": "MahmoodLab/UNI2-h", "shape": "[N, 1536]"},
+  "classes": ["Benign", "LUAD", "LUSC"]
+}

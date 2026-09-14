@@ -1,0 +1,11 @@
+{
+  "model_revision": "pathology-analysis-v1",
+  "model": "CLAM",
+  "task": "luad_gene_probability",
+  "scope": "LUAD_ONLY",
+  "file": "clam_mutation_model_full.pt",
+  "gcs_uri": "gs://soomit-bucket/models/pathology-analysis/gene/clam_mutation_model_full.pt",
+  "sha256": "683e833d1c2aef17a5b321183eb46265e77c0abd7c850f6723d05935ba80e372",
+  "input": {"backbone": "MahmoodLab/UNI2-h", "shape": "[N, 1536]"},
+  "genes": ["EGFR", "KRAS", "BRAF", "MET", "ERBB2", "TP53", "STK11", "KEAP1"]
+}

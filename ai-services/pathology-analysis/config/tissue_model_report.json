@@ -1,0 +1,37 @@
+{
+  "project": "CDSS 캡스톤 - 조직(병리) 파트 ② 악성·아형 통합모델",
+  "task": "Benign / LUAD / LUSC 3-class 분류",
+  "official_model": "clam_model_full.pt",
+  "comparison_baseline": "amd_mil_model_full.pt",
+  "models": {
+    "AMD-MIL": {
+      "file": "amd_mil_model_full.pt",
+      "architecture": "Agent token + Denoising gate MIL",
+      "hidden_dim": 512,
+      "input_dim": 1536,
+      "num_classes": 3,
+      "backbone": "UNI2-h (frozen)",
+      "training_data": "TCGA-LUAD(541) + TCGA-LUSC(512) + LC25000 Benign(500) = 1,553 WSI",
+      "test_accuracy": 0.9412,
+      "test_accuracy_fraction": "272/289",
+      "note": "비교모델(baseline). 성능은 CLAM보다 근소하게 낮음(94.12% vs 95.16%)"
+    },
+    "CLAM": {
+      "file": "clam_model_full.pt",
+      "architecture": "Gated Attention MIL",
+      "hidden_dim": 512,
+      "input_dim": 1536,
+      "num_classes": 3,
+      "backbone": "UNI2-h (frozen)",
+      "training_data": "TCGA-LUAD(541) + TCGA-LUSC(512) + LC25000 Benign(500) = 1,553 WSI",
+      "test_accuracy": 0.9516,
+      "test_accuracy_fraction": "275/289",
+      "note": "공식모델로 채택 — 두 모델 중 더 높은 성능(95.16%)을 기준으로 선정"
+    }
+  },
+  "known_limitations": [
+    "Benign은 두 모델 모두 완벽 분리, 오분류는 LUAD-LUSC 아형 구분에서만 발생",
+    "저장된 .pt 파일은 state_dict만 포함하며 학습 당시 성능 메타데이터는 미포함 - 본 문서가 공식 성능 기록임"
+  ],
+  "report_date": "2026-09-08"
+}

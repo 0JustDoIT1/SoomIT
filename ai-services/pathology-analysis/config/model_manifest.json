@@ -1,0 +1,17 @@
+{
+  "model_revision": "pathology-analysis-v1",
+  "embedding_backbone": "MahmoodLab/UNI2-h",
+  "tissue": {
+    "model": "CLAM",
+    "gcs_uri": "gs://soomit-bucket/models/pathology-analysis/tissue/clam_model_full.pt",
+    "sha256": "d24bc8dc6929778bf9faf31a67bec83e4b05a010b292085c7c9fb15271e9cf25",
+    "classes": ["Benign", "LUAD", "LUSC"]
+  },
+  "gene": {
+    "model": "CLAM",
+    "scope": "LUAD_ONLY",
+    "gcs_uri": "gs://soomit-bucket/models/pathology-analysis/gene/clam_mutation_model_full.pt",
+    "sha256": "683e833d1c2aef17a5b321183eb46265e77c0abd7c850f6723d05935ba80e372",
+    "genes": ["EGFR", "KRAS", "BRAF", "MET", "ERBB2", "TP53", "STK11", "KEAP1"]
+  }
+}
