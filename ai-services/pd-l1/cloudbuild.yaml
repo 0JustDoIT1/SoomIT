@@ -1,0 +1,38 @@
+steps:
+  - name: python:3.11-slim
+    entrypoint: bash
+    secretEnv: [HF_TOKEN]
+    args:
+      - -ceu
+      - |
+        pip install --no-cache-dir 'huggingface_hub==1.31.0'
+        python - <<'PY'
+        import os
+        from huggingface_hub import snapshot_download
+
+        snapshot_download(
+            repo_id="paige-ai/Virchow2",
+            token=os.environ["HF_TOKEN"],
+            cache_dir="/workspace/.hf-cache",
+        )
+        PY
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --tag
+      - gcr.io/$PROJECT_ID/pdl1-serve:final_model
+      - .
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - gcr.io/$PROJECT_ID/pdl1-serve:final_model
+
+images:
+  - gcr.io/$PROJECT_ID/pdl1-serve:final_model
+
+availableSecrets:
+  secretManager:
+    - versionName: projects/$PROJECT_ID/secrets/pdl1-hf-token/versions/latest
+      env: HF_TOKEN
+
+timeout: 3600s

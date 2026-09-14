@@ -1,10 +1,21 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
+from .pipeline import InvalidPipelineInput, PDL1Pipeline
 from .predictor import InvalidFeatureFile, PDL1Predictor
+from .storage import InvalidGCSUri
+
+
+class PredictionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    wsi_gcs_uri: str
+    annotation_base64: str
+    roi_layer: str = Field(pattern="^(Tumor|Tumor-JS)$")
+    main_index: str | int | None = None
+    pdl1_image_id: str | int | None = None
 
 
 class Probabilities(BaseModel):
@@ -26,6 +37,7 @@ class PredictionResponse(BaseModel):
     predicted_tps_range_label: str
     confidence: float = Field(ge=0, le=1)
     probabilities: Probabilities
+    preprocessing: dict
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -33,7 +45,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
-        app.state.predictor = PDL1Predictor(
+        predictor = PDL1Predictor(
             resolved.checkpoint_path,
             resolved.mil_baseline_path,
             model_gcs_uri=resolved.model_gcs_uri,
@@ -42,36 +54,38 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             device=resolved.device,
             max_patches=resolved.max_patches,
         )
+        app.state.pipeline = PDL1Pipeline(predictor, batch_size=resolved.batch_size)
         yield
 
     app = FastAPI(title="SoomIT PD-L1 inference", version="1.0.0", lifespan=lifespan)
 
     @app.get("/health")
     def health(request: Request) -> dict[str, str]:
-        predictor = request.app.state.predictor
+        pipeline = request.app.state.pipeline
+        predictor = pipeline.predictor
         return {
             "status": "ok",
             "model": "AMD-MIL",
             "model_revision": predictor.model_revision,
             "model_sha256": predictor.model_sha256,
             "device": str(predictor.device),
+            "input": "PD-L1 IHC WSI + HALO annotation",
+            "feature_extractor": "paige-ai/Virchow2",
         }
 
     @app.post("/v1/predict", response_model=PredictionResponse)
     def predict(
         request: Request,
-        content: bytes = Body(default=b"", media_type="application/octet-stream"),
+        payload: PredictionRequest,
     ) -> dict:
-        if not content:
-            raise HTTPException(status_code=400, detail="Request body is empty")
-        if len(content) > resolved.max_upload_bytes:
+        if len(payload.annotation_base64) > resolved.max_annotation_bytes * 2:
             raise HTTPException(
                 status_code=413,
-                detail="Feature file exceeds the configured size limit",
+                detail="Annotation exceeds the configured size limit",
             )
         try:
-            return request.app.state.predictor.predict_bytes(content)
-        except InvalidFeatureFile as exc:
+            return request.app.state.pipeline.predict(**payload.model_dump())
+        except (InvalidFeatureFile, InvalidPipelineInput, InvalidGCSUri, RuntimeError) as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     return app

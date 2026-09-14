@@ -11,8 +11,9 @@ class Settings:
     model_revision: str
     mil_baseline_path: Path
     device: str | None
-    max_upload_bytes: int
+    max_annotation_bytes: int
     max_patches: int
+    batch_size: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -23,6 +24,7 @@ class Settings:
             model_revision=os.getenv("PDL1_MODEL_REVISION", "final_model"),
             mil_baseline_path=Path(os.getenv("PDL1_MIL_BASELINE_PATH", "/app/mil_baseline")),
             device=os.getenv("PDL1_DEVICE") or None,
-            max_upload_bytes=int(os.getenv("PDL1_MAX_UPLOAD_BYTES", str(64 * 1024 * 1024))),
+            max_annotation_bytes=int(os.getenv("PDL1_MAX_ANNOTATION_BYTES", str(8 * 1024 * 1024))),
             max_patches=int(os.getenv("PDL1_MAX_PATCHES", "5000")),
+            batch_size=int(os.getenv("PDL1_VIRCHOW2_BATCH_SIZE", "64")),
         )

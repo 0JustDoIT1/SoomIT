@@ -5,7 +5,11 @@
     "input_dim": 2560,
     "num_classes": 3
   },
-  "tps_classes": {"0": "<1%", "1": "1-49%", "2": ">=50%"},
+  "tps_classes": {
+    "0": "<1%",
+    "1": "1-49%",
+    "2": ">=50%"
+  },
   "training": {
     "development_cases": 125,
     "final_test_cases": 32,
@@ -17,7 +21,7 @@
     "sampling": "inverse-frequency weighted sampling",
     "sampling_alpha": 1.0,
     "optimizer": "AdamW",
-    "weight_decay": 0.00001,
+    "weight_decay": 1e-05,
     "final_epochs": 5,
     "seed": 42
   },
@@ -33,6 +37,22 @@
     "macro_auc": 0.9567044213096844,
     "accuracy": 0.875,
     "balanced_accuracy": 0.8733211233211233,
-    "confusion_matrix": [[11, 1, 0], [1, 6, 0], [0, 2, 11]]
+    "confusion_matrix": [
+      [
+        11,
+        1,
+        0
+      ],
+      [
+        1,
+        6,
+        0
+      ],
+      [
+        0,
+        2,
+        11
+      ]
+    ]
   }
 }

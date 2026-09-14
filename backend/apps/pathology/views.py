@@ -307,8 +307,9 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
             context={"case": case},
         )
         serializer.is_valid(raise_exception=True)
-        feature_file = serializer.validated_data["feature_file"]
-        wsi_id = serializer.validated_data.get("wsi_id")
+        annotation_file = serializer.validated_data["annotation_file"]
+        roi_layer = serializer.validated_data["roi_layer"]
+        wsi_id = serializer.validated_data["wsi_id"]
         source_image_asset = None
         examination_order = None
         if wsi_id:
@@ -350,14 +351,22 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
             status=AiAnalysis.Status.RUNNING,
             started_at=timezone.now(),
             input_metadata={
-                "feature_filename": feature_file.name,
-                "feature_size_bytes": feature_file.size,
+                "annotation_filename": annotation_file.name,
+                "annotation_size_bytes": annotation_file.size,
+                "roi_layer": roi_layer,
+                "wsi_storage_uri": source_image_asset.storage_uri,
                 "wsi_id": str(wsi_id) if wsi_id else None,
             },
         )
 
         try:
-            prediction = request_pdl1_prediction(feature_file.read())
+            prediction = request_pdl1_prediction(
+                wsi_gcs_uri=source_image_asset.storage_uri,
+                annotation_content=annotation_file.read(),
+                roi_layer=roi_layer,
+                main_index=str(case.patient_id),
+                pdl1_image_id=str(wsi_id),
+            )
         except PDL1InferenceError as exc:
             analysis.status = AiAnalysis.Status.FAILED
             analysis.completed_at = timezone.now()

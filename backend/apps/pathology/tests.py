@@ -975,6 +975,8 @@ class PathologyReadAPITestCase(APITestCase):
         }
         self.pathology_order.pathology_test_type = ExaminationOrder.PathologyTestType.PDL1
         self.pathology_order.save(update_fields=["pathology_test_type", "updated_at"])
+        self.wsi.stain = WholeSlideImage.Stain.PDL1
+        self.wsi.save(update_fields=["stain", "updated_at"])
         self.authenticate_pathology_user()
         url = reverse(
             "pathology:case-pdl1-analysis-run",
@@ -984,12 +986,13 @@ class PathologyReadAPITestCase(APITestCase):
         response = self.client.post(
             url,
             {
-                "feature_file": SimpleUploadedFile(
-                    "slide-features.pt",
-                    b"serialized-features",
-                    content_type="application/octet-stream",
+                "annotation_file": SimpleUploadedFile(
+                    "slide.annotations",
+                    b"<Annotations />",
+                    content_type="application/xml",
                 ),
                 "wsi_id": str(self.wsi.id),
+                "roi_layer": "Tumor",
             },
             format="multipart",
         )
@@ -1007,7 +1010,13 @@ class PathologyReadAPITestCase(APITestCase):
         created_analysis = AiAnalysis.objects.get(id=response.data["id"])
         self.assertEqual(created_analysis.source_image_asset, self.image_asset)
         self.assertEqual(created_analysis.ai_result.pdl1_detail.predicted_class, 2)
-        mock_predict.assert_called_once_with(b"serialized-features")
+        mock_predict.assert_called_once_with(
+            wsi_gcs_uri="gcs://test-bucket/test-slide.svs",
+            annotation_content=b"<Annotations />",
+            roi_layer="Tumor",
+            main_index=str(self.case.patient_id),
+            pdl1_image_id=str(self.wsi.id),
+        )
 
     @patch("apps.pathology.views.request_pdl1_prediction")
     def test_pdl1_analysis_requires_wsi_from_pdl1_order(self, mock_predict):
@@ -1025,7 +1034,9 @@ class PathologyReadAPITestCase(APITestCase):
         response = self.client.post(
             url,
             {
-                "feature_file": SimpleUploadedFile("features.pt", b"features"),
+                "annotation_file": SimpleUploadedFile(
+                    "slide.annotations", b"<Annotations />"
+                ),
             },
             format="multipart",
         )
@@ -1034,7 +1045,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertIn("wsi_id", response.data)
         mock_predict.assert_not_called()
 
-    def test_pdl1_analysis_rejects_non_pt_file(self):
+    def test_pdl1_analysis_rejects_non_annotation_file(self):
         self.client.force_authenticate(user=self.user)
         url = reverse(
             "pathology:case-pdl1-analysis-run",
@@ -1043,12 +1054,15 @@ class PathologyReadAPITestCase(APITestCase):
 
         response = self.client.post(
             url,
-            {"feature_file": SimpleUploadedFile("features.txt", b"features")},
+            {
+                "annotation_file": SimpleUploadedFile("features.txt", b"annotation"),
+                "wsi_id": str(self.wsi.id),
+            },
             format="multipart",
         )
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("feature_file", response.data)
+        self.assertIn("annotation_file", response.data)
 
     def test_unauthenticated_user_cannot_access_case_diagnoses(self):
         url = reverse(

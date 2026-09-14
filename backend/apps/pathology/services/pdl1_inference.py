@@ -1,3 +1,4 @@
+import base64
 import json
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -69,13 +70,28 @@ def validate_prediction(payload):
     }
 
 
-def request_pdl1_prediction(feature_content):
-    headers = {"Content-Type": "application/octet-stream"}
+def request_pdl1_prediction(
+    *,
+    wsi_gcs_uri,
+    annotation_content,
+    roi_layer,
+    main_index=None,
+    pdl1_image_id=None,
+):
+    headers = {"Content-Type": "application/json"}
     if settings.PDL1_INFERENCE_SERVICE_USE_ID_TOKEN:
         headers["Authorization"] = f"Bearer {_fetch_id_token()}"
     request = Request(
         f"{settings.PDL1_INFERENCE_SERVICE_URL}/v1/predict",
-        data=feature_content,
+        data=json.dumps(
+            {
+                "wsi_gcs_uri": wsi_gcs_uri,
+                "annotation_base64": base64.b64encode(annotation_content).decode("ascii"),
+                "roi_layer": roi_layer,
+                "main_index": main_index,
+                "pdl1_image_id": pdl1_image_id,
+            }
+        ).encode("utf-8"),
         headers=headers,
         method="POST",
     )

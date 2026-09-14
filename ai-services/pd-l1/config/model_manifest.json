@@ -19,18 +19,18 @@
     }
   ],
   "image": "gcr.io/soomit-506909/pdl1-serve:final_model",
-  "image_digest": "sha256:5f073034c5cbd5b985c1d6d10e63fbbd4ef07f8dc9621884a860c421aa394dff",
+  "image_digest": "sha256:1ae7267e3ee2a199dc22f11e4b1649e14ecf09de1dc02a1acd7828e9cc2afa44",
   "input": {
-    "media_type": "application/octet-stream",
-    "format": "safe PyTorch dictionary",
-    "required_tensor": "features",
-    "shape": "[N, 2560]",
+    "media_type": "application/json",
+    "wsi": "gs:// or gcs:// PD-L1 IHC .svs URI",
+    "annotation": "base64 HALO .annotations",
+    "roi_layer": ["Tumor", "Tumor-JS"],
     "patch_count": "1-5000",
-    "feature_extractor": "Virchow2"
+    "feature_extractor": "paige-ai/Virchow2"
   },
   "cloud_run": {
     "service": "pdl1-serve",
-    "revision": "pdl1-serve-00001-9md",
+    "revision": "pdl1-serve-00003-hdv",
     "region": "asia-southeast1",
     "url": "https://pdl1-serve-461462459694.asia-southeast1.run.app",
     "cold_start_model_load_verified": true,

@@ -90,6 +90,27 @@ class PDL1Predictor:
         if not features.is_floating_point() or not torch.isfinite(features).all().item():
             raise InvalidFeatureFile("features must be a finite floating-point tensor")
 
+        return self.predict_features(
+            features,
+            main_index=data.get("main_index"),
+            pdl1_image_id=data.get("pdl1_image_id"),
+        )
+
+    def predict_features(
+        self,
+        features: torch.Tensor,
+        *,
+        main_index: str | int | None = None,
+        pdl1_image_id: str | int | None = None,
+    ) -> dict[str, Any]:
+        if features.ndim != 2 or features.shape[1] != 2560:
+            raise InvalidFeatureFile("features shape must be [N, 2560]")
+        patch_count = features.shape[0]
+        if patch_count < 1 or patch_count > self.max_patches:
+            raise InvalidFeatureFile(f"patch count must be between 1 and {self.max_patches}")
+        if not features.is_floating_point() or not torch.isfinite(features).all().item():
+            raise InvalidFeatureFile("features must be a finite floating-point tensor")
+
         batch = features.float().unsqueeze(0).to(self.device)
         with self._lock, torch.inference_mode():
             output = self.model(batch)
@@ -107,8 +128,8 @@ class PDL1Predictor:
         return {
             "model_revision": self.model_revision,
             "model_sha256": self.model_sha256,
-            "main_index": data.get("main_index"),
-            "pdl1_image_id": data.get("pdl1_image_id"),
+            "main_index": main_index,
+            "pdl1_image_id": pdl1_image_id,
             "patch_count": patch_count,
             "predicted_class": predicted_class,
             "predicted_tps_range": range_code,
