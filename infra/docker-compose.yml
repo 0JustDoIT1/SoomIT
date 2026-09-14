@@ -55,8 +55,12 @@ services:
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
       ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
       ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
+      XRAY_GCS_BUCKET: ${XRAY_GCS_BUCKET:?Set XRAY_GCS_BUCKET}
+      XRAY_SERVICE_URL: ${XRAY_SERVICE_URL:?Set XRAY_SERVICE_URL}
+      XRAY_SERVICE_TIMEOUT_SECONDS: ${XRAY_SERVICE_TIMEOUT_SECONDS:-300}
+      XRAY_SERVICE_USE_ID_TOKEN: ${XRAY_SERVICE_USE_ID_TOKEN:-1}
     volumes:
-      - ./gcs-key.json:/app/gcs-key.json:ro
+      - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command: ['celery', '-A', 'config', 'worker', '-l', 'info']
 
   celery_beat:

@@ -120,6 +120,14 @@ PDL1_ANNOTATION_MAX_UPLOAD_BYTES = int(
     os.environ.get("PDL1_ANNOTATION_MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)),
 )
 
+# X-ray Cloud Run inference is optional until the service is configured.
+XRAY_SERVICE_URL = os.environ.get("XRAY_SERVICE_URL", "").rstrip("/")
+XRAY_SERVICE_TIMEOUT_SECONDS = float(
+    os.environ.get("XRAY_SERVICE_TIMEOUT_SECONDS", "300"),
+)
+XRAY_SERVICE_USE_ID_TOKEN = os.environ.get("XRAY_SERVICE_USE_ID_TOKEN", "0") == "1"
+XRAY_GCS_BUCKET = os.environ.get("XRAY_GCS_BUCKET", "")
+
 CT_ANALYSIS_PHASE1_SERVICE_URL = os.environ.get(
     "CT_ANALYSIS_PHASE1_SERVICE_URL", ""
 ).rstrip("/")

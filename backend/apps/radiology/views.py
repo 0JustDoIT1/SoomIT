@@ -21,6 +21,7 @@ from apps.clinical.models import ClinicalResult
 from apps.patients.models import Appointment
 
 from .models import RadiologyReview
+from .tasks import run_xray_analysis
 from .services.workflow import is_pet_ct_tnm_order
 from .serializers import (
     RadiologyAiAnalysisDetailSerializer,
@@ -539,6 +540,10 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
             model_version=model_version,
             status=AiAnalysis.Status.PENDING,
         )
+        if analysis_type == AnalysisType.XRAY_SCREENING:
+            transaction.on_commit(
+                lambda analysis_id=str(analysis.id): run_xray_analysis.delay(analysis_id)
+            )
         return Response(
             RadiologyAiAnalysisDetailSerializer(analysis).data,
             status=status.HTTP_201_CREATED,

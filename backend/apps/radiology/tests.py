@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest.mock import patch
 
 from django.db import connection
 from django.test import override_settings
@@ -524,6 +525,59 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(analysis.model_version, latest_model)
         self.assertEqual(analysis.source_image_asset, asset)
         self.assertEqual(analysis.status, AiAnalysis.Status.PENDING)
+
+    @patch("apps.radiology.views.run_xray_analysis.delay")
+    def test_start_xray_analysis_enqueues_once_after_commit(self, delay):
+        asset = self._create_asset(self.order)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
+                {},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        analysis = AiAnalysis.objects.get(id=response.data["analysis_id"])
+        self.assertEqual(analysis.source_image_asset, asset)
+        delay.assert_called_once_with(str(analysis.id))
+
+    @patch("apps.radiology.views.run_xray_analysis.delay")
+    def test_ct_and_duplicate_analysis_do_not_enqueue_xray_task(self, delay):
+        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.save(update_fields=["exam_type", "updated_at"])
+        ModelVersion.objects.create(
+            model_name="ct-no-enqueue-model",
+            version="1.0",
+            analysis_type="CT_NODULE",
+        )
+        self._create_asset(
+            self.order,
+            image_type=CaseImageAsset.ImageType.CT,
+            uploaded_stage=Stage.CT,
+        )
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
+                {},
+                format="json",
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        delay.assert_not_called()
+
+        duplicate_order = self._create_order(self.case)
+        asset = self._create_asset(
+            duplicate_order,
+            storage_uri="test://radiology/xray-duplicate",
+        )
+        self._create_analysis(asset, AiAnalysis.Status.PENDING)
+        with self.captureOnCommitCallbacks(execute=True):
+            duplicate = self.client.post(
+                reverse("radiology:order-analysis-create", kwargs={"order_id": duplicate_order.id}),
+                {},
+                format="json",
+            )
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        delay.assert_not_called()
 
     def test_start_ct_and_tnm_analyses_choose_order_meaning(self):
         self.order.exam_type = ExaminationOrder.ExamType.CT
