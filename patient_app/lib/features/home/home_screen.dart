@@ -14,6 +14,7 @@ import 'models/patient_notification.dart';
 import 'services/notification_service.dart';
 import '../notification/notification_list_screen.dart';
 import '../symptom/symptom_screen.dart';
+import '../questionnaire/questionnaire_screen.dart';
 
 import '../medication/medication_screen.dart';
 
@@ -140,6 +141,23 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ],
                 ),
+
+const SizedBox(height: 12),
+
+_buildHealthActionCard(
+  icon: Icons.assignment_outlined,
+  title: '진료 전 문진',
+  subtitle: '외래 진료 전 문진표 작성',
+  onTap: () {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) =>
+            const QuestionnaireScreen(),
+      ),
+    );
+  },
+),                
 
 const SizedBox(height: 24),
 

@@ -1,5 +1,6 @@
 import hashlib
 from django.utils import timezone
+from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
@@ -16,7 +17,7 @@ from rest_framework.generics import (
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.accounts.models import Hospital
+from apps.accounts.models import Hospital, User
 from apps.cases.models import LungCancerCase
 from apps.notifications.models import PatientNotificationSetting
 
@@ -49,6 +50,10 @@ from .serializers import (
     MedicationScheduleSerializer,
     MedicationIntakeTakenSerializer,
     SymptomLogSerializer,
+    PatientAppointmentRequestSerializer,
+    PatientAppointmentCancelRequestSerializer,
+    PatientAppointmentChangeRequestSerializer,
+    PatientQuestionnaireUpdateSerializer,
 )
 
 # 원무과 - 환자 목록 조회 / 신규 환자 등록
@@ -226,6 +231,92 @@ class AppointmentListAPIView(ListAPIView):
                 "examination_order",
             )
             .order_by("-scheduled_at")
+        )
+        
+# 환자 예약 요청 POST      
+@extend_schema(
+    tags=["환자앱-예약"],
+    summary="환자 예약 요청",
+    description="환자가 외래 진료 예약을 요청합니다. 생성 시 REQUESTED 상태로 저장됩니다.",
+    request=PatientAppointmentRequestSerializer,
+    responses=AppointmentSerializer,
+)
+class PatientAppointmentRequestAPIView(APIView):
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = PatientAppointmentRequestSerializer(
+            data=request.data
+        )
+        serializer.is_valid(raise_exception=True)
+
+        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return Response(
+                {"detail": "환자 정보를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        patient_account = (
+            PatientAccount.objects
+            .filter(
+                patient=patient,
+                link_status="LINKED",
+            )
+            .first()
+        )
+
+        if patient_account is None:
+            return Response(
+                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        doctor = None
+        doctor_id = serializer.validated_data.get("doctor_id")
+
+        if doctor_id is not None:
+            try:
+                doctor = User.objects.get(id=doctor_id)
+            except User.DoesNotExist:
+                return Response(
+                    {"doctor_id": "해당 의료진을 찾을 수 없습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        scheduled_at = serializer.validated_data["scheduled_at"]
+
+        # 동일 환자의 동일 시간 중복 예약 방지
+        duplicate_exists = Appointment.objects.filter(
+            patient=patient,
+            scheduled_at=scheduled_at,
+            appointment_status__in=[
+                Appointment.AppointmentStatus.REQUESTED,
+                Appointment.AppointmentStatus.CONFIRMED,
+            ],
+        ).exists()
+
+        if duplicate_exists:
+            return Response(
+                {"detail": "같은 시간에 이미 예약이 존재합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appointment = Appointment.objects.create(
+            patient=patient,
+            doctor=doctor,
+            scheduled_at=scheduled_at,
+            appointment_status=Appointment.AppointmentStatus.REQUESTED,
+            visit_status=Appointment.VisitStatus.SCHEDULED,
+            created_by_type=Appointment.CreatedByType.PATIENT,
+            created_by_patient_account=patient_account,
+        )
+
+        return Response(
+            AppointmentSerializer(appointment).data,
+            status=status.HTTP_201_CREATED,
         )
         
 # ─────────────────────────────────────────────
@@ -523,6 +614,74 @@ class PatientQuestionnaireListAPIView(ListCreateAPIView):
         context["patient"] = patient
 
         return context
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(
+            data=request.data
+        )
+    
+        serializer.is_valid(
+            raise_exception=True
+        )
+    
+        questionnaire = serializer.save()
+    
+        response_serializer = (
+            PatientQuestionnaireSerializer(
+                questionnaire
+            )
+        )
+    
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
+        )
+
+@extend_schema(tags=["환자앱-문진표"])
+class PatientQuestionnaireDetailAPIView(
+    RetrieveUpdateAPIView
+):
+    queryset = PatientQuestionnaire.objects.all()
+    lookup_field = "id"
+
+    def get_serializer_class(self):
+        if self.request.method in ["PATCH", "PUT"]:
+            return PatientQuestionnaireUpdateSerializer
+
+        return PatientQuestionnaireSerializer
+
+    def get_queryset(self):
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return PatientQuestionnaire.objects.none()
+
+        return PatientQuestionnaire.objects.filter(
+            patient=patient,
+        )
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+
+        instance = self.get_object()
+
+        serializer = PatientQuestionnaireUpdateSerializer(
+            instance,
+            data=request.data,
+            partial=partial,
+        )
+
+        serializer.is_valid(raise_exception=True)
+        questionnaire = serializer.save()
+
+        response_serializer = PatientQuestionnaireSerializer(
+            questionnaire
+        )
+
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_200_OK,
+        )
     
 @extend_schema(
     tags=["환자앱-복약"],
@@ -715,4 +874,266 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
             patient=patient,
             case=case,
             risk_level=risk_level,
+        )
+        
+@extend_schema(
+    tags=["환자앱-예약"],
+    summary="환자 예약 취소 요청",
+    description="환자가 예약 취소를 요청합니다. 즉시 취소되지는 않으며, 원무과 확인 후 최종 취소됩니다.",
+    request=PatientAppointmentCancelRequestSerializer,
+    responses=AppointmentSerializer,
+)
+class PatientAppointmentCancelRequestAPIView(APIView):
+
+    @transaction.atomic
+    def post(self, request, appointment_id):
+        serializer = PatientAppointmentCancelRequestSerializer(
+            data=request.data
+        )
+        serializer.is_valid(raise_exception=True)
+
+        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return Response(
+                {"detail": "환자 정보를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        patient_account = (
+            PatientAccount.objects
+            .filter(
+                patient=patient,
+                link_status="LINKED",
+            )
+            .first()
+        )
+
+        if patient_account is None:
+            return Response(
+                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            appointment = Appointment.objects.get(
+                id=appointment_id,
+                patient=patient,
+            )
+        except Appointment.DoesNotExist:
+            return Response(
+                {"detail": "예약 정보를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if (
+            appointment.appointment_status
+            == Appointment.AppointmentStatus.CANCELLED
+        ):
+            return Response(
+                {"detail": "이미 취소된 예약입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            appointment.cancellation_requested_at is not None
+            or appointment.cancellation_requested_by_patient_account_id
+            is not None
+        ):
+            return Response(
+                {"detail": "이미 취소 요청된 예약입니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        appointment.cancellation_requested_by_patient_account = (
+            patient_account
+        )
+        appointment.cancellation_requested_at = timezone.now()
+
+        appointment.save(
+            update_fields=[
+                "cancellation_requested_by_patient_account",
+                "cancellation_requested_at",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            AppointmentSerializer(appointment).data,
+            status=status.HTTP_200_OK,
+        )
+        
+
+@extend_schema(
+    tags=["환자앱-예약"],
+    summary="환자 예약 변경 요청",
+    description=(
+        "환자가 기존 예약의 변경을 요청합니다. "
+        "새 예약은 REQUESTED 상태로 생성되고, "
+        "기존 예약은 취소 요청 상태로 기록됩니다."
+    ),
+    request=PatientAppointmentChangeRequestSerializer,
+    responses=AppointmentSerializer,
+)
+class PatientAppointmentChangeRequestAPIView(APIView):
+
+    @transaction.atomic
+    def post(self, request, appointment_id):
+        serializer = PatientAppointmentChangeRequestSerializer(
+            data=request.data
+        )
+        serializer.is_valid(raise_exception=True)
+
+        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return Response(
+                {"detail": "환자 정보를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        patient_account = (
+            PatientAccount.objects
+            .filter(
+                patient=patient,
+                link_status="LINKED",
+            )
+            .first()
+        )
+
+        if patient_account is None:
+            return Response(
+                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        try:
+            old_appointment = (
+                Appointment.objects
+                .select_for_update()
+                .get(
+                    id=appointment_id,
+                    patient=patient,
+                )
+            )
+        except Appointment.DoesNotExist:
+            return Response(
+                {"detail": "기존 예약 정보를 찾을 수 없습니다."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if (
+            old_appointment.appointment_status
+            == Appointment.AppointmentStatus.CANCELLED
+        ):
+            return Response(
+                {"detail": "이미 취소된 예약은 변경할 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if (
+            old_appointment.cancellation_requested_at is not None
+            or old_appointment.cancellation_requested_by_patient_account is not None
+        ):
+            return Response(
+                {"detail": "이미 취소 요청된 예약은 변경할 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        
+        if (
+            old_appointment.visit_status
+            != Appointment.VisitStatus.SCHEDULED
+        ):
+            return Response(
+                {"detail": "방문 예정 상태의 예약만 변경할 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        new_scheduled_at = serializer.validated_data[
+            "new_scheduled_at"
+        ]
+        
+        if new_scheduled_at == old_appointment.scheduled_at:
+            return Response(
+                {"detail": "기존 예약 시간과 동일한 시간으로는 변경할 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        doctor = old_appointment.doctor
+
+        doctor_id = serializer.validated_data.get("doctor_id")
+        if doctor_id is not None:
+            try:
+                doctor = User.objects.get(
+                    id=doctor_id,
+                    department_role__role="DOCTOR",
+                )
+            except User.DoesNotExist:
+                return Response(
+                    {
+                        "doctor_id":
+                            "해당 의사를 찾을 수 없습니다."
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+                
+        if doctor is not None:
+            doctor_duplicate_exists = Appointment.objects.filter(
+                doctor=doctor,
+                scheduled_at=new_scheduled_at,
+                appointment_status__in=[
+                    Appointment.AppointmentStatus.REQUESTED,
+                    Appointment.AppointmentStatus.CONFIRMED,
+                ],
+            ).exists()
+
+            if doctor_duplicate_exists:
+                return Response(
+                    {"detail": "해당 의료진의 같은 시간에 이미 예약이 존재합니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        duplicate_exists = Appointment.objects.filter(
+            patient=patient,
+            scheduled_at=new_scheduled_at,
+            appointment_status__in=[
+                Appointment.AppointmentStatus.REQUESTED,
+                Appointment.AppointmentStatus.CONFIRMED,
+            ],
+        ).exists()
+
+        if duplicate_exists:
+            return Response(
+                {"detail": "같은 시간에 이미 예약이 존재합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        new_appointment = Appointment.objects.create(
+            patient=patient,
+            doctor=doctor,
+            scheduled_at=new_scheduled_at,
+            appointment_status=Appointment.AppointmentStatus.REQUESTED,
+            visit_status=Appointment.VisitStatus.SCHEDULED,
+            created_by_type=Appointment.CreatedByType.PATIENT,
+            created_by_patient_account=patient_account,
+        )
+
+        old_appointment.cancellation_requested_by_patient_account = (
+            patient_account
+        )
+        old_appointment.cancellation_requested_at = timezone.now()
+
+        old_appointment.save(
+            update_fields=[
+                "cancellation_requested_by_patient_account",
+                "cancellation_requested_at",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            AppointmentSerializer(new_appointment).data,
+            status=status.HTTP_201_CREATED,
         )

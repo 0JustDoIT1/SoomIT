@@ -18,6 +18,8 @@ class Appointment {
   final String? examType;
   final String displayType;
 
+  final DateTime? cancellationRequestedAt;
+
   const Appointment({
     required this.id,
     required this.scheduledAt,
@@ -31,6 +33,7 @@ class Appointment {
     required this.hospitalName,
     required this.examType,
     required this.displayType,
+    required this.cancellationRequestedAt,
   });
 
   factory Appointment.fromJson(Map<String, dynamic> json) {
@@ -39,7 +42,7 @@ class Appointment {
 
       scheduledAt: DateTime.parse(
         json['scheduled_at'] as String,
-      ),
+      ).toLocal(),
 
       appointmentStatus:
           json['appointment_status'] as String,
@@ -70,6 +73,13 @@ class Appointment {
 
       displayType:
           json['display_type'] as String,
+
+      cancellationRequestedAt:
+          json['cancellation_requested_at'] != null
+              ? DateTime.parse(
+                  json['cancellation_requested_at'] as String,
+                ).toLocal()
+              : null,
     );
   }
 }

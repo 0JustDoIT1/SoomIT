@@ -5,6 +5,7 @@ from django.urls import path
 
 from .views import (
     AppointmentListAPIView,
+    PatientAppointmentRequestAPIView,
     ExaminationScheduleListAPIView,
     PatientDetailAPIView,
     PatientListAPIView,
@@ -14,9 +15,12 @@ from .views import (
     PatientNotificationSettingListAPIView,
     PatientNotificationSettingUpdateAPIView,
     PatientQuestionnaireListAPIView,
+    PatientQuestionnaireDetailAPIView, 
     PatientMedicationScheduleListAPIView,
     PatientMedicationIntakeTakenAPIView,
     PatientSymptomLogListCreateAPIView,
+    PatientAppointmentCancelRequestAPIView,
+    PatientAppointmentChangeRequestAPIView,
     )
 
 
@@ -27,6 +31,25 @@ urlpatterns = [
     path(
         "appointments/", AppointmentListAPIView.as_view(), name="appointment-list",),
 
+    # Flutter 환자 앱 - 예약 요청
+    path(
+        "appointments/request/",
+        PatientAppointmentRequestAPIView.as_view(),
+        name="patient-appointment-request",
+    ),
+    
+    path(
+        "appointments/<uuid:appointment_id>/cancel-request/",
+        PatientAppointmentCancelRequestAPIView.as_view(),
+        name="patient-appointment-cancel-request",
+    ),
+    
+    path(
+        "appointments/<uuid:appointment_id>/change-request/",
+        PatientAppointmentChangeRequestAPIView.as_view(),
+        name="patient-appointment-change-request",
+    ),
+    
     #  검사 일정
     path(
         "exam-schedules/",
@@ -74,6 +97,12 @@ urlpatterns = [
         "questionnaires/",
         PatientQuestionnaireListAPIView.as_view(),
         name="patient-questionnaire-list",
+    ),
+    
+    path(
+        "questionnaires/<uuid:id>/",
+        PatientQuestionnaireDetailAPIView.as_view(),
+        name="patient-questionnaire-detail",
     ),
     
     # 복약 일정

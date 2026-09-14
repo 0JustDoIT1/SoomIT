@@ -61,6 +61,9 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
             "exam_type",
             "display_type",
+            
+            "cancellation_requested_at",
+            "cancellation_requested_by_patient_account",
         ]
 
     # 담당 의사 이름
@@ -107,6 +110,55 @@ class AppointmentSerializer(serializers.ModelSerializer):
         # examination_order가 없으면 일반 외래 예약
         return "외래 진료"
     
+    
+# ─────────────────────────────────────────────
+# 환자앱 예약
+# ─────────────────────────────────────────────
+
+class PatientAppointmentRequestSerializer(serializers.Serializer):
+    doctor_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+    )
+    scheduled_at = serializers.DateTimeField()
+
+    def validate_scheduled_at(self, value):
+        from django.utils import timezone
+
+        if value <= timezone.now():
+            raise serializers.ValidationError(
+                "예약 시간은 현재 시간 이후여야 합니다."
+            )
+
+        return value
+ 
+class PatientAppointmentChangeRequestSerializer(serializers.Serializer):
+    doctor_id = serializers.UUIDField(
+        required=False,
+        allow_null=True,
+    )
+
+    new_scheduled_at = serializers.DateTimeField()
+
+    def validate_new_scheduled_at(self, value):
+        from django.utils import timezone
+
+        if value <= timezone.now():
+            raise serializers.ValidationError(
+                "변경할 예약 시간은 현재 시간 이후여야 합니다."
+            )
+
+        return value
+
+class PatientAppointmentCancelRequestSerializer(serializers.Serializer):
+    cancellation_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        max_length=1000,
+    )
+
+
    
 # ─────────────────────────────────────────────    
 # 환자 검사 일정 조회
@@ -584,26 +636,96 @@ class LabResultSerializer(serializers.ModelSerializer):
 # 문진표 작성 / 제출
 # ─────────────────────────────────────────────
 class PatientQuestionnaireCreateSerializer(serializers.ModelSerializer):
+    is_completed = serializers.BooleanField(
+        required=False,
+        default=False,
+    )
+
     class Meta:
         model = PatientQuestionnaire
         fields = [
+            "id",
             "questionnaire_type",
             "questionnaire_version",
             "responses",
+            "is_completed",
+        ]
+
+        read_only_fields = [
+            "id",
         ]
 
     def create(self, validated_data):
         patient = self.context["patient"]
 
+        is_completed = validated_data.get(
+            "is_completed",
+            False,
+        )
+
         return PatientQuestionnaire.objects.create(
             patient=patient,
-            questionnaire_type=validated_data["questionnaire_type"],
-            questionnaire_version=validated_data["questionnaire_version"],
-            responses=validated_data.get("responses", {}),
-            is_completed=True,
-            completed_at=timezone.now(),
+            questionnaire_type=validated_data[
+                "questionnaire_type"
+            ],
+            questionnaire_version=validated_data[
+                "questionnaire_version"
+            ],
+            responses=validated_data.get(
+                "responses",
+                {},
+            ),
+            is_completed=is_completed,
+            completed_at=(
+                timezone.now()
+                if is_completed
+                else None
+            ),
         )
         
+class PatientQuestionnaireUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientQuestionnaire
+        fields = [
+            "responses",
+            "is_completed",
+        ]
+
+    def update(self, instance, validated_data):
+        if instance.is_completed:
+            raise serializers.ValidationError(
+                {
+                    "detail": "이미 제출 완료된 문진표는 수정할 수 없습니다."
+                }
+            )
+    
+        instance.responses = validated_data.get(
+            "responses",
+            instance.responses,
+        )
+
+        is_completed = validated_data.get(
+            "is_completed",
+            instance.is_completed,
+        )
+
+        instance.is_completed = is_completed
+        instance.completed_at = (
+            timezone.now()
+            if is_completed
+            else None
+        )
+
+        instance.save(
+            update_fields=[
+                "responses",
+                "is_completed",
+                "completed_at",
+                "updated_at",
+            ]
+        )
+
+        return instance
         
 class MedicationScheduleItemSerializer(serializers.ModelSerializer):
     drug_name = serializers.CharField(
