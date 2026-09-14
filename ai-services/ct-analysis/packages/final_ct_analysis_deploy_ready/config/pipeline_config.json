@@ -1,0 +1,93 @@
+{
+  "service_name": "ct_analysis",
+  "version": "1.0.0",
+
+  "phases": {
+    "phase1": {
+      "name": "CT_ANALYSIS_PHASE_1",
+      "steps": [
+        "segmentation",
+        "quantification",
+        "morphology",
+        "texture",
+        "malignancy",
+        "thoracic_anatomy_segmentation",
+        "canonical_anatomy",
+        "t_input"
+      ],
+      "output_status": "READY_FOR_T_MODEL"
+    },
+
+    "phase2": {
+      "name": "CT_ANALYSIS_PHASE_2",
+      "requires": [
+        "original_ct",
+        "t_primary_tumor_mask",
+        "phase1_anatomy",
+        "patient_age",
+        "patient_gender",
+        "histology"
+      ],
+      "steps": [
+        "tumor_feature_extraction",
+        "anatomy_feature_extraction",
+        "n_payload_build"
+      ],
+      "n_feature_count": 34,
+      "output_status": "READY_FOR_N_MODEL"
+    }
+  },
+
+  "nodule_policy": {
+    "connectivity": 26,
+    "minimum_equivalent_diameter_mm": 3.0,
+    "ordering": "largest_volume_first",
+    "id_format": "N###"
+  },
+
+  "morphology_texture_preprocessing": {
+    "isotropic_spacing": "minimum_original_spacing",
+    "z_padding_voxels_each_side": 32,
+    "padding_hu": -2000.0,
+    "percentile_clipping": [
+      0.1,
+      99.8
+    ],
+    "normalization": "volume_zscore_after_percentile_clipping",
+    "patch_shape": [
+      1,
+      64,
+      64,
+      64
+    ],
+    "crop_policy": "deterministic_nodule_centroid"
+  },
+
+  "malignancy_preprocessing": {
+    "physical_crop_mm": 50.0,
+    "output_shape": [
+      1,
+      64,
+      64,
+      64
+    ],
+    "hu_clip": [
+      -1000.0,
+      400.0
+    ],
+    "normalization": "linear_0_1"
+  },
+
+  "t_input": {
+    "crop_policy": "lung_union_bbox_plus_physical_margin",
+    "margin_mm": 50.0,
+    "normalization": "deferred_to_nnunet"
+  },
+
+  "runtime": {
+    "main_environment": "vista3d",
+    "anatomy_environment": "totalseg",
+    "anatomy_model": "TotalSegmentator 2.18.0"
+  }
+}
+

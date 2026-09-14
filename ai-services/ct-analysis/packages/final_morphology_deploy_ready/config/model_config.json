@@ -1,0 +1,31 @@
+{
+  "model_name": "morphology_med3d_final",
+  "architecture": "MedicalNet 3D ResNet18",
+  "structure": "shared_backbone_dual_head",
+  "input_channels": 2,
+  "input_channel_order": [
+    "ct",
+    "nodule_mask"
+  ],
+  "input_shape": [
+    1,
+    2,
+    64,
+    64,
+    64
+  ],
+  "outputs": [
+    "spiculation",
+    "lobulation"
+  ],
+  "output_activation": "sigmoid",
+  "training_experiment": "exp07_taskweighted_lob1p25",
+  "best_epoch": 14,
+  "loss": "BCEWithLogitsLoss",
+  "class_imbalance": "pos_weight",
+  "task_weights": {
+    "spiculation": 1.0,
+    "lobulation": 1.25
+  },
+  "fine_tuning": "freeze_to_unfreeze"
+}

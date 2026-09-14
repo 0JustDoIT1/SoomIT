@@ -1,0 +1,15 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - Dockerfile.phase1
+      - --tag
+      - gcr.io/$PROJECT_ID/ct-analysis-phase1-serve:latest
+      - .
+images:
+  - gcr.io/$PROJECT_ID/ct-analysis-phase1-serve:latest
+timeout: 3600s
+options:
+  machineType: E2_HIGHCPU_32
+

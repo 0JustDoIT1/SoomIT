@@ -1,0 +1,53 @@
+{
+  "task": "lung_nodule_quantification",
+  "version": "quantification-v1.0.0",
+  "qa_case": "LIDC_0001",
+  "qa_status": "PASS",
+  "artifacts": [
+    {
+      "path": "VERSION",
+      "sha256": "85b5e5d00ccf883e7b4b7d2bc2a2ed09d530ea8d048ffa1ddbffb8ec580ce6d2",
+      "size_bytes": 22
+    },
+    {
+      "path": "code/quantify_nodules.py",
+      "sha256": "e7089a33f8edafeefdf4ce1397523f5477d0c319f61bbea9d0578d9c32672a88",
+      "size_bytes": 9312
+    },
+    {
+      "path": "config/quantification_config.json",
+      "sha256": "1e7deb3a9c8e7508c4025276f50dce32348d39e665360e8a3550fcad67959221",
+      "size_bytes": 722
+    },
+    {
+      "path": "docs/OUTPUT_SCHEMA.md",
+      "sha256": "f153e4f6fad183c269bc06c1c07c782cd8251eb4e9d4923fe019c4bf390d1916",
+      "size_bytes": 705
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "eabff6f87cdb5f6c5d5af34605c56f9e6bdfea40a31752ad8ecf27839938d44c",
+      "size_bytes": 1395
+    },
+    {
+      "path": "qa/nodule_quantification.csv",
+      "sha256": "23f307db056a8d916fafb229409f1f9dee5d9d4c14233c43a788494d13466ca8",
+      "size_bytes": 1062
+    },
+    {
+      "path": "qa/nodule_quantification.json",
+      "sha256": "4751fb3d8cb29ff67bdaf0f11fc51616c8f916cc74a9475518b93b4f02d536fa",
+      "size_bytes": 2782
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "31a74d0abdef6816353c44ecfaae771fb0c1ee28324f31e0ed5ffc4b29a9c961",
+      "size_bytes": 49
+    },
+    {
+      "path": "sample_output/nodule_quantification.json",
+      "sha256": "4751fb3d8cb29ff67bdaf0f11fc51616c8f916cc74a9475518b93b4f02d536fa",
+      "size_bytes": 2782
+    }
+  ]
+}

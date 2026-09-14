@@ -1,0 +1,41 @@
+{
+  "task": "lung_nodule_quantification",
+
+  "input": {
+    "image_format": "NIfTI",
+    "mask_format": "NIfTI",
+    "mask_labels": {
+      "0": "background",
+      "1": "lung_nodule"
+    }
+  },
+
+  "component_analysis": {
+    "connectivity": 26,
+    "ordering": "largest_volume_first",
+    "nodule_id_format": "N###"
+  },
+
+  "outputs": [
+    "voxel_count",
+    "volume_mm3",
+    "equivalent_diameter_mm",
+    "maximum_3d_diameter_mm",
+    "surface_area_mm2",
+    "sphericity",
+    "centroid_voxel_xyz",
+    "centroid_world_xyz_mm",
+    "bbox_voxel_xyz"
+  ],
+
+  "coordinate_system": {
+    "array": "XYZ",
+    "world": "XYZ_mm"
+  },
+
+  "libraries": {
+    "geometry": "NumPy/SciPy",
+    "shape_features": "PyRadiomics"
+  }
+}
+

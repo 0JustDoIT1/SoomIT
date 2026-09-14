@@ -1,0 +1,48 @@
+{
+  "model_name": "texture_med3d_resnet18_ctmask",
+  "model_version": "1.0.0",
+  "task": "lung_nodule_texture_classification",
+  "architecture": "3D ResNet18",
+  "pretraining": "Med3D",
+  "input": {
+    "ct": {
+      "shape": [
+        1,
+        64,
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "nodule_mask": {
+      "shape": [
+        1,
+        64,
+        64,
+        64
+      ],
+      "dtype": "float32"
+    },
+    "combined_shape": [
+      2,
+      64,
+      64,
+      64
+    ]
+  },
+  "classes": {
+    "0": "GGO",
+    "1": "PART_SOLID",
+    "2": "SOLID"
+  },
+  "training": {
+    "loss": "WeightedCrossEntropy",
+    "best_epoch": 28,
+    "selection_metric": "validation_macro_f1"
+  },
+  "checkpoint": "checkpoint/texture_med3d_final.pt",
+  "xai": {
+    "method": "Grad-CAM",
+    "selected_layer": "layer3"
+  }
+}

@@ -1,0 +1,45 @@
+FROM pytorch/pytorch:2.6.0-cuda12.4-cudnn9-runtime
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1 \
+    MODEL_REVISION=ct-analysis-v1.0.0 \
+    CT_ANALYSIS_OUTPUT_GCS_PREFIX=gs://soomit-bucket/ct-analysis \
+    VISTA3D_MODEL_GCS_URI=gs://soomit-bucket/models/ct-analysis/vista3d_lidc_best.pt \
+    MORPHOLOGY_MODEL_GCS_URI=gs://soomit-bucket/models/ct-analysis/morphology_med3d_final.pt \
+    TEXTURE_MODEL_GCS_URI=gs://soomit-bucket/models/ct-analysis/texture_med3d_final.pt \
+    MALIGNANCY_MODEL_GCS_URI=gs://soomit-bucket/models/ct-analysis/med3d_resnet18_best.pth
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential libgl1 libglib2.0-0 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY requirements-phase1.txt .
+RUN pip install --no-cache-dir numpy==1.24.4 \
+    && pip install --no-cache-dir --no-build-isolation -r requirements-phase1.txt
+RUN python -m venv --system-site-packages /opt/totalseg \
+    && /opt/totalseg/bin/pip install --no-cache-dir TotalSegmentator==2.18.0
+
+ENV TOTALSEG_PYTHON=/opt/totalseg/bin/python \
+    TOTALSEG_HOME_DIR=/opt/totalseg-home
+
+RUN mkdir -p /opt/totalseg-home \
+    && /opt/totalseg/bin/totalseg_download_weights -t total \
+    && /opt/totalseg/bin/totalseg_download_weights -t lung_vessels
+
+COPY artifact.py storage_io.py input_io.py orthanc_client.py model_artifacts.py phase1_server.py ./
+COPY packages ./packages
+COPY external ./external
+
+RUN mkdir -p \
+      /app/packages/final_segmentation_deploy_ready/model \
+      /app/packages/final_morphology_deploy_ready/model \
+      /app/packages/final_texture_deploy_ready/checkpoint \
+    && useradd --create-home --uid 10001 app \
+    && chown -R app:app /app /opt/totalseg /opt/totalseg-home
+
+USER app
+EXPOSE 8080
+CMD ["sh", "-c", "exec python -m uvicorn phase1_server:app --host 0.0.0.0 --port ${PORT:-8080} --workers 1 --no-access-log"]

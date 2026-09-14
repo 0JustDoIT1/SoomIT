@@ -1,0 +1,5 @@
+Environment: separate TotalSegmentator runtime
+TotalSegmentator==2.18.0
+Python==3.10.x
+GPU required/recommended
+

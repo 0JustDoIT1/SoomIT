@@ -1,0 +1,30 @@
+{
+  "model_name": "Med3DResNet18Malignancy",
+  "model_version": "v1",
+  "checkpoint": "med3d_resnet18_best.pth",
+  "input_channels": 1,
+  "input_size": [
+    64,
+    64,
+    64
+  ],
+  "crop_size_mm": 50.0,
+  "hu_min": -1000.0,
+  "hu_max": 400.0,
+  "threshold": 0.5,
+  "best_epoch": 3,
+  "validation_roc_auc": 0.8592247778994767,
+  "validation_pr_auc": 0.4223495212934708,
+  "test_roc_auc": 0.8782,
+  "test_pr_auc": 0.4243,
+  "test_accuracy": 0.7643,
+  "test_sensitivity": 0.8902,
+  "test_specificity": 0.7513,
+  "test_precision": 0.2704,
+  "test_f1": 0.4148,
+  "test_tp": 73,
+  "test_tn": 595,
+  "test_fp": 197,
+  "test_fn": 9,
+  "probability_calibrated": false
+}

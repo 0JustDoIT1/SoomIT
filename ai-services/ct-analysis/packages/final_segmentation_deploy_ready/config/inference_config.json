@@ -1,0 +1,45 @@
+{
+  "model_name": "VISTA3D",
+  "model_version": "vista3d-lidc-v1.0.0",
+  "task": "lung_nodule_segmentation",
+
+  "checkpoint": "/home/jupyter-mirae20/ct-project/results/vista3d/final/vista3d_lidc_best.pt",
+
+  "input": {
+    "format": "NIfTI",
+    "channels": 1
+  },
+
+  "preprocessing": {
+    "resample_spacing_xyz_mm": [1.0, 1.0, 1.0],
+    "orientation": "RAS",
+    "hu_min": -1000,
+    "hu_max": 400,
+    "normalize_min": 0.0,
+    "normalize_max": 1.0,
+    "dtype": "float32"
+  },
+
+  "inference": {
+    "patch_size": [192, 192, 128],
+    "overlap": 0.5,
+    "amp": true,
+    "label_prompt": [23]
+  },
+
+  "postprocessing": {
+    "internal_target_label": 23,
+    "output_target_label": 1,
+    "output_dtype": "uint8"
+  },
+
+  "output": {
+    "format": "NIfTI",
+    "labels": {
+      "0": "background",
+      "1": "lung_nodule"
+    },
+    "preserve_original_geometry": true
+  }
+}
+

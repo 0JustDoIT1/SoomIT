@@ -1,0 +1,56 @@
+amp: true
+input_channels: 1
+
+patch_size: [192, 192, 128]
+
+bundle_root: '/home/jupyter-mirae20/ct-project/results/vista3d/final'
+
+infer:
+  ckpt_name: '/home/jupyter-mirae20/ct-project/results/vista3d/final/vista3d_lidc_best.pt'
+  output_path: '/home/jupyter-mirae20/ct-project/results/vista3d/final/val_predictions'
+  log_output_file: '/home/jupyter-mirae20/ct-project/results/vista3d/final/inference.log'
+
+huggingface:
+  enabled: false
+
+resample_to_spacing: [1.0, 1.0, 1.0]
+
+model: "vista3d_segresnet_d"
+
+image_key: image
+
+transforms_infer:
+  _target_: Compose
+  transforms:
+
+  - _target_: LoadImaged
+    keys: '@image_key'
+    image_only: true
+    ensure_channel_first: true
+
+  - _target_: Spacingd
+    keys: ['@image_key']
+    pixdim: '@resample_to_spacing'
+    mode: [bilinear]
+    align_corners: [true]
+
+  - _target_: ScaleIntensityRanged
+    keys: '@image_key'
+    a_min: -1000
+    a_max: 400
+    b_min: 0.0
+    b_max: 1.0
+    clip: true
+
+  - _target_: Orientationd
+    keys: ['@image_key']
+    axcodes: RAS
+
+  - _target_: CastToTyped
+    keys: '@image_key'
+    dtype: '$torch.float32'
+
+  - _target_: EnsureTyped
+    keys: '@image_key'
+    track_meta: true
+

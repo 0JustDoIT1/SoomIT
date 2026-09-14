@@ -1,0 +1,30 @@
+{
+  "task": "t_model_input_builder",
+  "input_modality": "CT",
+  "input_channels": 1,
+  "output_format": "NIfTI",
+  "output_filename_pattern": "{CASE_ID}_0000.nii.gz",
+  "lung_segmentation": "TotalSegmentator",
+  "lung_labels": [
+    "lung_upper_lobe_left",
+    "lung_lower_lobe_left",
+    "lung_upper_lobe_right",
+    "lung_middle_lobe_right",
+    "lung_lower_lobe_right"
+  ],
+  "crop_method": "lung_union_bbox_plus_physical_margin",
+  "margin_mm": 50.0,
+  "preserve_hu": true,
+  "preserve_spacing": true,
+  "preserve_physical_geometry": true,
+  "external_normalization": false,
+  "target_model": {
+    "framework": "nnUNetv2",
+    "dataset": "Dataset504_Lung1PrimaryTumorLungCrop50mm417",
+    "configuration": "3d_fullres",
+    "fold": 0,
+    "trainer": "nnUNetTrainer_250epochs",
+    "checkpoint": "checkpoint_best.pth"
+  }
+}
+

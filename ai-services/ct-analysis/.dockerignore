@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.pt
+*.pth
+*.nii
+*.nii.gz
+sample_output/
+qa/
+metrics/
+xai/

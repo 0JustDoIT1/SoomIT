@@ -1,0 +1,37 @@
+{
+  "feature_count": 34,
+  "numeric_count": 31,
+  "categorical_count": 3,
+  "categorical_features": [
+    "gender",
+    "histology",
+    "primary_lobe"
+  ],
+  "gender_categories": [
+    "male",
+    "female"
+  ],
+  "histology_categories": [
+    "adenocarcinoma",
+    "squamous cell carcinoma",
+    "large cell",
+    "nos",
+    "unknown"
+  ],
+  "primary_lobe_categories": [
+    "lung_upper_lobe_left",
+    "lung_lower_lobe_left",
+    "lung_upper_lobe_right",
+    "lung_middle_lobe_right",
+    "lung_lower_lobe_right",
+    "unassigned"
+  ],
+  "numeric_missing_policy": "null_or_nan",
+  "categorical_missing_policy": {
+    "histology": "unknown",
+    "primary_lobe": "unassigned",
+    "gender": "unknown_with_warning"
+  },
+  "required_geometry": "CT, T tumor mask, anatomy masks must share the same physical geometry"
+}
+

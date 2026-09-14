@@ -1,0 +1,46 @@
+{
+  "ct": {
+    "format": "npy",
+    "dtype": "float32",
+    "shape": [
+      1,
+      64,
+      64,
+      64
+    ],
+    "clipping": null,
+    "normalization": null
+  },
+  "nodule_mask": {
+    "format": "npy",
+    "dtype": "float32",
+    "shape": [
+      1,
+      64,
+      64,
+      64
+    ],
+    "binarization_at_inference": false
+  },
+  "concatenation": {
+    "axis": 0,
+    "channel_order": [
+      "ct",
+      "nodule_mask"
+    ],
+    "result_shape": [
+      2,
+      64,
+      64,
+      64
+    ]
+  },
+  "batch_input_shape": [
+    1,
+    2,
+    64,
+    64,
+    64
+  ],
+  "augmentation_at_inference": false
+}

@@ -1,0 +1,14 @@
+# Main runtime: existing vista3d environment
+numpy==1.24.4
+nibabel
+scipy
+torch
+pyradiomics
+
+# Anatomy runtime is isolated in a separate conda environment:
+# totalseg
+# TotalSegmentator==2.18.0
+#
+# Model/package-specific dependencies remain defined in each
+# underlying deploy-ready package.
+

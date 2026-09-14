@@ -1,0 +1,13 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --file
+      - Dockerfile.phase2
+      - --tag
+      - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:latest
+      - .
+images:
+  - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:latest
+timeout: 1800s
+

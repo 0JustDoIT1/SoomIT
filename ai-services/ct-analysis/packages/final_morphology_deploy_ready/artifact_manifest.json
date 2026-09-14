@@ -1,0 +1,34 @@
+{
+  "artifact": "lung_nodule_morphology",
+  "version": "1.0.0",
+  "status": "DEPLOY_READY",
+  "model": {
+    "checkpoint": "model/morphology_med3d_final.pt",
+    "sha256": "d582c8b0be4e12ea5d7906f2ba36ff17c07429f895a8974c386458c1153fbfd7",
+    "architecture": "MedicalNet 3D ResNet18",
+    "input": "CT + Nodule Mask",
+    "outputs": [
+      "spiculation",
+      "lobulation"
+    ]
+  },
+  "thresholds": {
+    "spiculation": 0.833984,
+    "lobulation": 0.784668
+  },
+  "validation": {
+    "spiculation_ap": 0.42512,
+    "lobulation_ap": 0.23921,
+    "mean_ap": 0.332165
+  },
+  "test": {
+    "spiculation_ap": 0.4852,
+    "spiculation_auroc": 0.8341,
+    "lobulation_ap": 0.2772,
+    "lobulation_auroc": 0.7773,
+    "mean_ap": 0.3812
+  },
+  "qa": {
+    "standalone_inference_identical": true
+  }
+}

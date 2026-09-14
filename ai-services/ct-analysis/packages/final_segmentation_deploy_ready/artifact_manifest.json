@@ -1,0 +1,166 @@
+{
+  "model": "VISTA3D",
+  "version": "vista3d-lidc-v1.0.0",
+  "task": "lung_nodule_segmentation",
+  "e2e_qa_status": "PASS",
+  "checkpoint_sha256": "a38ff95bf4bae705de32f20d5327b42d52fffa5c84f3e57b308afc70700cbc7b",
+  "artifacts": [
+    {
+      "path": "SHA256SUMS.txt",
+      "sha256": "7bed7a73c40214f4ed10b55177109acdf02071335f97107f920b04af3b09662c",
+      "size_bytes": 1223
+    },
+    {
+      "path": "VERSION",
+      "sha256": "a896f686becd272e772e739757744bf30856abf4f3db406bec62c3c278f8f1c9",
+      "size_bytes": 20
+    },
+    {
+      "path": "code/__pycache__/inference.cpython-310.pyc",
+      "sha256": "d89b67e36f94fb119e2257d7634e0a4771122720dd61c41ec49e137d3f226922",
+      "size_bytes": 5871
+    },
+    {
+      "path": "code/__pycache__/model.cpython-310.pyc",
+      "sha256": "419476fc686dcfad17b65e20ec509e8d685bbad1676b3557619a31769aa006be",
+      "size_bytes": 1320
+    },
+    {
+      "path": "code/__pycache__/postprocessing.cpython-310.pyc",
+      "sha256": "4f242d468e7500493095a397a2b22f5c762c70eb80a2a01dac0371fbc4e9c887",
+      "size_bytes": 1387
+    },
+    {
+      "path": "code/__pycache__/preprocessing.cpython-310.pyc",
+      "sha256": "689c97ed597140028d32c39a8b2d414168f524252a1e84470c14ca4d3235289b",
+      "size_bytes": 984
+    },
+    {
+      "path": "code/inference.py",
+      "sha256": "6cf6e82dde9dbdcf5ada0e95da88d662b991b60dffbd77ec91b96174ca0a1962",
+      "size_bytes": 8279
+    },
+    {
+      "path": "code/model.py",
+      "sha256": "97802f9e66cfc21e211f6ed7c0d9efadc19bd72724c61e070514854ae8ac82e3",
+      "size_bytes": 1303
+    },
+    {
+      "path": "code/postprocess/__pycache__/nodule_patch.cpython-310.pyc",
+      "sha256": "7319935ab707bb715f09a4816fd7b8c0bf29e436d954c45b321f30f46b940919",
+      "size_bytes": 4005
+    },
+    {
+      "path": "code/postprocess/nodule_patch.py",
+      "sha256": "a6cd9152ede0b063c6771cc8cc30213c37ec7aa55bd672149ab897738df79890",
+      "size_bytes": 5493
+    },
+    {
+      "path": "code/postprocessing.py",
+      "sha256": "aec141b708cca53e9a297cae3d1a40ac4f672699e1d775aa48f841301212f708",
+      "size_bytes": 1320
+    },
+    {
+      "path": "code/preprocessing.py",
+      "sha256": "a44fa4e09ba98a63b6b488acf129ef2a2c1bb977e4c44dc8a67cd4a071b020d4",
+      "size_bytes": 629
+    },
+    {
+      "path": "config/inference_config.json",
+      "sha256": "cfbda3cf064ad090e79a61237117c97c39448e0216f0cd4f175a0f6e363ffd25",
+      "size_bytes": 876
+    },
+    {
+      "path": "config/nodule_patch_config.json",
+      "sha256": "c36e425b74d85a9f8157cc9fb70b1d6aace95594d5f766e2f0c6b0cb9705e4f7",
+      "size_bytes": 529
+    },
+    {
+      "path": "docs/MODEL_SUMMARY.md",
+      "sha256": "2257263c2baf1ce984498ad3784ae1e73938bce88d4227bb708f9f72dee4d3f4",
+      "size_bytes": 1473
+    },
+    {
+      "path": "docs/OUTPUT_SCHEMA.md",
+      "sha256": "450054ae4e611aee138c1d571cc9223075bbbcbf6cfa8f3b440d31991f52ec17",
+      "size_bytes": 1337
+    },
+    {
+      "path": "docs/README.md",
+      "sha256": "ba9ccdeeedf8f4b1362638bb3629b3824b65e6e89ed8dd04440584b8119fb8a8",
+      "size_bytes": 2777
+    },
+    {
+      "path": "final_segmentation_deploy_ready_with_patches.tar.gz",
+      "sha256": "85cea451eec057fa7e734548ca3ba6d779ed5836a3f9de14b8394575ef0d7d8e",
+      "size_bytes": 45
+    },
+    {
+      "path": "model/vista3d_lidc_best.pt",
+      "sha256": "a38ff95bf4bae705de32f20d5327b42d52fffa5c84f3e57b308afc70700cbc7b",
+      "size_bytes": 872073683
+    },
+    {
+      "path": "qa/e2e_qa.json",
+      "sha256": "ca031ee86bd80286ffa0033dc684f7d73c98c1c30260f93f319b745540ca12fe",
+      "size_bytes": 313
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "31ab101c3f35a26b80dc73e41b60f184f86ebb7f34e73379acde3feb1971714b",
+      "size_bytes": 57
+    },
+    {
+      "path": "sample_output/metadata.json",
+      "sha256": "0d2042246014a4f2fbff08503aad70f5e4a8057d3399bd442252ec4bb8b229c8",
+      "size_bytes": 733
+    },
+    {
+      "path": "sample_output/segmentation_mask.nii.gz",
+      "sha256": "c200dc5821ecba572011b46b0e48ba17815f0238c6a4e01b97019f47ac0f6af9",
+      "size_bytes": 222249
+    }
+  ],
+  "nodule_patch_postprocess": {
+    "code": "code/postprocess/nodule_patch.py",
+    "config": "config/nodule_patch_config.json",
+    "qa_status": "PASS",
+    "outputs": {
+      "morphology": [
+        "ct_patch_64x64x64",
+        "mask_patch_64x64x64"
+      ],
+      "malignancy": [
+        "ct_50mm_cube_resampled_64x64x64"
+      ]
+    },
+    "connected_component_analysis": true,
+    "coordinate_order_internal": "ZYX",
+    "minimum_equivalent_diameter_mm": 3.0,
+    "filter_scope": "downstream_patch_generation_only",
+    "segmentation_mask_unchanged": true,
+    "metadata_fields": [
+      "detected_component_count",
+      "nodule_count",
+      "rejected_component_count",
+      "nodule_patches",
+      "rejected_components",
+      "downstream_min_diameter_mm"
+    ],
+    "e2e_qa": {
+      "case_id": "LIDC_0001",
+      "detected_components": 3,
+      "retained_components": 2,
+      "rejected_components": 1,
+      "retained_ids": [
+        "N001",
+        "N002"
+      ],
+      "rejected_ids": [
+        "N003"
+      ],
+      "status": "PASS"
+    }
+  }
+}
+
