@@ -147,6 +147,16 @@ CT_ANALYSIS_PHASE2_SERVICE_USE_ID_TOKEN = (
     os.environ.get("CT_ANALYSIS_PHASE2_SERVICE_USE_ID_TOKEN", "0") == "1"
 )
 
+TNM_T_SERVICE_URL = os.environ.get("TNM_T_SERVICE_URL", "").rstrip("/")
+TNM_T_SERVICE_TIMEOUT_SECONDS = float(os.environ.get("TNM_T_SERVICE_TIMEOUT_SECONDS", "3600"))
+TNM_T_SERVICE_USE_ID_TOKEN = os.environ.get("TNM_T_SERVICE_USE_ID_TOKEN", "0") == "1"
+TNM_M_SERVICE_URL = os.environ.get("TNM_M_SERVICE_URL", "").rstrip("/")
+TNM_M_SERVICE_TIMEOUT_SECONDS = float(os.environ.get("TNM_M_SERVICE_TIMEOUT_SECONDS", "3600"))
+TNM_M_SERVICE_USE_ID_TOKEN = os.environ.get("TNM_M_SERVICE_USE_ID_TOKEN", "0") == "1"
+TNM_SERVICE_URL = os.environ.get("TNM_SERVICE_URL", "").rstrip("/")
+TNM_SERVICE_TIMEOUT_SECONDS = float(os.environ.get("TNM_SERVICE_TIMEOUT_SECONDS", "900"))
+TNM_SERVICE_USE_ID_TOKEN = os.environ.get("TNM_SERVICE_USE_ID_TOKEN", "0") == "1"
+
 PATHOLOGY_ANALYSIS_SERVICE_URL = os.environ.get(
     "PATHOLOGY_ANALYSIS_SERVICE_URL", ""
 ).rstrip("/")

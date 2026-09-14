@@ -146,7 +146,9 @@ def phase1_from_orthanc(body: OrthancPhase1Request) -> dict:
                 max_uncompressed_bytes=MAX_EXPANDED_BYTES,
             )
             ct_path = dicom_directory_to_nifti(
-                dicom_root, work_root / "source" / f"{case_id}_0000.nii.gz"
+                dicom_root,
+                work_root / "source" / f"{case_id}_0000.nii.gz",
+                metadata_path=work_root / "source" / "dicom_to_nifti_metadata.json",
             )
             archive.unlink(missing_ok=True)
             return run_phase1(

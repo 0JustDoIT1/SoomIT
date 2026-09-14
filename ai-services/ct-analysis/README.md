@@ -20,6 +20,10 @@ Orthanc request body:
       "case_id": "CASE001"
     }
 
+The Orthanc endpoint downloads the raw DICOM series archive and runs the bundled
+`code/dicom_to_nifti.py` converter before Phase 1 inference. The converted NIfTI and
+`source/dicom_to_nifti_metadata.json` are retained in the uploaded GCS artifact.
+
 GCS request body:
 
     {
