@@ -1,0 +1,13 @@
+{
+  "model_type": "clam",
+  "model_sha256": "d24bc8dc6929778bf9faf31a67bec83e4b05a010b292085c7c9fb15271e9cf25",
+  "sample_sha256": "eb787e010f155f75a84b2dcf181274f4dc07857349ac5541d80dace3fcec83bc",
+  "sample_shape": [7492, 1536],
+  "predicted_class": 1,
+  "predicted_label": "LUAD",
+  "probabilities": {
+    "Benign": 0.0001702441368252039,
+    "LUAD": 0.9495433568954468,
+    "LUSC": 0.050286341458559036
+  }
+}

@@ -1,0 +1,75 @@
+{
+  "project": "CDSS 캡스톤 - 유전자 파트④ 변이예측",
+  "task": "8개 유전자 변이확률 예측 (Multi-Label)",
+  "official_model": "clam_mutation_model_full.pt",
+  "comparison_baseline": "mutation_model_bigger_hidden_earlystop_full_v2.pt",
+  "gene_categories": {
+    "actionable": [
+      "EGFR",
+      "KRAS",
+      "BRAF",
+      "MET",
+      "ERBB2"
+    ],
+    "prognostic_reference": [
+      "TP53",
+      "STK11",
+      "KEAP1"
+    ]
+  },
+  "models": {
+    "AMD-MIL": {
+      "file": "mutation_model_bigger_hidden_earlystop_full_v2.pt",
+      "architecture": "Agent token + Denoising gate MIL (Multi-Label)",
+      "hidden_dim": 512,
+      "input_dim": 1536,
+      "num_classes": 8,
+      "backbone": "UNI2-h (frozen)",
+      "training_data": "TCGA-LUAD 448명 (목표 466명의 96%), Train/Val/Test 3분할(70/15/15)",
+      "best_epoch": 24,
+      "mean_test_auc": 0.6652,
+      "test_auc_per_gene": {
+        "ERBB2": 0.8472,
+        "TP53": 0.7445,
+        "STK11": 0.7884,
+        "KEAP1": 0.6075,
+        "EGFR": 0.6753,
+        "KRAS": 0.5425,
+        "BRAF": 0.6212,
+        "MET": 0.4952
+      },
+      "note": "비교모델(baseline). 성능은 CLAM보다 낮음(평균AUC 0.6652 vs 0.6969)"
+    },
+    "CLAM": {
+      "file": "clam_mutation_model_full.pt",
+      "architecture": "Gated Attention MIL (Multi-Label)",
+      "hidden_dim": 512,
+      "input_dim": 1536,
+      "num_classes": 8,
+      "backbone": "UNI2-h (frozen)",
+      "training_data": "TCGA-LUAD 448명, 동일 분할",
+      "best_epoch": 7,
+      "mean_test_auc": 0.6969,
+      "test_auc_per_gene": {
+        "EGFR": 0.599,
+        "KRAS": 0.6519,
+        "BRAF": 0.5043,
+        "MET": 0.4143,
+        "ERBB2": 0.9028,
+        "TP53": 0.8527,
+        "STK11": 0.8684,
+        "KEAP1": 0.7821
+      },
+      "note": "공식모델로 채택 — 두 모델 중 더 높은 성능(0.6969)을 기준으로 선정"
+    }
+  },
+  "excluded_scope": [
+    "ALK/ROS1/RET/NTRK(gene fusion) - GDC controlled-access + 공개대안 데이터도 양성표본 극소(15명)로 제외",
+    "LUSC - 원 팀계획대로 LUAD 전용 유지(표적변이가 non-squamous에 집중되는 임상적 특성과 일치)"
+  ],
+  "known_limitations": [
+    "MET/ERBB2는 표본극소로 분할이 바뀔 때마다 AUC가 크게 출렁임(참고용)",
+    "저장된 .pt 파일은 state_dict만 포함하며 학습 당시 성능 메타데이터는 미포함 - 본 문서가 공식 성능 기록임"
+  ],
+  "report_date": "2026-09-08"
+}

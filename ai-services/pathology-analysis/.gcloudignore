@@ -1,0 +1,10 @@
+.git
+.gitignore
+.gcloudignore
+models/
+validation/*.pt
+.hf-cache/
+**/__pycache__/
+*.py[cod]
+.env
+.env.*
