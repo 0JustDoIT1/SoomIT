@@ -7,8 +7,8 @@ describe("CaseInfoWorkspace", () => {
     ["OVERVIEW", "전체 요약"],
     ["XRAY", "흉부 X선 검사·결과"],
     ["CT", "흉부 CT 검사·결과"],
-    ["PATHOLOGY", "병리 검사·결과"],
-    ["GENE", "PD-L1 바이오마커"],
+    ["PATHOLOGY", "조직/유전자 검사·결과"],
+    ["GENE", "PD-L1 검사·결과"],
     ["TREATMENT", "치료 결정"],
     ["PRESCRIPTION", "처방 및 안전성 확인"],
   ] as const)("renders the %s workspace without fabricated records", (menu, title) => {

@@ -7,7 +7,9 @@ describe("Pdl1ResultPanel", () => {
   it("shows an honest empty state without the removed gene comparison", () => {
     render(<Pdl1ResultPanel aiResult={null} />);
 
-    expect(screen.getAllByText("인증 연동 대기").length).toBeGreaterThan(0);
+    expect(screen.getByText("AI 결과 없음")).toBeTruthy();
+    expect(screen.getByText(/현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다/)).toBeTruthy();
+    expect(document.body).not.toHaveTextContent("인증 연동 대기");
     expect(screen.getAllByText("확정 결과 없음").length).toBeGreaterThan(0);
     expect(document.body).not.toHaveTextContent("유전자 결과 비교");
   });

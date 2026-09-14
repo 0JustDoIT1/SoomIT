@@ -35,7 +35,7 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getAllByText("전문과 확정 결과").length).toBeGreaterThan(0);
     expect(screen.getAllByText("AI 분석 후보").length).toBeGreaterThan(0);
     expect(screen.getByText("호흡기내과 판단")).toBeTruthy();
-    expect(screen.getAllByText("바이오마커").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("조직/유전자").length).toBeGreaterThan(0);
     expect(screen.getByText("다음 단계 진행")).toBeTruthy();
   });
 
@@ -45,5 +45,24 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getByText("확인 가능한 전문과 확정 결과가 없습니다.")).toBeTruthy();
     expect(screen.getByText("현재 Case에 연결된 AI 분석 후보가 없습니다.")).toBeTruthy();
     expect(screen.getByText("현재 기록된 다음 행동이 없습니다.")).toBeTruthy();
+    expect(screen.getAllByText("정보 없음")).toHaveLength(6);
+  });
+
+  it("counts only confirmed clinical results and summarizes actual workflow evidence", () => {
+    render(
+      <CaseOverviewPanel
+        caseData={{ ...caseData, current_stage: "STAGING" }}
+        clinicalResults={[
+          { id: "ct", exam_type: "CT", result_status: "CONFIRMED" },
+          { id: "gene", exam_type: "GENE", result_status: "DRAFT", result_detail: { pdl1: { tps_percent: 20 } } },
+        ]}
+        aiResults={[{ id: "pdl1", analysis_type: "PDL1_CLASSIFICATION", status: "COMPLETED" }]}
+        prescriptions={[{ id: "rx", prescription_status: "DRAFT" }]}
+      />,
+    );
+
+    expect(screen.getAllByText("1건")).toHaveLength(2);
+    expect(screen.getAllByText("결과 조회됨")).toHaveLength(4);
+    expect(screen.getAllByText("현재 단계")).toHaveLength(2);
   });
 });

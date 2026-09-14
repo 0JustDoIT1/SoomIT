@@ -4,9 +4,9 @@ const ITEMS: { key: CaseInfoKey; label: string }[] = [
   { key: "OVERVIEW", label: "전체 요약" },
   { key: "XRAY", label: "흉부 X선" },
   { key: "CT", label: "흉부 CT" },
-  { key: "PATHOLOGY", label: "병리" },
-  { key: "STAGING", label: "TNM 검토" },
-  { key: "GENE", label: "바이오마커" },
+  { key: "STAGING", label: "PET-CT / TNM 병기" },
+  { key: "PATHOLOGY", label: "조직/유전자" },
+  { key: "GENE", label: "PD-L1" },
   { key: "TREATMENT", label: "치료 결정" },
   { key: "PRESCRIPTION", label: "처방" },
 ];

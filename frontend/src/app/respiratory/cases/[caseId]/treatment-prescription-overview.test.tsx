@@ -14,5 +14,30 @@ describe("TreatmentPrescriptionOverview", () => {
   it("shows empty values without fabricating a treatment or prescription", () => {
     render(<TreatmentPrescriptionOverview treatment={null} prescriptions={[]} />);
     expect(screen.getAllByText("-")).toHaveLength(4);
+    expect(screen.getAllByText("결과 없음").length).toBeGreaterThanOrEqual(6);
+  });
+
+  it("keeps confirmed specialist evidence separate from AI candidates", () => {
+    render(
+      <TreatmentPrescriptionOverview
+        treatment={null}
+        prescriptions={[]}
+        clinicalResults={[
+          { exam_type: "STAGING", result_status: "CONFIRMED", result_status_label: "확정" },
+          { exam_type: "PATHOLOGY", result_status: "CONFIRMED" },
+          { exam_type: "GENE", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 55 } } },
+        ]}
+        aiResults={[
+          { analysis_type: "TNM_STAGING", status: "COMPLETED", status_label: "완료" },
+          { analysis_type: "GENE_PREDICTION", status: "COMPLETED" },
+          { analysis_type: "PDL1_CLASSIFICATION", status: "COMPLETED", result_detail: { pdl1: { predicted_tps_range_label: "≥50%" } } },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("TPS 55%")).toBeTruthy();
+    expect(screen.getByText("≥50%")).toBeTruthy();
+    expect(screen.getAllByText("전문과 확정")).toHaveLength(3);
+    expect(screen.getAllByText("AI 후보")).toHaveLength(3);
   });
 });

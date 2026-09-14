@@ -162,8 +162,8 @@ function RespiratoryResultsContent() {
       <div className="grid grid-cols-5 gap-3">
         <ResultStageCard title="X-ray" result={resultMap.get('XRAY')} />
         <ResultStageCard title="CT" result={resultMap.get('CT')} />
-        <ResultStageCard title="병리" result={resultMap.get('PATHOLOGY')} />
         <ResultStageCard title="TNM" result={resultMap.get('STAGING')} />
+        <ResultStageCard title="병리" result={resultMap.get('PATHOLOGY')} />
         <ResultStageCard title="유전자" result={resultMap.get('GENE')} />
       </div>
 

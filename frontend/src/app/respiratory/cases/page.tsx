@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../_lib/respiratory-api";
 import { getCaseListFetchError, getCaseListHttpError } from "./case-list-errors";
+import { CASES_PER_PAGE, getVisiblePageNumbers, paginateCases } from "./case-pagination";
 
 type CaseItem = {
   id: string;
@@ -20,9 +21,9 @@ type CaseItem = {
 const STAGE_LABELS: Record<string, string> = {
   XRAY: "흉부 X선",
   CT: "흉부 CT",
-  PATHOLOGY: "병리",
-  STAGING: "TNM 병기",
-  GENE: "바이오마커",
+  PATHOLOGY: "조직/유전자",
+  STAGING: "PET-CT / TNM 병기",
+  GENE: "조직/유전자",
   TREATMENT: "치료 결정",
   PRESCRIPTION: "처방",
 };
@@ -53,6 +54,7 @@ export default function RespiratoryCasesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
+  const [currentPage, setCurrentPage] = useState(1);
 
   const fetchCases = useCallback(async (signal?: AbortSignal) => {
     setLoading(true);
@@ -67,6 +69,7 @@ export default function RespiratoryCasesPage() {
         throw new Error(getCaseListHttpError(response.status));
       }
       setCases(readCaseList(await response.json()));
+      setCurrentPage(1);
     } catch (fetchError) {
       if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
         return;
@@ -99,6 +102,9 @@ export default function RespiratoryCasesPage() {
     );
   }, [cases, search]);
 
+  const pagination = useMemo(() => paginateCases(filteredCases, currentPage), [filteredCases, currentPage]);
+  const visiblePages = getVisiblePageNumbers(pagination.page, pagination.pageCount);
+
   return (
     <div className="h-full overflow-auto bg-slate-50 px-6 py-5">
       <div className="mx-auto max-w-[1440px]">
@@ -124,7 +130,7 @@ export default function RespiratoryCasesPage() {
             <input
               type="search"
               value={search}
-              onChange={(event) => setSearch(event.target.value)}
+              onChange={(event) => { setSearch(event.target.value); setCurrentPage(1); }}
               placeholder="환자명, 환자번호, Case 검색"
               aria-label="담당 Case 검색"
               className="w-80 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
@@ -157,7 +163,7 @@ export default function RespiratoryCasesPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredCases.map((caseItem) => (
+                  {pagination.items.map((caseItem) => (
                     <tr
                       key={caseItem.id}
                       className="cursor-pointer transition hover:bg-blue-50/60"
@@ -190,6 +196,20 @@ export default function RespiratoryCasesPage() {
                   )}
                 </tbody>
               </table>
+              {filteredCases.length > 0 && (
+                <nav aria-label="Case 목록 페이지" className="flex items-center justify-between gap-4 border-t border-slate-200 px-5 py-3">
+                  <p className="whitespace-nowrap text-xs text-slate-500">
+                    총 {filteredCases.length}건 · {(pagination.page - 1) * CASES_PER_PAGE + 1}–{Math.min(pagination.page * CASES_PER_PAGE, filteredCases.length)}건 표시
+                  </p>
+                  <div className="flex items-center gap-1">
+                    <button type="button" disabled={pagination.page === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className="whitespace-nowrap rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">이전</button>
+                    {visiblePages.map((page) => (
+                      <button key={page} type="button" aria-label={`${page}페이지`} aria-current={pagination.page === page ? "page" : undefined} onClick={() => setCurrentPage(page)} className={`h-8 min-w-8 rounded-md px-2 text-xs font-semibold ${pagination.page === page ? "bg-blue-600 text-white" : "border border-slate-200 text-slate-600 hover:bg-slate-50"}`}>{page}</button>
+                    ))}
+                    <button type="button" disabled={pagination.page === pagination.pageCount} onClick={() => setCurrentPage((page) => Math.min(pagination.pageCount, page + 1))} className="whitespace-nowrap rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">다음</button>
+                  </div>
+                </nav>
+              )}
             </div>
           )}
         </section>

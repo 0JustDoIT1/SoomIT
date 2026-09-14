@@ -23,7 +23,7 @@ describe("CaseWorkspaceEmpty preview", () => {
     await user.click(screen.getByRole("button", { name: "흉부 CT" }));
     expect(screen.getByRole("heading", { name: "흉부 CT 검사·결과" })).toBeTruthy();
 
-    await user.click(screen.getByRole("button", { name: "바이오마커" }));
+    await user.click(screen.getByRole("button", { name: "PD-L1" }));
     expect(screen.getByRole("heading", { name: "PD-L1 검사·결과" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "PD-L1 결과 비교" })).toBeTruthy();
 

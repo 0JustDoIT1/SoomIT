@@ -8,9 +8,10 @@ const STAGE_CONFIG: Record<string, { title: string; description: string; departm
   XRAY: { title: "흉부 X선 검사·결과", description: "영상의학과 판독 결과를 먼저 확인하고 AI 후보를 보조 근거로 검토합니다.", department: "영상의학과" },
   CT: { title: "흉부 CT 검사·결과", description: "영상의학과 CT 판독 결과와 AI 분석 후보 및 원본 영상 근거를 확인합니다.", department: "영상의학과" },
   PATHOLOGY: { title: "병리 검사·결과", description: "병리과 확정 결과와 병리 AI 후보 및 원본 병리 근거를 확인합니다.", department: "병리과" },
+  GENE: { title: "유전자 검사·결과", description: "전문과 확정 유전자 결과와 AI 분석 후보를 서로 다른 출처로 확인합니다.", department: "병리과" },
 };
 
-export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void }) {
+export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi, showEvidence = true }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void; showEvidence?: boolean }) {
   const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
   const config = STAGE_CONFIG[stage] ?? { title: "검사·결과", description: "전문과 확정 결과와 AI 분석 후보를 구분해 확인합니다.", department: "전문과" };
@@ -28,13 +29,13 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </div>
       </header>
 
-      <div className="border-b border-slate-200 bg-slate-50/50 px-4 py-3">
+      {showEvidence && <div className="border-b border-slate-200 bg-slate-50/50 px-4 py-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
           <p className="whitespace-nowrap text-[10px] text-slate-400">화면에서 바로 확인하고 필요할 때 크게 볼 수 있습니다.</p>
         </div>
         <div className="overflow-x-auto"><EvidenceViewerPanel /></div>
-      </div>
+      </div>}
 
       <div className="grid grid-cols-2 divide-x divide-slate-200">
         <SourcePanel eyebrow={config.department} title="전문과 확정 결과" meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
@@ -83,12 +84,13 @@ function getSpecialistValues(stage: string, detail: unknown): [string, string][]
 
 function getAiValues(stage: string, detail: unknown): [string, string][] {
   const root = asRecord(detail); if (!root) return [];
-  const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PATHOLOGY" ? "pathology" : stage === "STAGING" ? "tnm" : "";
+  const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PATHOLOGY" ? "pathology" : stage === "STAGING" ? "tnm" : stage === "GENE" ? "gene" : "";
   const section = asRecord(root[sectionKey]); if (!section) return [];
   const fields: Record<string, [string, string][]> = {
     XRAY: [["AI 판정 후보", "assessment_label"], ["의심 점수", "suspicion_score"]], CT: [["AI 악성 위험도", "overall_malignancy_risk"]],
     PATHOLOGY: [["AI 악성 판정 후보", "malignancy_assessment_label"], ["악성 확률", "malignancy_probability"], ["조직형 후보", "predicted_histologic_type"], ["아형 후보", "predicted_subtype"], ["아형 confidence", "subtype_confidence"]],
     STAGING: [["T 후보", "predicted_t"], ["N 후보", "predicted_n"], ["M 후보", "predicted_m"], ["Stage Group 후보", "predicted_stage_group"], ["confidence", "confidence"]],
+    GENE: [["유전자", "gene"], ["변이 후보", "variant"], ["변이 유형", "variant_type"], ["AI 해석 후보", "interpretation"], ["confidence", "confidence"]],
   };
   return pickValues(section, fields[stage] ?? []);
 }

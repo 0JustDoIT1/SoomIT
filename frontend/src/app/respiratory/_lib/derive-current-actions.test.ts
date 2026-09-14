@@ -17,8 +17,8 @@ describe("deriveCurrentActions", () => {
     );
 
     expect(actions).toHaveLength(2);
-    expect(actions[0]).toMatchObject({ source: "SPECIALIST", title: "전문과 확정 결과 확인" });
-    expect(actions[1]).toMatchObject({ source: "AI", title: "AI 후보 결과 확인" });
+    expect(actions[0]).toMatchObject({ source: "SPECIALIST", title: "TNM 병기 확정 결과 확인", target: "STAGING" });
+    expect(actions[1]).toMatchObject({ source: "AI", title: "PET-CT 기반 TNM AI 후보 확인", target: "STAGING" });
   });
 
   it("recalculates work from the newly selected Case", () => {
@@ -29,5 +29,26 @@ describe("deriveCurrentActions", () => {
 
   it("does not create unsupported work for inactive Cases", () => {
     expect(deriveCurrentActions({ ...activeCase, case_status: "CLOSED" }, [{ exam_type: "STAGING", result_status: "CONFIRMED" }], [], [])).toEqual([]);
+  });
+
+  it("creates PD-L1 work only from an actual clinical or AI result", () => {
+    expect(deriveCurrentActions({ ...activeCase, current_stage: "GENE" }, [], [], [])).toEqual([]);
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "GENE" },
+      [{ id: "gene-1", exam_type: "GENE", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { pdl1: { tps_percent: 40 } } }],
+      [],
+      [],
+    );
+    expect(actions).toEqual(expect.arrayContaining([expect.objectContaining({ title: "PD-L1 확정 TPS 확인", target: "GENE", source: "SPECIALIST" })]));
+  });
+
+  it("opens gene review in the combined pathology and gene workspace", () => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "GENE" },
+      [],
+      [{ id: "gene-ai", analysis_type: "GENE_PREDICTION", status: "COMPLETED" }],
+      [],
+    );
+    expect(actions[0]).toMatchObject({ title: "유전자검사 AI 후보 확인", target: "PATHOLOGY" });
   });
 });

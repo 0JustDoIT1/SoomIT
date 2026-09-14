@@ -17,6 +17,13 @@ export type FollowUpPathologyOrderResponse = {
   created_at: string;
 };
 
+export type FollowUpPathologyOrderRequest = {
+  pathology_test_type: FollowUpPathologyTestType;
+  priority: "NORMAL" | "URGENT";
+  purpose: string;
+  clinical_note: string;
+};
+
 export async function fetchFollowUpPathologyOrderAvailability(
   authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
   caseId: string,
@@ -33,19 +40,14 @@ export async function fetchFollowUpPathologyOrderAvailability(
 export async function createFollowUpPathologyOrder(
   authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>,
   caseId: string,
-  pathologyTestType: FollowUpPathologyTestType,
+  order: FollowUpPathologyOrderRequest,
 ) {
   const response = await authorizedFetch(
     `${API_BASE_URL}/api/doctor/cases/${caseId}/pathology-orders/`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        pathology_test_type: pathologyTestType,
-        priority: "NORMAL",
-        purpose: "추가 병리 검사",
-        clinical_note: "",
-      }),
+      body: JSON.stringify(order),
     },
   );
   const data = (await response.json()) as FollowUpPathologyOrderResponse & {

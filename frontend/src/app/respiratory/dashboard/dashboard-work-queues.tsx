@@ -1,4 +1,4 @@
-const STAGES = ["XRAY", "CT", "PATHOLOGY", "STAGING", "GENE", "TREATMENT", "PRESCRIPTION"] as const;
+const STAGES = ["XRAY", "CT", "STAGING", "PATHOLOGY", "GENE", "TREATMENT", "PRESCRIPTION"] as const;
 
 type DashboardCase = {
   current_stage: string;

@@ -9,6 +9,7 @@ import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
 import { ResultReviewPanel } from "./result-review-panel";
+import { PathologyGeneReviewPanel } from "./pathology-gene-review-panel";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
 import { CasePatientSidebar } from "./case-patient-sidebar";
 import { BottomActionBar } from "./bottom-action-bar";
@@ -356,10 +357,10 @@ const workspaceMainMenus: typeof mainMenus = [
   { key: "PRESCRIPTION", label: "처방", description: "처방 및 안전성 검사" },
 ];
 const workspaceResultSubMenus: typeof resultSubMenus = [
-  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PATHOLOGY", label: "병리" }, { key: "STAGING", label: "TNM 병기" }, { key: "GENE", label: "바이오마커" },
+  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "STAGING", label: "PET-CT / TNM 병기" }, { key: "PATHOLOGY", label: "조직/유전자" }, { key: "GENE", label: "PD-L1" },
 ];
 const workspaceAiSubMenus: typeof aiSubMenus = [
-  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PATHOLOGY", label: "병리" }, { key: "STAGING", label: "TNM 검토" }, { key: "GENE", label: "바이오마커" },
+  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "STAGING", label: "PET-CT / TNM 병기" }, { key: "PATHOLOGY", label: "조직/유전자" }, { key: "GENE", label: "PD-L1" },
 ];
 const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
   { key: "AI_RECOMMENDATION", label: "AI 치료 추천" }, { key: "REGIMEN", label: "치료요법 후보" }, { key: "FINAL_PLAN", label: "최종 치료계획" },
@@ -530,13 +531,20 @@ export default function RespiratoryCaseDetailPage() {
         const caseDetailData: CaseItem =
           await caseDetailResponse.json();
 
-        if (!controller.signal.aborted) { setCases(caseListData); setSelectedCase(caseDetailData); }
+        if (!controller.signal.aborted) {
+          setCases(caseListData);
+          setSelectedCase(caseDetailData);
+          setLoading(false);
+        }
         setPdl1Results([]);
 
-        const [tnmAnalysisRequest, tnmClinicalRequest] =
+        const [tnmAnalysisRequest, tnmClinicalRequest, regimenCandidateRequest, treatmentDecisionRequest, prescriptionRequest] =
           await Promise.allSettled([
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal }),
           ]);
 
         if (tnmAnalysisRequest.status === "fulfilled" && tnmAnalysisRequest.value.ok) {
@@ -572,20 +580,22 @@ export default function RespiratoryCaseDetailPage() {
           );
         }
 
-        const regimenCandidateResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal });
-
-        if (regimenCandidateResponse.ok) {
+        if (regimenCandidateRequest.status === "fulfilled" && regimenCandidateRequest.value.ok) {
+          const regimenCandidateResponse = regimenCandidateRequest.value;
           const regimenCandidateData: CaseRegimenCandidate[] =
             await regimenCandidateResponse.json();
 
           if (!controller.signal.aborted) setRegimenCandidates(regimenCandidateData);
         } else if (!controller.signal.aborted) {
-          setRegimenLoadError(getPanelFetchError(regimenCandidateResponse.status, "치료요법 후보"));
+          setRegimenLoadError(
+            regimenCandidateRequest.status === "fulfilled"
+              ? getPanelFetchError(regimenCandidateRequest.value.status, "치료요법 후보")
+              : "치료요법 후보 조회 중 네트워크 오류가 발생했습니다.",
+          );
         }
 
-        const treatmentDecisionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal });
-
-        if (treatmentDecisionResponse.ok) {
+        if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.ok) {
+          const treatmentDecisionResponse = treatmentDecisionRequest.value;
           const treatmentDecisionData: CaseTreatmentDecision =
             await treatmentDecisionResponse.json();
 
@@ -600,7 +610,7 @@ export default function RespiratoryCaseDetailPage() {
               treatmentDecisionData.targeted_therapy_plan ?? "",
             rationale: treatmentDecisionData.rationale ?? "",
           });
-        } else if (treatmentDecisionResponse.status === 404) {
+        } else if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.status === 404) {
           setCaseTreatmentDecision(null);
           setCaseTreatmentForm({
             treatment_type: "",
@@ -610,18 +620,25 @@ export default function RespiratoryCaseDetailPage() {
             rationale: "",
           });
         } else if (!controller.signal.aborted) {
-          setTreatmentLoadError(getPanelFetchError(treatmentDecisionResponse.status, "치료 결정"));
+          setTreatmentLoadError(
+            treatmentDecisionRequest.status === "fulfilled"
+              ? getPanelFetchError(treatmentDecisionRequest.value.status, "치료 결정")
+              : "치료 결정 조회 중 네트워크 오류가 발생했습니다.",
+          );
         }
 
-        const prescriptionResponse = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal });
-
-        if (prescriptionResponse.ok) {
+        if (prescriptionRequest.status === "fulfilled" && prescriptionRequest.value.ok) {
+          const prescriptionResponse = prescriptionRequest.value;
           const prescriptionData: CasePrescription[] =
             await prescriptionResponse.json();
 
           if (!controller.signal.aborted) setCasePrescriptions(prescriptionData);
-        } else {
-          setPrescriptionLoadError(getPanelFetchError(prescriptionResponse.status, "처방 목록"));
+        } else if (!controller.signal.aborted) {
+          setPrescriptionLoadError(
+            prescriptionRequest.status === "fulfilled"
+              ? getPanelFetchError(prescriptionRequest.value.status, "처방 목록")
+              : "처방 목록 조회 중 네트워크 오류가 발생했습니다.",
+          );
         }
       } catch (err) {
         if (controller.signal.aborted) return;
@@ -815,6 +832,18 @@ export default function RespiratoryCaseDetailPage() {
   const geneClinicalResult = tnmClinicalResults.find(
     (result) => result.exam_type === "GENE"
   ) as GeneClinicalResult | undefined;
+
+  const geneAiResult = tnmAnalysisResults.find(
+    (result) => result.analysis_type === "GENE_PREDICTION"
+  );
+
+  const pathologyClinicalResult = tnmClinicalResults.find(
+    (result) => result.exam_type === "PATHOLOGY"
+  );
+
+  const pathologyAiResult = tnmAnalysisResults.find(
+    (result) => result.analysis_type === "PATHOLOGY_DIAGNOSIS"
+  );
 
   const treatmentAnalysisResult = tnmAnalysisResults.find(
     (result) => result.analysis_type === "TREATMENT_RECOMMENDATION"
@@ -1458,8 +1487,11 @@ export default function RespiratoryCaseDetailPage() {
 
       {/* D. 상세 영역 */}
       <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0" : "min-w-0 overflow-y-auto p-3"}>
-        <CaseWorkflowBar currentStage={selectedCase.current_stage} />
-        <CurrentActionQueue actions={currentActions} onNavigate={(href) => router.push(href)} />
+        <CaseWorkflowBar
+          currentStage={selectedCase.current_stage}
+          hasPdl1Result={Boolean(latestPdl1Result || geneClinicalResult?.result_detail?.pdl1)}
+        />
+        <CurrentActionQueue actions={currentActions} onNavigate={(href) => router.push(href)} onOpen={(action) => handleInfoMenuSelect(action.target)} />
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
@@ -1486,7 +1518,7 @@ export default function RespiratoryCaseDetailPage() {
         </div>
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
-          <TreatmentPrescriptionOverview treatment={caseTreatmentDecision} prescriptions={casePrescriptions} />
+          <TreatmentPrescriptionOverview treatment={caseTreatmentDecision} prescriptions={casePrescriptions} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
         )}
 
         {selectedInfoMenu === "OVERVIEW" ? (
@@ -1496,7 +1528,7 @@ export default function RespiratoryCaseDetailPage() {
               decision={selectedCase.latest_clinician_decision}
               onOrderCreated={() => setCaseRefreshVersion((current) => current + 1)}
             />
-            <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
+            <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} />
           </div>
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
@@ -2396,6 +2428,19 @@ export default function RespiratoryCaseDetailPage() {
           aiError={aiResultError}
           retrying={panelRetrying === "AI"}
           onRetry={retryAiResults}
+        />
+        ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY" ? (
+        <PathologyGeneReviewPanel
+          pathologyClinicalResult={pathologyClinicalResult}
+          pathologyAiResult={pathologyAiResult}
+          geneClinicalResult={geneClinicalResult}
+          geneAiResult={geneAiResult}
+          clinicalError={clinicalResultError}
+          aiError={aiResultError}
+          clinicalRetrying={panelRetrying === "CLINICAL"}
+          aiRetrying={panelRetrying === "AI"}
+          onRetryClinical={retryClinicalResults}
+          onRetryAi={retryAiResults}
         />
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel

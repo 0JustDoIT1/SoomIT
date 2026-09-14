@@ -1,0 +1,35 @@
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { PathologyGeneReviewPanel } from "./pathology-gene-review-panel";
+
+describe("PathologyGeneReviewPanel", () => {
+  it("separates pathology and gene sources without fabricating missing values", () => {
+    render(
+      <PathologyGeneReviewPanel
+        pathologyClinicalResult={{
+          exam_type: "PATHOLOGY",
+          result_status_label: "확정",
+          result_detail: { pathology: { histologic_type: "NSCLC" } },
+        }}
+        geneAiResult={{
+          analysis_type: "GENE_PREDICTION",
+          status_label: "완료",
+          result_detail: { gene: { variant: "EGFR 후보" } },
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "조직/유전자 검사·결과" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "병리 검사·결과" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "유전자 검사·결과" })).toBeTruthy();
+    expect(screen.getByText("NSCLC")).toBeTruthy();
+    expect(screen.getByText("EGFR 후보")).toBeTruthy();
+    expect(screen.getAllByText("AI 후보 없음")).toHaveLength(1);
+    expect(screen.getAllByText("확정 결과 없음")).toHaveLength(1);
+  });
+
+  it("renders the shared evidence viewer only once", () => {
+    render(<PathologyGeneReviewPanel />);
+    expect(screen.getAllByText("연결된 영상이 없습니다.")).toHaveLength(1);
+  });
+});

@@ -74,12 +74,12 @@ export function Pdl1ResultPanel({
 
         {!aiResult && !aiError && (
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-            PD-L1 AI 결과는 인증 연결 전까지 조회할 수 없습니다. 전문과 확정 TPS는 임상 결과에서 계속 표시됩니다.
+            현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다. 전문과 확정 TPS가 있으면 임상 결과에서 별도로 표시됩니다.
           </p>
         )}
 
         <div className="mt-4 grid grid-cols-3 gap-3">
-          <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "인증 연동 대기"} tone="blue" />
+          <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "AI 결과 없음"} tone="blue" />
           <ResultCard source="PD-L1 AI 분석 후보" label="분석 신뢰도" value={confidence !== null ? `${confidence.toFixed(2)}%` : "-"} tone="blue" />
           <ResultCard source="전문과 확정 결과" label="확정 TPS" value={clinical?.tps_percent !== null && clinical?.tps_percent !== undefined ? `${clinical.tps_percent}%` : "확정 결과 없음"} tone="emerald" />
         </div>
