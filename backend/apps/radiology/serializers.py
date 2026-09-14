@@ -129,6 +129,21 @@ class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
         return value
 
 
+class RadiologyXrayImageUploadSerializer(serializers.Serializer):
+    image = serializers.FileField(allow_empty_file=False, write_only=True)
+
+    def validate_image(self, uploaded_file):
+        content_type = (uploaded_file.content_type or "").lower()
+        if content_type not in {"image/png", "image/jpeg"}:
+            raise serializers.ValidationError("PNG 또는 JPEG 파일만 업로드할 수 있습니다.")
+
+        filename = uploaded_file.name.lower()
+        expected_extensions = (".png",) if content_type == "image/png" else (".jpg", ".jpeg")
+        if not filename.endswith(expected_extensions):
+            raise serializers.ValidationError("파일 확장자와 이미지 형식이 일치하지 않습니다.")
+        return uploaded_file
+
+
 class RadiologyAiAnalysisSummarySerializer(serializers.Serializer):
     id = serializers.UUIDField(read_only=True)
     analysis_type = serializers.CharField(read_only=True)

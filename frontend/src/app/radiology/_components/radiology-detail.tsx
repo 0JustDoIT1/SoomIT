@@ -11,6 +11,7 @@ import {
   RadiologyApiError,
   startRadiologyAnalysis,
   submitRadiologyAnalysisForReview,
+  uploadRadiologyXrayImage,
   type RadiologyAnalysisDetail,
   type RadiologyAnalysisResult,
   type RadiologyWorklistItem,
@@ -146,9 +147,10 @@ export function RadiologyPatientSummary({ item, onClear }: {
   );
 }
 
-export function RadiologyDetail({ item, embedded = false }: {
+export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   item: RadiologyWorklistItem;
   embedded?: boolean;
+  onImageUploaded?: () => void;
 }) {
   const [showResultNotice, setShowResultNotice] = useState(false);
   const [startingAnalysis, setStartingAnalysis] = useState(false);
@@ -161,6 +163,7 @@ export function RadiologyDetail({ item, embedded = false }: {
   const [actionError, setActionError] = useState("");
   const [analysisResult, setAnalysisResult] = useState<RadiologyAnalysisResult | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
   const order = item.examination_order;
   const image = item.latest_image_asset;
@@ -226,6 +229,23 @@ export function RadiologyDetail({ item, embedded = false }: {
       setActionError(error instanceof Error ? error.message : "AI 분석을 등록하지 못했습니다.");
     } finally {
       setStartingAnalysis(false);
+    }
+  }
+
+  async function handleUploadImage() {
+    if (!isXray || !previewFile) return;
+    setUploadingImage(true);
+    setActionError("");
+    setActionMessage("");
+    try {
+      await uploadRadiologyXrayImage(order.id, previewFile);
+      setSelectedFiles([]);
+      setActionMessage("X-ray 영상이 업로드되어 영상 자산으로 연결되었습니다.");
+      onImageUploaded?.();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "X-ray 영상을 업로드하지 못했습니다.");
+    } finally {
+      setUploadingImage(false);
     }
   }
 
@@ -310,7 +330,7 @@ export function RadiologyDetail({ item, embedded = false }: {
               <input
                 type="file"
                 multiple={!isXray}
-                accept=".dcm,.dicom,image/jpeg,image/png,application/dicom"
+                accept={isXray ? "image/jpeg,image/png" : ".dcm,.dicom,application/dicom"}
                 className="sr-only"
                 onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
               />
@@ -335,7 +355,7 @@ export function RadiologyDetail({ item, embedded = false }: {
                   </div>
                 </div>
               ) : null}
-              <p className="mt-3 text-slate-500">선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다.</p>
+              {isXray ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{"\uc120\ud0dd\ud55c PNG \ub610\ub294 JPEG\ub294 \uc5c5\ub85c\ub4dc \ud6c4 \uc601\uc0c1 \uc790\uc0b0\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4."}</p><button type="button" onClick={handleUploadImage} disabled={!previewFile || uploadingImage} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingImage ? "\uc5c5\ub85c\ub4dc \uc911" : "\uc11c\ubc84\uc5d0 \uc5c5\ub85c\ub4dc"}</button></div> : <p className="mt-3 text-slate-500">선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다.</p>}
             </div>
           ) : null}
           <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p>

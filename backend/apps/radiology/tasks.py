@@ -8,7 +8,7 @@ from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, XrayAiRes
 from apps.cases.models import CaseImageAsset
 
 from .services.xray_inference import request_xray_prediction
-from .services.xray_storage import download_xray_png_bytes
+from .services.xray_storage import download_xray_image_bytes
 
 
 def _mark_failed(analysis_id):
@@ -69,7 +69,7 @@ def run_xray_analysis(analysis_id):
     analysis.save(update_fields=["status", "started_at", "error_message", "completed_at"])
 
     try:
-        png_bytes = download_xray_png_bytes(asset.storage_uri)
+        png_bytes = download_xray_image_bytes(asset.storage_uri)
         prediction = request_xray_prediction(png_bytes)
         assessment, suspicion_score = _xray_values(prediction)
     except Exception:

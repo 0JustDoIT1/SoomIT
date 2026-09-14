@@ -303,6 +303,23 @@ async function radiologyRequest<T>(path: string, init: RequestInit = {}): Promis
   return response.json();
 }
 
+export async function uploadRadiologyXrayImage(orderId: string, image: File) {
+  const formData = new FormData();
+  formData.set("image", image);
+  const response = await staffAuthenticatedFetch(
+    `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/upload/`,
+    { method: "POST", headers: { Accept: "application/json" }, body: formData },
+  );
+  if (!response.ok) {
+    const errorData: unknown = await response.json().catch(() => null);
+    throw new RadiologyApiError(
+      getErrorMessage(errorData) ?? "X-ray 영상을 업로드하지 못했습니다.",
+      response.status,
+    );
+  }
+  return response.json() as Promise<RadiologyRegisteredImage>;
+}
+
 export function registerRadiologyImage(
   orderId: string,
   data: RadiologyImageRegistration,

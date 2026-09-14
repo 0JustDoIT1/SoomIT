@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.utils import timezone
@@ -22,11 +23,18 @@ from apps.patients.models import Appointment
 
 from .models import RadiologyReview
 from .tasks import run_xray_analysis
+from .services.xray_storage import (
+    XrayStorageError,
+    build_xray_object_path,
+    delete_xray_image,
+    upload_xray_image,
+)
 from .services.workflow import is_pet_ct_tnm_order
 from .serializers import (
     RadiologyAiAnalysisDetailSerializer,
     RadiologyAiResultSerializer,
     RadiologyImageAssetCreateSerializer,
+    RadiologyXrayImageUploadSerializer,
     RadiologyWorklistQuerySerializer,
     RadiologyWorklistSerializer,
 )
@@ -473,6 +481,78 @@ class RadiologyOrderImageCreateAPIView(RadiologyPermissionMixin, APIView):
             RadiologyImageAssetCreateSerializer(asset).data,
             status=status.HTTP_201_CREATED,
         )
+
+
+class RadiologyOrderXrayImageUploadAPIView(RadiologyPermissionMixin, APIView):
+    """Upload original PNG/JPEG bytes before creating a READY X-ray asset."""
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        order = self.get_order(order_id, for_update=True)
+        if order is None:
+            return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        if order.exam_type != ExaminationOrder.ExamType.XRAY:
+            return Response({"detail": "X-ray 오더에만 영상을 업로드할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = RadiologyXrayImageUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploaded_file = serializer.validated_data["image"]
+        image_bytes = uploaded_file.read()
+        content_type = uploaded_file.content_type.lower()
+        is_png = image_bytes.startswith(b"\x89PNG\r\n\x1a\n")
+        is_jpeg = image_bytes.startswith(b"\xff\xd8\xff")
+        if not ((content_type == "image/png" and is_png) or (content_type == "image/jpeg" and is_jpeg)):
+            return Response(
+                {"image": ["파일 내용이 PNG 또는 JPEG 형식이 아닙니다."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        extensions = (".png",) if content_type == "image/png" else (".jpg", ".jpeg")
+        object_path = build_xray_object_path(
+            hospital_id=order.case.patient.hospital_id,
+            case_id=order.case_id,
+            order_id=order.id,
+            filename=uploaded_file.name,
+            allowed_extensions=extensions,
+        )
+        storage_uri = f"gs://{settings.XRAY_GCS_BUCKET}/{object_path}"
+        if CaseImageAsset.objects.filter(storage_uri=storage_uri).exists():
+            return Response(
+                {"image": ["동일한 영상 자산이 이미 등록되어 있습니다."]},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            storage_uri = upload_xray_image(
+                image_bytes,
+                content_type=content_type,
+                hospital_id=order.case.patient.hospital_id,
+                case_id=order.case_id,
+                order_id=order.id,
+                filename=uploaded_file.name,
+            )
+        except XrayStorageError:
+            return Response({"detail": "X-ray 영상을 저장하지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+
+        try:
+            asset = CaseImageAsset.objects.create(
+                case=order.case,
+                examination_order=order,
+                storage_type=CaseImageAsset.StorageType.GCS,
+                storage_uri=storage_uri,
+                image_type=CaseImageAsset.ImageType.XRAY,
+                uploaded_stage=Stage.XRAY,
+                status=CaseImageAsset.Status.READY,
+                file_format="PNG" if content_type == "image/png" else "JPEG",
+                metadata=None,
+            )
+        except Exception:
+            try:
+                delete_xray_image(storage_uri)
+            except XrayStorageError:
+                pass
+            raise
+        return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
 
 
 class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):

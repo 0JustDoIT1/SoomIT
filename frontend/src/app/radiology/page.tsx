@@ -78,6 +78,7 @@ function RadiologyStatusTable({
 function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (workflow: RadiologyCaseWorkflow) => void }) {
   const [workflow, setWorkflow] = useState<RadiologyCaseWorkflow | null>(null);
   const [error, setError] = useState("");
+  const [reloadVersion, setReloadVersion] = useState(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -89,7 +90,7 @@ function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (
         }
       });
     return () => controller.abort();
-  }, [caseId, onLoaded]);
+  }, [caseId, onLoaded, reloadVersion]);
 
   if (error) return <StateMessage variant="error" title={error} className="m-6" />;
   if (!workflow) return <StateMessage variant="loading" title="검사 흐름을 불러오는 중입니다." className="m-6" />;
@@ -126,7 +127,11 @@ function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (
               </p>
               <StatusBadge status={exam.workflow_status} label={exam.workflow_status_label} />
             </div>
-            <RadiologyDetail item={exam} embedded />
+            <RadiologyDetail
+              item={exam}
+              embedded
+              onImageUploaded={() => setReloadVersion((version) => version + 1)}
+            />
           </section>
         ))}
       </div>

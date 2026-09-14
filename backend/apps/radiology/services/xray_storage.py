@@ -38,36 +38,42 @@ class XrayStorageDownloadError(XrayStorageError):
     pass
 
 
+IMAGE_CONTENT_TYPES = {
+    "image/png": (".png",),
+    "image/jpeg": (".jpg", ".jpeg"),
+}
+
+
 def _bucket_name():
     bucket_name = settings.XRAY_GCS_BUCKET.strip()
     if not bucket_name:
-        raise XrayStorageError("XRAY_GCS_BUCKET 설정이 필요합니다.")
+        raise XrayStorageError("XRAY_GCS_BUCKET must be configured.")
     return bucket_name
 
 
 def _safe_component(value, field_name):
     value = str(value).strip()
     if not value or value in {".", ".."} or "/" in value or "\\" in value:
-        raise InvalidXrayObjectPath(f"{field_name} 값이 올바르지 않습니다.")
+        raise InvalidXrayObjectPath(f"Invalid {field_name}.")
     return value
 
 
-def _safe_filename(filename):
+def _safe_filename(filename, *, allowed_extensions=(".png",)):
     filename = _safe_component(filename, "filename")
-    if filename.lower().endswith(".png"):
+    allowed_extensions = tuple(extension.lower() for extension in allowed_extensions)
+    if filename.lower().endswith(allowed_extensions):
         return filename
-    return f"{filename}.png"
+    return f"{filename}{allowed_extensions[0]}"
 
 
-def build_xray_object_path(*, hospital_id, case_id, order_id, filename):
-    """Build the approved object name without altering an existing .png filename."""
+def build_xray_object_path(*, hospital_id, case_id, order_id, filename, allowed_extensions=(".png",)):
     return "/".join(
         (
             "xray",
             _safe_component(hospital_id, "hospital_id"),
             _safe_component(case_id, "case_id"),
             _safe_component(order_id, "order_id"),
-            _safe_filename(filename),
+            _safe_filename(filename, allowed_extensions=allowed_extensions),
         )
     )
 
@@ -76,9 +82,9 @@ def _build_gs_uri(object_path):
     return f"gs://{_bucket_name()}/{object_path}"
 
 
-def parse_xray_gs_uri(gs_uri):
+def parse_xray_gs_uri(gs_uri, *, allowed_extensions=(".png",)):
     if not isinstance(gs_uri, str):
-        raise InvalidXrayObjectPath("GCS URI가 올바르지 않습니다.")
+        raise InvalidXrayObjectPath("Invalid GCS URI.")
     parsed = urlparse(gs_uri)
     if (
         parsed.scheme != "gs"
@@ -87,17 +93,18 @@ def parse_xray_gs_uri(gs_uri):
         or parsed.query
         or parsed.fragment
     ):
-        raise InvalidXrayObjectPath("X-ray GCS URI가 올바르지 않습니다.")
+        raise InvalidXrayObjectPath("Invalid X-ray GCS URI.")
 
     object_path = parsed.path.lstrip("/")
     parts = object_path.split("/")
+    allowed_extensions = tuple(extension.lower() for extension in allowed_extensions)
     if (
         len(parts) != 5
         or parts[0] != "xray"
         or any(not part or part in {".", ".."} for part in parts)
-        or not parts[-1].lower().endswith(".png")
+        or not parts[-1].lower().endswith(allowed_extensions)
     ):
-        raise InvalidXrayObjectPath("X-ray GCS object path가 올바르지 않습니다.")
+        raise InvalidXrayObjectPath("Invalid X-ray GCS object path.")
     return object_path
 
 
@@ -105,51 +112,81 @@ def _get_bucket():
     try:
         return storage.Client().bucket(_bucket_name())
     except GoogleAuthError as exc:
-        raise XrayStorageCredentialError("GCS 인증 정보를 사용할 수 없습니다.") from exc
+        raise XrayStorageCredentialError("GCS credentials are unavailable.") from exc
     except Exception as exc:
-        raise XrayStorageCredentialError("GCS client를 초기화할 수 없습니다.") from exc
+        raise XrayStorageCredentialError("The GCS client could not be initialized.") from exc
 
 
-def upload_xray_png(png_bytes, *, hospital_id, case_id, order_id, filename):
-    """Upload unmodified PNG bytes and return their approved gs:// URI."""
-    if not isinstance(png_bytes, bytes) or not png_bytes:
-        raise XrayStorageUploadError("비어 있지 않은 PNG bytes가 필요합니다.")
+def _upload(image_bytes, *, content_type, object_path):
+    try:
+        _get_bucket().blob(object_path).upload_from_string(image_bytes, content_type=content_type)
+    except NotFound as exc:
+        raise XrayStorageBucketNotFound("X-ray GCS bucket was not found.") from exc
+    except (Forbidden, Unauthorized) as exc:
+        raise XrayStorageAccessError("Access to the X-ray GCS bucket was denied.") from exc
+    except XrayStorageError:
+        raise
+    except Exception as exc:
+        raise XrayStorageUploadError("The X-ray image could not be uploaded to GCS.") from exc
+    return _build_gs_uri(object_path)
 
+
+def upload_xray_image(image_bytes, *, content_type, hospital_id, case_id, order_id, filename):
+    """Upload original PNG or JPEG bytes and return their approved gs:// URI."""
+    if content_type not in IMAGE_CONTENT_TYPES:
+        raise XrayStorageUploadError("Only PNG or JPEG X-ray images are supported.")
+    if not isinstance(image_bytes, bytes) or not image_bytes:
+        raise XrayStorageUploadError("Non-empty image bytes are required.")
     object_path = build_xray_object_path(
         hospital_id=hospital_id,
         case_id=case_id,
         order_id=order_id,
         filename=filename,
+        allowed_extensions=IMAGE_CONTENT_TYPES[content_type],
     )
-    try:
-        _get_bucket().blob(object_path).upload_from_string(
-            png_bytes,
-            content_type="image/png",
-        )
-    except NotFound as exc:
-        raise XrayStorageBucketNotFound("X-ray GCS bucket을 찾을 수 없습니다.") from exc
-    except (Forbidden, Unauthorized) as exc:
-        raise XrayStorageAccessError("X-ray GCS bucket 접근이 거부되었습니다.") from exc
-    except XrayStorageError:
-        raise
-    except Exception as exc:
-        raise XrayStorageUploadError("X-ray PNG를 GCS에 업로드할 수 없습니다.") from exc
-    return _build_gs_uri(object_path)
+    return _upload(image_bytes, content_type=content_type, object_path=object_path)
 
 
-def download_xray_png_bytes(gs_uri):
-    """Download original PNG bytes from an approved gs:// X-ray object URI."""
-    object_path = parse_xray_gs_uri(gs_uri)
+def upload_xray_png(png_bytes, *, hospital_id, case_id, order_id, filename):
+    return upload_xray_image(
+        png_bytes,
+        content_type="image/png",
+        hospital_id=hospital_id,
+        case_id=case_id,
+        order_id=order_id,
+        filename=filename,
+    )
+
+
+def _download(gs_uri, *, allowed_extensions):
+    object_path = parse_xray_gs_uri(gs_uri, allowed_extensions=allowed_extensions)
     try:
         return _get_bucket().blob(object_path).download_as_bytes()
     except NotFound as exc:
-        raise XrayStorageObjectNotFound("X-ray PNG object를 찾을 수 없습니다.") from exc
+        raise XrayStorageObjectNotFound("X-ray image object was not found.") from exc
     except (Forbidden, Unauthorized) as exc:
-        raise XrayStorageAccessError("X-ray GCS bucket 접근이 거부되었습니다.") from exc
+        raise XrayStorageAccessError("Access to the X-ray GCS bucket was denied.") from exc
     except XrayStorageError:
         raise
     except Exception as exc:
-        raise XrayStorageDownloadError("X-ray PNG를 GCS에서 다운로드할 수 없습니다.") from exc
+        raise XrayStorageDownloadError("The X-ray image could not be downloaded from GCS.") from exc
+
+
+def download_xray_image_bytes(gs_uri):
+    return _download(gs_uri, allowed_extensions=(".png", ".jpg", ".jpeg"))
+
+
+def delete_xray_image(gs_uri):
+    """Best-effort cleanup for an object uploaded before its DB asset could be created."""
+    object_path = parse_xray_gs_uri(gs_uri, allowed_extensions=(".png", ".jpg", ".jpeg"))
+    try:
+        _get_bucket().blob(object_path).delete()
+    except Exception as exc:
+        raise XrayStorageUploadError("The uploaded X-ray image could not be cleaned up.") from exc
+
+
+def download_xray_png_bytes(gs_uri):
+    return _download(gs_uri, allowed_extensions=(".png",))
 
 
 download_xray_png = download_xray_png_bytes

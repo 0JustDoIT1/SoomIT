@@ -26,8 +26,46 @@ vi.mock("./_lib/radiology-api", () => ({
 }));
 vi.mock("./_components/radiology-detail", () => ({
   RadiologyPatientSummary: ({ item }: { item: { id: string } }) => <div>summary-{item.id}</div>,
-  RadiologyDetail: () => <div>exam-detail</div>,
+  RadiologyDetail: ({ onImageUploaded }: { onImageUploaded?: () => void }) => (
+    <button type="button" onClick={onImageUploaded}>uploaded-image</button>
+  ),
 }));
+
+it("refetches the selected case workflow after an image upload", async () => {
+  sessionStorage.setItem("accessToken", "test");
+  const row = {
+    case: { id: "case-1" }, patient: { name: "patient-1", patient_code: "code-1" },
+    current_exam: { id: "order-1", examination_order: { exam_type_label: "XRAY" } },
+    workflow_status: "EXAM_PENDING",
+  };
+  vi.mocked(fetchRadiologyCaseWorklist).mockResolvedValue([row] as unknown as Awaited<ReturnType<typeof fetchRadiologyCaseWorklist>>);
+  vi.mocked(fetchRadiologyCaseWorkflow).mockResolvedValue({
+    patient: row.patient,
+    case: row.case,
+    responsible_doctor: null,
+    exams: [{
+      ...row.current_exam,
+      patient: row.patient,
+      case: row.case,
+      responsible_doctor: null,
+      requesting_doctor: { id: "doctor-1", name: "doctor" },
+      image_asset_count: 0,
+      latest_image_asset: null,
+      latest_ai_analysis: null,
+      workflow_status_label: "pending",
+      scheduled_at: null,
+      ai_result: null,
+      review: null,
+    }],
+  } as unknown as Awaited<ReturnType<typeof fetchRadiologyCaseWorkflow>>);
+  const user = userEvent.setup();
+  render(<Page />);
+  await user.click(await screen.findByText("patient-1"));
+  await screen.findByRole("button", { name: "uploaded-image" });
+  expect(fetchRadiologyCaseWorkflow).toHaveBeenCalledTimes(1);
+  await user.click(screen.getByRole("button", { name: "uploaded-image" }));
+  await waitFor(() => expect(fetchRadiologyCaseWorkflow).toHaveBeenCalledTimes(2));
+});
 
 it("preserves selected case, summary and workflow through all pagination controls", async () => {
   sessionStorage.setItem("accessToken", "test");

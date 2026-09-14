@@ -8,6 +8,7 @@ from .views import (
     RadiologyCaseWorklistAPIView,
     RadiologyOrderAnalysisCreateAPIView,
     RadiologyOrderImageCreateAPIView,
+    RadiologyOrderXrayImageUploadAPIView,
     RadiologyWorklistAPIView,
 )
 
@@ -26,6 +27,11 @@ urlpatterns = [
         "orders/<uuid:order_id>/images/",
         RadiologyOrderImageCreateAPIView.as_view(),
         name="order-image-create",
+    ),
+    path(
+        "orders/<uuid:order_id>/images/upload/",
+        RadiologyOrderXrayImageUploadAPIView.as_view(),
+        name="order-xray-image-upload",
     ),
     path(
         "orders/<uuid:order_id>/analyses/",

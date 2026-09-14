@@ -4,6 +4,7 @@ from unittest.mock import patch
 from django.db import connection
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.urls import reverse
 from django.utils import timezone
 from rest_framework import status
@@ -498,6 +499,58 @@ class RadiologyWorklistAPITestCase(APITestCase):
             format="json",
         )
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @patch("apps.radiology.views.upload_xray_image")
+    def test_upload_xray_png_creates_ready_gcs_asset(self, upload_xray_image):
+        upload_xray_image.return_value = (
+            f"gs://test-xray-bucket/xray/{self.hospital.id}/{self.case.id}/{self.order.id}/chest.png"
+        )
+        response = self.client.post(
+            reverse("radiology:order-xray-image-upload", kwargs={"order_id": self.order.id}),
+            {"image": SimpleUploadedFile("chest.png", b"\x89PNG\r\n\x1a\nsource-bytes", content_type="image/png")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        asset = CaseImageAsset.objects.get(id=response.data["id"])
+        self.assertEqual(asset.storage_type, CaseImageAsset.StorageType.GCS)
+        self.assertEqual(asset.status, CaseImageAsset.Status.READY)
+        self.assertEqual(asset.image_type, CaseImageAsset.ImageType.XRAY)
+        self.assertEqual(asset.uploaded_stage, Stage.XRAY)
+        self.assertEqual(asset.file_format, "PNG")
+        self.assertEqual(asset.examination_order_id, self.order.id)
+        upload_xray_image.assert_called_once()
+
+    @patch("apps.radiology.views.upload_xray_image")
+    def test_upload_xray_jpeg_creates_ready_asset(self, upload_xray_image):
+        upload_xray_image.return_value = (
+            f"gs://test-xray-bucket/xray/{self.hospital.id}/{self.case.id}/{self.order.id}/chest.jpg"
+        )
+        response = self.client.post(
+            reverse("radiology:order-xray-image-upload", kwargs={"order_id": self.order.id}),
+            {"image": SimpleUploadedFile("chest.jpg", b"\xff\xd8\xffsource-bytes", content_type="image/jpeg")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(CaseImageAsset.objects.get(id=response.data["id"]).file_format, "JPEG")
+
+    def test_upload_xray_rejects_unsupported_file_before_gcs(self):
+        response = self.client.post(
+            reverse("radiology:order-xray-image-upload", kwargs={"order_id": self.order.id}),
+            {"image": SimpleUploadedFile("chest.gif", b"GIF89a", content_type="image/gif")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(CaseImageAsset.objects.filter(examination_order=self.order).exists())
+
+    @patch("apps.radiology.views.upload_xray_image")
+    def test_upload_xray_rejects_other_hospital_order_before_gcs(self, upload_xray_image):
+        response = self.client.post(
+            reverse("radiology:order-xray-image-upload", kwargs={"order_id": self.other_order.id}),
+            {"image": SimpleUploadedFile("chest.png", b"\x89PNG\r\n\x1a\nsource-bytes", content_type="image/png")},
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        upload_xray_image.assert_not_called()
 
     def test_start_analysis_requires_ready_asset(self):
         response = self.client.post(
