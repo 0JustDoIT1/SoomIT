@@ -121,7 +121,8 @@ export function RadiologyWorklist({
         </label>
       </div>
 
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 flex-1 overflow-auto" aria-busy={viewStatus === "loading"}>
+        {viewStatus === "loading" ? <span className="sr-only" role="status">Worklist 로딩 중</span> : null}
         <table className="w-full min-w-[420px] border-collapse text-left text-xs">
           <thead className="bg-violet-50/40 text-xs font-semibold text-slate-500">
             <tr className="border-b border-slate-200">
@@ -133,7 +134,15 @@ export function RadiologyWorklist({
           </thead>
 
           <tbody>
-            {items.map((item) => {
+            {viewStatus === "loading" ? Array.from({ length: 10 }, (_, index) => (
+              <tr key={index} aria-hidden="true" className="border-b border-slate-100 border-l-4 border-l-transparent motion-safe:animate-pulse">
+                {["w-14", "w-20", "w-12", "w-16"].map((width) => (
+                  <td key={width} className="px-3 py-2.5">
+                    <div className={`h-6 max-w-full rounded bg-violet-50 ${width}`} />
+                  </td>
+                ))}
+              </tr>
+            )) : items.map((item) => {
               const caseId = item.case.id;
 
               return (
@@ -185,14 +194,6 @@ export function RadiologyWorklist({
           </tbody>
         </table>
       </div>
-
-      {viewStatus === "loading" ? (
-        <StateMessage
-          variant="loading"
-          title="Worklist를 불러오는 중입니다."
-          className="m-5"
-        />
-      ) : null}
 
       {viewStatus === "empty" ? (
         <StateMessage

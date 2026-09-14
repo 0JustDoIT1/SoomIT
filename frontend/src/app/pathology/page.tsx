@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
 
 import {
@@ -17,6 +18,33 @@ import type { PathologyAiAnalysis } from "./_lib/pathology-api";
 type Tab = "worklist" | "ai" | "completed";
 
 const PAGE_SIZE = 10;
+
+function WorklistSkeleton() {
+  return (
+    <div className="min-h-0 flex-1 overflow-auto" role="status" aria-label="Worklist 로딩 중" aria-busy="true">
+      <table className="w-full min-w-[420px] text-left text-xs" aria-hidden="true">
+        <thead className="sticky top-0 z-[1] bg-[#F1F3FF] text-slate-600">
+          <tr>
+            {["환자명", "환자코드", "검사", "상태"].map((label) => (
+              <th key={label} className="px-3 py-2.5">{label}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="motion-safe:animate-pulse">
+          {Array.from({ length: PAGE_SIZE }, (_, index) => (
+            <tr key={index} className="border-b border-l-[3px] border-l-transparent border-b-[#E8EAF3]">
+              {["w-14", "w-20", "w-12", "w-16"].map((width) => (
+                <td key={width} className="px-3 py-2.5">
+                  <div className={`h-4 max-w-full rounded bg-[#EEF0F8] ${width}`} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
 
 const geneTargets = [
   { symbol: "KRAS", label: "KRAS" },
@@ -157,57 +185,34 @@ function PatientSummary({
 }: {
   item: PathologyWorkstationItem;
 }) {
-  const informationGroups = [
-    {
-      title: "환자 기본정보",
-      rows: [
-        ["환자명", item.patient.name],
-        ["환자코드", item.patient.patient_code],
-        ["생년월일", item.patient.birth_date || "-"],
-        ["성별", item.patient.sex || "-"],
-      ],
-    },
-    {
-      title: "Case 정보",
-      rows: [
-        ["Case Code", item.case.case_code || "-"],
-        ["현재 단계", item.case.current_stage || "-"],
-        ["Case 상태", item.case.case_status || "-"],
-      ],
-    },
-    {
-      title: "검체 정보",
-      rows: [
-        ["검체번호", item.specimen?.specimen_code ?? "-"],
-        ["검체 종류", item.specimen?.specimen_type ?? "-"],
-        ["채취 부위", item.specimen?.body_site ?? "-"],
-        ["검체 상태", item.specimen?.status ?? "-"],
-        ["Slide", item.latest_wsi?.slide_code ?? "-"],
-        ["연결 WSI", String(item.wsi_count)],
-      ],
-    },
-    {
-      title: "현재 검사 / 오더",
-      rows: [
-        ["검사", item.pathology_test_type_label ?? "-"],
-        ["현재 상태", workflowDisplayStatus(item)],
-        ["작업 상태", item.status || "-"],
-        ["우선순위", item.priority || "-"],
-        ["의뢰 의사", item.requesting_doctor?.name ?? "-"],
-      ],
-    },
+  const summaryRows = [
+    ["환자코드", item.patient.patient_code],
+    [
+      "성별 / 생년월일",
+      `${item.patient.sex || "-"} / ${item.patient.birth_date || "-"}`,
+    ],
+    ["Case Code", item.case.case_code || "-"],
+    ["현재 검사", item.pathology_test_type_label ?? "-"],
+    ["현재 상태", workflowDisplayStatus(item)],
+    ["의뢰 의사", item.requesting_doctor?.name ?? "-"],
   ];
 
   return (
-    <section className="min-h-0 overflow-y-auto bg-[#F9FAFF]">
-      <div className="border-b border-[#E2E5F2] bg-white px-4 py-3">
+    <section
+      aria-labelledby="pathology-selected-patient-heading"
+      className="min-h-0 overflow-y-auto bg-gradient-to-b from-[#F1F3FF]/70 to-[#F9FAFF] p-3"
+    >
+      <div className="rounded-t-xl border border-[#DDE2F7] bg-gradient-to-r from-white to-[#F1F3FF] px-4 py-3 shadow-sm">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          선택 환자 · 검체
+          선택 환자
         </p>
 
         <div className="mt-1 flex items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-bold text-slate-900">
+            <h2
+              id="pathology-selected-patient-heading"
+              className="text-base font-bold text-slate-900"
+            >
               {item.patient.name}
             </h2>
 
@@ -216,66 +221,76 @@ function PatientSummary({
             </p>
           </div>
 
-          <span className="whitespace-nowrap rounded-md bg-[#F1F3FF] px-2 py-1 text-[11px] font-semibold text-[#3446B8]">
+          <span className="whitespace-nowrap rounded-full border border-[#DDE2F7] bg-white px-2 py-1 text-[11px] font-semibold text-[#3446B8]">
             {workflowDisplayStatus(item)}
           </span>
         </div>
       </div>
 
-      <div className="divide-y divide-[#E2E5F2] px-4">
-        {informationGroups.map((group) => (
-          <section key={group.title} className="py-3">
-            <h3 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[#3446B8] before:h-1.5 before:w-1.5 before:rounded-full before:bg-[#6677D8]">
-              {group.title}
-            </h3>
-
-            <dl className="mt-2 divide-y divide-[#E2E5F2] text-xs">
-              {group.rows.map(([label, value]) => (
-                <div
-                  key={label}
-                  className="grid grid-cols-[96px_minmax(0,1fr)] gap-3 py-1.5"
-                >
-                  <dt className="text-slate-500">{label}</dt>
-                  <dd className="break-words font-medium text-slate-800">
-                    {value}
-                  </dd>
-                </div>
-              ))}
-            </dl>
-          </section>
+      <dl className="grid gap-x-4 gap-y-3 rounded-b-xl border border-[#DDE2F7] bg-white px-4 py-4 text-xs shadow-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+        {summaryRows.map(([label, value]) => (
+          <div key={label}>
+            <dt className="text-[11px] text-slate-400">{label}</dt>
+            <dd className="mt-1 break-words font-medium text-slate-800">
+              {value}
+            </dd>
+          </div>
         ))}
+      </dl>
+    </section>
+  );
+}
+
+function SelectedCaseOverview({
+  workflow,
+  item,
+}: {
+  workflow: PathologyCaseWorkflow;
+  item: PathologyWorkstationItem | null;
+}) {
+  return (
+    <section className="mb-4 overflow-hidden rounded-2xl border border-[#DDE2F7] bg-white shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E5F2] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#5364C7]">
+            선택 환자 정보
+          </p>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <h1 className="text-xl font-bold text-slate-900">
+              {workflow.patient.name}
+            </h1>
+            <span className="text-xs text-slate-500">
+              {workflow.patient.patient_code}
+            </span>
+          </div>
+        </div>
+
+        {item ? (
+          <span className="rounded-full border border-[#CDD3EE] bg-white px-3 py-1.5 text-xs font-semibold text-[#3446B8] shadow-sm">
+            {workflowDisplayStatus(item)}
+          </span>
+        ) : null}
       </div>
 
-      <section className="border-t border-[#E2E5F2] bg-white px-4 py-3">
-        <h3 className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-[#3446B8] before:h-1.5 before:w-1.5 before:rounded-full before:bg-[#F28A3A]">
-          영상 올리기
-        </h3>
-
-        {item.latest_wsi ? (
-          <div className="mt-2 rounded-r-lg border-l-2 border-[#3446B8] bg-[#F1F3FF] px-3 py-2 text-xs">
-            <p className="font-semibold text-[#3446B8]">현재 연결 영상</p>
-            <p className="mt-1 break-all text-[#3446B8]">
-              {item.latest_wsi.slide_code} · {item.latest_wsi.original_filename}
-            </p>
-            <p className="mt-1 text-[11px] text-[#6677D8]">
-              WSI ID: {item.latest_wsi.id}
-            </p>
+      <dl className="grid gap-x-6 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
+        {[
+          ["생년월일", workflow.patient.birth_date || "-"],
+          ["성별", workflow.patient.sex || "-"],
+          ["Case Code", workflow.case.case_code || "-"],
+          ["현재 단계", workflow.case.current_stage || "-"],
+          ["Case 상태", workflow.case.case_status || "-"],
+          ["담당자", item?.assigned_to_name ?? "-"],
+          ["의뢰 의사", item?.requesting_doctor?.name ?? "-"],
+          ["현재 검사", item?.pathology_test_type_label ?? "-"],
+        ].map(([label, value]) => (
+          <div key={label} className="border-l-2 border-[#CDD3EE] pl-3">
+            <dt className="text-[11px] text-slate-400">{label}</dt>
+            <dd className="mt-1 break-words font-semibold text-slate-800">
+              {value}
+            </dd>
           </div>
-        ) : null}
-
-        <button
-          type="button"
-          disabled
-          className="mt-2 flex w-full cursor-not-allowed flex-col items-center justify-center rounded-lg border border-dashed border-[#AEB8EB] bg-[#F1F3FF] px-3 py-4 text-center disabled:opacity-80"
-        >
-          <span className="text-xs font-semibold text-[#3446B8]">
-            WSI 파일 선택 또는 끌어놓기
-          </span>
-          <span className="mt-1 text-[11px] text-slate-500">
-            WSI 업로드 API 연결 대기
-          </span>
-        </button>
-      </section>
+        ))}
+      </dl>
     </section>
   );
 }
@@ -388,6 +403,25 @@ function WorkArea({
       : isGene
         ? "8개 유전자 변이 분석"
         : "현재 오더의 검사 종류를 확인할 수 없습니다.";
+  const workflowSteps = [
+    {
+      label: "조직데이터",
+      completed: Boolean(item.latest_wsi),
+    },
+    {
+      label: "AI 분석",
+      completed: Boolean(currentAnalysis),
+    },
+    {
+      label: "AI 분석 결과",
+      completed: currentAnalysis?.status === "SUCCEEDED",
+    },
+    {
+      label: "의사에게 제출",
+      completed:
+        alreadySubmitted || item.workflow_status === "REVIEW_COMPLETED",
+    },
+  ];
 
   async function handleSubmitForReview() {
     if (!canSubmitForReview || !currentAnalysis) return;
@@ -414,23 +448,61 @@ function WorkArea({
   }
 
   return (
-    <section className="border-b border-[#E2E5F2] bg-white last:border-b-0">
-      <header className="border-b border-[#E2E5F2] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-          병리 분석 Workstation
-        </p>
+    <section className="mb-4 overflow-hidden rounded-2xl border border-[#DDE2F7] bg-white shadow-sm last:mb-0">
+      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#DDE2F7] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+            병리 분석 Workstation
+          </p>
 
-        <h2 className="mt-1 text-lg font-bold text-[#3446B8]">
-          {String(sectionNumber).padStart(2, "0")} · {testTitle}
-        </h2>
+          <h2 className="mt-1 text-lg font-bold text-[#3446B8]">
+            {String(sectionNumber).padStart(2, "0")} · {testTitle}
+          </h2>
 
-        <p className="mt-1 text-xs text-slate-500">
-          {testDescription} · {item.patient.name} ·{" "}
-          {item.specimen?.specimen_code ?? "검체 미연결"}
-        </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {testDescription} · {item.patient.name} ·{" "}
+            {item.specimen?.specimen_code ?? "검체 미연결"}
+          </p>
+        </div>
+        <span className="rounded-full border border-[#DDE2F7] bg-white px-2.5 py-1 text-xs font-semibold text-[#3446B8]">
+          {workflowDisplayStatus(item)}
+        </span>
       </header>
 
-      <div className="divide-y divide-[#E2E5F2] px-5">
+      <div className="space-y-4 bg-[#F9FAFF] p-4">
+        {isKnownTestType ? (
+          <ol
+            aria-label={`${testTitle} workflow`}
+            className="grid overflow-hidden rounded-xl border border-[#DDE2F7] bg-white sm:grid-cols-4"
+          >
+            {workflowSteps.map((step, index) => (
+              <li
+                key={step.label}
+                className={`relative flex items-center gap-3 border-b border-[#E2E5F2] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${
+                  step.completed ? "bg-[#F1F3FF]" : "bg-white"
+                }`}
+              >
+                <span
+                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                    step.completed
+                      ? "bg-[#3446B8] text-white"
+                      : "border border-[#CDD3EE] bg-white text-slate-400"
+                  }`}
+                >
+                  {String(index + 1).padStart(2, "0")}
+                </span>
+                <span
+                  className={`text-xs font-semibold ${
+                    step.completed ? "text-[#3446B8]" : "text-slate-500"
+                  }`}
+                >
+                  {step.label}
+                </span>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+
         {!isKnownTestType ? (
           <StateMessage
             variant="empty"
@@ -440,7 +512,7 @@ function WorkArea({
         ) : null}
 
         {isKnownTestType ? (
-        <section className="py-5">
+        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <h3 className="text-sm font-bold">
             <span className="mr-2 text-xs text-[#3446B8]">
               01
@@ -450,7 +522,7 @@ function WorkArea({
 
           {item.latest_wsi ? (
             <>
-              <dl className="mt-3 grid grid-cols-2 gap-x-5 gap-y-3 border-y border-slate-200 py-3 text-xs sm:grid-cols-5">
+              <dl className="mt-3 grid grid-cols-2 gap-3 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-xs sm:grid-cols-5">
                 <div>
                   <dt className="text-slate-500">Slide</dt>
                   <dd className="mt-1 font-semibold">
@@ -492,7 +564,7 @@ function WorkArea({
                 </div>
               </dl>
 
-              <div className="mt-3 flex min-h-80 flex-col items-center justify-center border border-slate-300 bg-slate-950 text-slate-200">
+              <div className="mt-3 flex min-h-80 flex-col items-center justify-center rounded-xl border border-slate-300 bg-slate-950 text-slate-200 shadow-inner">
                 <p className="font-semibold">
                   조직영상 미리보기
                 </p>
@@ -514,7 +586,7 @@ function WorkArea({
         ) : null}
 
         {isSubtype ? (
-        <section className="py-5">
+        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold">
@@ -556,7 +628,7 @@ function WorkArea({
         ) : null}
 
         {isPdl1 ? (
-        <section className="py-5">
+        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h3 className="text-sm font-bold">
@@ -634,7 +706,7 @@ function WorkArea({
         ) : null}
 
         {isGene ? (
-        <section className="py-5">
+        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <div className="flex justify-between">
             <div>
               <h3 className="text-sm font-bold">
@@ -676,6 +748,131 @@ function WorkArea({
             onClick={() => setIsResultOpen(true)}
           />
         </section>
+        ) : null}
+
+        {currentAnalysis?.status === "SUCCEEDED" ? (
+          <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#5364C7]">
+                  AI 결과
+                </p>
+                <h3 className="mt-1 text-sm font-bold text-slate-900">
+                  AI 분석 결과
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsResultOpen(true)}
+                className="rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F]"
+              >
+                AI 결과 보기
+              </button>
+            </div>
+
+            {isSubtype && pathologyResult ? (
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+                {[
+                  [
+                    "예측 아형",
+                    pathologyResult.predicted_subtype ??
+                      pathologyResult.predicted_histologic_type ??
+                      "-",
+                  ],
+                  ["아형 신뢰도", percent(pathologyResult.subtype_confidence)],
+                  [
+                    "악성 판정",
+                    pathologyResult.malignancy_assessment_label ?? "-",
+                  ],
+                  ["악성 확률", percent(pathologyResult.malignancy_probability)],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
+                  >
+                    <dt className="text-xs text-slate-500">{label}</dt>
+                    <dd className="mt-2 font-bold text-slate-900">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+
+            {isPdl1 && pdl1Result ? (
+              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+                {[
+                  ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
+                  ["Confidence", percent(pdl1Result.confidence)],
+                  ["모델명", pdl1?.model_name ?? "-"],
+                  ["모델 버전", pdl1?.model_version_name ?? "-"],
+                ].map(([label, value]) => (
+                  <div
+                    key={label}
+                    className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
+                  >
+                    <dt className="text-xs text-slate-500">{label}</dt>
+                    <dd className="mt-2 font-bold text-slate-900">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            ) : null}
+
+            {isGene && geneResults.length > 0 ? (
+              <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                {geneTargets.map((gene) => {
+                  const result = geneResults.find(
+                    (entry) => entry.gene_symbol === gene.symbol,
+                  );
+
+                  return (
+                    <div
+                      key={gene.symbol}
+                      className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-sm"
+                    >
+                      <dt className="font-bold text-slate-800">{gene.label}</dt>
+                      <dd className="mt-2 font-semibold text-slate-700">
+                        {geneStatus(result?.predicted_status)}
+                      </dd>
+                      <dd className="mt-1 text-xs text-slate-500">
+                        Probability {percent(result?.predicted_probability)}
+                      </dd>
+                    </div>
+                  );
+                })}
+              </dl>
+            ) : null}
+          </section>
+        ) : null}
+
+        {currentAnalysis?.status === "SUCCEEDED" ? (
+          <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#DDE2F7] bg-gradient-to-r from-white to-[#F1F3FF] px-5 py-4 shadow-sm">
+            <div>
+              <p className="text-sm font-semibold text-slate-800">
+                {item.workflow_status === "REVIEW_COMPLETED"
+                  ? "의사 판독 완료"
+                  : alreadySubmitted
+                    ? "의사에게 제출 완료"
+                    : "AI 분석 결과를 의사 판독 대상으로 제출합니다."}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                {reviewSubmissionError ||
+                  (alreadySubmitted
+                    ? "동일한 판독 작업은 중복 생성되지 않습니다."
+                    : "완료된 현재 검사 결과만 제출할 수 있습니다.")}
+              </p>
+            </div>
+            <button
+              type="button"
+              disabled={!canSubmitForReview}
+              onClick={handleSubmitForReview}
+              className="rounded-lg bg-[#3446B8] px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-[#29399F] disabled:cursor-not-allowed disabled:bg-slate-300"
+            >
+              {submittingReview
+                ? "제출 중"
+                : alreadySubmitted
+                  ? "의사에게 제출 완료"
+                  : "의사에게 제출"}
+            </button>
+          </section>
         ) : null}
       </div>
 
@@ -734,8 +931,8 @@ function WorkArea({
               {isSubtype ? (
                 pathologyResult ? (
                   <>
-                    <dl className="grid grid-cols-2 gap-5 border-y border-slate-200 py-4 text-sm sm:grid-cols-4">
-                      <div>
+                    <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">예측 아형</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {pathologyResult.predicted_subtype ??
@@ -743,19 +940,19 @@ function WorkArea({
                             "-"}
                         </dd>
                       </div>
-                      <div>
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">아형 신뢰도</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {percent(pathologyResult.subtype_confidence)}
                         </dd>
                       </div>
-                      <div>
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">악성 판정</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {pathologyResult.malignancy_assessment_label ?? "-"}
                         </dd>
                       </div>
-                      <div>
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">악성 확률</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {percent(pathologyResult.malignancy_probability)}
@@ -764,7 +961,7 @@ function WorkArea({
                     </dl>
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
-                      <div className="flex min-h-64 flex-col items-center justify-center border border-slate-300 bg-slate-950 px-4 text-center text-slate-200">
+                      <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-slate-300 bg-slate-950 px-4 text-center text-slate-200 shadow-inner">
                         <p className="font-semibold">원본 조직영상</p>
                         <p className="mt-2 text-xs text-slate-400">
                           {item.latest_wsi
@@ -772,7 +969,7 @@ function WorkArea({
                             : "연결된 WSI가 없습니다."}
                         </p>
                       </div>
-                      <div className="flex min-h-64 items-center justify-center border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
+                      <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
                         AI Heatmap 연결 예정
                       </div>
                     </div>
@@ -788,26 +985,26 @@ function WorkArea({
               {isPdl1 ? (
                 pdl1Result ? (
                   <div className="space-y-5">
-                    <dl className="grid grid-cols-2 gap-5 border-y border-slate-200 py-4 text-sm sm:grid-cols-4">
-                      <div>
+                    <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">TPS 예측 구간</dt>
                         <dd className="mt-1 text-xl font-bold text-blue-800">
                           {pdl1Result.predicted_tps_range_label ?? "-"}
                         </dd>
                       </div>
-                      <div>
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">Confidence</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {percent(pdl1Result.confidence)}
                         </dd>
                       </div>
-                      <div>
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">모델명</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {pdl1?.model_name ?? "-"}
                         </dd>
                       </div>
-                      <div>
+                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">모델 버전</dt>
                         <dd className="mt-1 font-bold text-slate-900">
                           {pdl1?.model_version_name ?? "-"}
@@ -815,7 +1012,7 @@ function WorkArea({
                       </div>
                     </dl>
 
-                    <div>
+                    <div className="rounded-xl border border-[#DDE2F7] bg-white p-4">
                       <h3 className="text-sm font-bold text-slate-800">
                         Probabilities
                       </h3>
@@ -824,7 +1021,7 @@ function WorkArea({
                           ([key, value]) => (
                             <div
                               key={key}
-                              className="flex justify-between border-b border-slate-200 px-2 py-2"
+                              className="flex justify-between rounded-lg border border-[#DDE2F7] bg-[#F7F8FC] px-3 py-2"
                             >
                               <dt className="text-slate-500">{key}</dt>
                               <dd className="font-semibold text-slate-800">
@@ -846,38 +1043,21 @@ function WorkArea({
 
               {isGene ? (
                 geneResults.length > 0 ? (
-                  <div className="overflow-x-auto border border-slate-200">
-                    <table className="w-full text-left text-sm">
-                      <thead className="bg-slate-50 text-slate-500">
-                        <tr>
-                          <th className="px-4 py-3">Gene</th>
-                          <th className="px-4 py-3">결과</th>
-                          <th className="px-4 py-3 text-right">Probability</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-200">
-                        {geneTargets.map((gene) => {
-                          const result = geneResults.find(
-                            (entry) => entry.gene_symbol === gene.symbol,
-                          );
+                  <dl className="grid gap-2 sm:grid-cols-2">
+                    {geneTargets.map((gene) => {
+                      const result = geneResults.find(
+                        (entry) => entry.gene_symbol === gene.symbol,
+                      );
 
-                          return (
-                            <tr key={gene.symbol}>
-                              <td className="px-4 py-3 font-bold">
-                                {gene.label}
-                              </td>
-                              <td className="px-4 py-3 font-semibold text-slate-700">
-                                {geneStatus(result?.predicted_status)}
-                              </td>
-                              <td className="px-4 py-3 text-right text-slate-600">
-                                {percent(result?.predicted_probability)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                      return (
+                        <div key={gene.symbol} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-sm">
+                          <dt className="font-bold text-slate-800">{gene.label}</dt>
+                          <dd className="text-right text-slate-600"><span className="mr-1 text-[11px] text-slate-400">Probability</span>{percent(result?.predicted_probability)}</dd>
+                          <dd className="col-span-2 mt-1 font-semibold text-slate-700"><span className="mr-2 text-[11px] font-normal text-slate-400">결과</span>{geneStatus(result?.predicted_status)}</dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
                 ) : (
                   <StateMessage
                     variant="empty"
@@ -887,7 +1067,7 @@ function WorkArea({
               ) : null}
             </div>
 
-            <footer className="flex flex-wrap items-center justify-between gap-4 border-t border-[#E2E5F2] bg-[#F7F8FC] px-5 py-4 sm:px-6">
+            <footer className="m-5 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] px-5 py-4 sm:m-6">
               <div>
                 <p className="text-sm font-semibold text-slate-700">
                   {item.workflow_status === "REVIEW_COMPLETED"
@@ -934,6 +1114,7 @@ function WorkArea({
 }
 
 export default function PathologyDashboardPage() {
+  const recent = useRecentPatients("pathologyRecentPatients");
   const [items, setItems] = useState<
     PathologyWorkstationItem[]
   >([]);
@@ -941,6 +1122,8 @@ export default function PathologyDashboardPage() {
   const [selectedId, setSelectedId] = useState<
     string | null
   >(null);
+
+  const [selectedItem, setSelectedItem] = useState<PathologyWorkstationItem | null>(null);
 
   const [selectedWorkflow, setSelectedWorkflow] = useState<
     PathologyCaseWorkflow | null
@@ -1004,13 +1187,6 @@ export default function PathologyDashboardPage() {
             : 0,
         );
 
-        setSelectedId((current) =>
-          nextItems.some(
-            (item) => item.case_id === current,
-          )
-            ? current
-            : null,
-        );
       })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
@@ -1043,7 +1219,7 @@ export default function PathologyDashboardPage() {
     const controller = new AbortController();
 
     void fetchPathologyCaseWorkflow(selectedId, controller.signal)
-      .then(setSelectedWorkflow)
+      .then(data => { if (!controller.signal.aborted) { setSelectedWorkflow(data); setSelectedItem(current => current?.case_id === selectedId ? current : data.orders[0] ?? null); } })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setDetailError(
@@ -1090,7 +1266,7 @@ export default function PathologyDashboardPage() {
   const selected =
     items.find(
       (item) => item.case_id === selectedId,
-    ) ?? null;
+    ) ?? (selectedItem?.case_id === selectedId ? selectedItem : null);
 
   const totalPages = Math.max(
     1,
@@ -1110,7 +1286,6 @@ export default function PathologyDashboardPage() {
 
     setLoading(true);
     setError("");
-    setSelectedId(null);
     setPage(nextPage);
   };
 
@@ -1186,8 +1361,14 @@ export default function PathologyDashboardPage() {
       </nav>
 
       <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
-        <div className="grid overflow-hidden rounded-xl border border-[#E2E5F2] bg-white shadow-sm xl:h-[calc(100vh-141px)] xl:min-h-[620px] xl:grid-cols-[minmax(420px,32fr)_minmax(0,68fr)] xl:divide-x xl:divide-[#E2E5F2]">
-          <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] divide-y divide-[#E2E5F2]">
+        <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[160px_minmax(360px,28fr)_minmax(0,62fr)]">
+          <RecentPatients patients={recent.patients} selectedId={selectedId} onSelect={patient => {
+            if (patient.case_id !== selectedId) {
+              setSelectedItem(null); setSelectedWorkflow(null); setDetailError(""); setDetailLoading(true); setSelectedId(patient.case_id);
+            }
+            recent.remember(patient);
+          }} />
+          <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] overflow-hidden rounded-2xl border border-[#E2E5F2] bg-white shadow-sm divide-y divide-[#E2E5F2]">
             <section className="flex min-h-0 flex-col">
               <div className="flex flex-wrap items-center gap-3 border-b border-[#E2E5F2] bg-[#F9FAFF] px-4 py-3">
                 <h1 className="mr-auto text-sm font-bold">
@@ -1266,11 +1447,7 @@ export default function PathologyDashboardPage() {
               </div>
 
               {loading ? (
-                <StateMessage
-                  variant="loading"
-                  title="Worklist를 불러오는 중입니다."
-                  className="m-4"
-                />
+                <WorklistSkeleton />
               ) : error ? (
                 <StateMessage
                   variant="error"
@@ -1310,6 +1487,8 @@ export default function PathologyDashboardPage() {
                               setDetailLoading(true);
                               setDetailError("");
                               setSelectedWorkflow(null);
+                              setSelectedItem(item);
+                              recent.remember({ case_id: item.case_id, patient_name: item.patient.name, birth_date: item.patient.birth_date });
                               setSelectedId(item.case_id);
                             })()
                           }
@@ -1323,6 +1502,8 @@ export default function PathologyDashboardPage() {
                               setDetailLoading(true);
                               setDetailError("");
                               setSelectedWorkflow(null);
+                              setSelectedItem(item);
+                              recent.remember({ case_id: item.case_id, patient_name: item.patient.name, birth_date: item.patient.birth_date });
                               setSelectedId(item.case_id);
                             }
                           }}
@@ -1448,6 +1629,11 @@ export default function PathologyDashboardPage() {
               <PatientSummary
                 item={selected}
               />
+            ) : selectedId && recent.patients.some(patient => patient.case_id === selectedId) ? (
+              <div className="p-4">
+                <p>{recent.patients.find(patient => patient.case_id === selectedId)?.patient_name}</p>
+                <p>{recent.patients.find(patient => patient.case_id === selectedId)?.birth_date || "-"}</p>
+              </div>
             ) : (
               <StateMessage
                 variant="empty"
@@ -1469,8 +1655,12 @@ export default function PathologyDashboardPage() {
               title={detailError}
               className="m-6 self-start"
             />
-          ) : selected && selectedWorkflow ? (
-            <main className="min-h-0 overflow-y-auto bg-white">
+          ) : selectedId && selectedWorkflow ? (
+            <main className="min-h-0 overflow-y-auto rounded-2xl border border-[#E2E5F2] bg-[#F7F8FC] p-4 shadow-sm">
+              <SelectedCaseOverview
+                workflow={selectedWorkflow}
+                item={selected ?? selectedWorkflow.orders[0] ?? null}
+              />
               {selectedWorkflow.orders.map((order, index) => (
                 <WorkArea
                   key={order.examination_order?.id ?? order.id}

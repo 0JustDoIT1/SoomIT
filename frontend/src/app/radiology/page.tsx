@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
+import { RecentPatients, useRecentPatients, type RecentPatient } from "@/components/workspace/recent-patients";
 
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
@@ -74,21 +75,21 @@ function RadiologyStatusTable({
   );
 }
 
-function RadiologyCaseDetail({ item }: { item: RadiologyCaseWorklistItem }) {
+function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (workflow: RadiologyCaseWorkflow) => void }) {
   const [workflow, setWorkflow] = useState<RadiologyCaseWorkflow | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
-    void fetchRadiologyCaseWorkflow(item.case.id, controller.signal)
-      .then(setWorkflow)
+    void fetchRadiologyCaseWorkflow(caseId, controller.signal)
+      .then(data => { if (!controller.signal.aborted) { setWorkflow(data); onLoaded(data); } })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setError(reason instanceof Error ? reason.message : "검사 흐름을 불러오지 못했습니다.");
         }
       });
     return () => controller.abort();
-  }, [item.case.id]);
+  }, [caseId, onLoaded]);
 
   if (error) return <StateMessage variant="error" title={error} className="m-6" />;
   if (!workflow) return <StateMessage variant="loading" title="검사 흐름을 불러오는 중입니다." className="m-6" />;
@@ -137,10 +138,23 @@ export default function RadiologyWorklistPage() {
   const pageSize = 10;
   const [worklistItems, setWorklistItems] = useState<RadiologyCaseWorklistItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<RadiologyCaseWorklistItem | null>(null);
+  const [recentSelection, setRecentSelection] = useState<RecentPatient | null>(null);
+  const recent = useRecentPatients("radiologyRecentPatients");
+  const selectedCaseId = selectedItem?.case.id ?? recentSelection?.case_id ?? null;
+  const onWorkflowLoaded = useCallback((workflow: RadiologyCaseWorkflow) => {
+    setSelectedItem(current => {
+      if (current) return current;
+      const exam = workflow.exams.at(-1);
+      return exam ? { case: workflow.case, patient: workflow.patient, responsible_doctor: workflow.responsible_doctor,
+        exam_count: workflow.exams.length, current_exam: exam, workflow_status: exam.workflow_status,
+        workflow_status_label: exam.workflow_status_label } : null;
+    });
+  }, []);
   const [filters, setFilters] = useState<RadiologyWorklistFilters>({});
   const [viewStatus, setViewStatus] = useState<WorklistViewStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [pagePending, startPageTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<WorkstationTab>("worklist");
 
   const totalPages = Math.max(1, Math.ceil(worklistItems.length / pageSize));
@@ -156,29 +170,20 @@ export default function RadiologyWorklistPage() {
   );
 
   function handleSelectItem(item: RadiologyCaseWorklistItem) {
+    setRecentSelection(null);
     setSelectedItem(item);
+    recent.remember({ case_id: item.case.id, patient_name: item.patient.name, birth_date: item.patient.birth_date });
   }
 
   function handleFiltersChange(nextFilters: RadiologyWorklistFilters) {
+    setRecentSelection(null);
     setCurrentPage(1);
     setFilters(nextFilters);
   }
 
   function handlePageChange(nextPage: number) {
     const boundedPage = Math.min(Math.max(nextPage, 1), totalPages);
-    const nextItems = worklistItems.slice(
-      (boundedPage - 1) * pageSize,
-      boundedPage * pageSize,
-    );
-    setCurrentPage(boundedPage);
-    if (
-      selectedItem &&
-      !nextItems.some(
-        (item) => item.case.id === selectedItem.case.id,
-      )
-    ) {
-      setSelectedItem(null);
-    }
+    startPageTransition(() => setCurrentPage(boundedPage));
   }
 
   useEffect(() => {
@@ -265,13 +270,17 @@ export default function RadiologyWorklistPage() {
 
       <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
         {activeTab === "worklist" ? (
-          <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(400px,31fr)_minmax(0,69fr)]">
+          <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[160px_minmax(360px,28fr)_minmax(0,62fr)]">
+            <RecentPatients patients={recent.patients} selectedId={selectedCaseId} onSelect={patient => {
+              if (patient.case_id !== selectedCaseId) { setSelectedItem(null); setRecentSelection(patient); }
+              recent.remember(patient);
+            }} />
             <div className="grid min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm grid-rows-[minmax(0,62fr)_minmax(0,38fr)] divide-y divide-slate-100">
               <RadiologyWorklist
                 items={pagedItems}
-                selectedId={selectedItem?.case.id ?? null}
+                selectedId={selectedCaseId}
                 onSelect={handleSelectItem}
-                viewStatus={viewStatus}
+                viewStatus={pagePending ? "loading" : viewStatus}
                 errorMessage={errorMessage}
                 filters={filters}
                 onFiltersChange={handleFiltersChange}
@@ -281,13 +290,15 @@ export default function RadiologyWorklistPage() {
                 onPageChange={handlePageChange}
               />
               {selectedItem ? (
-                <RadiologyPatientSummary item={selectedItem.current_exam} onClear={() => setSelectedItem(null)} />
+                <RadiologyPatientSummary item={selectedItem.current_exam} onClear={() => { setSelectedItem(null); setRecentSelection(null); }} />
+              ) : recentSelection ? (
+                <div className="p-4"><p>{recentSelection.patient_name}</p><p>{recentSelection.birth_date || "-"}</p></div>
               ) : (
                 <StateMessage variant="empty" title="환자를 선택하세요" description="Worklist에서 검사 항목을 선택하면 환자 정보가 표시됩니다." className="m-4" />
               )}
             </div>
-            {selectedItem ? (
-              <RadiologyCaseDetail key={selectedItem.case.id} item={selectedItem} />
+            {selectedCaseId ? (
+              <RadiologyCaseDetail key={selectedCaseId} caseId={selectedCaseId} onLoaded={onWorkflowLoaded} />
             ) : (
               <StateMessage variant="empty" title="영상 작업을 시작할 환자를 선택하세요" description="Worklist에서 환자를 선택하면 X-ray / CT / PET-CT-TNM 검사 흐름을 확인할 수 있습니다." className="m-8 self-center rounded-xl border border-slate-200 bg-white shadow-sm" />
             )}

@@ -128,6 +128,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         items.exists.return_value = True
         items.filter.return_value.exists.return_value = False
         safety.exists.return_value = True
+        safety.order_by.return_value.first.return_value = None
         safety.filter.return_value.exists.return_value = False
         for block, warning, expected in ((True, False, 400), (False, True, 400), (False, False, 200)):
             self.prescription.prescription_status = "VALIDATED"
@@ -144,6 +145,44 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         self.rx.select_for_update.assert_called_once_with(of=("self",))
         self.prescription.safety_check_results.all.return_value.delete.assert_not_called()
+
+    def test_unresolved_warning_cannot_be_finalized_after_acknowledgment(self):
+        items = self.prescription.items.all.return_value
+        safety = self.prescription.safety_check_results.all.return_value
+        items.exists.return_value = True
+        items.filter.return_value.exists.return_value = False
+        safety.exists.return_value = True
+        safety.order_by.return_value.first.return_value = None
+
+        def safety_filter(**kwargs):
+            return NS(
+                exists=lambda: kwargs.get("source_code__in") is not None,
+            )
+
+        safety.filter.side_effect = safety_filter
+        response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
+        self.assertEqual(response.status_code, 400)
+        self.prescription.save.assert_not_called()
+
+    def test_finalize_requires_safety_recheck_when_patient_inputs_changed(self):
+        items = self.prescription.items.all.return_value
+        safety = self.prescription.safety_check_results.all.return_value
+        items.exists.return_value = True
+        items.filter.return_value.exists.return_value = False
+        safety.exists.return_value = True
+        safety.filter.return_value.exists.return_value = False
+        safety.order_by.return_value.first.return_value = NS(checked_at=object())
+
+        with patch("apps.clinical.views.CurrentMedication.objects") as medications, \
+                patch("apps.clinical.views.PatientHealthProfile.objects") as profiles, \
+                patch("apps.clinical.views.LabResult.objects") as labs:
+            medications.filter.return_value.exists.return_value = True
+            profiles.filter.return_value.exists.return_value = False
+            labs.filter.return_value.exists.return_value = False
+            response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
+
+        self.assertEqual(response.status_code, 400)
+        self.prescription.save.assert_not_called()
 
     def test_finalized_items_cannot_be_patched(self):
         self.prescription.prescription_status = "FINAL"

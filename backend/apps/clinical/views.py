@@ -13,6 +13,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from apps.cases.models import ClinicianDecision, LungCancerCase
 from apps.patients.models import CurrentMedication, LabResult, Patient, PatientHealthProfile
 
+from .dur_client import DurClient, OPERATIONS
 from .models import ClinicalResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TreatmentDecision, TreatmentRule
 from .serializers import (
     DoctorClinicalResultSerializer,
@@ -24,6 +25,61 @@ from .serializers import (
 )
 
 from decimal import Decimal, ROUND_HALF_UP
+
+
+UNRESOLVED_SAFETY_SOURCE_CODES = {
+    "DUR_API_ERROR",
+    "DUR_MAPPING_UNRESOLVED",
+    "ALLERGY_UNCONFIRMED",
+    "LAB_MISSING",
+}
+
+
+def _valid_mfds_item_seq(drug):
+    """Return the explicit MFDS product identifier, never an inferred code."""
+    value = getattr(drug, "mfds_item_seq", None)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if value.isdigit() else None
+
+
+def _allergy_names(patient_profile):
+    """Return exact normalized strings and whether the recorded state is reliable."""
+    if patient_profile is None:
+        return set(), False
+
+    allergies = getattr(patient_profile, "allergies", None)
+    if not isinstance(allergies, list):
+        return set(), False
+
+    names = set()
+    for allergy in allergies:
+        if not isinstance(allergy, str) or not allergy.strip():
+            return names, False
+        names.add(allergy.strip().casefold())
+    return names, True
+
+
+def _dur_message(operation, row):
+    parts = [OPERATIONS[operation]]
+    content = row.get("prohibition_content")
+    remark = row.get("remark")
+    if content:
+        parts.append(str(content))
+    if remark:
+        parts.append(str(remark))
+    return " · ".join(parts)
+
+
+def _dur_pair_matches(row, first_item_seq, second_item_seq):
+    item_seq = row.get("item_seq")
+    mixture_item_seq = row.get("mixture_item_seq")
+    return (
+        item_seq == first_item_seq and mixture_item_seq == second_item_seq
+    ) or (
+        item_seq == second_item_seq and mixture_item_seq == first_item_seq
+    )
 
 
 def _dose_decimal(value, field, *, positive=False):
@@ -563,6 +619,7 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
             .select_for_update(of=("self",))
             .select_related(
                 "case",
+                "case__patient",
                 "treatment_decision",
                 "treatment_decision__clinical_result",
                 "regimen",
@@ -614,6 +671,22 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                 status=400,
             )
 
+        unresolved_warnings = safety_results.filter(
+            result="WARNING",
+            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
+        )
+
+        if unresolved_warnings.exists():
+            return Response(
+                {
+                    "detail": (
+                        "DUR, 알레르기 또는 검사 데이터의 미해결 Safety WARNING이 있어 "
+                        "처방을 확정할 수 없습니다. Safety Check를 다시 수행해 주세요."
+                    )
+                },
+                status=400,
+            )
+
         unacknowledged_warnings = safety_results.filter(
             result="WARNING",
             acknowledged_at__isnull=True,
@@ -629,6 +702,35 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                 },
                 status=400,
             )
+
+        latest_safety_result = safety_results.order_by("-checked_at").first()
+        if latest_safety_result is not None:
+            checked_at = latest_safety_result.checked_at
+            patient = prescription.case.patient
+            safety_inputs_changed = (
+                CurrentMedication.objects.filter(
+                    patient=patient,
+                    updated_at__gt=checked_at,
+                ).exists()
+                or PatientHealthProfile.objects.filter(
+                    patient=patient,
+                    updated_at__gt=checked_at,
+                ).exists()
+                or LabResult.objects.filter(
+                    patient=patient,
+                    updated_at__gt=checked_at,
+                ).exists()
+            )
+            if safety_inputs_changed:
+                return Response(
+                    {
+                        "detail": (
+                            "Safety Check 이후 환자 복용약, 알레르기 또는 검사 데이터가 변경되어 "
+                            "Safety Check를 다시 수행해야 합니다."
+                        )
+                    },
+                    status=400,
+                )
 
         prescription.prescription_status = "FINAL"
         prescription.save(
@@ -864,18 +966,31 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 status=400,
             )
 
+        items = list(prescription.items.all())
+        if not items:
+            return Response(
+                {"detail": "Safety Check를 수행할 처방 약물 항목이 없습니다."},
+                status=400,
+            )
+
+        if any(item.final_dose is None for item in items):
+            return Response(
+                {"detail": "모든 처방 약물의 최종 용량을 입력한 후 Safety Check를 수행할 수 있습니다."},
+                status=400,
+            )
+
         patient = prescription.case.patient
 
         # 기존 Safety 결과 초기화 후 재검사
         prescription.safety_check_results.all().delete()
 
         patient_profile = PatientHealthProfile.objects.filter(patient=patient).first()
-        allergies = patient_profile.allergies if patient_profile and isinstance(patient_profile.allergies, list) else []
-        allergy_names = {str(allergy).strip().lower() for allergy in allergies}
+        allergy_names, allergy_state_confirmed = _allergy_names(patient_profile)
 
-        active_medications = CurrentMedication.objects.filter(
-            patient=patient,
-            is_active=True,
+        active_medications = list(
+            CurrentMedication.objects
+            .filter(patient=patient, is_active=True)
+            .select_related("drug")
         )
 
         latest_lab = (
@@ -885,13 +1000,17 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             .first()
         )
 
-        # 1. 현재 복용약과 처방약 성분 중복 확인
-        for item in prescription.items.all():
+        # 1. 현재 복용약과 처방약 성분 중복 및 직접 알레르기 확인
+        for item in items:
             ingredient = item.drug.ingredient_name
+            normalized_ingredient = (ingredient or "").strip().casefold()
 
-            duplicated = active_medications.filter(
-                ingredient_name__iexact=ingredient,
-            ).exists()
+            duplicated = bool(normalized_ingredient) and any(
+                isinstance(medication.ingredient_name, str)
+                and medication.ingredient_name.strip().casefold()
+                == normalized_ingredient
+                for medication in active_medications
+            )
 
             SafetyCheckResult.objects.create(
                 prescription=prescription,
@@ -908,31 +1027,176 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 checked_at=timezone.now(),
             )
 
-            # 알레르기 검사
+            # 알레르기 검사는 정확한 약물명 또는 성분명만 비교한다.
             ingredient = (item.drug.ingredient_name or "").strip()
             drug_name = (item.drug.drug_name or "").strip()
 
             allergy_match = (
-                ingredient.lower() in allergy_names
-                or drug_name.lower() in allergy_names
+                ingredient.casefold() in allergy_names
+                or drug_name.casefold() in allergy_names
             )
 
             SafetyCheckResult.objects.create(
                 prescription=prescription,
                 prescription_item=item,
                 check_type="ALLERGY",
-                result="BLOCK" if allergy_match else "PASS",
+                result=(
+                    "BLOCK" if allergy_match
+                    else "PASS" if allergy_state_confirmed
+                    else "WARNING"
+                ),
                 message=(
                     f"{ingredient or drug_name} 성분/약물이 환자 알레르기 정보와 일치합니다."
                     if allergy_match
-                    else f"{ingredient or drug_name} 관련 등록된 알레르기가 확인되지 않았습니다."
+                    else (
+                        f"{ingredient or drug_name} 관련 등록된 직접 알레르기가 없습니다."
+                        if allergy_state_confirmed
+                        else "환자 알레르기 정보를 확인할 수 없어 추가 검토가 필요합니다."
+                    )
                 ),
                 source="INTERNAL_RULE_V1",
-                source_code="ALLERGY_CHECK",
+                source_code=(
+                    "ALLERGY_CHECK"
+                    if allergy_match or allergy_state_confirmed
+                    else "ALLERGY_UNCONFIRMED"
+                ),
                 checked_at=timezone.now(),
             )
 
-        # 2. 신장기능 검사 데이터 존재 여부 확인
+        # 2. DUR은 명시적으로 저장된 MFDS ITEM_SEQ만 사용한다.
+        dur_client = DurClient()
+        dur_cache = {}
+
+        def query_dur(operation, item_seq):
+            key = (operation, item_seq)
+            if key not in dur_cache:
+                dur_cache[key] = dur_client.query(operation, item_seq)
+            return dur_cache[key]
+
+        mapped_medications = []
+        for medication in active_medications:
+            medication_item_seq = _valid_mfds_item_seq(getattr(medication, "drug", None))
+            if medication_item_seq:
+                mapped_medications.append((medication, medication_item_seq))
+            else:
+                SafetyCheckResult.objects.create(
+                    prescription=prescription,
+                    prescription_item=None,
+                    check_type="DRUG_INTERACTION",
+                    result="WARNING",
+                    message=(
+                        f"현재 복용약 {medication.medication_name}의 DUR 품목 식별 코드를 "
+                        "확인할 수 없어 병용금기를 자동 판정할 수 없습니다."
+                    ),
+                    source="MFDS DUR",
+                    source_code="DUR_MAPPING_UNRESOLVED",
+                    checked_at=timezone.now(),
+                )
+
+        dur_block_pairs = set()
+        for item in items:
+            prescription_item_seq = _valid_mfds_item_seq(item.drug)
+            if not prescription_item_seq:
+                SafetyCheckResult.objects.create(
+                    prescription=prescription,
+                    prescription_item=item,
+                    check_type="DRUG_INTERACTION",
+                    result="WARNING",
+                    message=(
+                        f"처방약 {item.drug.drug_name}의 DUR 품목 식별 코드를 확인할 수 없어 "
+                        "병용금기를 자동 판정할 수 없습니다."
+                    ),
+                    source="MFDS DUR",
+                    source_code="DUR_MAPPING_UNRESOLVED",
+                    checked_at=timezone.now(),
+                )
+                continue
+
+            # 병용금기는 양쪽 품목에서 조회해 정확한 ITEM_SEQ 쌍이 있는 경우에만 BLOCK 한다.
+            for medication, medication_item_seq in mapped_medications:
+                pair_results = [
+                    query_dur("getUsjntTabooInfoList03", prescription_item_seq),
+                    query_dur("getUsjntTabooInfoList03", medication_item_seq),
+                ]
+                for dur_result in pair_results:
+                    if dur_result.status == "ERROR":
+                        SafetyCheckResult.objects.create(
+                            prescription=prescription,
+                            prescription_item=item,
+                            check_type="DRUG_INTERACTION",
+                            result="WARNING",
+                            message="MFDS DUR 병용금기 정보를 조회할 수 없어 추가 검토가 필요합니다.",
+                            source="MFDS DUR",
+                            source_code="DUR_API_ERROR",
+                            checked_at=timezone.now(),
+                        )
+                        continue
+
+                    if dur_result.status != "SUCCESS_WITH_RESULTS":
+                        continue
+
+                    for row in dur_result.rows:
+                        if not _dur_pair_matches(
+                            row,
+                            prescription_item_seq,
+                            medication_item_seq,
+                        ):
+                            continue
+                        pair_key = (id(item), *sorted((
+                            prescription_item_seq,
+                            medication_item_seq,
+                        )))
+                        if pair_key in dur_block_pairs:
+                            continue
+                        dur_block_pairs.add(pair_key)
+                        SafetyCheckResult.objects.create(
+                            prescription=prescription,
+                            prescription_item=item,
+                            check_type="DRUG_INTERACTION",
+                            result="BLOCK",
+                            message=(
+                                f"{item.drug.drug_name} + {medication.medication_name}: "
+                                f"{_dur_message('getUsjntTabooInfoList03', row)}"
+                            ),
+                            source="MFDS DUR",
+                            source_code=(
+                                f"DUR_USJNT_{prescription_item_seq}_{medication_item_seq}"
+                            ),
+                            checked_at=timezone.now(),
+                        )
+
+            # 텍스트 중심 DUR 유형은 공식 결과가 있더라도 자동 BLOCK 하지 않는다.
+            for operation in OPERATIONS:
+                if operation == "getUsjntTabooInfoList03":
+                    continue
+                dur_result = query_dur(operation, prescription_item_seq)
+                if dur_result.status == "ERROR":
+                    SafetyCheckResult.objects.create(
+                        prescription=prescription,
+                        prescription_item=item,
+                        check_type="DRUG_INTERACTION",
+                        result="WARNING",
+                        message="MFDS DUR 정보를 조회할 수 없어 추가 검토가 필요합니다.",
+                        source="MFDS DUR",
+                        source_code="DUR_API_ERROR",
+                        checked_at=timezone.now(),
+                    )
+                    continue
+                if dur_result.status != "SUCCESS_WITH_RESULTS":
+                    continue
+                for row in dur_result.rows:
+                    SafetyCheckResult.objects.create(
+                        prescription=prescription,
+                        prescription_item=item,
+                        check_type="DRUG_INTERACTION",
+                        result="WARNING",
+                        message=_dur_message(operation, row),
+                        source="MFDS DUR",
+                        source_code=f"DUR_{operation}",
+                        checked_at=timezone.now(),
+                    )
+
+        # 3. 신장기능 검사 데이터의 존재 여부만 확인한다. 정상/비정상 판정은 하지 않는다.
         renal_data_available = (
             latest_lab is not None
             and latest_lab.creatinine is not None
@@ -945,16 +1209,16 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             check_type="RENAL_FUNCTION",
             result="PASS" if renal_data_available else "WARNING",
             message=(
-                "신장기능 검토에 필요한 최근 Creatinine/eGFR 결과가 있습니다."
+                "신장기능 검토에 필요한 최근 Creatinine/eGFR 값의 존재를 확인했습니다."
                 if renal_data_available
-                else "최근 Creatinine/eGFR 결과가 없어 추가 검토가 필요합니다."
+                else "최근 Creatinine/eGFR 값이 없어 추가 검토가 필요합니다."
             ),
             source="INTERNAL_RULE_V1",
-            source_code="RENAL_DATA_CHECK",
+            source_code="RENAL_DATA_CHECK" if renal_data_available else "LAB_MISSING",
             checked_at=timezone.now(),
         )
 
-        # 3. 간기능 검사 데이터 존재 여부 확인
+        # 4. 간기능 검사 데이터의 존재 여부만 확인한다. 정상/비정상 판정은 하지 않는다.
         hepatic_data_available = (
             latest_lab is not None
             and latest_lab.ast is not None
@@ -968,12 +1232,12 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             check_type="HEPATIC_FUNCTION",
             result="PASS" if hepatic_data_available else "WARNING",
             message=(
-                "간기능 검토에 필요한 최근 AST/ALT/Bilirubin 결과가 있습니다."
+                "간기능 검토에 필요한 최근 AST/ALT/Bilirubin 값의 존재를 확인했습니다."
                 if hepatic_data_available
-                else "최근 간기능 검사 결과가 부족하여 추가 검토가 필요합니다."
+                else "최근 AST/ALT/Bilirubin 값이 부족하여 추가 검토가 필요합니다."
             ),
             source="INTERNAL_RULE_V1",
-            source_code="HEPATIC_DATA_CHECK",
+            source_code="HEPATIC_DATA_CHECK" if hepatic_data_available else "LAB_MISSING",
             checked_at=timezone.now(),
         )
 
