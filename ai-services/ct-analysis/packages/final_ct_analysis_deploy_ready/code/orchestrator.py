@@ -122,6 +122,53 @@ def phase1(
     )
 
     # --------------------------------------------------
+    # DICOM input support
+    #
+    # --ct may point either at an already-converted NIfTI
+    # file or at a directory holding a raw CT DICOM series.
+    # When it is a directory, convert it to NIfTI first so
+    # every downstream step keeps receiving a NIfTI path.
+    # --------------------------------------------------
+
+    if ct_path.is_dir():
+        sys.path.insert(
+            0,
+            str(THIS_FILE.parent),
+        )
+
+        from dicom_to_nifti import (
+            convert_dicom_series,
+        )
+
+        source_dir = (
+            output_dir
+            / "source"
+        )
+
+        source_dir.mkdir(
+            parents=True,
+            exist_ok=True,
+        )
+
+        converted_ct_path = (
+            source_dir
+            / f"{case_id}_0000.nii.gz"
+        )
+
+        dicom_metadata_path = (
+            source_dir
+            / "dicom_to_nifti_metadata.json"
+        )
+
+        convert_dicom_series(
+            dicom_dir=ct_path,
+            output_nifti=converted_ct_path,
+            metadata_path=dicom_metadata_path,
+        )
+
+        ct_path = converted_ct_path
+
+    # --------------------------------------------------
     # Output directories
     # --------------------------------------------------
 
@@ -706,6 +753,11 @@ def main():
     p1.add_argument(
         "--ct",
         required=True,
+        help=(
+            "Path to a NIfTI CT file, or a directory "
+            "containing a raw CT DICOM series (auto-"
+            "converted to NIfTI before phase 1 runs)."
+        ),
     )
 
     p1.add_argument(

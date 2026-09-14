@@ -4,6 +4,7 @@ nibabel
 scipy
 torch
 pyradiomics
+pydicom  # dicom_to_nifti.py: raw CT DICOM series -> NIfTI conversion
 
 # Anatomy runtime is isolated in a separate conda environment:
 # totalseg

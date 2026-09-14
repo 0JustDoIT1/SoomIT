@@ -32,3 +32,5 @@ model_validation/
 
 gcs-key.json
 .knowledge-deps/
+.pytest_cache/
+**/.pytest_cache/

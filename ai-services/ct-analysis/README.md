@@ -27,6 +27,11 @@ GCS request body:
       "case_id": "CASE001"
     }
 
+The `final_ct_analysis_deploy_ready` bundle's `orchestrator.py phase1` also accepts a raw CT
+DICOM series directly: pass `--ct` a directory of DICOM files instead of a NIfTI path and it is
+converted with `code/dicom_to_nifti.py` (pydicom-based, HU rescale + DICOM orientation handling)
+before the pipeline runs.
+
 ## Phase 2
 
 `ct-analysis-phase2-serve` accepts the Phase 1 GCS artifact and the primary-tumor mask returned by the future T model. It calculates the tumor and anatomy features and writes the canonical 34-feature N-model payload to GCS. The response status is `READY_FOR_N_MODEL`.
