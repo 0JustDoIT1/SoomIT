@@ -55,7 +55,7 @@ pip install -r requirements.txt
 
 ### 3. 연결 설정 확인
 
-`config/settings.py`가 `backend/.env`를 읽습니다. `POSTGRES_*`는 기존 VM DB 연결 값을 유지하고, `ORTHANC_BASE_URL`은 VM에서 접근 가능한 주소 또는 SSH 터널 주소로 지정합니다. Orthanc 사용자·비밀번호는 VM의 `infra/.env`와 일치시킵니다. 공통 인프라 전환을 위해 DB 초기화나 migration을 실행하지 않습니다.
+`config/settings.py`가 `backend/.env`를 읽습니다. `POSTGRES_*`는 해당 환경의 DB 연결 값을 사용하고, `ORTHANC_BASE_URL`은 로컬 주소 또는 SSH 터널 주소로 지정합니다. Compose에서는 Redis와 Orthanc 주소만 Docker 내부 서비스 이름으로 덮어씁니다.
 
 ### 4. 관리자 계정 생성 (선택)
 
@@ -83,17 +83,18 @@ python manage.py runserver 0.0.0.0:8000
 
 ```bash
 # VM의 프로젝트 루트에서 실행. 기존 .env를 덮어쓰지 않습니다.
-cp -n infra/.env.example infra/.env
-# infra/.env에 실제 VM DB 주소와 인증정보를 설정한 후:
-# Worker/Beat의 환경변수는 infra/.env에서 명시적으로 전달합니다.
-docker compose --env-file infra/.env -f infra/docker-compose.yml config --quiet
-docker compose --env-file infra/.env -f infra/docker-compose.yml up -d --build
-docker compose --env-file infra/.env -f infra/docker-compose.yml ps
+cp -n backend/.env.example backend/.env
+cp -n frontend/.env.example frontend/.env
+# backend/.env에 실제 VM DB 주소와 인증정보를 설정한 후:
+# Frontend URL은 frontend/.env에 설정하고 Backend/Worker/Beat는 backend/.env를 공유합니다.
+docker compose --env-file backend/.env --env-file frontend/.env -f infra/docker-compose.yml config --quiet
+docker compose --env-file backend/.env --env-file frontend/.env -f infra/docker-compose.yml up -d --build
+docker compose --env-file backend/.env --env-file frontend/.env -f infra/docker-compose.yml ps
 ```
 
 배포 전에 기존 컨테이너의 6379·8042·4242 포트 점유를 확인합니다. 기존 VM 컨테이너·volume 정리는 별도 배포 작업이며, PostgreSQL과 그 저장소는 유지합니다. Compose 파일 삭제는 실행 중인 기존 컨테이너를 정리하지 않습니다.
 
-코드 검증만 하려면 프로젝트 루트에서 `docker compose --env-file infra/.env.example -f infra/docker-compose.yml config`를 사용합니다. 실제 비밀번호가 들어 있는 환경에서는 config 전체 출력을 공유하지 말고 `config --quiet`를 사용합니다.
+코드 검증만 하려면 프로젝트 루트에서 `docker compose --env-file backend/.env.example --env-file frontend/.env.example -f infra/docker-compose.yml config`를 사용합니다. 실제 비밀번호가 들어 있는 환경에서는 config 전체 출력을 공유하지 말고 `config --quiet`를 사용합니다.
 
 ### 네트워크와 접근
 
@@ -107,9 +108,9 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 
 ### 환경변수와 데이터
 
-`infra/.env`는 VM Docker 실행용이고 `backend/.env`는 로컬 Django 개발용입니다. 루트 `.gitignore`가 실제 `.env`를 제외하며 `.env.example`만 커밋합니다.
+로컬과 VM 모두 Backend 설정은 `backend/.env`, Frontend 설정은 `frontend/.env`에 둡니다. 파일 이름은 같고 환경별 값만 다릅니다. 루트 `.gitignore`가 실제 `.env`를 제외하며 `.env.example`만 커밋합니다.
 
-`ORTHANC_USERNAME`, `ORTHANC_PASSWORD`, `ORTHANC_PUBLIC_URL`은 infra에서 필수입니다. `ORTHANC_PUBLIC_URL`은 WSI 공개 URL이며 실제 접근 경로에 맞추고 마지막 `/`를 포함합니다. `ORTHANC_BASE_URL`과 `ORTHANC_TIMEOUT_SECONDS`는 backend client 설정으로 유지합니다. JSON 안에 치환되는 infra 값에는 따옴표·역슬래시·줄바꿈을 넣지 않습니다. 긴 무작위 hex 비밀번호를 사용하면 JSON 및 dotenv 이스케이프 문제를 피할 수 있습니다.
+`ORTHANC_USERNAME`, `ORTHANC_PASSWORD`, `ORTHANC_PUBLIC_URL`은 VM의 `backend/.env`에서 필수입니다. `ORTHANC_PUBLIC_URL`은 WSI 공개 URL이며 실제 접근 경로에 맞추고 마지막 `/`를 포함합니다. `ORTHANC_BASE_URL`과 `ORTHANC_TIMEOUT_SECONDS`도 Backend 설정으로 유지합니다. Orthanc JSON에 치환되는 값에는 따옴표·역슬래시·줄바꿈을 넣지 않습니다. 긴 무작위 hex 비밀번호를 사용하면 JSON 및 dotenv 이스케이프 문제를 피할 수 있습니다.
 
 새 저장소는 `soomit_infra_orthanc_storage`와 `soomit_infra_redis_data`입니다. 기존 Orthanc volume은 재사용하지 않습니다. Redis는 `/data` volume과 이미지 기본 persistence 동작을 사용하며 AOF 등 별도 정책은 아직 추가하지 않았습니다. 새 Orthanc에는 CT·WSI를 추후 다시 등록해야 하며, 기존 DB의 Orthanc ID가 새 서버에서도 유효하다고 가정하지 않습니다. 재등록 후 ID 연결은 별도 작업이고 이번 구성은 DB를 수정하지 않습니다.
 
@@ -127,7 +128,7 @@ docker compose --env-file infra/.env -f infra/docker-compose.yml ps
 
 예시 파일의 `example-*`, `change-in-deployment`, `YOUR_VM_INTERNAL_DB_ADDRESS`, `example.invalid`는 placeholder입니다. Compose config 성공은 문법·치환 확인이며, placeholder가 실제 배포에 적합하다는 의미가 아닙니다.
 
-아래는 VM `infra/.env`의 구조 설명용 예시입니다. 실제 secret은 commit하지 않으며, 이 문서 작업에서 환경 파일을 생성하지 않습니다.
+아래는 VM `backend/.env`의 구조 설명용 예시입니다. 실제 secret은 commit하지 않으며, 이 문서 작업에서 환경 파일을 생성하지 않습니다.
 
 ```dotenv
 POSTGRES_HOST=YOUR_VM_INTERNAL_DB_ADDRESS
@@ -155,7 +156,7 @@ Orthanc 주소의 역할은 서로 다릅니다.
 - [ ] 기존 PostgreSQL 위치와 수신 주소·포트 확인
 - [ ] 컨테이너에서 접근 가능한 DB 주소·접근 권한 확인
 - [ ] 기존 PostgreSQL 계정·비밀번호 확인
-- [ ] VM `infra/.env` 생성 및 모든 placeholder 교체
+- [ ] VM `backend/.env` 생성 및 모든 placeholder 교체
 - [ ] 운영용 Django secret 및 Orthanc 인증정보 설정
 - [ ] Redis/Orthanc 포트·컨테이너 이름 충돌 확인
 - [ ] 실제 환경 파일로 `docker compose config --quiet` 검증
@@ -167,32 +168,32 @@ Orthanc 주소의 역할은 서로 다릅니다.
 
 환경변수 원본의 역할은 다음과 같습니다.
 
-- `backend/.env`: 로컬 Django 개발용. 기존 DB와 필요 시 SSH 터널을 사용합니다.
-- `infra/.env`: VM Docker 서비스용. DB·인증·바인딩 값을 보관합니다.
-- GitHub Repository/Environment Secrets: 향후 배포에서 VM의 `infra/.env`를 생성·주입할 원본입니다. workflow 및 실제 Secrets 등록은 아직 하지 않습니다.
+- `backend/.env`: 로컬 및 VM Backend용. 각 환경의 DB·인증·Cloud Run·Orthanc 값을 보관합니다.
+- `frontend/.env`: 로컬 및 VM Frontend용. 빌드할 API 기준 URL을 보관합니다.
+- GitHub Repository/Environment Secrets: 향후 배포에서 VM의 `backend/.env`를 생성·주입할 원본입니다. workflow 및 실제 Secrets 등록은 아직 하지 않습니다.
 
-Secrets 후보는 `POSTGRES_PASSWORD`, `DJANGO_SECRET_KEY`, `ORTHANC_PASSWORD`입니다. Variables 후보는 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `ORTHANC_USERNAME`, `ORTHANC_PUBLIC_URL`, `ORTHANC_TIMEOUT_SECONDS`와 HTTP·DICOM 바인딩 주소입니다. 사용자명은 조직 정책에 따라 Secrets로 관리할 수 있습니다. 향후 흐름은 Secrets/Variables → VM `infra/.env` 생성 → Compose 검증 → 실행입니다. 생성 과정에서 비밀값을 로그에 출력하지 않습니다.
+Secrets 후보는 `POSTGRES_PASSWORD`, `DJANGO_SECRET_KEY`, `ORTHANC_PASSWORD`입니다. Variables 후보는 `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_DB`, `POSTGRES_USER`, `ORTHANC_USERNAME`, `ORTHANC_PUBLIC_URL`, `ORTHANC_TIMEOUT_SECONDS`와 HTTP·DICOM 바인딩 주소입니다. 사용자명은 조직 정책에 따라 Secrets로 관리할 수 있습니다. 향후 흐름은 Secrets/Variables → VM `backend/.env` 생성 → Compose 검증 → 실행입니다. 생성 과정에서 비밀값을 로그에 출력하지 않습니다.
 
-Worker와 Beat의 공통 environment는 `POSTGRES_*`, `DJANGO_SECRET_KEY`, Celery URL 두 개입니다. Worker만 Orthanc URL·사용자·비밀번호·timeout을 추가로 받습니다. Django settings import 자체는 기본 secret으로도 가능하지만 VM에서 개발용 기본값을 사용하지 않도록 Compose는 `DJANGO_SECRET_KEY`를 필수로 요구합니다. 현재 task에는 웹 인증·AI 설정이 필요하지 않아 추가 전달하지 않습니다.
+Compose의 Django·Worker·Beat는 같은 `backend/.env`를 읽습니다. 세 서비스 모두 Django settings를 import하므로 DB, 인증, AI 서비스, Orthanc 설정을 동일하게 받습니다. Compose는 컨테이너 간 통신이 필요한 Redis와 Orthanc URL만 Docker 내부 주소로 덮어씁니다.
 
-`--env-file`의 모든 항목이 자동으로 컨테이너에 들어가는 것은 아닙니다. `${VARIABLE}` 치환 후 `environment`에 선언한 항목만 전달됩니다. 같은 이름의 shell 환경변수는 `--env-file` 값보다 우선하므로 배포 shell에 오래된 값이 남지 않았는지 확인합니다. 고정된 Redis·Orthanc 내부 URL은 이 치환 대상이 아닙니다. [Docker Compose 환경변수 문서](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
+`backend/.env`는 Compose의 `env_file`로 Django·Worker·Beat에 전달되고, 실행 명령의 `--env-file`은 Orthanc 설정과 Frontend build argument 치환에도 사용됩니다. 같은 이름의 shell 환경변수는 `--env-file` 값보다 우선하므로 배포 shell에 오래된 값이 남지 않았는지 확인합니다. [Docker Compose 환경변수 문서](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)
 
-환경 예시의 DB 호스트는 `YOUR_VM_INTERNAL_DB_ADDRESS` placeholder이며 settings 기본값은 `localhost`입니다. Django host process와 Celery container가 반드시 같은 `POSTGRES_HOST`를 쓸 필요는 없습니다. VM의 `infra/.env`에는 기존 PostgreSQL의 **컨테이너에서 접근 가능한 실제 주소**를 넣어야 합니다. 배포 시 VM 내부 IP 또는 host gateway 경로를 확인한 뒤 확정합니다. 현재 Compose에는 host gateway 매핑이 없으므로 해당 방식을 선택하면 별도 매핑이 필요합니다. `127.0.0.1`·`localhost`는 Celery 컨테이너 자신이므로 VM DB 주소로 사용하지 않습니다. 실제 DB 연결 검증과 네트워크·DB 접근 권한 확인은 배포 단계에서 수행합니다.
+환경 예시의 DB 호스트는 `YOUR_VM_INTERNAL_DB_ADDRESS` placeholder이며 settings 기본값은 `localhost`입니다. Django host process와 Celery container가 반드시 같은 `POSTGRES_HOST`를 쓸 필요는 없습니다. VM의 `backend/.env`에는 기존 PostgreSQL의 **컨테이너에서 접근 가능한 실제 주소**를 넣어야 합니다. 배포 시 VM 내부 IP 또는 host gateway 경로를 확인한 뒤 확정합니다. 현재 Compose에는 host gateway 매핑이 없으므로 해당 방식을 선택하면 별도 매핑이 필요합니다. `127.0.0.1`·`localhost`는 Celery 컨테이너 자신이므로 VM DB 주소로 사용하지 않습니다. 실제 DB 연결 검증과 네트워크·DB 접근 권한 확인은 배포 단계에서 수행합니다.
 
 Celery application은 `config/celery.py`, 부작용 없는 확인용 task는 `apps/common/tasks.py`의 `celery_health_check`입니다. task는 `"ok"`만 반환하며 DB·AI·Orthanc·파일에 접근하지 않습니다. `config/__init__.py`가 application을 로드하므로 기존 backend 환경에서도 갱신된 requirements 설치가 필요합니다.
 
 Worker·Beat는 `backend/Dockerfile`로 만든 동일한 `soomit-backend:local` 이미지를 사용합니다. Python 3.12 기반으로 dependencies와 소스를 포함하고 일반 사용자로 실행합니다. `.dockerignore`는 실제 환경 파일과 로컬 가상환경을 이미지에서 제외합니다. 기본 CMD는 개발용 Django 실행이며 Gunicorn/Nginx production 배포는 포함하지 않습니다.
 
-Compose는 `--env-file infra/.env`를 치환 입력으로 사용하고 각 서비스의 `environment`에 명시한 값만 컨테이너에 전달합니다. 로컬 Django 환경 파일 전체를 읽거나 mount하지 않습니다. 실제 환경 파일은 Git과 이미지에 포함하지 않습니다.
+Compose는 `backend/.env`를 Django·Worker·Beat에, `frontend/.env`를 Next.js에 전달합니다. Docker 내부 Redis와 Orthanc 주소는 Compose가 컨테이너용 주소로 덮어씁니다. 실제 환경 파일은 Git과 이미지에 포함하지 않습니다.
 
 | 설정 | 로컬 Django / VM host process | Compose Worker / Beat |
 |---|---|---|
 | Broker | `redis://127.0.0.1:6379/0` | `redis://redis:6379/0` |
 | Result backend | `redis://127.0.0.1:6379/1` | `redis://redis:6379/1` |
-| Orthanc | `http://127.0.0.1:8042` (로컬 또는 SSH 터널) | Worker: `http://orthanc:8042`, Beat: 미사용 |
-| PostgreSQL | 로컬 환경의 기존 `POSTGRES_*` | infra 환경의 명시적 `POSTGRES_*` |
+| Orthanc | `http://127.0.0.1:8042` (로컬 또는 SSH 터널) | Django·Worker·Beat: `http://orthanc:8042` |
+| PostgreSQL | 로컬 `backend/.env`의 `POSTGRES_*` | VM `backend/.env`의 `POSTGRES_*` |
 
-Compose가 Redis·Orthanc 내부 URL을 고정합니다. Worker의 Orthanc 인증정보는 서버와 동일한 infra 환경변수에서, `ORTHANC_TIMEOUT_SECONDS`는 infra 값(기본 30)에서 전달됩니다. Beat는 현재 Orthanc를 사용하지 않으므로 Orthanc 인증정보를 받지 않습니다. PostgreSQL의 `localhost`는 컨테이너 자신을 의미하므로 기존 VM DB의 컨테이너에서 접근 가능한 주소·권한은 배포 전에 확인해야 합니다. 이번 구성은 PostgreSQL 설정이나 DB를 변경하지 않습니다.
+Compose가 Redis·Orthanc 내부 URL을 고정하고, Orthanc 인증정보와 timeout은 VM `backend/.env`에서 전달합니다. Beat가 직접 Orthanc 작업을 수행하지 않더라도 Django settings를 동일하게 안전하게 로드하도록 전체 Backend 환경을 받습니다. PostgreSQL의 `localhost`는 컨테이너 자신을 의미하므로 기존 VM DB의 컨테이너에서 접근 가능한 주소·권한은 배포 전에 확인해야 합니다. 이번 구성은 PostgreSQL 설정이나 DB를 변경하지 않습니다.
 
 두 프로세스는 Redis healthcheck 통과 후 시작하며 `unless-stopped`를 사용합니다. JSON 직렬화만 허용하고 timezone은 Django `TIME_ZONE`과 같습니다. Beat는 한 인스턴스만 운영하며 기본 파일 scheduler의 상태를 `soomit_infra_celery_beat_data` volume에 저장합니다. 사용자 periodic task와 `django-celery-beat`·`django-celery-results`는 추가하지 않았습니다.
 
