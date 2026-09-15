@@ -82,6 +82,7 @@ services:
         'beat',
         '-l',
         'info',
+        '--scheduler=celery.beat:PersistentScheduler',
         '--schedule=/var/lib/celery/celerybeat-schedule',
       ]
     volumes:
