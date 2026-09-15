@@ -65,4 +65,27 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getAllByText("결과 조회됨")).toHaveLength(4);
     expect(screen.getAllByText("현재 단계")).toHaveLength(2);
   });
+
+  it("marks only an active examination order as in progress without treating it as a result", () => {
+    render(
+      <CaseOverviewPanel
+        caseData={{ ...caseData, current_stage: "XRAY" }}
+        clinicalResults={[]}
+        aiResults={[]}
+        orders={[{
+          id: "ct-order",
+          order_type: "CT",
+          order_type_label: "CT",
+          status: "ORDERED",
+          priority: "NORMAL",
+          created_at: "2026-09-15T03:00:00Z",
+        }]}
+        ordersLoaded
+      />,
+    );
+
+    expect(screen.getByText("오더 진행 중")).toBeTruthy();
+    expect(screen.getByText("1건")).toBeTruthy();
+    expect(screen.queryByText("결과 조회됨")).toBeNull();
+  });
 });

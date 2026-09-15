@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { notFound, useParams, useRouter } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
-import { API_BASE_URL } from "../../_lib/respiratory-api";
+import { API_BASE_URL, type ExaminationOrder } from "../../_lib/respiratory-api";
 import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-sections";
 import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
@@ -439,6 +439,8 @@ export default function RespiratoryCaseDetailPage() {
 
   const [casePrescriptions, setCasePrescriptions] =
   useState<CasePrescription[]>([]);
+  const [caseOrders, setCaseOrders] = useState<ExaminationOrder[]>([]);
+  const [ordersLoaded, setOrdersLoaded] = useState(false);
   const [casePrescriptionCycleNumber, setCasePrescriptionCycleNumber] =
   useState("1");
   const [casePrescriptionPhase, setCasePrescriptionPhase] =
@@ -501,6 +503,8 @@ export default function RespiratoryCaseDetailPage() {
         setTnmClinicalResults([]);
         setRegimenCandidates([]);
         setCaseTreatmentDecision(null);
+        setCaseOrders([]);
+        setOrdersLoaded(false);
         setPrescriptionItemDirty({});
         setCasePrescriptionCycleNumber("1");
         setCasePrescriptionPhase("INDUCTION");
@@ -542,13 +546,14 @@ export default function RespiratoryCaseDetailPage() {
           setPdl1Results([]);
         }
 
-        const [tnmAnalysisRequest, tnmClinicalRequest, regimenCandidateRequest, treatmentDecisionRequest, prescriptionRequest] =
+        const [tnmAnalysisRequest, tnmClinicalRequest, regimenCandidateRequest, treatmentDecisionRequest, prescriptionRequest, ordersRequest] =
           await Promise.allSettled([
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal }),
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal }),
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`, { signal: controller.signal }),
           ]);
 
         if (tnmAnalysisRequest.status === "fulfilled" && tnmAnalysisRequest.value.ok) {
@@ -639,6 +644,14 @@ export default function RespiratoryCaseDetailPage() {
               ? getPanelFetchError(prescriptionRequest.value.status, "처방 목록")
               : "처방 목록 조회 중 네트워크 오류가 발생했습니다.",
           ));
+        }
+
+        if (ordersRequest.status === "fulfilled" && ordersRequest.value.ok) {
+          const ordersPayload: unknown = await ordersRequest.value.json();
+          applyCurrentResponse(() => {
+            setCaseOrders(Array.isArray(ordersPayload) ? ordersPayload as ExaminationOrder[] : []);
+            setOrdersLoaded(true);
+          });
         }
       } catch (err) {
         applyCurrentResponse(() => setError(
@@ -1536,7 +1549,7 @@ export default function RespiratoryCaseDetailPage() {
               decision={selectedCase.latest_clinician_decision}
               onOrderCreated={() => setCaseRefreshVersion((current) => current + 1)}
             />
-            <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} />
+            <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} orders={caseOrders} ordersLoaded={ordersLoaded} />
           </div>
         ) : selectedInfoMenu === "AI_SUMMARY" ? (
           <div className="space-y-3">
