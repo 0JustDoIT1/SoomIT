@@ -1,6 +1,8 @@
 "use client";
 import Script from "next/script";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { DayPicker } from "react-day-picker";
+import { ko } from "react-day-picker/locale";
 
 type Patient = {
   id: string;
@@ -63,6 +65,19 @@ const initialUpdateForm: PatientUpdateForm = {
   address: "",
 };
 
+const birthDateStartMonth = new Date(1900, 0, 1);
+
+function parseBirthDate(value: string) {
+  if (!value) return undefined;
+  const [year, month, day] = value.split("-").map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day);
+}
+
+function formatBirthDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
 export default function PatientsPage() {
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
@@ -78,6 +93,8 @@ export default function PatientsPage() {
     useState<PatientCreateForm>(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [birthDatePickerOpen, setBirthDatePickerOpen] = useState(false);
+  const [birthDatePickerMonth, setBirthDatePickerMonth] = useState(new Date());
   const [postcodeReady, setPostcodeReady] = useState(false);
   const [postcodeError, setPostcodeError] = useState("");
   const addressDetailRef = useRef<HTMLInputElement>(null);
@@ -615,17 +632,72 @@ export default function PatientsPage() {
                   />
                 </FormField>
                 <FormField label="생년월일" required>
-                  <input
-                    type="date"
-                    value={createForm.birth_date}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        birth_date: e.target.value,
-                      })
-                    }
-                    className={inputClassName}
-                  />
+                  <div className="relative">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const selectedDate = parseBirthDate(createForm.birth_date);
+                        setBirthDatePickerMonth(selectedDate ?? new Date());
+                        setBirthDatePickerOpen((current) => !current);
+                      }}
+                      aria-expanded={birthDatePickerOpen}
+                      aria-haspopup="dialog"
+                      className={`${inputClassName} text-left ${createForm.birth_date ? "" : "text-slate-400"}`}
+                    >
+                      {createForm.birth_date || "생년월일을 선택하세요"}
+                    </button>
+                    {birthDatePickerOpen && (
+                      <div
+                        role="dialog"
+                        aria-label="생년월일 선택"
+                        className="absolute left-0 top-full z-20 mt-2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+                      >
+                        <DayPicker
+                          mode="single"
+                          month={birthDatePickerMonth}
+                          onMonthChange={setBirthDatePickerMonth}
+                          selected={parseBirthDate(createForm.birth_date)}
+                          onSelect={(date) => {
+                            if (!date) return;
+                            setCreateForm({
+                              ...createForm,
+                              birth_date: formatBirthDate(date),
+                            });
+                            setBirthDatePickerOpen(false);
+                          }}
+                          locale={ko}
+                          captionLayout="dropdown"
+                          startMonth={birthDateStartMonth}
+                          endMonth={new Date()}
+                          disabled={{ after: new Date() }}
+                          formatters={{
+                            formatMonthDropdown: (date) => `${date.getMonth() + 1}월`,
+                            formatYearDropdown: (date) => `${date.getFullYear()}년`,
+                            formatWeekdayName: (date) => ["일", "월", "화", "수", "목", "금", "토"][date.getDay()],
+                          }}
+                          classNames={{
+                            root: "text-sm text-slate-700",
+                            months: "flex",
+                            month: "space-y-3",
+                            month_caption: "flex h-8 items-center justify-center",
+                            dropdowns: "flex flex-row-reverse items-center gap-2",
+                            dropdown: "rounded-md border border-slate-200 bg-white px-2 py-1 text-sm",
+                            nav: "hidden",
+                            month_grid: "border-collapse",
+                            weekdays: "border-b border-slate-100",
+                            weekday: "h-8 w-9 text-center text-xs font-medium text-slate-400",
+                            week: "",
+                            day: "h-9 w-9 text-center",
+                            day_button: "h-8 w-8 rounded-md text-sm transition hover:bg-pink-50 hover:text-pink-600 disabled:cursor-not-allowed disabled:text-slate-300",
+                            selected: "[&>button]:bg-pink-500 [&>button]:text-white [&>button]:hover:bg-pink-500 [&>button]:hover:text-white",
+                            today: "[&>button]:font-semibold [&>button]:text-pink-600",
+                            outside: "[&>button]:text-slate-300",
+                            disabled: "[&>button]:text-slate-300 [&>button]:hover:bg-transparent [&>button]:hover:text-slate-300",
+                          }}
+                        />
+                      </div>
+                    )}
+                  </div>
                 </FormField>
                 <FormField label="성별" required>
                   <select

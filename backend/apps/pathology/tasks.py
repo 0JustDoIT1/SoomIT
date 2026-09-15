@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal, InvalidOperation
 
 from celery import shared_task
@@ -10,21 +11,24 @@ from .services.pdl1_inference import request_pdl1_prediction
 from .services.pdl1_storage import download_pdl1_annotation_bytes
 
 
-def _mark_failed(analysis_id):
+logger = logging.getLogger(__name__)
+
+
+def _mark_failed(analysis_id, error_message="PD-L1 analysis failed."):
     with transaction.atomic():
         analysis = AiAnalysis.objects.select_for_update().filter(id=analysis_id).first()
         if analysis is None or AiResult.objects.filter(ai_analysis=analysis).exists():
             return
         analysis.status = AiAnalysis.Status.FAILED
         analysis.completed_at = timezone.now()
-        analysis.error_message = "PD-L1 analysis failed."
+        analysis.error_message = error_message
         analysis.save(update_fields=["status", "completed_at", "error_message"])
 
 
 def _begin_analysis(analysis_id):
     with transaction.atomic():
         analysis = (
-            AiAnalysis.objects.select_for_update()
+            AiAnalysis.objects.select_for_update(of=("self",))
             .select_related("model_version", "source_image_asset")
             .filter(id=analysis_id)
             .first()
@@ -66,11 +70,11 @@ def _result_payload(prediction):
 @shared_task
 def run_pdl1_analysis(analysis_id):
     """Run a catalog-selected PD-L1 sample outside the request transaction."""
-    input_metadata, outcome = _begin_analysis(analysis_id)
-    if outcome:
-        return outcome
-
     try:
+        input_metadata, outcome = _begin_analysis(analysis_id)
+        if outcome:
+            return outcome
+
         analysis = AiAnalysis.objects.select_related("case__patient", "source_image_asset").get(id=analysis_id)
         asset = analysis.source_image_asset
         annotation = (asset.metadata or {}).get("pdl1_annotation", {}) if asset else {}
@@ -91,11 +95,13 @@ def run_pdl1_analysis(analysis_id):
         confidence = Decimal(str(prediction["confidence"]))
         if not Decimal("0") <= confidence <= Decimal("1"):
             raise ValueError("PD-L1 confidence is out of range.")
-    except (InvalidOperation, KeyError, TypeError, ValueError):
-        _mark_failed(analysis_id)
+    except (InvalidOperation, KeyError, TypeError, ValueError) as exc:
+        logger.exception("PD-L1 analysis failed for analysis_id=%s", analysis_id)
+        _mark_failed(analysis_id, f"PD-L1 analysis failed: {type(exc).__name__}.")
         return "failed"
-    except Exception:
-        _mark_failed(analysis_id)
+    except Exception as exc:
+        logger.exception("PD-L1 analysis failed for analysis_id=%s", analysis_id)
+        _mark_failed(analysis_id, f"PD-L1 analysis failed: {type(exc).__name__}.")
         return "failed"
 
     with transaction.atomic():

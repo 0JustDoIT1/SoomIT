@@ -1,13 +1,15 @@
 from datetime import date
+from contextlib import nullcontext
 from unittest.mock import patch
 
-from django.test import TestCase
+from django.db import connection, NotSupportedError
+from django.test import SimpleTestCase, TestCase
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion, PDL1AiResult
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
 from apps.patients.models import Patient
-from apps.pathology.tasks import run_pdl1_analysis
+from apps.pathology.tasks import _begin_analysis, run_pdl1_analysis
 
 
 PREDICTION = {
@@ -18,6 +20,44 @@ PREDICTION = {
     "probabilities": {"class_0": 0.000187133, "class_1": 0.011115523, "class_2": 0.988697344},
     "preprocessing": {"tile_size": 224},
 }
+
+
+class PDL1AnalysisLockTestCase(SimpleTestCase):
+    def test_begin_query_locks_only_analysis_with_nullable_outer_join(self):
+        def inspect_query(queryset):
+            with patch.object(connection, "get_autocommit", return_value=False):
+                sql, _ = queryset.query.get_compiler(connection=connection).as_sql()
+            self.assertIn("LEFT OUTER JOIN", sql)
+            self.assertTrue(sql.endswith('FOR UPDATE OF "ai_analyses"'), sql)
+            return None
+
+        with patch("apps.pathology.tasks.transaction.atomic", side_effect=nullcontext), patch(
+            "django.db.models.query.QuerySet.first", autospec=True, side_effect=inspect_query
+        ):
+            self.assertEqual(_begin_analysis("00000000-0000-0000-0000-000000000001"), (None, "analysis_not_found"))
+
+    @patch("apps.pathology.tasks.request_pdl1_prediction")
+    @patch("apps.pathology.tasks.download_pdl1_annotation_bytes")
+    def test_begin_query_failure_uses_existing_failed_cleanup(self, download, infer):
+        for status in (AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING):
+            with self.subTest(status=status):
+                analysis = AiAnalysis(status=status)
+                with patch("apps.pathology.tasks.transaction.atomic", side_effect=nullcontext), patch(
+                    "django.db.models.query.QuerySet.first",
+                    side_effect=[NotSupportedError("nullable outer join"), analysis],
+                ), patch("django.db.models.query.QuerySet.exists", return_value=False), patch.object(
+                    analysis, "save"
+                ) as save, patch("apps.pathology.tasks.logger.exception") as log_exception:
+                    self.assertEqual(run_pdl1_analysis(str(analysis.id)), "failed")
+                self.assertEqual(analysis.status, AiAnalysis.Status.FAILED)
+                self.assertIsNotNone(analysis.completed_at)
+                self.assertEqual(analysis.error_message, "PD-L1 analysis failed: NotSupportedError.")
+                save.assert_called_once_with(update_fields=["status", "completed_at", "error_message"])
+                log_exception.assert_called_once_with(
+                    "PD-L1 analysis failed for analysis_id=%s", str(analysis.id)
+                )
+        download.assert_not_called()
+        infer.assert_not_called()
 
 
 class PDL1AnalysisTaskTestCase(TestCase):
