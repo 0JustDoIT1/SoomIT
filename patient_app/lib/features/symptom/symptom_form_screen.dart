@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'services/symptom_service.dart';
+import 'symptom_constants.dart';
 
 class SymptomFormScreen extends StatefulWidget {
   const SymptomFormScreen({super.key});
@@ -11,21 +12,9 @@ class SymptomFormScreen extends StatefulWidget {
 
 class _SymptomFormScreenState extends State<SymptomFormScreen> {
   final SymptomService _symptomService = SymptomService();
-  final TextEditingController _descriptionController =
-      TextEditingController();
+  final TextEditingController _descriptionController = TextEditingController();
 
-  final List<String> _symptomTypes = [
-    '기침',
-    '호흡곤란',
-    '흉통',
-    '가래',
-    '객혈',
-    '피로',
-    '발열',
-    '기타',
-  ];
-
-  String _selectedSymptomType = '기침';
+  String _selectedSymptomType = symptomTypes.first;
   double _severity = 3;
   bool _isSubmitting = false;
 
@@ -40,7 +29,7 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
     if (severity >= 8) {
       return 'RED';
     }
-  
+
     // 주의가 필요한 증상
     if (_selectedSymptomType == '객혈' ||
         _selectedSymptomType == '호흡곤란' ||
@@ -49,16 +38,16 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
       if (severity >= 5) {
         return 'RED';
       }
-  
+
       // 경증이어도 주의
       return 'YELLOW';
     }
-  
+
     // 일반 증상
     if (severity >= 4) {
       return 'YELLOW';
     }
-  
+
     return 'GREEN';
   }
 
@@ -77,14 +66,14 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
     if (_isSubmitting) {
       return;
     }
-  
+
     setState(() {
       _isSubmitting = true;
     });
-  
+
     try {
       final severity = _severity.round();
-  
+
       // 최종 위험도는 Django 서버에서 판정
       final createdSymptom = await _symptomService.createSymptomLog(
         symptomType: _selectedSymptomType,
@@ -93,9 +82,9 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
             : _descriptionController.text.trim(),
         severity: severity,
       );
-  
+
       if (!mounted) return;
-  
+
       // 서버가 RED로 판정한 경우 위험 안내
       if (createdSymptom.riskLevel == 'RED') {
         await showDialog<void>(
@@ -111,9 +100,7 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
               title: const Text(
                 '주의가 필요한 증상입니다',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
               content: const Text(
                 '현재 기록한 증상의 위험도가 높습니다.\n\n'
@@ -134,26 +121,52 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
           },
         );
       }
-  
+
       if (!mounted) return;
-  
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('증상이 기록되었습니다.'),
-        ),
-      );
-  
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('증상이 기록되었습니다.')));
+
       Navigator.pop(context, true);
+    } on DailySymptomDuplicateException catch (e) {
+      if (!mounted) return;
+
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) {
+          return AlertDialog(
+            icon: const Icon(
+              Icons.info_outline,
+              color: Color(0xFF2B66F6),
+              size: 40,
+            ),
+            title: const Text(
+              '오늘 기록 완료',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
+            content: Text(
+              '${e.detail}\n하루에 같은 증상은 한 번만 기록할 수 있습니다.',
+              textAlign: TextAlign.center,
+            ),
+            actions: [
+              FilledButton(
+                onPressed: () {
+                  Navigator.pop(dialogContext);
+                },
+                child: const Text('확인'),
+              ),
+            ],
+          );
+        },
+      );
     } catch (e) {
       if (!mounted) return;
-  
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '증상 기록 저장에 실패했습니다.\n$e',
-          ),
-        ),
-      );
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('증상 기록 저장에 실패했습니다.\n$e')));
     } finally {
       if (mounted) {
         setState(() {
@@ -169,9 +182,7 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
     final riskLevel = _getRiskLevel(severity);
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('증상 기록'),
-      ),
+      appBar: AppBar(title: const Text('증상 기록')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -180,20 +191,15 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
             children: [
               const Text(
                 '증상 종류',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
 
               const SizedBox(height: 10),
 
               DropdownButtonFormField<String>(
                 initialValue: _selectedSymptomType,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                ),
-                items: _symptomTypes
+                decoration: const InputDecoration(border: OutlineInputBorder()),
+                items: symptomTypes
                     .map(
                       (symptom) => DropdownMenuItem(
                         value: symptom,
@@ -252,16 +258,12 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
                 width: double.infinity,
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: Theme.of(context)
-                      .colorScheme
-                      .surfaceContainerHighest,
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '현재 상태: ${_getRiskLabel(riskLevel)}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w700,
-                  ),
+                  style: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
 
@@ -269,10 +271,7 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
 
               const Text(
                 '상세 내용',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
               ),
 
               const SizedBox(height: 10),
@@ -293,19 +292,14 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
                 width: double.infinity,
                 height: 52,
                 child: FilledButton(
-                  onPressed:
-                      _isSubmitting ? null : _submit,
+                  onPressed: _isSubmitting ? null : _submit,
                   child: _isSubmitting
                       ? const SizedBox(
                           width: 22,
                           height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                          ),
+                          child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text(
-                          '기록하기',
-                        ),
+                      : const Text('기록하기'),
                 ),
               ),
             ],
