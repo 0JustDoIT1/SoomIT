@@ -5,17 +5,17 @@ import { CaseInfoMenu } from "./case-info-menu";
 describe("CaseInfoMenu", () => {
   it("opens every respiratory workspace from the flat information menu", () => {
     const onSelect = vi.fn();
-    render(<CaseInfoMenu selected="STAGING" onSelect={onSelect} />);
+    render(<CaseInfoMenu selected="PET_CT_TNM" onSelect={onSelect} />);
 
     for (const label of ["전체 요약", "흉부 X선", "흉부 CT", "PET-CT / TNM 병기", "조직/유전자", "PD-L1", "치료 결정", "처방", "AI 종합 분석"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
     }
 
-    expect(onSelect.mock.calls.map(([key]) => key)).toEqual(["OVERVIEW", "XRAY", "CT", "STAGING", "PATHOLOGY", "GENE", "TREATMENT", "PRESCRIPTION", "AI_SUMMARY"]);
+    expect(onSelect.mock.calls.map(([key]) => key)).toEqual(["OVERVIEW", "XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION", "AI_SUMMARY"]);
   });
 
   it("marks only the selected workspace as the current page", () => {
-    render(<CaseInfoMenu selected="GENE" onSelect={() => undefined} />);
+    render(<CaseInfoMenu selected="PDL1" onSelect={() => undefined} />);
     expect(screen.getByRole("button", { name: "PD-L1" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("button", { name: "PET-CT / TNM 병기" }).getAttribute("aria-current")).toBeNull();
   });

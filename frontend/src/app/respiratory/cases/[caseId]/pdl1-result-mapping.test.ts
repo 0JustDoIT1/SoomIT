@@ -5,9 +5,9 @@ import { selectPdl1Results } from "./pdl1-result-mapping";
 describe("selectPdl1Results", () => {
   it("selects only PD-L1 analyses that contain PD-L1 detail", () => {
     const results = selectPdl1Results([
-      { analysis_type: "TNM_STAGING", result_detail: { tnm: {} } },
-      { analysis_type: "PDL1_CLASSIFICATION", result_detail: null },
-      { analysis_type: "PDL1_CLASSIFICATION", result_detail: { pdl1: { predicted_tps_range_label: "≥50%", confidence: "0.9" } } },
+      { analysis_type: "PET_CT_TNM_ANALYSIS", result_detail: { tnm: {} } },
+      { analysis_type: "PDL1_ANALYSIS", result_detail: null },
+      { analysis_type: "PDL1_ANALYSIS", result_detail: { pdl1: { predicted_tps_range_label: "≥50%", confidence: "0.9" } } },
     ]);
 
     expect(results).toHaveLength(1);

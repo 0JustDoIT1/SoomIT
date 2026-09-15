@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from .models import (
     ClinicalResult, XrayResult, CtResult, Nodule, NoduleObservation,
-    SpecimenAdequacyResult, PathologyResult, TnmResult, GeneResult,
+    PathologyResult, TnmResult, GeneResult,
     GeneFinding, TreatmentDecision, CaseFinalResult,
     Drug, Regimen, RegimenDrug, TreatmentRule,
     Prescription, PrescriptionItem, SafetyCheckResult,
@@ -11,15 +11,14 @@ from .models import (
 
 @admin.register(ClinicalResult)
 class ClinicalResultAdmin(admin.ModelAdmin):
-    list_display = ("case", "stage", "result_status", "confirmed_by_user", "confirmed_at")
-    list_filter = ("stage", "result_status")
+    list_display = ("case", "workflow_stage", "result_status", "confirmed_by_user", "confirmed_at")
+    list_filter = ("workflow_stage", "result_status")
 
 
 admin.site.register(XrayResult)
 admin.site.register(CtResult)
 admin.site.register(Nodule)
 admin.site.register(NoduleObservation)
-admin.site.register(SpecimenAdequacyResult)
 admin.site.register(PathologyResult)
 admin.site.register(TnmResult)
 admin.site.register(GeneResult)

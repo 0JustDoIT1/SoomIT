@@ -1,6 +1,6 @@
 export type Pdl1Result = {
   id?: string;
-  analysis_type: "PDL1_CLASSIFICATION";
+  analysis_type: "PDL1_ANALYSIS";
   analysis_type_label?: string;
   status?: string;
   status_label?: string;
@@ -24,7 +24,7 @@ export function selectPdl1Results(payload: unknown): Pdl1Result[] {
   if (!Array.isArray(payload)) return [];
 
   return payload.filter((item): item is Pdl1Result => {
-    if (!isRecord(item) || item.analysis_type !== "PDL1_CLASSIFICATION") return false;
+    if (!isRecord(item) || item.analysis_type !== "PDL1_ANALYSIS") return false;
     if (!isRecord(item.result_detail)) return false;
     return isRecord(item.result_detail.pdl1);
   });

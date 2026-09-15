@@ -272,7 +272,7 @@ class DoctorTreatmentDecisionAPIView(APIView):
                 status=404,
             )
 
-        clinical_result = ClinicalResult.objects.filter(case=case, stage="TREATMENT").first()
+        clinical_result = ClinicalResult.objects.filter(case=case, workflow_stage="TREATMENT").first()
 
         if clinical_result and clinical_result.result_status == "CONFIRMED":
             return Response({"detail": "이미 확정된 치료 결정은 수정할 수 없습니다."}, status=400)
@@ -297,7 +297,7 @@ class DoctorTreatmentDecisionAPIView(APIView):
         with transaction.atomic():
             if clinical_result is None:
                 clinical_result = ClinicalResult.objects.create(
-                    case=case, stage="TREATMENT", result_status="DRAFT",
+                    case=case, workflow_stage="TREATMENT", result_status="DRAFT",
                 )
             serializer.save(clinical_result=clinical_result)
 
@@ -402,7 +402,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
 
         ClinicianDecision.objects.create(
             case=case,
-            source_stage="TREATMENT",
+            source_workflow_stage="TREATMENT",
             source_clinical_result=clinical_result,
             decision_type="PROCEED_NEXT_STAGE",
             target_stage="PRESCRIPTION",
@@ -1320,13 +1320,13 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             confirmed = ClinicalResult.objects.filter(case=case, result_status="CONFIRMED")
             ordering = (F("confirmed_at").desc(nulls_last=True), "-updated_at", "-id")
             pathology = confirmed.filter(
-                stage="PATHOLOGY", pathology_detail__isnull=False,
+                workflow_stage="PATHOLOGY_GENE", pathology_detail__isnull=False,
             ).select_related("pathology_detail").order_by(*ordering).first()
             staging = confirmed.filter(
-                stage="STAGING", tnm_detail__isnull=False,
+                workflow_stage="PET_CT_TNM", tnm_detail__isnull=False,
             ).select_related("tnm_detail").order_by(*ordering).first()
             gene = confirmed.filter(
-                stage="GENE", gene_detail__isnull=False,
+                workflow_stage="PATHOLOGY_GENE", gene_detail__isnull=False,
             ).select_related("gene_detail").prefetch_related(
                 "gene_detail__gene_findings",
             ).order_by(*ordering).first()

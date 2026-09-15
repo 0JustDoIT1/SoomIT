@@ -31,7 +31,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
    * 실제 로그인 구현 후에는 반드시 삭제할 것.
    */
   static const String _testAccessToken =
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg5Mzk0ODkyLCJpYXQiOjE3ODkzOTQ1OTIsImp0aSI6ImI2MjhmZDlhZjJjMjRmMDU5YzgxZmFhY2UwNzYwYjVhIiwidXNlcl9pZCI6IjVlM2JiNTdkLTJmNzItNGMxNi1hZDU5LTY2MzdhZmY0MWUwOSJ9.WzQkMMeBwDAwYgFxFoZxvz3Og6MICwZg0uM1XbBXBQ8';
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg5NDMzODIwLCJpYXQiOjE3ODk0MzM1MjAsImp0aSI6IjI2NTNlNTUyMTJiZTRjZGY5MzdhMTI2ZDc4YTcwZTE4IiwidXNlcl9pZCI6IjVlM2JiNTdkLTJmNzItNGMxNi1hZDU5LTY2MzdhZmY0MWUwOSJ9.MzBce0WOmf0VwQSgLIP1uWhuCXcEDh09HhL0Oaezspg';
 
   final List<_ChatMessage> _messages = [
     const _ChatMessage(

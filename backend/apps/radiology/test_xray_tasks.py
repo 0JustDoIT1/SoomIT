@@ -6,7 +6,7 @@ from django.test import TestCase
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion, XrayAiResult
-from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.patients.models import Patient
 from apps.radiology.tasks import run_xray_analysis
 
@@ -66,11 +66,11 @@ class XrayAnalysisTaskTestCase(TestCase):
             patient=patient,
             case_code="XRAY-TASK-CASE",
             primary_doctor=doctor,
-            current_stage=Stage.XRAY,
+            current_stage=WorkflowStage.XRAY,
         )
         order = ExaminationOrder.objects.create(
             case=case,
-            exam_type=ExaminationOrder.ExamType.XRAY,
+            order_type=ExaminationOrder.OrderType.XRAY,
             requesting_doctor=doctor,
             priority=ExaminationOrder.Priority.NORMAL,
             purpose="X-ray task test",
@@ -79,7 +79,7 @@ class XrayAnalysisTaskTestCase(TestCase):
         self.asset = CaseImageAsset.objects.create(
             case=case,
             examination_order=order,
-            uploaded_stage=Stage.XRAY,
+            workflow_stage=WorkflowStage.XRAY,
             image_type=CaseImageAsset.ImageType.XRAY,
             storage_type=CaseImageAsset.StorageType.GCS,
             storage_uri="gs://test-bucket/xray/task.png",
@@ -89,12 +89,12 @@ class XrayAnalysisTaskTestCase(TestCase):
         model_version = ModelVersion.objects.create(
             model_name="xray-task-model",
             version="1.0",
-            analysis_type="XRAY_SCREENING",
+            analysis_type="XRAY_ANALYSIS",
         )
         self.analysis = AiAnalysis.objects.create(
             case=case,
             source_image_asset=self.asset,
-            analysis_type="XRAY_SCREENING",
+            analysis_type="XRAY_ANALYSIS",
             model_version=model_version,
             status=AiAnalysis.Status.PENDING,
         )

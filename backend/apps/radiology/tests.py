@@ -21,7 +21,7 @@ from apps.ai_results.models import (
     TnmAiResult,
     XrayAiResult,
 )
-from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult
 from apps.radiology.models import RadiologyReview
 from apps.patients.models import Appointment, Patient
@@ -80,7 +80,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.model_version = ModelVersion.objects.create(
             model_name="xray-model",
             version="1.0",
-            analysis_type="XRAY_SCREENING",
+            analysis_type="XRAY_ANALYSIS",
         )
         self.url = reverse("radiology:worklist")
         self._authenticate(self.user, self.hospital)
@@ -110,13 +110,13 @@ class RadiologyWorklistAPITestCase(APITestCase):
             patient=patient,
             case_code=case_code,
             primary_doctor=self.doctor,
-            current_stage=Stage.XRAY,
+            current_stage=WorkflowStage.XRAY,
         )
 
     def _create_order(self, case, **overrides):
         values = {
             "case": case,
-            "exam_type": ExaminationOrder.ExamType.XRAY,
+            "order_type": ExaminationOrder.OrderType.XRAY,
             "requesting_doctor": self.doctor,
             "priority": ExaminationOrder.Priority.NORMAL,
             "purpose": "흉부 영상 검사",
@@ -129,7 +129,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         values = {
             "case": order.case,
             "examination_order": order,
-            "uploaded_stage": Stage.XRAY,
+            "workflow_stage": WorkflowStage.XRAY,
             "image_type": CaseImageAsset.ImageType.XRAY,
             "storage_type": CaseImageAsset.StorageType.ORTHANC,
             "storage_uri": f"orthanc://studies/{order.id}-{CaseImageAsset.objects.count()}",
@@ -139,7 +139,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         values.update(overrides)
         return CaseImageAsset.objects.create(**values)
 
-    def _create_analysis(self, asset, status_value, analysis_type="XRAY_SCREENING"):
+    def _create_analysis(self, asset, status_value, analysis_type="XRAY_ANALYSIS"):
         return AiAnalysis.objects.create(
             case=asset.case,
             source_image_asset=asset,
@@ -198,17 +198,17 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(response.data[0]["examination_order"]["id"], str(self.order.id))
 
     def test_filters_and_validates_query_parameters(self):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
+        self.order.order_type = ExaminationOrder.OrderType.CT
         self.order.priority = ExaminationOrder.Priority.URGENT
         self.order.status = ExaminationOrder.Status.SCHEDULED
-        self.order.save(update_fields=["exam_type", "priority", "status", "updated_at"])
+        self.order.save(update_fields=["order_type", "priority", "status", "updated_at"])
         response = self.client.get(
             self.url,
-            {"exam_type": "CT", "priority": "URGENT", "status": "SCHEDULED"},
+            {"order_type": "CT", "priority": "URGENT", "status": "SCHEDULED"},
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        invalid = self.client.get(self.url, {"exam_type": "PET_CT"})
+        invalid = self.client.get(self.url, {"order_type": "PET_CT"})
         self.assertEqual(invalid.status_code, status.HTTP_400_BAD_REQUEST)
         reversed_dates = self.client.get(
             self.url,
@@ -217,27 +217,27 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(reversed_dates.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_staging_asset_is_displayed_and_filtered_as_pet_ct_tnm(self):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
-        self.order.save(update_fields=["exam_type", "updated_at"])
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
         self._create_asset(
             self.order,
-            uploaded_stage=Stage.STAGING,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
             image_type=CaseImageAsset.ImageType.CT,
         )
 
-        staging_response = self.client.get(self.url, {"exam_type": "STAGING"})
+        staging_response = self.client.get(self.url, {"order_type": "PET_CT_TNM"})
         self.assertEqual(staging_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(staging_response.data), 1)
         self.assertEqual(
-            staging_response.data[0]["examination_order"]["exam_type"],
-            ExaminationOrder.ExamType.CT,
+            staging_response.data[0]["examination_order"]["order_type"],
+            ExaminationOrder.OrderType.CT,
         )
         self.assertEqual(
-            staging_response.data[0]["examination_order"]["exam_type_label"],
+            staging_response.data[0]["examination_order"]["order_type_label"],
             "PET-CT",
         )
 
-        ct_response = self.client.get(self.url, {"exam_type": "CT"})
+        ct_response = self.client.get(self.url, {"order_type": "CT"})
         self.assertEqual(ct_response.status_code, status.HTTP_200_OK)
         self.assertEqual(ct_response.data, [])
 
@@ -288,27 +288,27 @@ class RadiologyWorklistAPITestCase(APITestCase):
         url = reverse("radiology:case-worklist")
         xray_response = self.client.get(url)
         self.assertEqual(
-            xray_response.data[0]["current_exam"]["examination_order"]["exam_type_label"],
+            xray_response.data[0]["current_exam"]["examination_order"]["order_type_label"],
             "X-ray",
         )
 
-        self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
         ct_response = self.client.get(url)
         self.assertEqual(
-            ct_response.data[0]["current_exam"]["examination_order"]["exam_type_label"],
+            ct_response.data[0]["current_exam"]["examination_order"]["order_type_label"],
             "CT",
         )
 
-        pet_order = self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        pet_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
         pet_asset = self._create_asset(
             pet_order,
-            uploaded_stage=Stage.STAGING,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
             image_type=CaseImageAsset.ImageType.CT,
         )
         self._create_analysis(
             pet_asset,
             AiAnalysis.Status.RUNNING,
-            analysis_type="TNM_STAGING",
+            analysis_type="PET_CT_TNM_ANALYSIS",
         )
 
         response = self.client.get(url)
@@ -318,19 +318,19 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(len(case_rows), 1)
         self.assertEqual(case_rows[0]["exam_count"], 3)
         self.assertEqual(
-            case_rows[0]["current_exam"]["examination_order"]["exam_type_label"],
+            case_rows[0]["current_exam"]["examination_order"]["order_type_label"],
             "PET-CT",
         )
 
     def test_case_workflow_returns_only_actual_order_scoped_exams(self):
         xray_asset = self._create_asset(self.order)
         xray_analysis = self._create_analysis(xray_asset, AiAnalysis.Status.RUNNING)
-        ct_order = self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
-        ct_asset = self._create_asset(ct_order, uploaded_stage=Stage.CT)
+        ct_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
+        ct_asset = self._create_asset(ct_order, workflow_stage=WorkflowStage.CT)
         ct_analysis = self._create_analysis(
             ct_asset,
             AiAnalysis.Status.RUNNING,
-            analysis_type="CT_NODULE",
+            analysis_type="CT_ANALYSIS",
         )
 
         response = self.client.get(
@@ -356,7 +356,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         ClinicalResult.objects.create(
             case=self.case,
-            stage=Stage.XRAY,
+            workflow_stage=WorkflowStage.XRAY,
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
         )
         completed_response = self.client.get(self.url)
@@ -454,13 +454,13 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         asset = CaseImageAsset.objects.get(id=response.data["id"])
         self.assertEqual(asset.image_type, CaseImageAsset.ImageType.XRAY)
-        self.assertEqual(asset.uploaded_stage, Stage.XRAY)
+        self.assertEqual(asset.workflow_stage, WorkflowStage.XRAY)
         self.assertEqual(asset.status, CaseImageAsset.Status.READY)
         self.assertEqual(asset.examination_order, self.order)
 
     def test_create_ct_image_sets_server_managed_fields(self):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
-        self.order.save(update_fields=["exam_type", "updated_at"])
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
         response = self.client.post(
             reverse("radiology:order-image-create", kwargs={"order_id": self.order.id}),
             self._image_payload(),
@@ -469,7 +469,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         asset = CaseImageAsset.objects.get(id=response.data["id"])
         self.assertEqual(asset.image_type, CaseImageAsset.ImageType.CT)
-        self.assertEqual(asset.uploaded_stage, Stage.CT)
+        self.assertEqual(asset.workflow_stage, WorkflowStage.CT)
 
     def test_create_image_rejects_duplicate_and_other_hospital_order(self):
         payload = self._image_payload()
@@ -515,7 +515,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(asset.storage_type, CaseImageAsset.StorageType.GCS)
         self.assertEqual(asset.status, CaseImageAsset.Status.READY)
         self.assertEqual(asset.image_type, CaseImageAsset.ImageType.XRAY)
-        self.assertEqual(asset.uploaded_stage, Stage.XRAY)
+        self.assertEqual(asset.workflow_stage, WorkflowStage.XRAY)
         self.assertEqual(asset.file_format, "PNG")
         self.assertEqual(asset.examination_order_id, self.order.id)
         upload_xray_image.assert_called_once()
@@ -564,7 +564,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         latest_model = ModelVersion.objects.create(
             model_name="xray-model",
             version="2.0",
-            analysis_type="XRAY_SCREENING",
+            analysis_type="XRAY_ANALYSIS",
         )
         asset = self._create_asset(self.order)
         response = self.client.post(
@@ -574,7 +574,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         analysis = AiAnalysis.objects.get(id=response.data["analysis_id"])
-        self.assertEqual(analysis.analysis_type, "XRAY_SCREENING")
+        self.assertEqual(analysis.analysis_type, "XRAY_ANALYSIS")
         self.assertEqual(analysis.model_version, latest_model)
         self.assertEqual(analysis.source_image_asset, asset)
         self.assertEqual(analysis.status, AiAnalysis.Status.PENDING)
@@ -596,17 +596,17 @@ class RadiologyWorklistAPITestCase(APITestCase):
 
     @patch("apps.radiology.views.run_xray_analysis.delay")
     def test_ct_and_duplicate_analysis_do_not_enqueue_xray_task(self, delay):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
-        self.order.save(update_fields=["exam_type", "updated_at"])
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
         ModelVersion.objects.create(
             model_name="ct-no-enqueue-model",
             version="1.0",
-            analysis_type="CT_NODULE",
+            analysis_type="CT_ANALYSIS",
         )
         self._create_asset(
             self.order,
             image_type=CaseImageAsset.ImageType.CT,
-            uploaded_stage=Stage.CT,
+            workflow_stage=WorkflowStage.CT,
         )
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.post(
@@ -633,32 +633,32 @@ class RadiologyWorklistAPITestCase(APITestCase):
         delay.assert_not_called()
 
     def test_start_ct_and_tnm_analyses_choose_order_meaning(self):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
-        self.order.save(update_fields=["exam_type", "updated_at"])
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
         ct_model = ModelVersion.objects.create(
-            model_name="ct-model", version="1.0", analysis_type="CT_NODULE",
+            model_name="ct-model", version="1.0", analysis_type="CT_ANALYSIS",
         )
         ct_asset = self._create_asset(
             self.order,
             image_type=CaseImageAsset.ImageType.CT,
-            uploaded_stage=Stage.CT,
+            workflow_stage=WorkflowStage.CT,
         )
         ct_response = self.client.post(
             reverse("radiology:order-analysis-create", kwargs={"order_id": self.order.id}),
             {}, format="json",
         )
         self.assertEqual(ct_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(ct_response.data["analysis_type"], "CT_NODULE")
+        self.assertEqual(ct_response.data["analysis_type"], "CT_ANALYSIS")
         self.assertEqual(str(ct_model.id), str(ct_response.data["model_version"]["id"]))
 
-        tnm_order = self._create_order(self.case, exam_type=ExaminationOrder.ExamType.CT)
+        tnm_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
         ModelVersion.objects.create(
-            model_name="tnm-model", version="1.0", analysis_type="TNM_STAGING",
+            model_name="tnm-model", version="1.0", analysis_type="PET_CT_TNM_ANALYSIS",
         )
         self._create_asset(
             tnm_order,
             image_type=CaseImageAsset.ImageType.CT,
-            uploaded_stage=Stage.STAGING,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
             storage_uri="test://radiology/tnm",
         )
         tnm_response = self.client.post(
@@ -666,7 +666,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
             {}, format="json",
         )
         self.assertEqual(tnm_response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(tnm_response.data["analysis_type"], "TNM_STAGING")
+        self.assertEqual(tnm_response.data["analysis_type"], "PET_CT_TNM_ANALYSIS")
 
     def test_start_analysis_blocks_active_duplicate_and_other_hospital(self):
         asset = self._create_asset(self.order)
@@ -749,19 +749,19 @@ class RadiologyWorklistAPITestCase(APITestCase):
         download.assert_called_once_with(asset.storage_uri)
 
     def test_result_returns_ct_detail_without_interpreting_payload(self):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
-        self.order.save(update_fields=["exam_type", "updated_at"])
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
         asset = self._create_asset(
             self.order,
             image_type=CaseImageAsset.ImageType.CT,
-            uploaded_stage=Stage.CT,
+            workflow_stage=WorkflowStage.CT,
         )
         analysis = AiAnalysis.objects.create(
             case=self.case,
             source_image_asset=asset,
-            analysis_type="CT_NODULE",
+            analysis_type="CT_ANALYSIS",
             model_version=ModelVersion.objects.create(
-                model_name="ct-result-model", version="1.0", analysis_type="CT_NODULE",
+                model_name="ct-result-model", version="1.0", analysis_type="CT_ANALYSIS",
             ),
             status=AiAnalysis.Status.SUCCEEDED,
         )
@@ -782,19 +782,19 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(response.data["result"]["nodules"][0]["finding_payload"], payload)
 
     def test_result_returns_tnm_detail(self):
-        self.order.exam_type = ExaminationOrder.ExamType.CT
-        self.order.save(update_fields=["exam_type", "updated_at"])
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
         asset = self._create_asset(
             self.order,
             image_type=CaseImageAsset.ImageType.CT,
-            uploaded_stage=Stage.STAGING,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
         )
         analysis = AiAnalysis.objects.create(
             case=self.case,
             source_image_asset=asset,
-            analysis_type="TNM_STAGING",
+            analysis_type="PET_CT_TNM_ANALYSIS",
             model_version=ModelVersion.objects.create(
-                model_name="tnm-result-model", version="1.0", analysis_type="TNM_STAGING",
+                model_name="tnm-result-model", version="1.0", analysis_type="PET_CT_TNM_ANALYSIS",
             ),
             status=AiAnalysis.Status.SUCCEEDED,
         )

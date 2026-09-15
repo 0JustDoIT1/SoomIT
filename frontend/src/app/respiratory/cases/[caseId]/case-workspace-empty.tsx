@@ -15,7 +15,7 @@ import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview
 import { AiSummaryPanel } from "./ai-summary-panel";
 
 export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorMessage?: string; isPreview?: boolean }) {
-  const [selectedMenu, setSelectedMenu] = useState<CaseInfoKey>("STAGING");
+  const [selectedMenu, setSelectedMenu] = useState<CaseInfoKey>("PET_CT_TNM");
 
   return (
     <div className="fixed inset-x-0 bottom-0 top-[54px] flex min-h-0 w-full flex-col overflow-hidden bg-slate-50">
@@ -30,7 +30,7 @@ export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorM
           <div className="min-h-0 overflow-y-auto">
             <PreviewWorkspace menu={selectedMenu} />
           </div>
-          {selectedMenu === "STAGING" ? <BottomActionBar /> : <div className="-mx-2 border-t border-slate-200 bg-white" />}
+          {selectedMenu === "PET_CT_TNM" ? <BottomActionBar /> : <div className="-mx-2 border-t border-slate-200 bg-white" />}
         </main>
       </div>
     </div>
@@ -49,9 +49,9 @@ const EMPTY_CASE = {
 
 function PreviewWorkspace({ menu }: { menu: CaseInfoKey }) {
   if (menu === "OVERVIEW") return <CaseOverviewPanel caseData={EMPTY_CASE} clinicalResults={[]} aiResults={[]} />;
-  if (["XRAY", "CT", "PATHOLOGY"].includes(menu)) return <ResultReviewPanel stage={menu} />;
-  if (menu === "STAGING") return <TnmReviewWorkspace />;
-  if (menu === "GENE") {
+  if (["XRAY", "CT", "PATHOLOGY_GENE"].includes(menu)) return <ResultReviewPanel stage={menu} />;
+  if (menu === "PET_CT_TNM") return <TnmReviewWorkspace />;
+  if (menu === "PDL1") {
     return <div className="space-y-3"><BiomarkerSourceHeader /><PreviewEmpty title="PD-L1 결과 비교" message="전문과 확정 TPS가 없으며 PD-L1 AI 후보는 인증 연결 전까지 조회되지 않습니다." /></div>;
   }
   if (menu === "TREATMENT" || menu === "PRESCRIPTION") {

@@ -17,13 +17,15 @@ from .serializers import (
     MedicalOpinionRequestSerializer,
     MedicalOpinionResponseSerializer,
     FollowUpPathologyOrderCreateSerializer,
+    ExaminationOrderCreateSerializer,
 )
+from .services.examination_orders import ExaminationOrderCreationError, create_examination_order
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
 from .services.pathology_orders import (
     PathologyOrderCreationError,
     create_follow_up_pathology_order,
     has_active_pathology_order,
-    has_confirmed_subtype_result,
+    has_confirmed_pathology_gene_result,
 )
 
 
@@ -145,16 +147,14 @@ class DoctorFollowUpPathologyOrderAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        subtype_completed = has_confirmed_subtype_result(case)
+        pathology_gene_completed = has_confirmed_pathology_gene_result(case)
         return Response(
             {
-                "subtype_review_completed": subtype_completed,
+                "pathology_gene_review_completed": pathology_gene_completed,
                 "active_orders": {
-                    ExaminationOrder.PathologyTestType.PDL1: has_active_pathology_order(
-                        case, ExaminationOrder.PathologyTestType.PDL1
-                    ),
-                    ExaminationOrder.PathologyTestType.GENE: has_active_pathology_order(
-                        case, ExaminationOrder.PathologyTestType.GENE
+                    "PDL1": has_active_pathology_order(case, ExaminationOrder.OrderType.PDL1),
+                    "PATHOLOGY_GENE": has_active_pathology_order(
+                        case, ExaminationOrder.OrderType.PATHOLOGY_GENE
                     ),
                 },
             }
@@ -186,10 +186,70 @@ class DoctorFollowUpPathologyOrderAPIView(APIView):
             {
                 "examination_order_id": examination_order.id,
                 "pathology_work_item_id": work_item.id,
-                "pathology_test_type": examination_order.pathology_test_type,
-                "pathology_test_type_label": examination_order.get_pathology_test_type_display(),
+                "order_type": examination_order.order_type,
+                "order_type_label": examination_order.get_order_type_display(),
                 "order_status": examination_order.status,
                 "created_at": examination_order.created_at,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class DoctorExaminationOrderAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get_case(self, request, case_id):
+        return LungCancerCase.objects.filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
+
+    def get(self, request, case_id):
+        case = self.get_case(request, case_id)
+        if case is None:
+            return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        orders = case.examination_orders.order_by("-created_at")
+        return Response([
+            {
+                "id": order.id,
+                "case_id": order.case_id,
+                "order_type": order.order_type,
+                "order_type_label": order.get_order_type_display(),
+                "priority": order.priority,
+                "status": order.status,
+                "purpose": order.purpose,
+                "clinical_note": order.clinical_note,
+                "created_at": order.created_at,
+            }
+            for order in orders
+        ])
+
+    def post(self, request, case_id):
+        case = self.get_case(request, case_id)
+        if case is None:
+            return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = ExaminationOrderCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            order, work_item = create_examination_order(
+                case=case,
+                requesting_doctor=request.user,
+                **serializer.validated_data,
+            )
+        except ExaminationOrderCreationError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(
+            {
+                "id": order.id,
+                "case_id": order.case_id,
+                "order_type": order.order_type,
+                "order_type_label": order.get_order_type_display(),
+                "priority": order.priority,
+                "status": order.status,
+                "pathology_work_item_id": work_item.id if work_item else None,
+                "created_at": order.created_at,
             },
             status=status.HTTP_201_CREATED,
         )

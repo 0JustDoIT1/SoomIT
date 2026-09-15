@@ -4,7 +4,7 @@ from django.db import models
 from django.db.models import Q
 
 from apps.accounts.models import User
-from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.ai_results.models import AiResult
 from apps.common.models import TimestampedUUIDModel
 
@@ -16,7 +16,7 @@ class ClinicalResult(TimestampedUUIDModel):
         CONFIRMED = "CONFIRMED", "확정"
 
     # stage: PRESCRIPTION 제외한 6개 (prescriptions는 treatment_decisions를 근거로 별도 테이블)
-    STAGE_CHOICES = [c for c in Stage.choices if c[0] != "PRESCRIPTION"]
+    STAGE_CHOICES = [c for c in WorkflowStage.choices if c[0] != "PRESCRIPTION"]
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="clinical_results")
     examination_order = models.ForeignKey(
@@ -26,7 +26,7 @@ class ClinicalResult(TimestampedUUIDModel):
         blank=True,
         related_name="clinical_results",
     )
-    stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
+    workflow_stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
     source_image_asset = models.ForeignKey(
         CaseImageAsset, on_delete=models.PROTECT, null=True, blank=True, related_name="clinical_results"
     )
@@ -146,29 +146,6 @@ class NoduleObservation(TimestampedUUIDModel):
             ),
             models.CheckConstraint(
                 check=Q(malignancy_risk__gte=0) & Q(malignancy_risk__lte=100), name="ck_nodobs_malig_0_100"
-            ),
-        ]
-
-
-# ── 5-6. specimen_adequacy_results ──────────────────────────────
-class SpecimenAdequacyResult(models.Model):
-    class AdequacyStatus(models.TextChoices):
-        ADEQUATE = "ADEQUATE", "적정"
-        INADEQUATE = "INADEQUATE", "부적정"
-        INDETERMINATE = "INDETERMINATE", "판정불가"
-
-    clinical_result = models.OneToOneField(
-        ClinicalResult, on_delete=models.CASCADE, primary_key=True, related_name="specimen_adequacy_detail"
-    )
-    adequacy_status = models.CharField(max_length=15, choices=AdequacyStatus.choices)
-    tumor_cell_ratio = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    reason = models.TextField(null=True, blank=True)
-
-    class Meta:
-        db_table = "specimen_adequacy_results"
-        constraints = [
-            models.CheckConstraint(
-                check=Q(tumor_cell_ratio__gte=0) & Q(tumor_cell_ratio__lte=100), name="ck_spec_result_ratio_0_100"
             ),
         ]
 

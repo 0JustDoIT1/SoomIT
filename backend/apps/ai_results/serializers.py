@@ -75,16 +75,6 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
                 ],
             }
 
-        # 검체 적정성
-        if hasattr(result, "specimen_adequacy_detail"):
-            specimen = result.specimen_adequacy_detail
-            detail["specimen_adequacy"] = {
-                "adequacy_status": specimen.adequacy_status,
-                "adequacy_status_label": specimen.get_adequacy_status_display(),
-                "tumor_cell_ratio": specimen.tumor_cell_ratio,
-                "confidence": specimen.confidence,
-            }
-
         # 병리
         if hasattr(result, "pathology_detail"):
             pathology = result.pathology_detail

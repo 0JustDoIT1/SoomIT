@@ -8,13 +8,11 @@ from apps.common.models import CreatedOnlyUUIDModel
 
 
 class AnalysisType(models.TextChoices):
-    XRAY_SCREENING = "XRAY_SCREENING", "X-ray 선별"
-    CT_NODULE = "CT_NODULE", "CT 결절분석"
-    SPECIMEN_ADEQUACY = "SPECIMEN_ADEQUACY", "검체 적정성"
-    PATHOLOGY_DIAGNOSIS = "PATHOLOGY_DIAGNOSIS", "병리 진단"
-    PDL1_CLASSIFICATION = "PDL1_CLASSIFICATION", "PD-L1 구간 분류"
-    TNM_STAGING = "TNM_STAGING", "TNM 병기"
-    GENE_PREDICTION = "GENE_PREDICTION", "유전자 예측"
+    XRAY_ANALYSIS = "XRAY_ANALYSIS", "X-ray 분석"
+    CT_ANALYSIS = "CT_ANALYSIS", "CT 분석"
+    PET_CT_TNM_ANALYSIS = "PET_CT_TNM_ANALYSIS", "PET-CT 및 TNM 분석"
+    PATHOLOGY_GENE_ANALYSIS = "PATHOLOGY_GENE_ANALYSIS", "조직·유전자 분석"
+    PDL1_ANALYSIS = "PDL1_ANALYSIS", "PD-L1 분석"
     TREATMENT_RECOMMENDATION = "TREATMENT_RECOMMENDATION", "치료 추천"
 
 
@@ -138,33 +136,6 @@ class NoduleAiResult(models.Model):
             ),
             models.CheckConstraint(
                 check=Q(malignancy_risk__gte=0) & Q(malignancy_risk__lte=100), name="ck_nodule_ai_malig_0_100"
-            ),
-        ]
-
-
-# ── 4-6. specimen_adequacy_ai_results ───────────────────────────
-class SpecimenAdequacyAiResult(models.Model):
-    class AdequacyStatus(models.TextChoices):
-        ADEQUATE = "ADEQUATE", "적정"
-        INADEQUATE = "INADEQUATE", "부적정"
-        INDETERMINATE = "INDETERMINATE", "판정불가"
-
-    ai_result = models.OneToOneField(
-        AiResult, on_delete=models.CASCADE, primary_key=True, db_column="ai_result_id",
-        related_name="specimen_adequacy_detail",
-    )
-    adequacy_status = models.CharField(max_length=15, choices=AdequacyStatus.choices)
-    tumor_cell_ratio = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
-    confidence = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
-
-    class Meta:
-        db_table = "specimen_adequacy_ai_results"
-        constraints = [
-            models.CheckConstraint(
-                check=Q(tumor_cell_ratio__gte=0) & Q(tumor_cell_ratio__lte=100), name="ck_spec_ai_ratio_0_100"
-            ),
-            models.CheckConstraint(
-                check=Q(confidence__gte=0) & Q(confidence__lte=1), name="ck_spec_ai_conf_0_1"
             ),
         ]
 

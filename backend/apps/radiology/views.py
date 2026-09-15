@@ -18,7 +18,7 @@ from apps.accounts.permissions import (
     get_token_hospital_id,
 )
 from apps.ai_results.models import AiAnalysis, AnalysisType, ModelVersion
-from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult
 from apps.patients.models import Appointment
 
@@ -64,7 +64,7 @@ class RadiologyPermissionMixin:
         return queryset.filter(
             id=order_id,
             case__patient__hospital_id=self.get_hospital_id(),
-            exam_type__in=[ExaminationOrder.ExamType.XRAY, ExaminationOrder.ExamType.CT],
+            order_type__in=[ExaminationOrder.OrderType.XRAY, ExaminationOrder.OrderType.CT, ExaminationOrder.OrderType.PET_CT_TNM],
         ).first()
 
     def get_analysis(self, analysis_id):
@@ -73,13 +73,14 @@ class RadiologyPermissionMixin:
                 id=analysis_id,
                 case__patient__hospital_id=self.get_hospital_id(),
                 analysis_type__in=[
-                    AnalysisType.XRAY_SCREENING,
-                    AnalysisType.CT_NODULE,
-                    AnalysisType.TNM_STAGING,
+                    AnalysisType.XRAY_ANALYSIS,
+                    AnalysisType.CT_ANALYSIS,
+                    AnalysisType.PET_CT_TNM_ANALYSIS,
                 ],
-                source_image_asset__examination_order__exam_type__in=[
-                    ExaminationOrder.ExamType.XRAY,
-                    ExaminationOrder.ExamType.CT,
+                source_image_asset__examination_order__order_type__in=[
+                    ExaminationOrder.OrderType.XRAY,
+                    ExaminationOrder.OrderType.CT,
+                    ExaminationOrder.OrderType.PET_CT_TNM,
                 ],
             )
             .select_related(
@@ -146,9 +147,10 @@ class RadiologyWorklistAPIView(RadiologyPermissionMixin, ListAPIView):
         queryset = (
             ExaminationOrder.objects.filter(
                 case__patient__hospital_id=hospital_id,
-                exam_type__in=[
-                    ExaminationOrder.ExamType.XRAY,
-                    ExaminationOrder.ExamType.CT,
+                order_type__in=[
+                    ExaminationOrder.OrderType.XRAY,
+                    ExaminationOrder.OrderType.CT,
+                    ExaminationOrder.OrderType.PET_CT_TNM,
                 ],
             )
             .select_related(
@@ -173,17 +175,9 @@ class RadiologyWorklistAPIView(RadiologyPermissionMixin, ListAPIView):
             .order_by("-created_at")
         )
 
-        if "exam_type" in filters:
-            exam_type = filters["exam_type"]
-            staging_relation = Q(image_assets__uploaded_stage="STAGING") | Q(
-                image_assets__ai_analyses__analysis_type="TNM_STAGING",
-            )
-            if exam_type == "STAGING":
-                queryset = queryset.filter(staging_relation).distinct()
-            elif exam_type == ExaminationOrder.ExamType.CT:
-                queryset = queryset.filter(exam_type=exam_type).exclude(staging_relation).distinct()
-            else:
-                queryset = queryset.filter(exam_type=exam_type)
+        if "order_type" in filters:
+            order_type = filters["order_type"]
+            queryset = queryset.filter(order_type=order_type)
         if "status" in filters:
             queryset = queryset.filter(status=filters["status"])
         if "priority" in filters:
@@ -251,7 +245,7 @@ def _workflow_order_queryset(hospital_id):
     return (
         ExaminationOrder.objects.filter(
             case__patient__hospital_id=hospital_id,
-            exam_type__in=[ExaminationOrder.ExamType.XRAY, ExaminationOrder.ExamType.CT],
+            order_type__in=[ExaminationOrder.OrderType.XRAY, ExaminationOrder.OrderType.CT, ExaminationOrder.OrderType.PET_CT_TNM],
         )
         .select_related(
             "case",
@@ -277,17 +271,9 @@ def _workflow_order_queryset(hospital_id):
 
 
 def _filter_radiology_orders(queryset, filters):
-    if "exam_type" in filters:
-        exam_type = filters["exam_type"]
-        staging_relation = Q(image_assets__uploaded_stage="STAGING") | Q(
-            image_assets__ai_analyses__analysis_type="TNM_STAGING",
-        )
-        if exam_type == "STAGING":
-            queryset = queryset.filter(staging_relation).distinct()
-        elif exam_type == ExaminationOrder.ExamType.CT:
-            queryset = queryset.filter(exam_type=exam_type).exclude(staging_relation).distinct()
-        else:
-            queryset = queryset.filter(exam_type=exam_type)
+    if "order_type" in filters:
+        order_type = filters["order_type"]
+        queryset = queryset.filter(order_type=order_type)
     if "status" in filters:
         queryset = queryset.filter(status=filters["status"])
     if "priority" in filters:
@@ -325,7 +311,7 @@ class RadiologyCaseWorklistAPIView(RadiologyPermissionMixin, APIView):
         exam_counts = dict(
             ExaminationOrder.objects.filter(
                 case__patient__hospital_id=hospital_id,
-                exam_type__in=[ExaminationOrder.ExamType.XRAY, ExaminationOrder.ExamType.CT],
+                order_type__in=[ExaminationOrder.OrderType.XRAY, ExaminationOrder.OrderType.CT, ExaminationOrder.OrderType.PET_CT_TNM],
             )
             .values("case_id")
             .annotate(total=Count("id"))
@@ -340,9 +326,9 @@ class RadiologyCaseWorklistAPIView(RadiologyPermissionMixin, APIView):
             orders_by_case.setdefault(order.case_id, []).append(order)
 
         def exam_rank(order):
-            if is_pet_ct_tnm_order(order.worklist_image_assets):
+            if order.order_type == ExaminationOrder.OrderType.PET_CT_TNM:
                 return 2
-            if order.exam_type == ExaminationOrder.ExamType.CT:
+            if order.order_type == ExaminationOrder.OrderType.CT:
                 return 1
             return 0
 
@@ -379,7 +365,7 @@ class RadiologyCaseWorkflowAPIView(RadiologyPermissionMixin, APIView):
 
         orders = list(_workflow_order_queryset(self.get_hospital_id()).filter(case_id=case_id))
         serializer = RadiologyWorklistSerializer()
-        exam_rank = {"XRAY": 0, "CT": 1, "STAGING": 2}
+        exam_rank = {"XRAY": 0, "CT": 1, "PET_CT_TNM": 2}
         exams = []
         for order in orders:
             item = serializer.to_representation(order)
@@ -411,12 +397,7 @@ class RadiologyCaseWorkflowAPIView(RadiologyPermissionMixin, APIView):
 
         exams.sort(
             key=lambda item: (
-                exam_rank.get(
-                    "STAGING"
-                    if item["examination_order"]["exam_type_label"] == "PET-CT"
-                    else item["examination_order"]["exam_type"],
-                    99,
-                ),
+                exam_rank.get(item["examination_order"]["order_type"], 99),
                 item["examination_order"]["created_at"],
             )
         )
@@ -452,20 +433,20 @@ class RadiologyOrderImageCreateAPIView(RadiologyPermissionMixin, APIView):
         if order is None:
             return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
 
-        is_staging_order = order.image_assets.filter(
-            Q(uploaded_stage=Stage.STAGING)
-            | Q(ai_analyses__analysis_type=AnalysisType.TNM_STAGING),
-        ).exists()
-        image_type = (
-            CaseImageAsset.ImageType.XRAY
-            if order.exam_type == ExaminationOrder.ExamType.XRAY
-            else CaseImageAsset.ImageType.CT
-        )
-        uploaded_stage = (
-            Stage.XRAY
-            if order.exam_type == ExaminationOrder.ExamType.XRAY
-            else Stage.STAGING if is_staging_order else Stage.CT
-        )
+        if order.order_type == ExaminationOrder.OrderType.XRAY:
+            image_type = CaseImageAsset.ImageType.XRAY
+            workflow_stage = WorkflowStage.XRAY
+        elif order.order_type == ExaminationOrder.OrderType.PET_CT_TNM:
+            image_type = request.data.get("image_type", CaseImageAsset.ImageType.CT)
+            if image_type not in {CaseImageAsset.ImageType.CT, CaseImageAsset.ImageType.PET}:
+                return Response(
+                    {"image_type": "PET-CT 오더에는 CT 또는 PET 자산만 등록할 수 있습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            workflow_stage = WorkflowStage.PET_CT_TNM
+        else:
+            image_type = CaseImageAsset.ImageType.CT
+            workflow_stage = WorkflowStage.CT
 
         serializer = RadiologyImageAssetCreateSerializer(
             data=request.data,
@@ -476,7 +457,7 @@ class RadiologyOrderImageCreateAPIView(RadiologyPermissionMixin, APIView):
             case=order.case,
             examination_order=order,
             image_type=image_type,
-            uploaded_stage=uploaded_stage,
+            workflow_stage=workflow_stage,
             status=CaseImageAsset.Status.READY,
         )
         return Response(
@@ -493,7 +474,7 @@ class RadiologyOrderXrayImageUploadAPIView(RadiologyPermissionMixin, APIView):
         order = self.get_order(order_id, for_update=True)
         if order is None:
             return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
-        if order.exam_type != ExaminationOrder.ExamType.XRAY:
+        if order.order_type != ExaminationOrder.OrderType.XRAY:
             return Response({"detail": "X-ray 오더에만 영상을 업로드할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
 
         serializer = RadiologyXrayImageUploadSerializer(data=request.data)
@@ -543,7 +524,7 @@ class RadiologyOrderXrayImageUploadAPIView(RadiologyPermissionMixin, APIView):
                 storage_type=CaseImageAsset.StorageType.GCS,
                 storage_uri=storage_uri,
                 image_type=CaseImageAsset.ImageType.XRAY,
-                uploaded_stage=Stage.XRAY,
+                workflow_stage=WorkflowStage.XRAY,
                 status=CaseImageAsset.Status.READY,
                 file_format="PNG" if content_type == "image/png" else "JPEG",
                 metadata=None,
@@ -588,29 +569,25 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
         if order is None:
             return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
 
-        is_staging_order = order.image_assets.filter(
-            Q(uploaded_stage=Stage.STAGING)
-            | Q(ai_analyses__analysis_type=AnalysisType.TNM_STAGING),
-        ).exists()
-        if order.exam_type == ExaminationOrder.ExamType.XRAY:
-            analysis_type = AnalysisType.XRAY_SCREENING
+        if order.order_type == ExaminationOrder.OrderType.XRAY:
+            analysis_type = AnalysisType.XRAY_ANALYSIS
             assets = order.image_assets.filter(
                 status=CaseImageAsset.Status.READY,
                 image_type=CaseImageAsset.ImageType.XRAY,
             )
-        elif is_staging_order:
-            analysis_type = AnalysisType.TNM_STAGING
+        elif order.order_type == ExaminationOrder.OrderType.PET_CT_TNM:
+            analysis_type = AnalysisType.PET_CT_TNM_ANALYSIS
             assets = order.image_assets.filter(
                 status=CaseImageAsset.Status.READY,
                 image_type=CaseImageAsset.ImageType.CT,
-                uploaded_stage=Stage.STAGING,
+                workflow_stage=WorkflowStage.PET_CT_TNM,
             )
         else:
-            analysis_type = AnalysisType.CT_NODULE
+            analysis_type = AnalysisType.CT_ANALYSIS
             assets = order.image_assets.filter(
                 status=CaseImageAsset.Status.READY,
                 image_type=CaseImageAsset.ImageType.CT,
-                uploaded_stage=Stage.CT,
+                workflow_stage=WorkflowStage.CT,
             )
 
         asset = assets.order_by("-created_at").first()
@@ -646,7 +623,7 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
             model_version=model_version,
             status=AiAnalysis.Status.PENDING,
         )
-        if analysis_type == AnalysisType.XRAY_SCREENING:
+        if analysis_type == AnalysisType.XRAY_ANALYSIS:
             transaction.on_commit(
                 lambda analysis_id=str(analysis.id): run_xray_analysis.delay(analysis_id)
             )

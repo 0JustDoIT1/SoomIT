@@ -39,7 +39,6 @@ class DoctorAiAnalysisListAPIView(ListAPIView):
                 "ai_result",
                 "ai_result__xray_detail",
                 "ai_result__ct_detail",
-                "ai_result__specimen_adequacy_detail",
                 "ai_result__pathology_detail",
                 "ai_result__tnm_detail",
                 "ai_result__treatment_detail",

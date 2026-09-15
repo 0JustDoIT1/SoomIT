@@ -2,7 +2,7 @@ from rest_framework import serializers
 from django.conf import settings
 
 from apps.ai_results.serializers import DoctorAiAnalysisSerializer
-from apps.clinical.models import ClinicalResult, PathologyResult
+from apps.clinical.models import ClinicalResult, GeneFinding, GeneResult, PathologyResult
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from .services.workflow import calculate_workflow_status, workflow_label
@@ -19,6 +19,10 @@ class PathologyAiAnalysisSerializer(DoctorAiAnalysisSerializer):
 
 class PDL1AnalysisRunSerializer(serializers.Serializer):
     pass
+
+
+class PathologyGeneAnalysisRunSerializer(serializers.Serializer):
+    wsi_id = serializers.UUIDField(required=False)
 
 
 class PDL1InputUploadSerializer(serializers.Serializer):
@@ -44,6 +48,13 @@ class PathologyReviewSubmissionSerializer(serializers.Serializer):
     ai_analysis_id = serializers.UUIDField()
 
 
+class GeneFindingWriteSerializer(serializers.Serializer):
+    gene_symbol = serializers.CharField(max_length=30)
+    assessment = serializers.ChoiceField(choices=GeneFinding.Assessment.choices)
+    alteration_code = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+
 class PathologyDiagnosisSerializer(serializers.ModelSerializer):
     result_status_label = serializers.CharField(
         source="get_result_status_display",
@@ -55,6 +66,7 @@ class PathologyDiagnosisSerializer(serializers.ModelSerializer):
         allow_null=True,
     )
     pathology = serializers.SerializerMethodField()
+    gene = serializers.SerializerMethodField()
 
     class Meta:
         model = ClinicalResult
@@ -69,6 +81,7 @@ class PathologyDiagnosisSerializer(serializers.ModelSerializer):
             "confirmed_by_name",
             "confirmed_at",
             "pathology",
+            "gene",
             "created_at",
             "updated_at",
         ]
@@ -84,6 +97,24 @@ class PathologyDiagnosisSerializer(serializers.ModelSerializer):
             "histologic_type": detail.histologic_type,
             "subtype": detail.subtype,
             "diagnosis_summary": detail.diagnosis_summary,
+        }
+
+    def get_gene(self, obj):
+        if not hasattr(obj, "gene_detail"):
+            return None
+        detail = obj.gene_detail
+        return {
+            "interpretation": detail.interpretation,
+            "additional_test_recommended": detail.additional_test_recommended,
+            "findings": [
+                {
+                    "gene_symbol": finding.gene_symbol,
+                    "assessment": finding.assessment,
+                    "alteration_code": finding.alteration_code,
+                    "note": finding.note,
+                }
+                for finding in detail.gene_findings.all()
+            ],
         }
 
 
@@ -109,6 +140,9 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
         allow_blank=True,
         allow_null=True,
     )
+    gene_interpretation = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    additional_test_recommended = serializers.BooleanField(required=False, default=False)
+    gene_findings = GeneFindingWriteSerializer(many=True, required=False, default=list)
     source_image_asset_id = serializers.UUIDField(
         required=False,
         allow_null=True,
@@ -120,6 +154,10 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
 
     def validate(self, attrs):
         case = self.context["case"]
+
+        gene_symbols = [finding["gene_symbol"] for finding in attrs.get("gene_findings", [])]
+        if len(gene_symbols) != len(set(gene_symbols)):
+            raise serializers.ValidationError({"gene_findings": "Gene symbols must be unique."})
 
         work_item_id = attrs.pop("work_item_id", None)
         if self.instance is None:
@@ -207,6 +245,11 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         case = self.context["case"]
+        gene_data = {
+            "interpretation": validated_data.pop("gene_interpretation", None),
+            "additional_test_recommended": validated_data.pop("additional_test_recommended", False),
+            "findings": validated_data.pop("gene_findings", []),
+        }
         detail_data = {
             field: validated_data.pop(field, None)
             for field in (
@@ -219,7 +262,7 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
         clinical_result = ClinicalResult.objects.create(
             case=case,
             examination_order=self.context["examination_order"],
-            stage="PATHOLOGY",
+            workflow_stage="PATHOLOGY_GENE",
             result_status=ClinicalResult.ResultStatus.DRAFT,
             **validated_data,
         )
@@ -227,6 +270,21 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
             clinical_result=clinical_result,
             **detail_data,
         )
+        gene_result = GeneResult.objects.create(
+            clinical_result=clinical_result,
+            interpretation=gene_data["interpretation"],
+            additional_test_recommended=gene_data["additional_test_recommended"],
+        )
+        GeneFinding.objects.bulk_create([
+            GeneFinding(
+                gene_result=gene_result,
+                gene_symbol=finding["gene_symbol"],
+                assessment=finding["assessment"],
+                alteration_code=finding.get("alteration_code"),
+                note=finding.get("note"),
+            )
+            for finding in gene_data["findings"]
+        ])
         work_item = self.context["work_item"]
         if work_item.status == PathologyWorkItem.Status.PENDING:
             work_item.status = PathologyWorkItem.Status.IN_PROGRESS
@@ -239,6 +297,9 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
                 "확정된 병리 판독은 수정할 수 없습니다.",
             )
 
+        gene_interpretation = validated_data.pop("gene_interpretation", serializers.empty)
+        additional_test_recommended = validated_data.pop("additional_test_recommended", serializers.empty)
+        gene_findings = validated_data.pop("gene_findings", serializers.empty)
         detail = instance.pathology_detail
         for field in (
             "malignancy_status",
@@ -249,6 +310,25 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
             if field in validated_data:
                 setattr(detail, field, validated_data.pop(field))
         detail.save()
+
+        gene_detail, _ = GeneResult.objects.get_or_create(clinical_result=instance)
+        if gene_interpretation is not serializers.empty:
+            gene_detail.interpretation = gene_interpretation
+        if additional_test_recommended is not serializers.empty:
+            gene_detail.additional_test_recommended = additional_test_recommended
+        gene_detail.save()
+        if gene_findings is not serializers.empty:
+            gene_detail.gene_findings.all().delete()
+            GeneFinding.objects.bulk_create([
+                GeneFinding(
+                    gene_result=gene_detail,
+                    gene_symbol=finding["gene_symbol"],
+                    assessment=finding["assessment"],
+                    alteration_code=finding.get("alteration_code"),
+                    note=finding.get("note"),
+                )
+                for finding in gene_findings
+            ])
 
         for field in ("source_image_asset_id", "reviewed_ai_result_id"):
             if field in validated_data:
@@ -507,8 +587,8 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
     patient = serializers.SerializerMethodField()
     case = serializers.SerializerMethodField()
     specimen = serializers.SerializerMethodField()
-    pathology_test_type = serializers.SerializerMethodField()
-    pathology_test_type_label = serializers.SerializerMethodField()
+    order_type = serializers.SerializerMethodField()
+    order_type_label = serializers.SerializerMethodField()
 
     current_exam_or_task = serializers.SerializerMethodField()
     requesting_doctor = serializers.SerializerMethodField()
@@ -527,7 +607,7 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         model = PathologyWorkItem
         fields = [
             "id", "case_id", "patient", "case", "specimen",
-            "pathology_test_type", "pathology_test_type_label",
+            "order_type", "order_type_label",
             "current_exam_or_task", "task_type", "status", "priority",
             "assigned_to_id", "assigned_to_name", "requesting_doctor",
             "wsi_count", "latest_wsi", "latest_ai_analysis", "latest_gene_analysis",
@@ -544,16 +624,16 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             return obj.wsi.specimen.examination_order
         return None
 
-    def get_pathology_test_type(self, obj):
+    def get_order_type(self, obj):
         order = self._pathology_order(obj)
-        return order.pathology_test_type if order else None
+        return order.order_type if order else None
 
-    def get_pathology_test_type_label(self, obj):
+    def get_order_type_label(self, obj):
         order = self._pathology_order(obj)
-        return order.get_pathology_test_type_display() if order and order.pathology_test_type else None
+        return order.get_order_type_display() if order else None
 
     def get_current_exam_or_task(self, obj):
-        return self.get_pathology_test_type_label(obj) or "-"
+        return self.get_order_type_label(obj) or "-"
 
     def get_patient(self, obj):
         patient = obj.case.patient
@@ -592,7 +672,7 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             (
                 item
                 for item in self._order_analyses(obj)
-                if item.analysis_type == "GENE_PREDICTION"
+                if item.analysis_type == "PATHOLOGY_GENE_ANALYSIS"
             ),
             None,
         )
@@ -641,10 +721,10 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             "id": order.id,
             "status": order.status,
             "priority": order.priority,
-            "pathology_test_type": order.pathology_test_type,
-            "pathology_test_type_label": (
-                order.get_pathology_test_type_display()
-                if order.pathology_test_type
+            "order_type": order.order_type,
+            "order_type_label": (
+                order.get_order_type_display()
+                if order.order_type
                 else None
             ),
             "created_at": order.created_at,

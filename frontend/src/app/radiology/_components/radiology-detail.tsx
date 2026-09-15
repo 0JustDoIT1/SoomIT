@@ -94,8 +94,8 @@ function getWorkflowLabel(status: RadiologyWorklistItem["workflow_status"]) {
 }
 
 function getAnalysisLabel(item: RadiologyWorklistItem) {
-  if (item.examination_order.exam_type_label === "PET-CT") return "TNM AI 분석";
-  return item.examination_order.exam_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
+  if (item.examination_order.order_type_label === "PET-CT") return "TNM AI 분석";
+  return item.examination_order.order_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
 }
 
 function formatPercent(value: string | null, scale = 100) {
@@ -198,7 +198,7 @@ export function RadiologyPatientSummary({ item, onClear }: {
         <div><dt className="text-[11px] text-slate-400">환자코드</dt><dd className="mt-1 font-medium text-slate-800">{item.patient.patient_code}</dd></div>
         <div><dt className="text-[11px] text-slate-400">성별 / 생년월일</dt><dd className="mt-1 font-medium text-slate-800">{item.patient.sex} / {item.patient.birth_date}</dd></div>
         <div><dt className="text-[11px] text-slate-400">Case</dt><dd className="mt-1 break-words font-medium text-slate-800">{item.case.case_code}</dd></div>
-        <div><dt className="text-[11px] text-slate-400">현재 검사</dt><dd className="mt-1 font-semibold text-violet-700">{order.exam_type_label}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">현재 검사</dt><dd className="mt-1 font-semibold text-violet-700">{order.order_type_label}</dd></div>
         <div><dt className="text-[11px] text-slate-400">현재 상태</dt><dd className="mt-1 font-medium text-slate-800">{getWorkflowLabel(item.workflow_status)}</dd></div>
         <div><dt className="text-[11px] text-slate-400">요청 의사</dt><dd className="mt-1 font-medium text-slate-800">{item.requesting_doctor.name}</dd></div>
         <div><dt className="text-[11px] text-slate-400">검사 예정 시각</dt><dd className="mt-1 font-medium text-slate-800">{formatDateTime(item.scheduled_at)}</dd></div>
@@ -233,7 +233,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
   const order = item.examination_order;
   const image = item.latest_image_asset;
-  const isXray = order.exam_type === "XRAY";
+  const isXray = order.order_type === "XRAY";
   const previewFile = isXray ? selectedFiles.find(isPreviewableImage) ?? null : null;
   const previewUrl = useMemo(
     () => previewFile ? URL.createObjectURL(previewFile) : null,
@@ -394,9 +394,9 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
         <div className="flex items-center gap-4">
           <div className="min-w-0 flex-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">영상 및 AI 작업</p>
-            <h2 className="mt-1 text-lg font-bold text-slate-900">{order.exam_type_label === "PET-CT" ? "PET-CT 영상 / TNM AI 분석" : `${order.exam_type_label} 영상 / AI 분석`}</h2>
+            <h2 className="mt-1 text-lg font-bold text-slate-900">{order.order_type_label === "PET-CT" ? "PET-CT 영상 / TNM AI 분석" : `${order.order_type_label} 영상 / AI 분석`}</h2>
             <p className="mt-1 text-xs text-slate-500">{item.patient.name} · {item.patient.patient_code}</p>
-            {order.exam_type_label === "PET-CT" ? <p className="mt-1 text-xs font-medium text-slate-600">PET-CT 영상 → TNM AI 분석 → 결과 확인</p> : null}
+            {order.order_type_label === "PET-CT" ? <p className="mt-1 text-xs font-medium text-slate-600">PET-CT 영상 → TNM AI 분석 → 결과 확인</p> : null}
           </div>
           <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
         </div>

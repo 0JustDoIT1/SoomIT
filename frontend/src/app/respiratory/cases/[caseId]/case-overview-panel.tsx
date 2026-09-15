@@ -21,7 +21,7 @@ type OverviewCase = {
 
 type OverviewClinicalResult = {
   id?: string;
-  exam_type: string;
+  workflow_stage: string;
   exam_name?: string;
   result_status?: string;
   result_status_label?: string;
@@ -43,12 +43,14 @@ type CaseOverviewPanelProps = {
   clinicalResults: OverviewClinicalResult[];
   aiResults: OverviewAiResult[];
   prescriptions?: { id: string; prescription_status?: string }[];
+  orders?: { id: string; order_type: string; order_type_label: string; status: string; priority: string; purpose?: string; created_at: string }[];
+  ordersLoaded?: boolean;
 };
 
-export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescriptions = [] }: CaseOverviewPanelProps) {
+export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescriptions = [], orders = [], ordersLoaded = false }: CaseOverviewPanelProps) {
   const decision = caseData.latest_clinician_decision;
   const confirmedClinicalResults = clinicalResults.filter((result) => result.result_status === "CONFIRMED");
-  const flowItems = buildFlowItems(caseData.current_stage, clinicalResults, aiResults, prescriptions);
+  const flowItems = buildFlowItems(caseData.current_stage, clinicalResults, aiResults, prescriptions, orders);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -63,17 +65,18 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
         </span>
       </header>
 
-      <div className="grid grid-cols-4 border-b border-slate-200 bg-slate-50/70">
+      <div className="grid grid-cols-5 border-b border-slate-200 bg-slate-50/70">
         <Metric label="현재 단계" value={getStageLabel(caseData.current_stage)} accent />
         <Metric label="전문과 확정 결과" value={`${confirmedClinicalResults.length}건`} />
         <Metric label="AI 분석 후보" value={`${aiResults.length}건`} />
+        <Metric label="검사 오더" value={ordersLoaded ? `${orders.length}건` : "조회 불가"} />
         <Metric label="최근 업데이트" value={formatDate(caseData.updated_at)} />
       </div>
 
       <div className="border-b border-slate-200 px-4 py-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-xs font-bold text-slate-800">검사·진료 흐름 요약</h2>
-          <p className="text-[10px] text-slate-400">완료 여부를 추측하지 않고 현재 단계와 조회된 결과만 표시합니다.</p>
+          <p className="text-[10px] text-slate-400">오더 상태와 결과 상태를 분리해 표시합니다.</p>
         </div>
         <div className="grid min-w-[760px] grid-cols-7 gap-2 overflow-x-auto">
           {flowItems.map((item) => <FlowItem key={item.label} {...item} />)}
@@ -87,8 +90,8 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
           tone="emerald"
           empty="확인 가능한 전문과 확정 결과가 없습니다."
           items={confirmedClinicalResults.map((result) => ({
-            id: result.id ?? `${result.exam_type}-${result.result_date ?? "none"}`,
-            title: result.exam_name || getClinicalResultLabel(result.exam_type),
+            id: result.id ?? `${result.workflow_stage}-${result.result_date ?? "none"}`,
+            title: result.exam_name || getClinicalResultLabel(result.workflow_stage),
             status: result.result_status_label || result.result_status || "-",
             date: formatDate(result.result_date),
           }))}
@@ -125,7 +128,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
             <p className="text-[10px] text-slate-400">Case 상태</p>
             <p className="mt-1 text-xs font-bold text-slate-700">{getCaseStatusLabel(caseData.case_status)}</p>
-            <p className="mt-2 text-[10px] leading-4 text-slate-400">검사별 진행 상태는 검사 오더 기능이 연결되면 표시됩니다.</p>
+            <p className="mt-2 text-[10px] leading-4 text-slate-400">검사 오더는 요청·예약 상태만 표시합니다. 완료 판단은 전문과 확정 결과를 기준으로 합니다.</p>
           </div>
         </section>
       </div>
@@ -150,28 +153,29 @@ function Detail({ label, value }: { label: string; value: string }) {
   return <div className="flex items-start justify-between gap-3 border-b border-violet-100 py-1.5 last:border-0"><span className="shrink-0 text-[10px] text-slate-400">{label}</span><span className="min-w-0 text-right text-[11px] font-semibold text-slate-700">{value || "-"}</span></div>;
 }
 
-type FlowState = "current" | "available" | "empty";
+type FlowState = "current" | "available" | "ordered" | "empty";
 
 function FlowItem({ label, state }: { label: string; state: FlowState }) {
-  const style = state === "current" ? "border-blue-200 bg-blue-50 text-blue-700" : state === "available" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-slate-200 bg-slate-50 text-slate-400";
-  const status = state === "current" ? "현재 단계" : state === "available" ? "결과 조회됨" : "정보 없음";
+  const style = state === "current" ? "border-blue-200 bg-blue-50 text-blue-700" : state === "available" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "ordered" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-400";
+  const status = state === "current" ? "현재 단계" : state === "available" ? "결과 조회됨" : state === "ordered" ? "오더 진행 중" : "정보 없음";
   return <div className={`min-w-0 rounded-md border px-2 py-2 text-center ${style}`}><p className="truncate text-[10px] font-bold">{label}</p><p className="mt-1 whitespace-nowrap text-[9px]">{status}</p></div>;
 }
 
-function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalResult[], aiResults: OverviewAiResult[], prescriptions: { id: string; prescription_status?: string }[]) {
-  const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.exam_type) && Boolean(result.result_status));
+function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalResult[], aiResults: OverviewAiResult[], prescriptions: { id: string; prescription_status?: string }[], orders: { order_type: string; status: string }[]) {
+  const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.workflow_stage) && Boolean(result.result_status));
   const hasAi = (types: string[]) => aiResults.some((result) => types.includes(result.analysis_type) && Boolean(result.status));
-  const hasPdl1Clinical = clinicalResults.some((result) => hasPdl1Detail(result.result_detail) && Boolean(result.result_status));
+  const hasPdl1Clinical = clinicalResults.some((result) => (result.workflow_stage === "PDL1" || hasPdl1Detail(result.result_detail)) && Boolean(result.result_status));
+  const hasActiveOrder = (type: string) => orders.some((order) => order.order_type === type && ["ORDERED", "SCHEDULED"].includes(order.status));
   const configs = [
-    { label: "흉부 X선", stages: ["XRAY"], available: hasClinical(["XRAY"]) || hasAi(["XRAY_SCREENING"]) },
-    { label: "흉부 CT", stages: ["CT"], available: hasClinical(["CT"]) || hasAi(["CT_NODULE"]) },
-    { label: "PET-CT", stages: ["STAGING"], available: hasClinical(["STAGING"]) || hasAi(["TNM_STAGING"]) },
-    { label: "조직/유전자", stages: ["PATHOLOGY", "GENE"], available: hasClinical(["PATHOLOGY", "GENE"]) || hasAi(["PATHOLOGY_DIAGNOSIS", "GENE_PREDICTION"]) },
-    { label: "PD-L1", stages: [], available: hasPdl1Clinical || hasAi(["PDL1_CLASSIFICATION"]) },
+    { label: "흉부 X선", stages: ["XRAY"], available: hasClinical(["XRAY"]) || hasAi(["XRAY_ANALYSIS"]) },
+    { label: "흉부 CT", stages: ["CT"], available: hasClinical(["CT"]) || hasAi(["CT_ANALYSIS"]) },
+    { label: "PET-CT", stages: ["PET_CT_TNM"], available: hasClinical(["PET_CT_TNM"]) || hasAi(["PET_CT_TNM_ANALYSIS"]) },
+    { label: "조직/유전자", stages: ["PATHOLOGY_GENE"], available: hasClinical(["PATHOLOGY_GENE"]) || hasAi(["PATHOLOGY_GENE_ANALYSIS"]) },
+    { label: "PD-L1", stages: ["PDL1"], available: hasPdl1Clinical || hasAi(["PDL1_ANALYSIS"]) },
     { label: "치료 결정", stages: ["TREATMENT"], available: hasAi(["TREATMENT_RECOMMENDATION"]) },
     { label: "처방", stages: ["PRESCRIPTION"], available: prescriptions.some((item) => Boolean(item.prescription_status)) },
   ];
-  return configs.map(({ label, stages, available }) => ({ label, state: (stages.includes(currentStage) ? "current" : available ? "available" : "empty") as FlowState }));
+  return configs.map(({ label, stages, available }) => ({ label, state: (stages.includes(currentStage) ? "current" : available ? "available" : hasActiveOrder(stages[0]) ? "ordered" : "empty") as FlowState }));
 }
 
 function hasPdl1Detail(detail: unknown) {
@@ -179,12 +183,12 @@ function hasPdl1Detail(detail: unknown) {
 }
 
 function getClinicalResultLabel(examType: string) {
-  const labels: Record<string, string> = { XRAY: "흉부 X선", CT: "흉부 CT", STAGING: "TNM 병기 확정 결과", PATHOLOGY: "조직검사", GENE: "유전자검사" };
+  const labels: Record<string, string> = { XRAY: "흉부 X선", CT: "흉부 CT", PET_CT_TNM: "TNM 병기 확정 결과", PATHOLOGY_GENE: "조직·유전자 검사", PDL1: "PD-L1 검사" };
   return labels[examType] ?? getStageLabel(examType);
 }
 
 function getAiResultLabel(analysisType: string, apiLabel?: string) {
-  const labels: Record<string, string> = { XRAY_SCREENING: "흉부 X선 AI 후보", CT_NODULE: "흉부 CT AI 후보", TNM_STAGING: "PET-CT 기반 TNM AI 후보", PATHOLOGY_DIAGNOSIS: "조직검사 AI 후보", GENE_PREDICTION: "유전자검사 AI 후보", PDL1_CLASSIFICATION: "PD-L1 AI 후보", TREATMENT_RECOMMENDATION: "치료 AI 후보" };
+  const labels: Record<string, string> = { XRAY_ANALYSIS: "흉부 X선 AI 후보", CT_ANALYSIS: "흉부 CT AI 후보", PET_CT_TNM_ANALYSIS: "PET-CT 기반 TNM AI 후보", PATHOLOGY_GENE_ANALYSIS: "조직·유전자 AI 후보", PDL1_ANALYSIS: "PD-L1 AI 후보", TREATMENT_RECOMMENDATION: "치료 AI 후보" };
   return labels[analysisType] ?? apiLabel ?? analysisType;
 }
 

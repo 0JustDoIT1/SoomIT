@@ -7,12 +7,12 @@ from apps.common.models import TimestampedUUIDModel, UUIDModel
 
 
 # 공통 Stage ENUM (여러 테이블에서 재사용)
-class Stage(models.TextChoices):
+class WorkflowStage(models.TextChoices):
     XRAY = "XRAY", "X-ray"
     CT = "CT", "CT"
-    PATHOLOGY = "PATHOLOGY", "병리"
-    STAGING = "STAGING", "병기(TNM)"
-    GENE = "GENE", "유전자"
+    PET_CT_TNM = "PET_CT_TNM", "PET-CT 및 TNM 병기 평가"
+    PATHOLOGY_GENE = "PATHOLOGY_GENE", "조직·유전자 검사"
+    PDL1 = "PDL1", "PD-L1 검사"
     TREATMENT = "TREATMENT", "치료"
     PRESCRIPTION = "PRESCRIPTION", "처방"
 
@@ -29,7 +29,7 @@ class LungCancerCase(TimestampedUUIDModel):
     primary_doctor = models.ForeignKey(
         User, on_delete=models.PROTECT, null=True, blank=True, related_name="primary_cases"
     )
-    current_stage = models.CharField(max_length=20, choices=Stage.choices)
+    current_stage = models.CharField(max_length=20, choices=WorkflowStage.choices)
     case_status = models.CharField(max_length=20, choices=CaseStatus.choices, default=CaseStatus.ACTIVE)
     closed_at = models.DateTimeField(null=True, blank=True)
 
@@ -56,12 +56,12 @@ class ClinicianDecision(UUIDModel):
         CLOSE_CASE = "CLOSE_CASE", "종결"
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="clinician_decisions")
-    source_stage = models.CharField(max_length=20, choices=Stage.choices)
+    source_stage = models.CharField(max_length=20, choices=WorkflowStage.choices)
     source_clinical_result = models.ForeignKey(
         "clinical.ClinicalResult", on_delete=models.PROTECT, null=True, blank=True, related_name="clinician_decisions"
     )
     decision_type = models.CharField(max_length=25, choices=DecisionType.choices)
-    target_stage = models.CharField(max_length=20, choices=Stage.choices, null=True, blank=True)
+    target_stage = models.CharField(max_length=20, choices=WorkflowStage.choices, null=True, blank=True)
     reason = models.TextField(null=True, blank=True)
     decided_by_user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="clinician_decisions")
     decided_at = models.DateTimeField()
@@ -72,15 +72,12 @@ class ClinicianDecision(UUIDModel):
 
 # ── 3-3. examination_orders ─────────────────────────────────────
 class ExaminationOrder(TimestampedUUIDModel):
-    class ExamType(models.TextChoices):
+    class OrderType(models.TextChoices):
         XRAY = "XRAY", "X-ray"
         CT = "CT", "CT"
-        WSI = "WSI", "WSI"
-
-    class PathologyTestType(models.TextChoices):
-        SUBTYPE = "SUBTYPE", "아형분류 검사"
+        PET_CT_TNM = "PET_CT_TNM", "PET-CT 및 TNM 병기 평가"
+        PATHOLOGY_GENE = "PATHOLOGY_GENE", "조직·유전자 검사"
         PDL1 = "PDL1", "PD-L1 검사"
-        GENE = "GENE", "유전자 검사"
 
     class Priority(models.TextChoices):
         NORMAL = "NORMAL", "일반"
@@ -93,13 +90,7 @@ class ExaminationOrder(TimestampedUUIDModel):
         CANCELLED = "CANCELLED", "취소됨"
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="examination_orders")
-    exam_type = models.CharField(max_length=10, choices=ExamType.choices)
-    pathology_test_type = models.CharField(
-    max_length=20,
-    choices=PathologyTestType.choices,
-    null=True,
-    blank=True,
-)
+    order_type = models.CharField(max_length=20, choices=OrderType.choices)
     requesting_doctor = models.ForeignKey(User, on_delete=models.PROTECT, related_name="requested_examinations")
     priority = models.CharField(max_length=10, choices=Priority.choices, default=Priority.NORMAL)
     purpose = models.TextField()
@@ -108,6 +99,13 @@ class ExaminationOrder(TimestampedUUIDModel):
 
     class Meta:
         db_table = "examination_orders"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["case", "order_type"],
+                condition=Q(status__in=["ORDERED", "SCHEDULED"]),
+                name="uq_active_order_case_type",
+            ),
+        ]
 
 
 # ── 3-4. case_image_assets ──────────────────────────────────────
@@ -115,6 +113,8 @@ class CaseImageAsset(TimestampedUUIDModel):
     class ImageType(models.TextChoices):
         XRAY = "XRAY", "X-ray"
         CT = "CT", "CT"
+        PET = "PET", "PET"
+        MRI = "MRI", "MRI"
         WSI = "WSI", "WSI"
 
     class StorageType(models.TextChoices):
@@ -132,7 +132,7 @@ class CaseImageAsset(TimestampedUUIDModel):
     examination_order = models.ForeignKey(
         ExaminationOrder, on_delete=models.PROTECT, null=True, blank=True, related_name="image_assets"
     )
-    uploaded_stage = models.CharField(max_length=20, choices=Stage.choices)
+    workflow_stage = models.CharField(max_length=20, choices=WorkflowStage.choices)
     image_type = models.CharField(max_length=10, choices=ImageType.choices)
     storage_type = models.CharField(max_length=10, choices=StorageType.choices)
     storage_uri = models.CharField(max_length=1000, unique=True)

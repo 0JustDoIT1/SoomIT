@@ -35,7 +35,7 @@ it("refetches the selected case workflow after an image upload", async () => {
   sessionStorage.setItem("accessToken", "test");
   const row = {
     case: { id: "case-1" }, patient: { name: "patient-1", patient_code: "code-1" },
-    current_exam: { id: "order-1", examination_order: { exam_type_label: "XRAY" } },
+    current_exam: { id: "order-1", examination_order: { order_type_label: "XRAY" } },
     workflow_status: "EXAM_PENDING",
   };
   vi.mocked(fetchRadiologyCaseWorklist).mockResolvedValue([row] as unknown as Awaited<ReturnType<typeof fetchRadiologyCaseWorklist>>);
@@ -71,7 +71,7 @@ it("preserves selected case, summary and workflow through all pagination control
   sessionStorage.setItem("accessToken", "test");
   const rows = Array.from({ length: 21 }, (_, i) => ({
     case: { id: String(i) }, patient: { name: `patient-${i}`, patient_code: `code-${i}` },
-    current_exam: { id: String(i), examination_order: { exam_type_label: "CT" } },
+    current_exam: { id: String(i), examination_order: { order_type_label: "CT" } },
     workflow_status: "EXAM_PENDING",
   }));
   vi.mocked(fetchRadiologyCaseWorklist).mockResolvedValue(rows as unknown as Awaited<ReturnType<typeof fetchRadiologyCaseWorklist>>);

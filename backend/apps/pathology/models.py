@@ -149,8 +149,6 @@ class PathologyWorkItem(TimestampedUUIDModel):
     class TaskType(models.TextChoices):
         WSI_UPLOAD = "WSI_UPLOAD", "WSI 등록"
         QUALITY_CHECK = "QUALITY_CHECK", "WSI 품질검증"
-        ADEQUACY_ANALYSIS = "ADEQUACY_ANALYSIS", "적정성 AI 분석"
-        ADEQUACY_REVIEW = "ADEQUACY_REVIEW", "적정성 전문의 판정"
         PATHOLOGY_ANALYSIS = "PATHOLOGY_ANALYSIS", "병리 AI 분석"
         PD_L1_REVIEW = "PD_L1_REVIEW", "PD-L1 검토"
         DIAGNOSTIC_REVIEW = "DIAGNOSTIC_REVIEW", "병리 전문의 판독"

@@ -6,7 +6,7 @@ const caseData = {
   case_code: "CASE-001",
   patient_name: "테스트 환자",
   patient_code: "P-001",
-  current_stage: "GENE",
+  current_stage: "PATHOLOGY_GENE",
   case_status: "ACTIVE",
   primary_doctor_name: "담당의",
   updated_at: "2026-09-10T04:00:00Z",
@@ -19,16 +19,16 @@ describe("CaseOverviewPanel", () => {
         caseData={{
           ...caseData,
           latest_clinician_decision: {
-            source_stage: "STAGING",
+            source_stage: "PET_CT_TNM",
             decision_type: "PROCEED_NEXT_STAGE",
-            target_stage: "GENE",
+            target_stage: "PATHOLOGY_GENE",
             reason: "확정 결과 확인",
             decided_by: "doctor",
             decided_at: "2026-09-10T03:00:00Z",
           },
         }}
-        clinicalResults={[{ id: "clinical-1", exam_type: "STAGING", exam_name: "TNM", result_status_label: "확정" }]}
-        aiResults={[{ id: "ai-1", analysis_type: "GENE_PREDICTION", analysis_type_label: "유전자 AI", status_label: "완료" }]}
+        clinicalResults={[{ id: "clinical-1", workflow_stage: "PET_CT_TNM", exam_name: "TNM", result_status_label: "확정" }]}
+        aiResults={[{ id: "ai-1", analysis_type: "PATHOLOGY_GENE_ANALYSIS", analysis_type_label: "유전자 AI", status_label: "완료" }]}
       />,
     );
 
@@ -51,12 +51,12 @@ describe("CaseOverviewPanel", () => {
   it("counts only confirmed clinical results and summarizes actual workflow evidence", () => {
     render(
       <CaseOverviewPanel
-        caseData={{ ...caseData, current_stage: "STAGING" }}
+        caseData={{ ...caseData, current_stage: "PET_CT_TNM" }}
         clinicalResults={[
-          { id: "ct", exam_type: "CT", result_status: "CONFIRMED" },
-          { id: "gene", exam_type: "GENE", result_status: "DRAFT", result_detail: { pdl1: { tps_percent: 20 } } },
+          { id: "ct", workflow_stage: "CT", result_status: "CONFIRMED" },
+          { id: "gene", workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT", result_detail: { pdl1: { tps_percent: 20 } } },
         ]}
-        aiResults={[{ id: "pdl1", analysis_type: "PDL1_CLASSIFICATION", status: "COMPLETED" }]}
+        aiResults={[{ id: "pdl1", analysis_type: "PDL1_ANALYSIS", status: "COMPLETED" }]}
         prescriptions={[{ id: "rx", prescription_status: "DRAFT" }]}
       />,
     );
@@ -64,5 +64,28 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getAllByText("1건")).toHaveLength(2);
     expect(screen.getAllByText("결과 조회됨")).toHaveLength(4);
     expect(screen.getAllByText("현재 단계")).toHaveLength(2);
+  });
+
+  it("marks only an active examination order as in progress without treating it as a result", () => {
+    render(
+      <CaseOverviewPanel
+        caseData={{ ...caseData, current_stage: "XRAY" }}
+        clinicalResults={[]}
+        aiResults={[]}
+        orders={[{
+          id: "ct-order",
+          order_type: "CT",
+          order_type_label: "CT",
+          status: "ORDERED",
+          priority: "NORMAL",
+          created_at: "2026-09-15T03:00:00Z",
+        }]}
+        ordersLoaded
+      />,
+    );
+
+    expect(screen.getByText("오더 진행 중")).toBeTruthy();
+    expect(screen.getByText("1건")).toBeTruthy();
+    expect(screen.queryByText("결과 조회됨")).toBeNull();
   });
 });
