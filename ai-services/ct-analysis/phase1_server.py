@@ -72,6 +72,12 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
             totalseg_env=os.environ.get("TOTALSEG_ENV", "totalseg"),
         )
     artifact_uri = upload_tree(work_root, destination)
+    visualization = result.get("visualization", {})
+    visualization_prefix = f"{artifact_uri}phase1/visualization/"
+    for layer in visualization.get("layers", []):
+        relative_path = layer.get("mesh_relative_path")
+        if relative_path:
+            layer["mesh_uri"] = f"{visualization_prefix}{relative_path}"
     return {
         "status": "READY_FOR_T_MODEL",
         "model_revision": MODEL_REVISION,
@@ -79,6 +85,8 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
         "artifact_uri": artifact_uri,
         "phase1_result_uri": f"{artifact_uri}phase1/phase1_result.json",
         "t_input_uri": f"{artifact_uri}phase1/t_input/{case_id}_0000.nii.gz",
+        "visualization_manifest_uri": f"{visualization_prefix}visualization_manifest.json",
+        "visualization": visualization,
         "result": result,
     }
 

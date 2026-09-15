@@ -34,6 +34,10 @@ from .services.xray_storage import (
 from .services.workflow import is_pet_ct_tnm_order
 from .services.dicom_validation import CtSeriesValidationError, parse_ct_headers, validate_ct_series
 from .services.orthanc_storage import OrthancError, delete_orthanc_series, upload_ct_series
+from .services.ct_visualization_storage import (
+    CtVisualizationStorageError,
+    download_ct_visualization,
+)
 from .serializers import (
     CtSeriesUploadSerializer,
     RadiologyAiAnalysisDetailSerializer,
@@ -729,13 +733,44 @@ class RadiologyAnalysisResultAPIView(RadiologyPermissionMixin, APIView):
                 {"detail": "AI 분석 결과가 아직 생성되지 않았습니다."},
                 status=status.HTTP_409_CONFLICT,
             )
-        serializer = RadiologyAiResultSerializer(analysis)
+        serializer = RadiologyAiResultSerializer(analysis, context={"request": request})
         if serializer.data["result"] is None:
             return Response(
                 {"detail": "분석 유형에 맞는 상세 결과가 없습니다."},
                 status=status.HTTP_409_CONFLICT,
             )
         return Response(serializer.data)
+
+
+class RadiologyAnalysisVisualizationAPIView(RadiologyPermissionMixin, APIView):
+    """Proxy an authorized private CT GLB layer without exposing its GCS URI."""
+
+    def get(self, request, analysis_id, layer_id):
+        analysis = self.get_analysis(analysis_id)
+        if (
+            analysis is None
+            or analysis.analysis_type != AnalysisType.CT_ANALYSIS
+            or analysis.status != AiAnalysis.Status.SUCCEEDED
+            or not hasattr(analysis, "ai_result")
+        ):
+            return Response({"detail": "CT visualization was not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        payload = analysis.ai_result.result_payload
+        visualization = payload.get("visualization") if isinstance(payload, dict) else None
+        layers = visualization.get("layers", []) if isinstance(visualization, dict) else []
+        layer = next(
+            (item for item in layers if isinstance(item, dict) and item.get("id") == layer_id),
+            None,
+        )
+        if layer is None or not layer.get("mesh_uri"):
+            return Response({"detail": "CT visualization layer was not found."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            content = download_ct_visualization(layer["mesh_uri"])
+        except CtVisualizationStorageError:
+            return Response({"detail": "CT visualization could not be loaded."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(content, content_type="model/gltf-binary")
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
 
 
 class RadiologyAnalysisSubmitForReviewAPIView(RadiologyPermissionMixin, APIView):

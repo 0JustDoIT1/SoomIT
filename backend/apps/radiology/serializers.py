@@ -1,5 +1,6 @@
 from django.conf import settings
 from django.utils import timezone
+from django.urls import reverse
 from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis
@@ -277,6 +278,23 @@ class RadiologyAiResultSerializer(serializers.Serializer):
             }
         if obj.analysis_type == "CT_ANALYSIS" and hasattr(ai_result, "ct_detail"):
             detail = ai_result.ct_detail
+            payload = ai_result.result_payload if isinstance(ai_result.result_payload, dict) else {}
+            visualization = payload.get("visualization")
+            if isinstance(visualization, dict):
+                visualization = dict(visualization)
+                layers = []
+                request = self.context.get("request")
+                for layer in visualization.get("layers", []):
+                    if not isinstance(layer, dict) or not layer.get("id"):
+                        continue
+                    item = {key: value for key, value in layer.items() if key != "mesh_uri"}
+                    path = reverse(
+                        "radiology:analysis-visualization",
+                        kwargs={"analysis_id": obj.id, "layer_id": layer["id"]},
+                    )
+                    item["mesh_url"] = request.build_absolute_uri(path) if request else path
+                    layers.append(item)
+                visualization["layers"] = layers
             return {
                 "overall_malignancy_risk": detail.overall_malignancy_risk,
                 "nodules": [
@@ -288,6 +306,7 @@ class RadiologyAiResultSerializer(serializers.Serializer):
                     }
                     for nodule in detail.nodule_results.all()
                 ],
+                "visualization": visualization,
             }
         if obj.analysis_type == "PET_CT_TNM_ANALYSIS" and hasattr(ai_result, "tnm_detail"):
             detail = ai_result.tnm_detail

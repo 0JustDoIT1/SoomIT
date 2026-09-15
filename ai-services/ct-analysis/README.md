@@ -6,6 +6,8 @@ The integrated CT analysis package is split at the T-model boundary.
 
 `ct-analysis-phase1-serve` accepts a chest CT from Orthanc or GCS. It runs VISTA3D nodule segmentation, quantification, morphology, texture, malignancy scoring, thoracic anatomy segmentation, and generation of the nnU-Net T-model input. The complete working artifact is uploaded to GCS and the response status is `READY_FOR_T_MODEL`.
 
+Phase 1 also converts the retained nodule, five lung-lobe, and canonical anatomy masks into independent GLB layers. The response includes `visualization_manifest_uri` and a `visualization.layers` array with private GCS mesh URIs, default colors, opacity, visibility, and supported `surface`/`wireframe` modes. Nodule components are emitted as stable size-ordered IDs (`N001`, `N002`, ...). This is visualization post-processing and does not change analytical model outputs.
+
 Endpoints:
 
 - `GET /health`

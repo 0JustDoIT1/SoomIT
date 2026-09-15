@@ -189,7 +189,11 @@ def run_ct_analysis(analysis_id):
                 {"type": "artifact_root", "uri": payload["artifact_uri"]},
                 {"type": "phase1_result", "uri": payload["phase1_result_uri"]},
                 {"type": "t_input", "uri": payload["t_input_uri"]},
-            ],
+            ] + (
+                [{"type": "visualization_manifest", "uri": payload["visualization_manifest_uri"]}]
+                if payload.get("visualization_manifest_uri")
+                else []
+            ),
         )
         ct_result = CtAiResult.objects.create(
             ai_result=ai_result,

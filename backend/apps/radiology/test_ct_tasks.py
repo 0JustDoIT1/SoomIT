@@ -18,6 +18,18 @@ PHASE1_PAYLOAD = {
     "artifact_uri": "gs://soomit-bucket/ct-analysis/case-001/",
     "phase1_result_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/phase1_result.json",
     "t_input_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/t_input/case-001_0000.nii.gz",
+    "visualization_manifest_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/visualization/visualization_manifest.json",
+    "visualization": {
+        "schema_version": "ct-visualization-v1",
+        "layers": [
+            {
+                "id": "N001",
+                "category": "NODULE",
+                "mesh_relative_path": "nodules/N001.glb",
+                "mesh_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/visualization/nodules/N001.glb",
+            }
+        ],
+    },
     "result": {
         "case_id": "case-001",
         "phase": "CT_ANALYSIS_PHASE_1",
@@ -129,7 +141,8 @@ class CtAnalysisTaskTestCase(TestCase):
         self.assertIsNone(self.analysis.error_message)
         self.assertEqual(result.schema_version, "ct-phase1-v1")
         self.assertEqual(result.result_payload, PHASE1_PAYLOAD)
-        self.assertEqual(len(result.result_files), 3)
+        self.assertEqual(len(result.result_files), 4)
+        self.assertEqual(result.result_files[-1]["type"], "visualization_manifest")
         self.assertEqual(detail.overall_malignancy_risk, Decimal("82"))
         self.assertEqual(len(nodules), 2)
         self.assertEqual(nodules[0].nodule_no, 1)

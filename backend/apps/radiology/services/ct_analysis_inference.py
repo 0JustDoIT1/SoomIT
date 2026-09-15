@@ -1,8 +1,11 @@
 import json
+import re
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
+
+from .ct_visualization_storage import parse_ct_visualization_uri
 
 
 class CtAnalysisInferenceError(RuntimeError):
@@ -76,4 +79,37 @@ def validate_phase1_response(payload):
     for index, nodule in enumerate(result["nodules"]):
         if not isinstance(nodule, dict) or "nodule_id" not in nodule:
             raise CtAnalysisInferenceError(f"Phase 1 응답의 result.nodules[{index}]에 nodule_id가 없습니다.")
+    visualization = payload.get("visualization")
+    manifest_uri = payload.get("visualization_manifest_uri")
+    if visualization is not None or manifest_uri is not None:
+        visualization_prefix = f"{payload['artifact_uri'].rstrip('/')}/phase1/visualization/"
+        if manifest_uri != f"{visualization_prefix}visualization_manifest.json":
+            raise CtAnalysisInferenceError("Phase 1 visualization manifest URI is invalid.")
+        if not isinstance(visualization, dict) or not isinstance(visualization.get("layers"), list):
+            raise CtAnalysisInferenceError("Phase 1 visualization layers are invalid.")
+        seen_ids = set()
+        for index, layer in enumerate(visualization["layers"]):
+            if not isinstance(layer, dict):
+                raise CtAnalysisInferenceError(f"Phase 1 visualization layer {index} is invalid.")
+            layer_id = layer.get("id")
+            mesh_uri = layer.get("mesh_uri")
+            if (
+                not isinstance(layer_id, str)
+                or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", layer_id)
+                or layer_id in seen_ids
+            ):
+                raise CtAnalysisInferenceError(f"Phase 1 visualization layer {index} has an invalid id.")
+            if (
+                not isinstance(mesh_uri, str)
+                or not mesh_uri.startswith(visualization_prefix)
+                or not mesh_uri.endswith(".glb")
+            ):
+                raise CtAnalysisInferenceError(f"Phase 1 visualization layer {index} has an invalid mesh URI.")
+            try:
+                parse_ct_visualization_uri(mesh_uri)
+            except Exception as exc:
+                raise CtAnalysisInferenceError(
+                    f"Phase 1 visualization layer {index} has an invalid mesh URI."
+                ) from exc
+            seen_ids.add(layer_id)
     return payload

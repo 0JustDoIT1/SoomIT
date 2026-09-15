@@ -225,6 +225,11 @@ def phase1(
         / "t_input"
     )
 
+    visualization_dir = (
+        output_dir
+        / "visualization"
+    )
+
     for d in [
         seg_dir,
         quant_dir,
@@ -232,6 +237,7 @@ def phase1(
         anatomy_dir,
         canonical_dir,
         t_input_dir,
+        visualization_dir,
     ]:
         d.mkdir(
             parents=True,
@@ -512,6 +518,33 @@ def phase1(
     prune_intermediate_anatomy_masks(anatomy_dir)
 
     # ==================================================
+    # 6.6 Web visualization artifacts
+    #
+    # Convert the retained segmentation/anatomy NIfTI masks into independent
+    # GLB layers. This is inference post-processing; it does not alter any
+    # model input or analytical result.
+    # ==================================================
+
+    run([
+        python_executable,
+        BUNDLE_ROOT / "visualization.py",
+        "--segmentation",
+        seg_mask,
+        "--lobe-dir",
+        lung_mask_dir,
+        "--canonical-dir",
+        canonical_dir,
+        "--output-dir",
+        visualization_dir,
+        "--case-id",
+        case_id,
+    ])
+
+    visualization_manifest = load_json(
+        visualization_dir / "visualization_manifest.json"
+    )
+
+    # ==================================================
     # 7. Phase 1 result
     # ==================================================
 
@@ -558,6 +591,7 @@ def phase1(
             "metadata":
                 str(canonical_metadata),
         },
+        "visualization": visualization_manifest,
         "t_input": {
             "nifti":
                 str(t_input_path),
