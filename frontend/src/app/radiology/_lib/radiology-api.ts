@@ -151,6 +151,20 @@ export type RadiologyAnalysisResult = {
         assessment: string;
         assessment_label: string;
         suspicion_score: string | null;
+        image: { width: number | null; height: number | null };
+        classification: {
+          prediction: string | null;
+          assessment: string | null;
+          suspicion_score: number | string | null;
+          probabilities: Record<string, number | string> | null;
+        };
+        detections: Array<{
+          class_id: number | null;
+          class_name: string | null;
+          score: number | string | null;
+          bbox_xyxy: [number, number, number, number] | null;
+        }>;
+        model_revision: string | null;
       }
     | {
         overall_malignancy_risk: string | null;
@@ -318,6 +332,17 @@ export async function uploadRadiologyXrayImage(orderId: string, image: File) {
     );
   }
   return response.json() as Promise<RadiologyRegisteredImage>;
+}
+
+export async function fetchRadiologyXrayImage(orderId: string, assetId: string, signal?: AbortSignal) {
+  const response = await staffAuthenticatedFetch(
+    `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/content/`,
+    { method: "GET", headers: { Accept: "image/png,image/jpeg" }, signal },
+  );
+  if (!response.ok) {
+    throw new RadiologyApiError("X-ray 영상을 불러오지 못했습니다.", response.status);
+  }
+  return response.blob();
 }
 
 export function registerRadiologyImage(

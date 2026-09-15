@@ -702,10 +702,21 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         self.assertEqual(denied.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_result_returns_xray_detail(self):
+    def test_result_returns_xray_detail_and_stored_payload(self):
         asset = self._create_asset(self.order)
         analysis = self._create_analysis(asset, AiAnalysis.Status.SUCCEEDED)
-        result = AiResult.objects.create(ai_analysis=analysis, schema_version="1.0", result_payload={})
+        payload = {
+            "image": {"width": 1024, "height": 768},
+            "classification": {
+                "prediction": "Suspicious Lung Cancer",
+                "assessment": "SUSPICIOUS",
+                "suspicion_score": 0.8123,
+                "probabilities": {"Normal": 0.1, "Other Lung Disease": 0.2, "Suspicious Lung Cancer": 0.7},
+            },
+            "detections": [{"class_id": 1, "class_name": "Effusion", "score": 0.579, "bbox_xyxy": [100, 200, 500, 600]}],
+            "model_revision": "xray-r1",
+        }
+        result = AiResult.objects.create(ai_analysis=analysis, schema_version="1.0", result_payload=payload)
         XrayAiResult.objects.create(
             ai_result=result,
             assessment=XrayAiResult.Assessment.SUSPICIOUS,
@@ -716,7 +727,26 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["result"]["assessment"], "SUSPICIOUS")
-        self.assertEqual(set(response.data["result"]), {"assessment", "assessment_label", "suspicion_score"})
+        self.assertEqual(response.data["result"]["image"], payload["image"])
+        self.assertEqual(response.data["result"]["classification"], payload["classification"])
+        self.assertEqual(response.data["result"]["detections"], payload["detections"])
+        self.assertEqual(response.data["result"]["model_revision"], "xray-r1")
+
+    @patch("apps.radiology.views.download_xray_image_bytes", return_value=b"png-bytes")
+    def test_xray_content_returns_authorized_ready_gcs_asset(self, download):
+        asset = self._create_asset(
+            self.order,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gs://test-bucket/xray/hospital/case/order/chest.png",
+            file_format="PNG",
+        )
+        response = self.client.get(
+            reverse("radiology:order-xray-image-content", kwargs={"order_id": self.order.id, "asset_id": asset.id}),
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Content-Type"], "image/png")
+        self.assertEqual(response.content, b"png-bytes")
+        download.assert_called_once_with(asset.storage_uri)
 
     def test_result_returns_ct_detail_without_interpreting_payload(self):
         self.order.exam_type = ExaminationOrder.ExamType.CT

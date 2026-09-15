@@ -64,6 +64,7 @@ export type WholeSlideImage = {
   storage_uri: string;
   file_format: string;
   image_status: string;
+  pdl1_input_ready?: boolean;
   orthanc_series_id: string | null;
   orthanc_instance_id: string | null;
   study_instance_uid: string | null;

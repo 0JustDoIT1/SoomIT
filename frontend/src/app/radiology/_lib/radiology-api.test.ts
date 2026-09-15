@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 import { staffAuthenticatedFetch } from "@/lib/api";
 
-import { uploadRadiologyXrayImage } from "./radiology-api";
+import { fetchRadiologyXrayImage, uploadRadiologyXrayImage } from "./radiology-api";
 
 vi.mock("@/lib/api", () => ({ staffAuthenticatedFetch: vi.fn() }));
 
@@ -24,4 +24,18 @@ it("posts the selected X-ray file as multipart form data", async () => {
   expect(init?.body).toBeInstanceOf(FormData);
   expect((init?.body as FormData).get("image")).toBeInstanceOf(File);
   expect(init?.headers).not.toHaveProperty("Content-Type");
+});
+
+it("loads a registered X-ray through the authenticated backend endpoint", async () => {
+  vi.mocked(staffAuthenticatedFetch).mockResolvedValue(
+    new Response("image-bytes", { status: 200, headers: { "Content-Type": "image/png" } }),
+  );
+
+  const blob = await fetchRadiologyXrayImage("order-1", "asset-1");
+
+  expect(blob.type).toBe("image/png");
+  expect(staffAuthenticatedFetch).toHaveBeenCalledWith(
+    "http://api.test/api/radiology/orders/order-1/images/asset-1/content/",
+    expect.objectContaining({ method: "GET" }),
+  );
 });
