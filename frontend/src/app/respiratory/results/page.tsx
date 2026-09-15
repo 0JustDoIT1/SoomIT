@@ -7,7 +7,7 @@ import { API_BASE_URL } from '../_lib/respiratory-api';
 
 type ClinicalResult = {
   id: string;
-  exam_type: string;
+  workflow_stage: string;
   exam_name: string;
   result_status: string;
   result_status_label: string;
@@ -120,7 +120,7 @@ function RespiratoryResultsContent() {
 
     for (const result of results) {
       // API 응답은 최신 확정 결과부터 정렬된다. 같은 검사 유형은 첫 결과를 유지한다.
-      if (!map.has(result.exam_type)) map.set(result.exam_type, result);
+      if (!map.has(result.workflow_stage)) map.set(result.workflow_stage, result);
     }
 
     return map;
@@ -164,9 +164,9 @@ function RespiratoryResultsContent() {
       <div className="grid grid-cols-5 gap-3">
         <ResultStageCard title="X-ray" result={resultMap.get('XRAY')} />
         <ResultStageCard title="CT" result={resultMap.get('CT')} />
-        <ResultStageCard title="TNM" result={resultMap.get('STAGING')} />
-        <ResultStageCard title="병리" result={resultMap.get('PATHOLOGY')} />
-        <ResultStageCard title="유전자" result={resultMap.get('GENE')} />
+        <ResultStageCard title="TNM" result={resultMap.get('PET_CT_TNM')} />
+        <ResultStageCard title="병리" result={resultMap.get('PATHOLOGY_GENE')} />
+        <ResultStageCard title="유전자" result={resultMap.get('PATHOLOGY_GENE')} />
       </div>
 
       <div className="mt-6 space-y-5">
@@ -257,7 +257,7 @@ function ResultSection({ result }: { result: ClinicalResult }) {
 function ClinicalDetail({ result }: { result: ClinicalResult }) {
   const detail = result.result_detail ?? {};
 
-  if (result.exam_type === 'XRAY' && detail.xray) {
+  if (result.workflow_stage === 'XRAY' && detail.xray) {
     return (
       <div className="grid grid-cols-2 gap-3">
         <Info label="판정" value={detail.xray.assessment_label} />
@@ -267,7 +267,7 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
     );
   }
 
-  if (result.exam_type === 'CT' && detail.ct) {
+  if (result.workflow_stage === 'CT' && detail.ct) {
     return (
       <div className="grid grid-cols-2 gap-3">
         <Info label="종합 판정" value={detail.ct.overall_assessment_label} />
@@ -277,7 +277,7 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
     );
   }
 
-  if (result.exam_type === 'PATHOLOGY' && detail.pathology) {
+  if (result.workflow_stage === 'PATHOLOGY_GENE' && detail.pathology) {
     return (
       <div className="grid grid-cols-2 gap-3">
         <Info
@@ -291,7 +291,7 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
     );
   }
 
-  if (result.exam_type === 'STAGING' && detail.tnm) {
+  if (result.workflow_stage === 'PET_CT_TNM' && detail.tnm) {
     return (
       <div className="grid grid-cols-4 gap-3">
         <Info label="T" value={detail.tnm.t_category} />
@@ -306,7 +306,7 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
     );
   }
 
-  if (result.exam_type === 'GENE') {
+  if (result.workflow_stage === 'PATHOLOGY_GENE') {
     return (
       <div className="space-y-4">
         {detail.gene && (

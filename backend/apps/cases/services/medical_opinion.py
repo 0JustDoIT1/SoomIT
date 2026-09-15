@@ -43,7 +43,7 @@ def _confirmed_results(case):
             "treatment_detail__selected_regimen",
         )
         .prefetch_related("gene_detail__gene_findings")
-        .order_by("stage", "-confirmed_at")
+        .order_by("workflow_stage", "-confirmed_at")
     )
 
 
@@ -90,7 +90,7 @@ def generate_medical_opinion(case, instruction="임상 결과를 종합한 간�
         "source_results": [
             {
                 "id": str(result.id),
-                "stage": result.stage,
+                "workflow_stage": result.workflow_stage,
                 "confirmed_at": result.confirmed_at,
             }
             for result in results

@@ -57,9 +57,9 @@ export default function CasesPage() {
   const getStageLabel = (stage: string) => {
     if (stage === "XRAY") return "X-ray";
     if (stage === "CT") return "CT";
-    if (stage === "PATHOLOGY") return "병리";
-    if (stage === "STAGING") return "TNM 병기";
-    if (stage === "GENE") return "유전자 검사";
+    if (stage === "PET_CT_TNM") return "PET-CT 및 TNM 병기 평가";
+    if (stage === "PATHOLOGY_GENE") return "조직·유전자 검사";
+    if (stage === "PDL1") return "PD-L1 검사";
     if (stage === "TREATMENT") return "치료 의사결정";
     if (stage === "PRESCRIPTION") return "처방";
 
@@ -165,9 +165,9 @@ export default function CasesPage() {
             <option value="ALL">단계 전체</option>
             <option value="XRAY">X-ray</option>
             <option value="CT">CT</option>
-            <option value="PATHOLOGY">병리</option>
-            <option value="STAGING">TNM 병기</option>
-            <option value="GENE">유전자 검사</option>
+            <option value="PET_CT_TNM">PET-CT 및 TNM 병기 평가</option>
+            <option value="PATHOLOGY_GENE">조직·유전자 검사</option>
+            <option value="PDL1">PD-L1 검사</option>
             <option value="TREATMENT">치료 의사결정</option>
             <option value="PRESCRIPTION">처방</option>
           </select>

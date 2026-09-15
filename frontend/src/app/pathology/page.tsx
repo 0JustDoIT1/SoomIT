@@ -413,11 +413,11 @@ function WorkArea({
         ? item.latest_gene_analysis
         : null;
   const expectedAnalysisType = isSubtype
-    ? "PATHOLOGY_DIAGNOSIS"
+    ? "PATHOLOGY_GENE_ANALYSIS"
     : isPdl1
-      ? "PDL1_CLASSIFICATION"
+      ? "PDL1_ANALYSIS"
       : isGene
-        ? "GENE_PREDICTION"
+        ? "PATHOLOGY_GENE_ANALYSIS"
         : null;
   const alreadySubmitted =
     reviewSubmitted ||

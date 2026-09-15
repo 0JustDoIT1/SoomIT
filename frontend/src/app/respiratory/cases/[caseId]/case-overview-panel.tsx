@@ -21,7 +21,7 @@ type OverviewCase = {
 
 type OverviewClinicalResult = {
   id?: string;
-  exam_type: string;
+  workflow_stage: string;
   exam_name?: string;
   result_status?: string;
   result_status_label?: string;
@@ -87,8 +87,8 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
           tone="emerald"
           empty="확인 가능한 전문과 확정 결과가 없습니다."
           items={confirmedClinicalResults.map((result) => ({
-            id: result.id ?? `${result.exam_type}-${result.result_date ?? "none"}`,
-            title: result.exam_name || getClinicalResultLabel(result.exam_type),
+            id: result.id ?? `${result.workflow_stage}-${result.result_date ?? "none"}`,
+            title: result.exam_name || getClinicalResultLabel(result.workflow_stage),
             status: result.result_status_label || result.result_status || "-",
             date: formatDate(result.result_date),
           }))}
@@ -159,15 +159,15 @@ function FlowItem({ label, state }: { label: string; state: FlowState }) {
 }
 
 function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalResult[], aiResults: OverviewAiResult[], prescriptions: { id: string; prescription_status?: string }[]) {
-  const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.exam_type) && Boolean(result.result_status));
+  const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.workflow_stage) && Boolean(result.result_status));
   const hasAi = (types: string[]) => aiResults.some((result) => types.includes(result.analysis_type) && Boolean(result.status));
   const hasPdl1Clinical = clinicalResults.some((result) => hasPdl1Detail(result.result_detail) && Boolean(result.result_status));
   const configs = [
-    { label: "흉부 X선", stages: ["XRAY"], available: hasClinical(["XRAY"]) || hasAi(["XRAY_SCREENING"]) },
-    { label: "흉부 CT", stages: ["CT"], available: hasClinical(["CT"]) || hasAi(["CT_NODULE"]) },
-    { label: "PET-CT", stages: ["STAGING"], available: hasClinical(["STAGING"]) || hasAi(["TNM_STAGING"]) },
-    { label: "조직/유전자", stages: ["PATHOLOGY", "GENE"], available: hasClinical(["PATHOLOGY", "GENE"]) || hasAi(["PATHOLOGY_DIAGNOSIS", "GENE_PREDICTION"]) },
-    { label: "PD-L1", stages: [], available: hasPdl1Clinical || hasAi(["PDL1_CLASSIFICATION"]) },
+    { label: "흉부 X선", stages: ["XRAY"], available: hasClinical(["XRAY"]) || hasAi(["XRAY_ANALYSIS"]) },
+    { label: "흉부 CT", stages: ["CT"], available: hasClinical(["CT"]) || hasAi(["CT_ANALYSIS"]) },
+    { label: "PET-CT", stages: ["PET_CT_TNM"], available: hasClinical(["PET_CT_TNM"]) || hasAi(["PET_CT_TNM_ANALYSIS"]) },
+    { label: "조직/유전자", stages: ["PATHOLOGY_GENE"], available: hasClinical(["PATHOLOGY_GENE"]) || hasAi(["PATHOLOGY_GENE_ANALYSIS"]) },
+    { label: "PD-L1", stages: ["PDL1"], available: hasPdl1Clinical || hasAi(["PDL1_ANALYSIS"]) },
     { label: "치료 결정", stages: ["TREATMENT"], available: hasAi(["TREATMENT_RECOMMENDATION"]) },
     { label: "처방", stages: ["PRESCRIPTION"], available: prescriptions.some((item) => Boolean(item.prescription_status)) },
   ];
@@ -179,12 +179,12 @@ function hasPdl1Detail(detail: unknown) {
 }
 
 function getClinicalResultLabel(examType: string) {
-  const labels: Record<string, string> = { XRAY: "흉부 X선", CT: "흉부 CT", STAGING: "TNM 병기 확정 결과", PATHOLOGY: "조직검사", GENE: "유전자검사" };
+  const labels: Record<string, string> = { XRAY: "흉부 X선", CT: "흉부 CT", PET_CT_TNM: "TNM 병기 확정 결과", PATHOLOGY_GENE: "조직·유전자 검사", PDL1: "PD-L1 검사" };
   return labels[examType] ?? getStageLabel(examType);
 }
 
 function getAiResultLabel(analysisType: string, apiLabel?: string) {
-  const labels: Record<string, string> = { XRAY_SCREENING: "흉부 X선 AI 후보", CT_NODULE: "흉부 CT AI 후보", TNM_STAGING: "PET-CT 기반 TNM AI 후보", PATHOLOGY_DIAGNOSIS: "조직검사 AI 후보", GENE_PREDICTION: "유전자검사 AI 후보", PDL1_CLASSIFICATION: "PD-L1 AI 후보", TREATMENT_RECOMMENDATION: "치료 AI 후보" };
+  const labels: Record<string, string> = { XRAY_ANALYSIS: "흉부 X선 AI 후보", CT_ANALYSIS: "흉부 CT AI 후보", PET_CT_TNM_ANALYSIS: "PET-CT 기반 TNM AI 후보", PATHOLOGY_GENE_ANALYSIS: "조직·유전자 AI 후보", PDL1_ANALYSIS: "PD-L1 AI 후보", TREATMENT_RECOMMENDATION: "치료 AI 후보" };
   return labels[analysisType] ?? apiLabel ?? analysisType;
 }
 

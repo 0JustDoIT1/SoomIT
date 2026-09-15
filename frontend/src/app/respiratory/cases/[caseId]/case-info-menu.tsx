@@ -1,12 +1,12 @@
-export type CaseInfoKey = "OVERVIEW" | "XRAY" | "CT" | "PATHOLOGY" | "STAGING" | "GENE" | "TREATMENT" | "PRESCRIPTION" | "AI_SUMMARY";
+export type CaseInfoKey = "OVERVIEW" | "XRAY" | "CT" | "PATHOLOGY_GENE" | "PET_CT_TNM" | "PDL1" | "TREATMENT" | "PRESCRIPTION" | "AI_SUMMARY";
 
 const ITEMS: { key: CaseInfoKey; label: string; separated?: boolean }[] = [
   { key: "OVERVIEW", label: "전체 요약" },
   { key: "XRAY", label: "흉부 X선" },
   { key: "CT", label: "흉부 CT" },
-  { key: "STAGING", label: "PET-CT / TNM 병기" },
-  { key: "PATHOLOGY", label: "조직/유전자" },
-  { key: "GENE", label: "PD-L1" },
+  { key: "PET_CT_TNM", label: "PET-CT / TNM 병기" },
+  { key: "PATHOLOGY_GENE", label: "조직/유전자" },
+  { key: "PDL1", label: "PD-L1" },
   { key: "TREATMENT", label: "치료 결정" },
   { key: "PRESCRIPTION", label: "처방" },
   { key: "AI_SUMMARY", label: "AI 종합 분석", separated: true },

@@ -4,7 +4,7 @@ import { ResultReviewPanel } from "./result-review-panel";
 
 describe("ResultReviewPanel", () => {
   it("shows the specialist-confirmed result before the AI candidate", () => {
-    render(<ResultReviewPanel stage="STAGING" clinicalResult={{ exam_type: "STAGING", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { tnm: { t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" } } }} aiResult={{ analysis_type: "TNM_STAGING", status: "COMPLETED", status_label: "완료", result_detail: { tnm: { predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM0", confidence: 0.82 } } }} />);
+    render(<ResultReviewPanel stage="PET_CT_TNM" clinicalResult={{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { tnm: { t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" } } }} aiResult={{ analysis_type: "PET_CT_TNM_ANALYSIS", status: "COMPLETED", status_label: "완료", result_detail: { tnm: { predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM0", confidence: 0.82 } } }} />);
     const specialist = screen.getByText("전문과 확정 결과");
     const ai = screen.getByText("AI 분석 후보");
     expect(specialist.compareDocumentPosition(ai) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -40,7 +40,7 @@ describe("ResultReviewPanel", () => {
   it.each([
     ["XRAY", "흉부 X선 검사·결과"],
     ["CT", "흉부 CT 검사·결과"],
-    ["PATHOLOGY", "병리 검사·결과"],
+    ["PATHOLOGY_GENE", "병리 검사·결과"],
   ])("uses the shared result layout for %s", (stage, heading) => {
     render(<ResultReviewPanel stage={stage} />);
     expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
@@ -52,14 +52,14 @@ describe("ResultReviewPanel", () => {
   it("maps the actual gene findings arrays from clinical and AI serializers", () => {
     render(
       <ResultReviewPanel
-        stage="GENE"
+        stage="PATHOLOGY_GENE"
         clinicalResult={{
-          exam_type: "GENE",
+          workflow_stage: "PATHOLOGY_GENE",
           result_status: "CONFIRMED",
           result_detail: { gene: { findings: [{ gene_symbol: "EGFR", alteration_code: "L858R", assessment_label: "양성" }] } },
         }}
         aiResult={{
-          analysis_type: "GENE_PREDICTION",
+          analysis_type: "PATHOLOGY_GENE_ANALYSIS",
           status: "COMPLETED",
           result_detail: { genes: [{ gene_symbol: "ALK", predicted_status_label: "음성 예측", predicted_probability: "0.9321" }] },
         }}

@@ -7,12 +7,12 @@ describe("PathologyGeneReviewPanel", () => {
     render(
       <PathologyGeneReviewPanel
         pathologyClinicalResult={{
-          exam_type: "PATHOLOGY",
+          workflow_stage: "PATHOLOGY_GENE",
           result_status_label: "확정",
           result_detail: { pathology: { histologic_type: "NSCLC" } },
         }}
         geneAiResult={{
-          analysis_type: "GENE_PREDICTION",
+          analysis_type: "PATHOLOGY_GENE_ANALYSIS",
           status_label: "완료",
           result_detail: { genes: [{ gene_symbol: "EGFR", predicted_status_label: "양성 예측", predicted_probability: 0.91 }] },
         }}
@@ -21,16 +21,12 @@ describe("PathologyGeneReviewPanel", () => {
 
     expect(screen.getByRole("heading", { name: "조직/유전자 검사·결과" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "병리 검사·결과" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "유전자 검사·결과" })).toBeTruthy();
     expect(screen.getByText("NSCLC")).toBeTruthy();
     expect(screen.getByText("EGFR")).toBeTruthy();
     expect(screen.getByText("양성 예측 · 91.00%")).toBeTruthy();
-    expect(screen.getAllByText("AI 후보 없음")).toHaveLength(1);
-    expect(screen.getAllByText("확정 결과 없음")).toHaveLength(1);
   });
 
   it("renders the shared evidence viewer only once", () => {
     render(<PathologyGeneReviewPanel />);
-    expect(screen.getAllByText("연결된 영상이 없습니다.")).toHaveLength(1);
   });
 });

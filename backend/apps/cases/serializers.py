@@ -5,10 +5,7 @@ from .models import ClinicianDecision, ExaminationOrder, LungCancerCase
 
 class FollowUpPathologyOrderCreateSerializer(serializers.Serializer):
     pathology_test_type = serializers.ChoiceField(
-        choices=[
-            ExaminationOrder.PathologyTestType.PDL1,
-            ExaminationOrder.PathologyTestType.GENE,
-        ]
+        choices=["SUBTYPE", "GENE", "PDL1", "PATHOLOGY_GENE"]
     )
     priority = serializers.ChoiceField(
         choices=ExaminationOrder.Priority.choices,
@@ -18,6 +15,23 @@ class FollowUpPathologyOrderCreateSerializer(serializers.Serializer):
     clinical_note = serializers.CharField(
         required=False, allow_blank=True, allow_null=True, default=""
     )
+
+
+class ExaminationOrderCreateSerializer(serializers.Serializer):
+    order_type = serializers.ChoiceField(
+        choices=[
+            ExaminationOrder.OrderType.CT,
+            ExaminationOrder.OrderType.PET_CT_TNM,
+            ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            ExaminationOrder.OrderType.PDL1,
+        ]
+    )
+    priority = serializers.ChoiceField(
+        choices=ExaminationOrder.Priority.choices,
+        default=ExaminationOrder.Priority.NORMAL,
+    )
+    purpose = serializers.CharField(max_length=500)
+    clinical_note = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
 
 
 class MedicalOpinionRequestSerializer(serializers.Serializer):
@@ -31,7 +45,7 @@ class MedicalOpinionRequestSerializer(serializers.Serializer):
 
 class MedicalOpinionSourceSerializer(serializers.Serializer):
     id = serializers.UUIDField()
-    stage = serializers.CharField()
+    workflow_stage = serializers.CharField()
     confirmed_at = serializers.DateTimeField(allow_null=True)
 
 

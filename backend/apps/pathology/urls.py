@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     CasePathologyAiAnalysisListAPIView,
+    CasePathologyGeneAnalysisRunAPIView,
     CasePathologyDiagnosisListAPIView,
     CasePathologySpecimenListAPIView,
     CasePathologyReportListAPIView,
@@ -9,7 +10,6 @@ from .views import (
     CasePDL1AnalysisRunAPIView,
     PDL1TestSampleListAPIView,
     PathologyOrderPDL1InputUploadAPIView,
-    CaseSpecimenAdequacyAiAnalysisListAPIView,
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
     PathologyCaseWorkflowAPIView,
@@ -61,9 +61,9 @@ urlpatterns = [
         name="case-ai-result-list",
     ),
     path(
-        "cases/<uuid:case_id>/adequacy-results/",
-        CaseSpecimenAdequacyAiAnalysisListAPIView.as_view(),
-        name="case-adequacy-result-list",
+        "cases/<uuid:case_id>/ai-results/run/",
+        CasePathologyGeneAnalysisRunAPIView.as_view(),
+        name="case-pathology-gene-analysis-run",
     ),
     path(
         "cases/<uuid:case_id>/pdl1-results/",

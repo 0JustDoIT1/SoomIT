@@ -1,14 +1,14 @@
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 
 type ResultRecord = Record<string, unknown>;
-type ClinicalResult = { exam_type: string; exam_name?: string; result_status?: string; result_status_label?: string; result_date?: string | null; result_detail?: unknown };
+type ClinicalResult = { workflow_stage: string; exam_name?: string; result_status?: string; result_status_label?: string; result_date?: string | null; result_detail?: unknown };
 type AiResult = { analysis_type: string; analysis_type_label?: string; status?: string; status_label?: string; model_name?: string; model_version_name?: string; completed_at?: string | null; result_detail?: unknown };
 
 const STAGE_CONFIG: Record<string, { title: string; description: string; department: string }> = {
   XRAY: { title: "흉부 X선 검사·결과", description: "영상의학과 판독 결과를 먼저 확인하고 AI 후보를 보조 근거로 검토합니다.", department: "영상의학과" },
   CT: { title: "흉부 CT 검사·결과", description: "영상의학과 CT 판독 결과와 AI 분석 후보 및 원본 영상 근거를 확인합니다.", department: "영상의학과" },
-  PATHOLOGY: { title: "병리 검사·결과", description: "병리과 확정 결과와 병리 AI 후보 및 원본 병리 근거를 확인합니다.", department: "병리과" },
-  GENE: { title: "유전자 검사·결과", description: "전문과 확정 유전자 결과와 AI 분석 후보를 서로 다른 출처로 확인합니다.", department: "병리과" },
+  PATHOLOGY_GENE: { title: "병리 검사·결과", description: "병리과 확정 결과와 병리 AI 후보 및 원본 병리 근거를 확인합니다.", department: "병리과" },
+  PDL1: { title: "유전자 검사·결과", description: "전문과 확정 유전자 결과와 AI 분석 후보를 서로 다른 출처로 확인합니다.", department: "병리과" },
 };
 
 export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi, showEvidence = true }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void; showEvidence?: boolean }) {
@@ -68,32 +68,43 @@ function PanelError({ message, retrying, onRetry }: { message: string; retrying:
 
 function getSpecialistValues(stage: string, detail: unknown): [string, string][] {
   const root = asRecord(detail); if (!root) return [];
-  const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PATHOLOGY" ? "pathology" : stage === "STAGING" ? "tnm" : stage === "GENE" ? "gene" : "";
+  if (stage === "PATHOLOGY_GENE") {
+    const pathology = asRecord(root.pathology);
+    const gene = asRecord(root.gene);
+    const pathologyValues = pathology ? pickValues(pathology, [["?? ??", "malignancy_status_label"], ["???", "histologic_type"], ["??", "subtype"], ["?? ??", "diagnosis_summary"]]) : [];
+    return [...pathologyValues, ...getClinicalGeneFindings(gene?.findings)];
+  }
+  if (stage === "PDL1") {
+    const pdl1 = asRecord(root.pdl1);
+    return pdl1 ? pickValues(pdl1, [["?? PD-L1 TPS", "tps_percent"], ["PD-L1 ??", "interpretation"], ["PD-L1 ??", "note"]]) : [];
+  }
+  const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PET_CT_TNM" ? "tnm" : "";
   const section = asRecord(root[sectionKey]); if (!section) return [];
   const fields: Record<string, [string, string][]> = {
-    XRAY: [["판정", "assessment_label"], ["주요 소견", "finding_summary"], ["권고", "recommended_action"]],
-    CT: [["종합 판정", "overall_assessment_label"], ["악성 위험도", "overall_malignancy_risk"], ["주요 소견", "finding_summary"]],
-    PATHOLOGY: [["악성 여부", "malignancy_status_label"], ["조직형", "histologic_type"], ["아형", "subtype"], ["진단 요약", "diagnosis_summary"]],
-    STAGING: [["확정 T", "t_category"], ["확정 N", "n_category"], ["확정 M", "m_category"], ["확정 Stage Group", "stage_group"], ["의료진 소견", "note"]],
-    GENE: [["종합 해석", "interpretation"], ["추가 검사 권고", "additional_test_recommended"]],
+    XRAY: [["??", "assessment_label"], ["?? ??", "finding_summary"], ["??", "recommended_action"]],
+    CT: [["?? ??", "overall_assessment_label"], ["?? ???", "overall_malignancy_risk"], ["?? ??", "finding_summary"]],
+    PET_CT_TNM: [["?? T", "t_category"], ["?? N", "n_category"], ["?? M", "m_category"], ["?? Stage Group", "stage_group"], ["??? ??", "note"]],
   };
-  const values = pickValues(section, fields[stage] ?? []);
-  if (stage === "GENE") {
-    values.push(...getClinicalGeneFindings(section.findings));
-  }
-  if (stage === "GENE") { const pdl1 = asRecord(root.pdl1); if (pdl1) values.push(...pickValues(pdl1, [["확정 PD-L1 TPS", "tps_percent"], ["PD-L1 해석", "interpretation"], ["PD-L1 소견", "note"]])); }
-  return values;
+  return pickValues(section, fields[stage] ?? []);
 }
 
 function getAiValues(stage: string, detail: unknown): [string, string][] {
   const root = asRecord(detail); if (!root) return [];
-  if (stage === "GENE") return getAiGeneFindings(root.genes);
-  const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PATHOLOGY" ? "pathology" : stage === "STAGING" ? "tnm" : stage === "GENE" ? "gene" : "";
+  if (stage === "PATHOLOGY_GENE") {
+    const pathology = asRecord(root.pathology);
+    const pathologyValues = pathology ? pickValues(pathology, [["AI ?? ?? ??", "malignancy_assessment_label"], ["?? ??", "malignancy_probability"], ["??? ??", "predicted_histologic_type"], ["?? ??", "predicted_subtype"], ["?? confidence", "subtype_confidence"]]) : [];
+    return [...pathologyValues, ...getAiGeneFindings(root.genes)];
+  }
+  if (stage === "PDL1") {
+    const pdl1 = asRecord(root.pdl1);
+    return pdl1 ? pickValues(pdl1, [["PD-L1 ?? ??", "predicted_tps_range_label"], ["confidence", "confidence"]]) : [];
+  }
+  const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PET_CT_TNM" ? "tnm" : "";
   const section = asRecord(root[sectionKey]); if (!section) return [];
   const fields: Record<string, [string, string][]> = {
-    XRAY: [["AI 판정 후보", "assessment_label"], ["의심 점수", "suspicion_score"]], CT: [["AI 악성 위험도", "overall_malignancy_risk"]],
-    PATHOLOGY: [["AI 악성 판정 후보", "malignancy_assessment_label"], ["악성 확률", "malignancy_probability"], ["조직형 후보", "predicted_histologic_type"], ["아형 후보", "predicted_subtype"], ["아형 confidence", "subtype_confidence"]],
-    STAGING: [["T 후보", "predicted_t"], ["N 후보", "predicted_n"], ["M 후보", "predicted_m"], ["Stage Group 후보", "predicted_stage_group"], ["confidence", "confidence"]],
+    XRAY: [["AI ?? ??", "assessment_label"], ["?? ??", "suspicion_score"]],
+    CT: [["AI ?? ???", "overall_malignancy_risk"]],
+    PET_CT_TNM: [["T ??", "predicted_t"], ["N ??", "predicted_n"], ["M ??", "predicted_m"], ["Stage Group ??", "predicted_stage_group"], ["confidence", "confidence"]],
   };
   return pickValues(section, fields[stage] ?? []);
 }

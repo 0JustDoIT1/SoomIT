@@ -80,12 +80,12 @@ export function RadiologyWorklist({
         <label className="flex items-center gap-2 text-xs text-slate-500">
           검사
           <select
-            value={filters.exam_type ?? ""}
+            value={filters.order_type ?? ""}
             onChange={(event) =>
               updateFilter(
-                "exam_type",
+                "order_type",
                 event.target.value as
-                  | RadiologyWorklistFilters["exam_type"]
+                  | RadiologyWorklistFilters["order_type"]
                   | "",
               )
             }
@@ -94,7 +94,7 @@ export function RadiologyWorklist({
             <option value="">전체</option>
             <option value="XRAY">X-ray</option>
             <option value="CT">CT</option>
-            <option value="STAGING">PET-CT</option>
+            <option value="PET_CT_TNM">PET-CT</option>
           </select>
         </label>
 
@@ -170,7 +170,7 @@ export function RadiologyWorklist({
                   </td>
 
                   <td className="px-3 py-2.5 text-slate-700">
-                    {item.current_exam.examination_order.exam_type_label}
+                    {item.current_exam.examination_order.order_type_label}
                   </td>
 
                   <td className="px-3 py-2.5">

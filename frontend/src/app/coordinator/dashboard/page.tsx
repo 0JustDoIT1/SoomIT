@@ -663,12 +663,12 @@ function getFlowSteps(
       label: "CT",
     },
     {
-      key: "PATHOLOGY",
-      label: "병리",
+      key: "PET_CT_TNM",
+      label: "PET-CT / TNM",
     },
     {
-      key: "GENE",
-      label: "유전자 검사",
+      key: "PATHOLOGY_GENE",
+      label: "조직·유전자 검사",
     },
     {
       key: "TREATMENT",
@@ -715,11 +715,10 @@ function getClinicalStageIndex(
   if (stage === "CONSULTATION") return 0;
   if (stage === "XRAY") return 1;
   if (stage === "CT") return 2;
-  if (stage === "PATHOLOGY") return 3;
-  if (stage === "GENE") return 4;
+  if (stage === "PET_CT_TNM") return 3;
+  if (stage === "PATHOLOGY_GENE" || stage === "PDL1") return 4;
 
   if (
-    stage === "STAGING" ||
     stage === "TREATMENT" ||
     stage === "PRESCRIPTION"
   ) {
@@ -748,12 +747,16 @@ function getClinicalStageDescription(
     return "CT 검사 단계";
   }
 
-  if (stage === "PATHOLOGY") {
-    return "병리 검사 단계";
+  if (stage === "PET_CT_TNM") {
+    return "PET-CT 및 TNM 병기 평가 단계";
   }
 
-  if (stage === "GENE") {
-    return "유전자 검사 단계";
+  if (stage === "PATHOLOGY_GENE") {
+    return "조직·유전자 검사 단계";
+  }
+
+  if (stage === "PDL1") {
+    return "PD-L1 검사 단계";
   }
 
   if (stage === "TREATMENT") {
@@ -776,16 +779,16 @@ function getStageLabel(stage: string) {
     return "CT";
   }
 
-  if (stage === "PATHOLOGY") {
-    return "병리 검사";
+  if (stage === "PET_CT_TNM") {
+    return "PET-CT 및 TNM 병기 평가";
   }
 
-  if (stage === "STAGING") {
-    return "TNM 병기";
+  if (stage === "PATHOLOGY_GENE") {
+    return "조직·유전자 검사";
   }
 
-  if (stage === "GENE") {
-    return "유전자 검사";
+  if (stage === "PDL1") {
+    return "PD-L1 검사";
   }
 
   if (stage === "TREATMENT") {

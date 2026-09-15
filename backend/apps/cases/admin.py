@@ -18,11 +18,11 @@ class ClinicianDecisionAdmin(admin.ModelAdmin):
 
 @admin.register(ExaminationOrder)
 class ExaminationOrderAdmin(admin.ModelAdmin):
-    list_display = ("case", "exam_type", "priority", "status", "requesting_doctor")
-    list_filter = ("exam_type", "priority", "status")
+    list_display = ("case", "order_type", "priority", "status", "requesting_doctor")
+    list_filter = ("order_type", "priority", "status")
 
 
 @admin.register(CaseImageAsset)
 class CaseImageAssetAdmin(admin.ModelAdmin):
-    list_display = ("case", "image_type", "uploaded_stage", "storage_type", "status")
+    list_display = ("case", "image_type", "workflow_stage", "storage_type", "status")
     list_filter = ("image_type", "storage_type", "status")

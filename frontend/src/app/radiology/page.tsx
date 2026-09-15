@@ -59,7 +59,7 @@ function RadiologyStatusTable({
                 <tr key={item.case.id} className="border-b border-slate-100 bg-white">
                   <td className="px-4 py-3 font-semibold text-slate-800">{item.patient.name}</td>
                   <td className="px-4 py-3 text-slate-600">{item.patient.patient_code}</td>
-                  <td className="px-4 py-3 text-slate-700">{item.current_exam.examination_order.exam_type_label}</td>
+                  <td className="px-4 py-3 text-slate-700">{item.current_exam.examination_order.order_type_label}</td>
                   <td className="px-4 py-3">
                     {item.current_exam.latest_ai_analysis ? <StatusBadge status={item.current_exam.latest_ai_analysis.status} label={item.current_exam.latest_ai_analysis.status_label} /> : "-"}
                   </td>
@@ -123,7 +123,7 @@ function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (
             <div className="flex items-center justify-between gap-3 rounded-t-xl border border-b-0 border-violet-100 bg-gradient-to-r from-violet-50 to-blue-50/60 px-5 py-3">
               <p className="text-sm font-bold text-slate-800">
                 <span className="mr-2 text-xs text-violet-600">{String(index + 1).padStart(2, "0")}</span>
-                {exam.examination_order.exam_type_label}
+                {exam.examination_order.order_type_label}
               </p>
               <StatusBadge status={exam.workflow_status} label={exam.workflow_status_label} />
             </div>

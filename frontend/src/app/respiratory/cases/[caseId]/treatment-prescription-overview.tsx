@@ -9,7 +9,7 @@ type PrescriptionSummary = {
   safety_check_results: { result: "PASS" | "WARNING" | "BLOCK" }[];
 };
 
-type ClinicalEvidence = { exam_type: string; result_status?: string; result_status_label?: string; result_detail?: unknown };
+type ClinicalEvidence = { workflow_stage: string; result_status?: string; result_status_label?: string; result_detail?: unknown };
 type AiEvidence = { analysis_type: string; status?: string; status_label?: string; result_detail?: unknown };
 
 export function TreatmentPrescriptionOverview({ treatment, prescriptions, clinicalResults = [], aiResults = [] }: { treatment: TreatmentSummary; prescriptions: PrescriptionSummary[]; clinicalResults?: ClinicalEvidence[]; aiResults?: AiEvidence[] }) {
@@ -42,19 +42,19 @@ function EvidenceSummary({ label, specialist, ai }: { label: string; specialist:
 }
 
 function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: AiEvidence[]) {
-  const confirmed = (type: string) => clinicalResults.find((result) => result.exam_type === type && result.result_status === "CONFIRMED");
+  const confirmed = (type: string) => clinicalResults.find((result) => result.workflow_stage === type && result.result_status === "CONFIRMED");
   const completedAi = (type: string) => aiResults.find((result) => result.analysis_type === type && Boolean(result.status));
-  const tnmClinical = confirmed("STAGING");
-  const pathology = confirmed("PATHOLOGY");
-  const gene = confirmed("GENE");
+  const tnmClinical = confirmed("PET_CT_TNM");
+  const pathology = confirmed("PATHOLOGY_GENE");
+  const gene = confirmed("PATHOLOGY_GENE");
   const pdl1Clinical = clinicalResults.find((result) => result.result_status === "CONFIRMED" && getNestedRecord(result.result_detail, "pdl1"));
-  const pdl1Ai = completedAi("PDL1_CLASSIFICATION");
+  const pdl1Ai = completedAi("PDL1_ANALYSIS");
   const tps = getNestedRecord(pdl1Clinical?.result_detail, "pdl1")?.tps_percent;
   const predictedRange = getNestedRecord(pdl1Ai?.result_detail, "pdl1")?.predicted_tps_range_label;
 
   return [
-    { label: "TNM 병기", specialist: getStatus(tnmClinical?.result_status_label, tnmClinical?.result_status), ai: getStatus(completedAi("TNM_STAGING")?.status_label, completedAi("TNM_STAGING")?.status) },
-    { label: "조직/유전자", specialist: [pathology && "조직", gene && "유전자"].filter(Boolean).join(" · ") || "결과 없음", ai: [completedAi("PATHOLOGY_DIAGNOSIS") && "조직", completedAi("GENE_PREDICTION") && "유전자"].filter(Boolean).join(" · ") || "결과 없음" },
+    { label: "TNM 병기", specialist: getStatus(tnmClinical?.result_status_label, tnmClinical?.result_status), ai: getStatus(completedAi("PET_CT_TNM_ANALYSIS")?.status_label, completedAi("PET_CT_TNM_ANALYSIS")?.status) },
+    { label: "조직/유전자", specialist: [pathology && "조직", gene && "유전자"].filter(Boolean).join(" · ") || "결과 없음", ai: completedAi("PATHOLOGY_GENE_ANALYSIS") ? "조직 · 유전자" : "결과 없음" },
     { label: "PD-L1", specialist: tps !== undefined && tps !== null ? `TPS ${String(tps)}%` : "결과 없음", ai: predictedRange ? String(predictedRange) : getStatus(pdl1Ai?.status_label, pdl1Ai?.status) },
   ];
 }

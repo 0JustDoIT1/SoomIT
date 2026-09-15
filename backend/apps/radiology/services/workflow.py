@@ -1,5 +1,5 @@
 from apps.ai_results.models import AiAnalysis, AnalysisType
-from apps.cases.models import CaseImageAsset, ExaminationOrder, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, WorkflowStage
 
 
 WORKFLOW_STATUS_LABELS = {
@@ -18,9 +18,9 @@ WORKFLOW_STATUS_LABELS = {
 def is_pet_ct_tnm_order(image_assets):
     """기존 STAGING 자산/TNM 분석을 PET-CT 기반 TNM 표시 단계로 해석한다."""
     return any(
-        asset.uploaded_stage == Stage.STAGING
+        asset.workflow_stage == WorkflowStage.PET_CT_TNM
         or any(
-            analysis.analysis_type == AnalysisType.TNM_STAGING
+            analysis.analysis_type == AnalysisType.PET_CT_TNM_ANALYSIS
             for analysis in asset.worklist_ai_analyses
         )
         for asset in image_assets

@@ -147,7 +147,7 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
     },
     latest_ai_analysis: {
       id: "analysis-1",
-      analysis_type: "PATHOLOGY_DIAGNOSIS",
+      analysis_type: "PATHOLOGY_GENE_ANALYSIS",
       status: "SUCCEEDED",
       status_label: "분석 완료",
       model_name: "model",

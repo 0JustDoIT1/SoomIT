@@ -20,22 +20,20 @@ ACTIVE_ORDER_STATUSES = {
 }
 
 
-def has_confirmed_subtype_result(case):
+def has_confirmed_pathology_gene_result(case):
     return ClinicalResult.objects.filter(
         case=case,
         examination_order__case=case,
-        examination_order__exam_type=ExaminationOrder.ExamType.WSI,
-        examination_order__pathology_test_type=ExaminationOrder.PathologyTestType.SUBTYPE,
-        stage="PATHOLOGY",
+        examination_order__order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+        workflow_stage="PATHOLOGY_GENE",
         result_status=ClinicalResult.ResultStatus.CONFIRMED,
     ).exists()
 
 
-def has_active_pathology_order(case, pathology_test_type):
+def has_active_pathology_order(case, order_type):
     return ExaminationOrder.objects.filter(
         case=case,
-        exam_type=ExaminationOrder.ExamType.WSI,
-        pathology_test_type=pathology_test_type,
+        order_type=order_type,
         status__in=ACTIVE_ORDER_STATUSES,
     ).exists()
 
@@ -46,20 +44,25 @@ def create_follow_up_pathology_order(
 ):
     locked_case = LungCancerCase.objects.select_for_update().get(pk=case.pk)
 
-    if not has_confirmed_subtype_result(locked_case):
+    order_type = (
+        ExaminationOrder.OrderType.PDL1
+        if pathology_test_type == "PDL1"
+        else ExaminationOrder.OrderType.PATHOLOGY_GENE
+    )
+
+    if order_type == ExaminationOrder.OrderType.PDL1 and not has_confirmed_pathology_gene_result(locked_case):
         raise PathologyOrderCreationError(
-            "SUBTYPE 판독이 완료된 후 추가 병리 검사를 처방할 수 있습니다."
+            "조직·유전자 판독이 완료된 후 PD-L1 검사를 처방할 수 있습니다."
         )
 
-    if has_active_pathology_order(locked_case, pathology_test_type):
+    if has_active_pathology_order(locked_case, order_type):
         raise PathologyOrderCreationError(
             "동일한 종류의 미완료 병리 검사 오더가 이미 존재합니다."
         )
 
     examination_order = ExaminationOrder.objects.create(
         case=locked_case,
-        exam_type=ExaminationOrder.ExamType.WSI,
-        pathology_test_type=pathology_test_type,
+        order_type=order_type,
         requesting_doctor=requesting_doctor,
         priority=priority,
         purpose=purpose,

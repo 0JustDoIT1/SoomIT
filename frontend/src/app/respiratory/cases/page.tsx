@@ -22,9 +22,9 @@ type CaseItem = {
 const STAGE_LABELS: Record<string, string> = {
   XRAY: "흉부 X선",
   CT: "흉부 CT",
-  PATHOLOGY: "조직/유전자",
-  STAGING: "PET-CT / TNM 병기",
-  GENE: "조직/유전자",
+  PATHOLOGY_GENE: "조직/유전자",
+  PET_CT_TNM: "PET-CT / TNM 병기",
+  PDL1: "PD-L1",
   TREATMENT: "치료 결정",
   PRESCRIPTION: "처방",
 };

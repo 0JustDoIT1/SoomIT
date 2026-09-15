@@ -3,9 +3,9 @@ import { getCaseStatusLabel } from "./clinical-display-labels";
 export const CASE_STAGES = [
   { code: "XRAY", label: "흉부 X선", sourceStages: ["XRAY"] },
   { code: "CT", label: "흉부 CT", sourceStages: ["CT"] },
-  { code: "STAGING", label: "PET-CT", sourceStages: ["STAGING"] },
-  { code: "PATHOLOGY_GENE", label: "조직/유전자", sourceStages: ["PATHOLOGY", "GENE"] },
-  { code: "PDL1", label: "PD-L1", sourceStages: [] },
+  { code: "PET_CT_TNM", label: "PET-CT", sourceStages: ["PET_CT_TNM"] },
+  { code: "PATHOLOGY_GENE", label: "조직/유전자", sourceStages: ["PATHOLOGY_GENE"] },
+  { code: "PDL1", label: "PD-L1", sourceStages: ["PDL1"] },
   { code: "TREATMENT", label: "치료 결정", sourceStages: ["TREATMENT"] },
   { code: "PRESCRIPTION", label: "처방", sourceStages: ["PRESCRIPTION"] },
 ] as const;

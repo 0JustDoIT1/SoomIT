@@ -2,7 +2,7 @@ import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 import { ResultReviewPanel } from "./result-review-panel";
 
 type ClinicalResult = {
-  exam_type: string;
+  workflow_stage: string;
   exam_name?: string;
   result_status?: string;
   result_status_label?: string;
@@ -79,9 +79,13 @@ export function PathologyGeneReviewPanel({
         <div className="overflow-x-auto"><EvidenceViewerPanel /></div>
       </div>
 
-      <div className="grid min-w-[920px] grid-cols-2 gap-3 bg-slate-50 p-3">
-        <ResultReviewPanel stage="PATHOLOGY" clinicalResult={pathologyClinicalResult} aiResult={pathologyAiResult} {...sharedProps} />
-        <ResultReviewPanel stage="GENE" clinicalResult={geneClinicalResult} aiResult={geneAiResult} {...sharedProps} />
+      <div className="bg-slate-50 p-3">
+        <ResultReviewPanel
+          stage="PATHOLOGY_GENE"
+          clinicalResult={pathologyClinicalResult ?? geneClinicalResult}
+          aiResult={pathologyAiResult ?? geneAiResult}
+          {...sharedProps}
+        />
       </div>
     </section>
   );
