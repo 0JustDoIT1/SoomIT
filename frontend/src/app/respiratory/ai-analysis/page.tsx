@@ -190,7 +190,8 @@ function RespiratoryAiAnalysisContent() {
     const map = new Map<string, ClinicalResult>();
 
     for (const result of clinicalResults) {
-      map.set(result.exam_type, result);
+      // API 응답은 최신 확정 결과부터 정렬된다. 같은 검사 유형은 첫 결과를 유지한다.
+      if (!map.has(result.exam_type)) map.set(result.exam_type, result);
     }
 
     return map;

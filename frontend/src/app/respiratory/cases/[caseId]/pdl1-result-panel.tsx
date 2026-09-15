@@ -9,7 +9,7 @@ type Pdl1AiResult = {
     pdl1: {
       predicted_tps_range_label?: string;
       confidence?: string | number;
-      probabilities?: { class_0?: number; class_1?: number; class_2?: number };
+      probabilities?: { class_0?: number | string; class_1?: number | string; class_2?: number | string };
     };
   };
 };
@@ -43,9 +43,7 @@ export function Pdl1ResultPanel({
   const confidenceValue = ai?.confidence === undefined ? null : Number(ai.confidence);
   const confidence = confidenceValue !== null && Number.isFinite(confidenceValue) ? confidenceValue * 100 : null;
   const probabilities = ai?.probabilities
-    ? [ai.probabilities.class_0, ai.probabilities.class_1, ai.probabilities.class_2].map((value) =>
-        typeof value === "number" ? value * 100 : null,
-      )
+    ? [ai.probabilities.class_0, ai.probabilities.class_1, ai.probabilities.class_2].map(toPercentage)
     : null;
 
   return (
@@ -104,6 +102,12 @@ export function Pdl1ResultPanel({
       </section>
     </div>
   );
+}
+
+function toPercentage(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number * 100 : null;
 }
 
 function ResultCard({ source, label, value, tone }: { source: string; label: string; value: string; tone: "blue" | "emerald" }) {

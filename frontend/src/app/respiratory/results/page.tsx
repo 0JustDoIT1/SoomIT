@@ -47,6 +47,7 @@ type ClinicalResult = {
         gene_symbol: string;
         assessment: string;
         assessment_label: string;
+        alteration_code: string | null;
         note: string | null;
       }[];
     };
@@ -118,7 +119,8 @@ function RespiratoryResultsContent() {
     const map = new Map<string, ClinicalResult>();
 
     for (const result of results) {
-      map.set(result.exam_type, result);
+      // API 응답은 최신 확정 결과부터 정렬된다. 같은 검사 유형은 첫 결과를 유지한다.
+      if (!map.has(result.exam_type)) map.set(result.exam_type, result);
     }
 
     return map;
@@ -344,7 +346,9 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
                     </div>
 
                     <span className="rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-700">
-                      {finding.assessment_label}
+                      {[finding.assessment_label, finding.alteration_code]
+                        .filter(Boolean)
+                        .join(' · ') || '-'}
                     </span>
                   </div>
                 ))}
@@ -364,7 +368,8 @@ function ClinicalDetail({ result }: { result: ClinicalResult }) {
             <Info
               label="PD-L1 TPS"
               value={
-                detail.pdl1.tps_percent !== null
+                detail.pdl1.tps_percent !== null &&
+                detail.pdl1.tps_percent !== undefined
                   ? `${detail.pdl1.tps_percent}%`
                   : null
               }

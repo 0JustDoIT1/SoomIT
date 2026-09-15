@@ -52,4 +52,21 @@ describe("Pdl1ResultPanel", () => {
     screen.getByRole("button", { name: "PD-L1 결과 다시 시도" }).click();
     expect(onRetry).toHaveBeenCalledOnce();
   });
+
+  it("formats numeric strings from the PD-L1 JSON payload", () => {
+    render(
+      <Pdl1ResultPanel
+        aiResult={{
+          result_detail: {
+            pdl1: {
+              confidence: "0.8",
+              probabilities: { class_0: "0.1", class_1: "0.8", class_2: "0.1" },
+            },
+          },
+        }}
+      />,
+    );
+
+    expect(screen.getAllByText("80.00%").length).toBeGreaterThan(0);
+  });
 });
