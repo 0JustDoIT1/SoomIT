@@ -18,6 +18,7 @@ from .views import (
     PatientQuestionnaireDetailAPIView, 
     PatientMedicationScheduleListAPIView,
     PatientMedicationIntakeTakenAPIView,
+    PatientMedicationIntakeLogListAPIView,
     PatientSymptomLogListCreateAPIView,
     PatientAppointmentCancelRequestAPIView,
     PatientAppointmentChangeRequestAPIView,
@@ -112,6 +113,13 @@ urlpatterns = [
         name="patient-medication-list",
     ),
     
+    # 복약 기록 조회
+    path(
+        "medications/intake/",
+        PatientMedicationIntakeLogListAPIView.as_view(),
+        name="patient-medication-intake-list",
+    ),
+
     # 복용 완료
     path(
         "medications/intake/taken/",

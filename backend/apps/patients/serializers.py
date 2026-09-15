@@ -396,6 +396,7 @@ class SymptomLogSerializer(serializers.ModelSerializer):
             "id",
             "risk_level",
             "risk_level_label",
+            "logged_at",
             "created_at",
             "updated_at",
         ]
@@ -815,3 +816,40 @@ class MedicationScheduleSerializer(serializers.ModelSerializer):
 class MedicationIntakeTakenSerializer(serializers.Serializer):
     medication_schedule_id = serializers.UUIDField()
     scheduled_at = serializers.DateTimeField()
+
+class MedicationIntakeLogSerializer(serializers.ModelSerializer):
+    medication_schedule_id = serializers.UUIDField(
+        source="medication_schedule.id",
+        read_only=True,
+    )
+
+    reminder_time = serializers.TimeField(
+        source="medication_schedule.reminder_time",
+        read_only=True,
+    )
+
+    status_label = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+
+    items = MedicationScheduleItemSerializer(
+        source="medication_schedule.items",
+        many=True,
+        read_only=True,
+    )
+
+    class Meta:
+        model = MedicationIntakeLog
+        fields = [
+            "id",
+            "medication_schedule_id",
+            "reminder_time",
+            "scheduled_at",
+            "taken_at",
+            "status",
+            "status_label",
+            "items",
+            "created_at",
+            "updated_at",
+        ]
