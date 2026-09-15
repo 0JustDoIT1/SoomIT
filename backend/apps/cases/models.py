@@ -122,24 +122,79 @@ class CaseImageAsset(TimestampedUUIDModel):
         GCS = "GCS", "GCS"
 
     class Status(models.TextChoices):
-        UPLOADING = "UPLOADING", "업로드중"
-        VALIDATING = "VALIDATING", "검증중"
-        READY = "READY", "사용가능"
+        UPLOADING = "UPLOADING", "업로드 중"
+        VALIDATING = "VALIDATING", "검증 중"
+        READY = "READY", "사용 가능"
         FAILED = "FAILED", "실패"
-        INVALID = "INVALID", "유효하지않음"
+        INVALID = "INVALID", "유효하지 않음"
 
-    case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="image_assets")
-    examination_order = models.ForeignKey(
-        ExaminationOrder, on_delete=models.PROTECT, null=True, blank=True, related_name="image_assets"
+    case = models.ForeignKey(
+        LungCancerCase,
+        on_delete=models.PROTECT,
+        related_name="image_assets",
     )
-    workflow_stage = models.CharField(max_length=20, choices=WorkflowStage.choices)
-    image_type = models.CharField(max_length=10, choices=ImageType.choices)
-    storage_type = models.CharField(max_length=10, choices=StorageType.choices)
-    storage_uri = models.CharField(max_length=1000, unique=True)
+    examination_order = models.ForeignKey(
+        ExaminationOrder,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="image_assets",
+    )
+    workflow_stage = models.CharField(
+        max_length=20,
+        choices=WorkflowStage.choices,
+    )
+    image_type = models.CharField(
+        max_length=10,
+        choices=ImageType.choices,
+    )
+    storage_type = models.CharField(
+        max_length=10,
+        choices=StorageType.choices,
+    )
+    storage_uri = models.CharField(
+        max_length=1000,
+        unique=True,
+    )
     file_format = models.CharField(max_length=20)
-    acquired_at = models.DateTimeField(null=True, blank=True)
-    metadata = models.JSONField(null=True, blank=True)
-    status = models.CharField(max_length=15, choices=Status.choices, default=Status.UPLOADING)
+
+    # DICOM Study에는 여러 Series가 포함될 수 있으므로 unique가 아닙니다.
+    study_instance_uid = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
+    # DICOM Series의 전역 식별값입니다.
+    series_instance_uid = models.CharField(
+        max_length=128,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+
+    # Cloud Run이 Orthanc에서 Series를 내려받을 때 사용하는 Orthanc 내부 ID입니다.
+    orthanc_series_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        unique=True,
+    )
+
+    acquired_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+    metadata = models.JSONField(
+        null=True,
+        blank=True,
+    )
+    status = models.CharField(
+        max_length=15,
+        choices=Status.choices,
+        default=Status.UPLOADING,
+    )
 
     class Meta:
         db_table = "case_image_assets"

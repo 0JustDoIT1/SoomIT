@@ -87,8 +87,26 @@ class RadiologyImageAssetSummarySerializer(serializers.Serializer):
     image_type = serializers.CharField(read_only=True)
     storage_type = serializers.CharField(read_only=True)
     status = serializers.CharField(read_only=True)
-    status_label = serializers.CharField(source="get_status_display", read_only=True)
-    acquired_at = serializers.DateTimeField(read_only=True, allow_null=True)
+    status_label = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+    orthanc_series_id = serializers.CharField(
+        read_only=True,
+        allow_null=True,
+    )
+    study_instance_uid = serializers.CharField(
+        read_only=True,
+        allow_null=True,
+    )
+    series_instance_uid = serializers.CharField(
+        read_only=True,
+        allow_null=True,
+    )
+    acquired_at = serializers.DateTimeField(
+        read_only=True,
+        allow_null=True,
+    )
     created_at = serializers.DateTimeField(read_only=True)
 
 
@@ -100,6 +118,9 @@ class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
             "storage_type",
             "storage_uri",
             "file_format",
+            "orthanc_series_id",
+            "study_instance_uid",
+            "series_instance_uid",
             "acquired_at",
             "metadata",
             "status",
@@ -125,7 +146,6 @@ class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
         if CaseImageAsset.objects.filter(storage_uri=value).exists():
             raise serializers.ValidationError("이미 사용 중인 영상 저장 위치입니다.")
         return value
-
 
 class RadiologyXrayImageUploadSerializer(serializers.Serializer):
     image = serializers.FileField(allow_empty_file=False, write_only=True)
