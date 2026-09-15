@@ -21,7 +21,7 @@ import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
-import { AiSummaryPanel } from "./ai-summary-panel";
+import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
@@ -814,9 +814,10 @@ export default function RespiratoryCaseDetailPage() {
         ? pdl1Results[0]
         : null;
 
-  const tnmAnalysisResult = tnmAnalysisResults.find(
-    (result) => result.analysis_type === "TNM_STAGING"
-  );
+  const tnmAnalysisResult = selectPreferredAiResult(
+    tnmAnalysisResults,
+    "TNM_STAGING",
+  ) as TnmAnalysisResult | undefined;
 
   const tnmAnalysis =
     tnmAnalysisResult?.result_detail?.tnm;
@@ -832,20 +833,23 @@ export default function RespiratoryCaseDetailPage() {
     (result) => result.exam_type === "GENE"
   ) as GeneClinicalResult | undefined;
 
-  const geneAiResult = tnmAnalysisResults.find(
-    (result) => result.analysis_type === "GENE_PREDICTION"
-  );
+  const geneAiResult = selectPreferredAiResult(
+    tnmAnalysisResults,
+    "GENE_PREDICTION",
+  ) as TnmAnalysisResult | undefined;
 
   const pathologyClinicalResult = tnmClinicalResults.find(
     (result) => result.exam_type === "PATHOLOGY"
   );
 
-  const pathologyAiResult = tnmAnalysisResults.find(
-    (result) => result.analysis_type === "PATHOLOGY_DIAGNOSIS"
-  );
+  const pathologyAiResult = selectPreferredAiResult(
+    tnmAnalysisResults,
+    "PATHOLOGY_DIAGNOSIS",
+  ) as TnmAnalysisResult | undefined;
 
-  const treatmentAnalysisResult = tnmAnalysisResults.find(
-    (result) => result.analysis_type === "TREATMENT_RECOMMENDATION"
+  const treatmentAnalysisResult = selectPreferredAiResult(
+    tnmAnalysisResults,
+    "TREATMENT_RECOMMENDATION",
   ) as TreatmentAnalysisResult | undefined;
 
   const treatmentAnalysis =
@@ -872,9 +876,10 @@ export default function RespiratoryCaseDetailPage() {
     GENE: "GENE_PREDICTION",
   }[selectedResultMenu];
 
-  const selectedAiResult = tnmAnalysisResults.find(
-    (result) => result.analysis_type === selectedAiType,
-  );
+  const selectedAiResult = selectPreferredAiResult(
+    tnmAnalysisResults,
+    selectedAiType,
+  ) as TnmAnalysisResult | undefined;
 
   const handleCaseTreatmentDraftSave = async () => {
     if (!caseId) return;
