@@ -100,7 +100,7 @@ class XrayAnalysisTaskTestCase(TestCase):
         )
 
     @patch("apps.radiology.tasks.request_xray_prediction", return_value=PREDICTION)
-    @patch("apps.radiology.tasks.download_xray_png_bytes", return_value=b"fake-png-bytes")
+    @patch("apps.radiology.tasks.download_xray_image_bytes", return_value=b"fake-png-bytes")
     def test_success_persists_full_result_and_xray_detail(self, download, infer):
         self.assertEqual(run_xray_analysis(str(self.analysis.id)), "succeeded")
 
@@ -120,7 +120,7 @@ class XrayAnalysisTaskTestCase(TestCase):
         self.assertEqual(detail.suspicion_score, Decimal("0.4616"))
 
     @patch("apps.radiology.tasks.request_xray_prediction")
-    @patch("apps.radiology.tasks.download_xray_png_bytes", side_effect=RuntimeError("storage unavailable"))
+    @patch("apps.radiology.tasks.download_xray_image_bytes", side_effect=RuntimeError("storage unavailable"))
     def test_gcs_failure_marks_analysis_failed_without_results(self, download, infer):
         self.assertEqual(run_xray_analysis(str(self.analysis.id)), "failed")
 
@@ -134,7 +134,7 @@ class XrayAnalysisTaskTestCase(TestCase):
         self.assertEqual(XrayAiResult.objects.count(), 0)
 
     @patch("apps.radiology.tasks.request_xray_prediction", side_effect=RuntimeError("inference unavailable"))
-    @patch("apps.radiology.tasks.download_xray_png_bytes", return_value=b"fake-png-bytes")
+    @patch("apps.radiology.tasks.download_xray_image_bytes", return_value=b"fake-png-bytes")
     def test_inference_failure_marks_analysis_failed_without_results(self, download, infer):
         self.assertEqual(run_xray_analysis(str(self.analysis.id)), "failed")
 
@@ -147,7 +147,7 @@ class XrayAnalysisTaskTestCase(TestCase):
         self.assertFalse(AiResult.objects.filter(ai_analysis=self.analysis).exists())
 
     @patch("apps.radiology.tasks.request_xray_prediction")
-    @patch("apps.radiology.tasks.download_xray_png_bytes")
+    @patch("apps.radiology.tasks.download_xray_image_bytes")
     def test_duplicate_execution_does_not_create_or_call_again(self, download, infer):
         result = AiResult.objects.create(
             ai_analysis=self.analysis,

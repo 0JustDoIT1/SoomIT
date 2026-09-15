@@ -213,10 +213,28 @@ class RadiologyAiResultSerializer(serializers.Serializer):
         ai_result = obj.ai_result
         if obj.analysis_type == "XRAY_SCREENING" and hasattr(ai_result, "xray_detail"):
             detail = ai_result.xray_detail
+            payload = ai_result.result_payload if isinstance(ai_result.result_payload, dict) else {}
+            classification = payload.get("classification")
+            classification = classification if isinstance(classification, dict) else {}
+            image = payload.get("image")
+            image = image if isinstance(image, dict) else {}
+            detections = payload.get("detections")
             return {
                 "assessment": detail.assessment,
                 "assessment_label": detail.get_assessment_display(),
                 "suspicion_score": detail.suspicion_score,
+                "image": {
+                    "width": image.get("width"),
+                    "height": image.get("height"),
+                },
+                "classification": {
+                    "prediction": classification.get("prediction"),
+                    "assessment": classification.get("assessment"),
+                    "suspicion_score": classification.get("suspicion_score"),
+                    "probabilities": classification.get("probabilities"),
+                },
+                "detections": detections if isinstance(detections, list) else [],
+                "model_revision": payload.get("model_revision"),
             }
         if obj.analysis_type == "CT_NODULE" and hasattr(ai_result, "ct_detail"):
             detail = ai_result.ct_detail

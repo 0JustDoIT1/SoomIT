@@ -120,6 +120,7 @@ PDL1_INFERENCE_SERVICE_USE_ID_TOKEN = (
 PDL1_ANNOTATION_MAX_UPLOAD_BYTES = int(
     os.environ.get("PDL1_ANNOTATION_MAX_UPLOAD_BYTES", str(8 * 1024 * 1024)),
 )
+PDL1_GCS_BUCKET = os.environ.get("PDL1_GCS_BUCKET", "")
 
 # X-ray Cloud Run inference is optional until the service is configured.
 XRAY_SERVICE_URL = os.environ.get("XRAY_SERVICE_URL", "").rstrip("/")

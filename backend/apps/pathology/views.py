@@ -1,9 +1,10 @@
-from django.db import transaction
+﻿from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Prefetch, Q, When
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
 from django.utils import timezone
-from decimal import Decimal
+from hashlib import sha256
+from pathlib import Path
 from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
@@ -14,14 +15,15 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnologist
-from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, ModelVersion, PDL1AiResult
-from apps.cases.models import ExaminationOrder, LungCancerCase
+from apps.ai_results.models import AiAnalysis, AnalysisType, ModelVersion
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
 from apps.clinical.models import ClinicalResult
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from .serializers import (
     PathologyAiAnalysisSerializer,
     PDL1AnalysisRunSerializer,
+    PDL1InputUploadSerializer,
     PathologyDiagnosisSerializer,
     PathologyDiagnosisConfirmSerializer,
     PathologyDiagnosisWriteSerializer,
@@ -32,10 +34,12 @@ from .serializers import (
     PathologyWorkstationSerializer,
     WholeSlideImageSerializer,
 )
-from .services.pdl1_inference import PDL1InferenceError, request_pdl1_prediction
+from .services.pdl1_sample_catalog import PDL1SampleCatalogError, list_pdl1_test_samples
 from .services.review_submission import ReviewSubmissionError, submit_for_review
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
+from .tasks import run_pdl1_analysis
+from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
 
 
 PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
@@ -294,124 +298,121 @@ class CasePDL1AiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
         )
 
 
-class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
-
-    def post(self, request, case_id):
-        case = get_object_or_404(
-            LungCancerCase,
-            id=case_id,
-            patient__hospital_id=pathology_hospital_id(request),
-        )
-        serializer = PDL1AnalysisRunSerializer(
-            data=request.data,
-            context={"case": case},
-        )
-        serializer.is_valid(raise_exception=True)
-        annotation_file = serializer.validated_data["annotation_file"]
-        roi_layer = serializer.validated_data["roi_layer"]
-        wsi_id = serializer.validated_data["wsi_id"]
-        source_image_asset = None
-        examination_order = None
-        if wsi_id:
-            wsi = WholeSlideImage.objects.select_related(
-                "image_asset__examination_order",
-                "specimen__examination_order",
-            ).get(id=wsi_id)
-            source_image_asset = wsi.image_asset
-            order_ids = {
-                source_image_asset.examination_order_id,
-                wsi.specimen.examination_order_id,
-            }
-            order_ids.discard(None)
-            if len(order_ids) > 1:
-                raise ValidationError({"wsi_id": "WSI의 병리 오더 연결이 일치하지 않습니다."})
-            if order_ids:
-                examination_order = ExaminationOrder.objects.get(id=order_ids.pop())
-
-        if (
-            examination_order is None
-            or examination_order.pathology_test_type
-            != ExaminationOrder.PathologyTestType.PDL1
-        ):
-            raise ValidationError(
-                {"wsi_id": "현재 PD-L1 검사 오더에 연결된 WSI가 필요합니다."}
-            )
-
-        model_version, _ = ModelVersion.objects.get_or_create(
-            model_name="pdl1-amd-mil",
-            version="final_model",
-            defaults={"analysis_type": AnalysisType.PDL1_CLASSIFICATION},
-        )
-        analysis = AiAnalysis.objects.create(
-            case=case,
-            examination_order=examination_order,
-            source_image_asset=source_image_asset,
-            analysis_type=AnalysisType.PDL1_CLASSIFICATION,
-            model_version=model_version,
-            status=AiAnalysis.Status.RUNNING,
-            started_at=timezone.now(),
-            input_metadata={
-                "annotation_filename": annotation_file.name,
-                "annotation_size_bytes": annotation_file.size,
-                "roi_layer": roi_layer,
-                "wsi_storage_uri": source_image_asset.storage_uri,
-                "wsi_id": str(wsi_id) if wsi_id else None,
-            },
-        )
-
+class PDL1TestSampleListAPIView(PathologyStaffAPIViewMixin, APIView):
+    def get(self, request):
         try:
-            prediction = request_pdl1_prediction(
-                wsi_gcs_uri=source_image_asset.storage_uri,
-                annotation_content=annotation_file.read(),
-                roi_layer=roi_layer,
-                main_index=str(case.patient_id),
-                pdl1_image_id=str(wsi_id),
-            )
-        except PDL1InferenceError as exc:
-            analysis.status = AiAnalysis.Status.FAILED
-            analysis.completed_at = timezone.now()
-            analysis.error_message = str(exc)
-            analysis.save(update_fields=["status", "completed_at", "error_message"])
+            return Response({"results": list_pdl1_test_samples()})
+        except PDL1SampleCatalogError:
             return Response(
-                {"analysis_id": str(analysis.id), "detail": str(exc)},
-                status=status.HTTP_502_BAD_GATEWAY,
+                {"detail": "PD-L1 test sample catalog is unavailable."},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
 
-        with transaction.atomic():
-            ai_result = AiResult.objects.create(
-                ai_analysis=analysis,
-                schema_version="1.0",
-                result_payload={
-                    "model_revision": prediction.get("model_revision"),
-                    "model_sha256": prediction.get("model_sha256"),
-                    "main_index": prediction.get("main_index"),
-                    "pdl1_image_id": prediction.get("pdl1_image_id"),
-                    "patch_count": prediction.get("patch_count"),
-                    "predicted_class": prediction["predicted_class"],
-                    "predicted_tps_range": prediction["predicted_tps_range"],
-                    "confidence": prediction["confidence"],
-                    "probabilities": prediction["probabilities"],
+
+class PathologyOrderPDL1InputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
+    @transaction.atomic
+    def post(self, request, order_id):
+        order = get_object_or_404(
+            ExaminationOrder.objects.select_for_update().select_related("case__patient"),
+            id=order_id,
+            case__patient__hospital_id=pathology_hospital_id(request),
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+        )
+        if WholeSlideImage.objects.filter(
+            specimen__examination_order=order,
+            stain=WholeSlideImage.Stain.PDL1,
+            is_current=True,
+            image_asset__status=CaseImageAsset.Status.READY,
+        ).exists():
+            raise ValidationError({"wsi_file": "A READY PD-L1 input is already linked to this order."})
+        serializer = PDL1InputUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        wsi_file = serializer.validated_data["wsi_file"]
+        annotation_file = serializer.validated_data["annotation_file"]
+        wsi_bytes = wsi_file.read()
+        annotation_bytes = annotation_file.read()
+        hospital_id, case_id = order.case.patient.hospital_id, order.case_id
+        wsi_uri = annotation_uri = None
+        try:
+            wsi_uri = upload_pdl1_input(
+                data=wsi_bytes, hospital_id=hospital_id, case_id=case_id, order_id=order.id,
+                kind="wsi", filename=wsi_file.name, content_type=wsi_file.content_type,
+            )
+            annotation_uri = upload_pdl1_input(
+                data=annotation_bytes, hospital_id=hospital_id, case_id=case_id, order_id=order.id,
+                kind="annotation", filename=annotation_file.name, content_type=annotation_file.content_type,
+            )
+        except PDL1StorageError:
+            if wsi_uri:
+                delete_pdl1_input(wsi_uri)
+            return Response({"detail": "PD-L1 input upload failed."}, status=status.HTTP_502_BAD_GATEWAY)
+        try:
+            specimen, _ = PathologySpecimen.objects.get_or_create(
+                case=order.case,
+                examination_order=order,
+                defaults={
+                    "specimen_code": f"PDL1-{order.id}",
+                    "specimen_type": PathologySpecimen.SpecimenType.OTHER,
+                    "status": PathologySpecimen.Status.READY,
+                    "created_by_user": request.user,
                 },
             )
-            PDL1AiResult.objects.create(
-                ai_result=ai_result,
-                predicted_class=prediction["predicted_class"],
-                predicted_tps_range=prediction["predicted_tps_range"],
-                confidence=Decimal(str(prediction["confidence"])),
-                probabilities=prediction["probabilities"],
+            asset = CaseImageAsset.objects.create(
+                case=order.case, examination_order=order, uploaded_stage=Stage.PATHOLOGY,
+                image_type=CaseImageAsset.ImageType.WSI, storage_type=CaseImageAsset.StorageType.GCS,
+                storage_uri=wsi_uri, file_format=Path(wsi_file.name).suffix.lstrip(".").upper(),
+                status=CaseImageAsset.Status.READY,
+                metadata={"pdl1_annotation": {"storage_uri": annotation_uri, "roi_layer": serializer.validated_data["roi_layer"]}},
             )
-            analysis.status = AiAnalysis.Status.SUCCEEDED
-            analysis.completed_at = timezone.now()
-            analysis.error_message = None
-            analysis.save(update_fields=["status", "completed_at", "error_message"])
+            wsi = WholeSlideImage.objects.create(
+                specimen=specimen, image_asset=asset, slide_code=Path(wsi_file.name).stem[:50],
+                stain=WholeSlideImage.Stain.PDL1, original_filename=wsi_file.name,
+                sha256=sha256(wsi_bytes).hexdigest(), uploaded_by_user=request.user,
+            )
+            PathologyWorkItem.objects.filter(case=order.case, examination_order=order).update(specimen=specimen, wsi=wsi)
+        except Exception:
+            if annotation_uri:
+                delete_pdl1_input(annotation_uri)
+            if wsi_uri:
+                delete_pdl1_input(wsi_uri)
+            raise
+        return Response({"wsi": WholeSlideImageSerializer(wsi).data, "upload_ready": True}, status=status.HTTP_201_CREATED)
 
-        analysis = AiAnalysis.objects.select_related(
-            "case", "model_version", "ai_result", "ai_result__pdl1_detail",
-        ).get(id=analysis.id)
-        return Response(
-            PathologyAiAnalysisSerializer(analysis).data,
-            status=status.HTTP_201_CREATED,
+
+class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = get_object_or_404(LungCancerCase, id=case_id, patient__hospital_id=pathology_hospital_id(request))
+        PDL1AnalysisRunSerializer(data=request.data).is_valid(raise_exception=True)
+        order = (
+            ExaminationOrder.objects.select_for_update().filter(
+                case=case, exam_type=ExaminationOrder.ExamType.WSI,
+                pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            ).exclude(status=ExaminationOrder.Status.CANCELLED).order_by("-created_at").first()
         )
+        if order is None:
+            raise ValidationError({"detail": "This case has no active independent PD-L1 order."})
+        wsi = WholeSlideImage.objects.select_related("image_asset").filter(
+            specimen__examination_order=order, stain=WholeSlideImage.Stain.PDL1,
+            is_current=True, image_asset__storage_type=CaseImageAsset.StorageType.GCS,
+            image_asset__status=CaseImageAsset.Status.READY,
+        ).order_by("-created_at").first()
+        if wsi is None or not (wsi.image_asset.metadata or {}).get("pdl1_annotation", {}).get("storage_uri"):
+            raise ValidationError({"detail": "Upload both PD-L1 WSI and HALO annotation before analysis."})
+        if AiAnalysis.objects.filter(examination_order=order, analysis_type=AnalysisType.PDL1_CLASSIFICATION, status__in=[AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING]).exists():
+            raise ValidationError({"detail": "A PD-L1 analysis is already pending or running."})
+        model_version = ModelVersion.objects.filter(model_name="pdl1-amd-mil", version="final_model", analysis_type=AnalysisType.PDL1_CLASSIFICATION).first()
+        if model_version is None:
+            return Response({"detail": "No PD-L1 model version is available."}, status=status.HTTP_400_BAD_REQUEST)
+        analysis = AiAnalysis.objects.create(
+            case=case, examination_order=order, source_image_asset=wsi.image_asset,
+            analysis_type=AnalysisType.PDL1_CLASSIFICATION, model_version=model_version,
+            status=AiAnalysis.Status.PENDING,
+            input_metadata={"roi_layer": wsi.image_asset.metadata["pdl1_annotation"]["roi_layer"]},
+        )
+        transaction.on_commit(lambda analysis_id=str(analysis.id): run_pdl1_analysis.delay(analysis_id))
+        return Response(PathologyAiAnalysisSerializer(analysis).data, status=status.HTTP_201_CREATED)
 
 
 class PathologyWorkItemListAPIView(ListAPIView):
@@ -517,7 +518,7 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
             }
             if workflow_status_value not in public_workflow_statuses:
                 raise ValidationError(
-                    {"workflow_status": "지원하지 않는 병리 workflow 상태입니다."}
+                    {"workflow_status": "吏?먰븯吏 ?딅뒗 蹂묐━ workflow ?곹깭?낅땲??"}
                 )
 
             representatives = [
@@ -621,7 +622,7 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         if expected_analysis_type is None:
             raise ValidationError(
-                {"pathology_test_type": "현재 오더의 검사 종류를 확인할 수 없습니다."}
+                {"pathology_test_type": "?꾩옱 ?ㅻ뜑??寃??醫낅쪟瑜??뺤씤?????놁뒿?덈떎."}
             )
 
         analysis = get_object_or_404(
@@ -635,18 +636,18 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         if analysis.analysis_type != expected_analysis_type:
             raise ValidationError(
-                {"ai_analysis_id": "현재 검사 종류와 일치하는 AI 분석이 아닙니다."}
+                {"ai_analysis_id": "?꾩옱 寃??醫낅쪟? ?쇱튂?섎뒗 AI 遺꾩꽍???꾨떃?덈떎."}
             )
         analysis_order_id = analysis.examination_order_id
         if analysis_order_id is None and analysis.source_image_asset_id:
             analysis_order_id = analysis.source_image_asset.examination_order_id
         if analysis_order_id != order.id:
             raise ValidationError(
-                {"ai_analysis_id": "현재 병리 오더의 AI 분석이 아닙니다."}
+                {"ai_analysis_id": "?꾩옱 蹂묐━ ?ㅻ뜑??AI 遺꾩꽍???꾨떃?덈떎."}
             )
         if analysis.status != AiAnalysis.Status.SUCCEEDED or not hasattr(analysis, "ai_result"):
             raise ValidationError(
-                {"ai_analysis_id": "완료된 AI 분석 결과만 제출할 수 있습니다."}
+                {"ai_analysis_id": "?꾨즺??AI 遺꾩꽍 寃곌낵留??쒖텧?????덉뒿?덈떎."}
             )
 
         latest_analysis = (
@@ -666,7 +667,7 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         if latest_analysis is None or latest_analysis.id != analysis.id:
             raise ValidationError(
-                {"ai_analysis_id": "현재 검사의 최신 AI 분석만 제출할 수 있습니다."}
+                {"ai_analysis_id": "?꾩옱 寃?ъ쓽 理쒖떊 AI 遺꾩꽍留??쒖텧?????덉뒿?덈떎."}
             )
 
         try:
@@ -751,7 +752,7 @@ class WholeSlideImagePyramidAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         if not wsi.orthanc_series_id:
             return Response(
-                {"detail": "이 WSI에 Orthanc series가 연결되지 않았습니다."},
+                {"detail": "??WSI??Orthanc series媛 ?곌껐?섏? ?딆븯?듬땲??"},
                 status=status.HTTP_409_CONFLICT,
             )
         try:
@@ -790,7 +791,7 @@ class WholeSlideImageTileAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         if not wsi.orthanc_series_id:
             return Response(
-                {"detail": "이 WSI에 Orthanc series가 연결되지 않았습니다."},
+                {"detail": "??WSI??Orthanc series媛 ?곌껐?섏? ?딆븯?듬땲??"},
                 status=status.HTTP_409_CONFLICT,
             )
         try:

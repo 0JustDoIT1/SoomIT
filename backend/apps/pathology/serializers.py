@@ -18,29 +18,24 @@ class PathologyAiAnalysisSerializer(DoctorAiAnalysisSerializer):
 
 
 class PDL1AnalysisRunSerializer(serializers.Serializer):
+    pass
+
+
+class PDL1InputUploadSerializer(serializers.Serializer):
+    wsi_file = serializers.FileField(write_only=True)
     annotation_file = serializers.FileField(write_only=True)
-    wsi_id = serializers.UUIDField()
-    roi_layer = serializers.ChoiceField(choices=("Tumor", "Tumor-JS"), default="Tumor")
+    roi_layer = serializers.ChoiceField(choices=("Tumor", "Tumor-JS"))
+
+    def validate_wsi_file(self, value):
+        if not value.name.lower().endswith((".svs", ".tif", ".tiff")):
+            raise serializers.ValidationError("PD-L1 WSI must be an SVS or TIFF file.")
+        return value
 
     def validate_annotation_file(self, value):
         if not value.name.lower().endswith(".annotations"):
-            raise serializers.ValidationError("HALO .annotations 파일만 사용할 수 있습니다.")
-        if value.size < 1:
-            raise serializers.ValidationError("빈 annotation 파일은 사용할 수 없습니다.")
-        if value.size > settings.PDL1_ANNOTATION_MAX_UPLOAD_BYTES:
-            raise serializers.ValidationError("annotation 파일 크기 제한을 초과했습니다.")
-        return value
-
-    def validate_wsi_id(self, value):
-        case = self.context["case"]
-        if not WholeSlideImage.objects.filter(
-            id=value,
-            specimen__case=case,
-            stain=WholeSlideImage.Stain.PDL1,
-            image_asset__storage_type="GCS",
-            image_asset__status="READY",
-        ).exists():
-            raise serializers.ValidationError("해당 Case의 사용 가능한 PD-L1 WSI가 아닙니다.")
+            raise serializers.ValidationError("HALO annotation must be a .annotations file.")
+        if value.size < 1 or value.size > settings.PDL1_ANNOTATION_MAX_UPLOAD_BYTES:
+            raise serializers.ValidationError("Invalid HALO annotation file size.")
         return value
 
 
@@ -386,6 +381,11 @@ class WholeSlideImageSerializer(serializers.ModelSerializer):
         source="image_asset.status",
         read_only=True,
     )
+    pdl1_input_ready = serializers.SerializerMethodField()
+
+    def get_pdl1_input_ready(self, obj):
+        metadata = obj.image_asset.metadata or {}
+        return bool(metadata.get("pdl1_annotation", {}).get("storage_uri"))
 
     class Meta:
         model = WholeSlideImage
@@ -404,6 +404,7 @@ class WholeSlideImageSerializer(serializers.ModelSerializer):
             "storage_uri",
             "file_format",
             "image_status",
+            "pdl1_input_ready",
             "orthanc_series_id",
             "orthanc_instance_id",
             "study_instance_uid",

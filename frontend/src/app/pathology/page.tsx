@@ -7,7 +7,9 @@ import { StateMessage } from "@/components/workspace/state-message";
 import {
   fetchPathologyCaseWorkflow,
   fetchPathologyWorkstation,
+  fetchPdl1Analyses,
   runPdl1Analysis,
+  uploadPdl1Input,
   submitPathologyForReview,
   type PathologyWorkstationItem,
   type PathologyCaseWorkflow,
@@ -92,6 +94,12 @@ function percent(value: string | number | null | undefined) {
       ? numericValue * 100
       : numericValue
   ).toFixed(1)}%`;
+}
+
+function resultPayloadText(payload: unknown, key: string) {
+  if (!payload || typeof payload !== "object" || !(key in payload)) return "-";
+  const value = (payload as Record<string, unknown>)[key];
+  return typeof value === "string" || typeof value === "number" ? String(value) : "-";
 }
 
 function geneStatus(value: string | undefined) {
@@ -310,7 +318,12 @@ function WorkArea({
       : [],
   );
 
-  const [featureFile, setFeatureFile] = useState<File | null>(null);
+  const [pdl1WsiFile, setPdl1WsiFile] = useState<File | null>(null);
+  const [pdl1AnnotationFile, setPdl1AnnotationFile] = useState<File | null>(null);
+  const [pdl1RoiLayer, setPdl1RoiLayer] = useState<"Tumor" | "Tumor-JS">("Tumor");
+  const [pdl1InputReady, setPdl1InputReady] = useState(Boolean(item.latest_wsi?.pdl1_input_ready));
+  const [uploadingPdl1Input, setUploadingPdl1Input] = useState(false);
+  const [pdl1UploadMessage, setPdl1UploadMessage] = useState("");
   const [runningPdl1, setRunningPdl1] = useState(false);
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -323,40 +336,67 @@ function WorkArea({
     item.pathology_test_type === "SUBTYPE" ? item.latest_ai_analysis : null;
   const pdl1 = pdl1Analyses[0] ?? null;
   const pdl1Status = runningPdl1 ? "RUNNING" : pdl1?.status;
+  const pdl1AnalysisId = pdl1?.id;
+  const pdl1AnalysisStatus = pdl1?.status;
   const pathologyResult = pathology?.result_detail?.pathology;
   const pdl1Result = pdl1?.result_detail?.pdl1;
+  const pdl1ModelRevision = resultPayloadText(
+    pdl1?.result_detail?.result_payload,
+    "model_revision",
+  );
   const geneResults =
     item.latest_gene_analysis?.result_detail?.genes ?? [];
 
+  useEffect(() => {
+    if (
+      item.pathology_test_type !== "PDL1" ||
+      !pdl1AnalysisId ||
+      (pdl1AnalysisStatus !== "PENDING" && pdl1AnalysisStatus !== "RUNNING")
+    ) return;
+    let cancelled = false;
+    const refresh = () => fetchPdl1Analyses(item.case_id)
+      .then((analyses) => { if (!cancelled) setPdl1Analyses(analyses); })
+      .catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [item.case_id, item.pathology_test_type, pdl1AnalysisId, pdl1AnalysisStatus]);
+
   async function handlePdl1Run() {
-    if (!featureFile || !item.latest_wsi) return;
+    if (!pdl1InputReady) return;
 
     setRunningPdl1(true);
     setError("");
     setMessage("");
 
     try {
-      const result = await runPdl1Analysis(
-        item.case_id,
-        featureFile,
-        item.latest_wsi?.id,
-      );
-
-      setPdl1Analyses((current) => [
-        result,
-        ...current,
-      ]);
-
-      setFeatureFile(null);
-      setMessage("PD-L1 분석이 완료되었습니다.");
+      const result = await runPdl1Analysis(item.case_id);
+      setPdl1Analyses((current) => [result, ...current]);
+      setMessage("PD-L1 분석 요청이 등록되었습니다.");
     } catch (reason) {
       setError(
         reason instanceof Error
           ? reason.message
-          : "PD-L1 분석을 실행하지 못했습니다.",
+          : "PD-L1 분석을 시작하지 못했습니다.",
       );
     } finally {
       setRunningPdl1(false);
+    }
+  }
+
+  async function handlePdl1Upload() {
+    if (!item.examination_order?.id || !pdl1WsiFile || !pdl1AnnotationFile) return;
+    setUploadingPdl1Input(true);
+    setError("");
+    setPdl1UploadMessage("");
+    try {
+      const result = await uploadPdl1Input(item.examination_order.id, pdl1WsiFile, pdl1AnnotationFile, pdl1RoiLayer);
+      setPdl1InputReady(result.upload_ready);
+      setPdl1UploadMessage("PD-L1 입력 파일이 서버에 업로드되었습니다.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "PD-L1 입력 파일 업로드에 실패했습니다.");
+    } finally {
+      setUploadingPdl1Input(false);
     }
   }
 
@@ -628,81 +668,49 @@ function WorkArea({
         ) : null}
 
         {isPdl1 ? (
-        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h3 className="text-sm font-bold">
-                <span className="mr-2 text-xs text-[#3446B8]">
-                  03
+          <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
+            <h3 className="text-sm font-bold"><span className="mr-2 text-xs text-[#3446B8]">01</span>입력 데이터</h3>
+            <div className="mt-3 grid gap-3 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
+              <label className={`rounded-lg border p-3 transition ${pdl1WsiFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-700">WSI 파일</span>
+                  {pdl1WsiFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
                 </span>
-                PD-L1 분석
-              </h3>
-
-              <p className="mt-1 text-xs text-slate-500">
-                현재 상태:{" "}
-                {pdl1?.status_label ?? "결과 없음"}
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <label className="cursor-pointer rounded-md border border-slate-300 px-3 py-2 text-xs font-semibold">
-                .pt feature 선택
-
-                <input
-                  type="file"
-                  accept=".pt"
-                  disabled={!item.latest_wsi}
-                  className="sr-only"
-                  onChange={(event) =>
-                    setFeatureFile(
-                      event.target.files?.[0] ?? null,
-                    )
-                  }
-                />
+                <span className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${uploadingPdl1Input || pdl1InputReady ? "bg-slate-300" : "bg-[#3446B8] hover:bg-[#29399F]"}`}>WSI 파일 선택</span>
+                  <span className="min-w-0 truncate text-xs text-slate-600">{pdl1WsiFile?.name ?? "선택된 파일이 없습니다."}</span>
+                </span>
+                <input type="file" accept=".svs,.tif,.tiff" disabled={uploadingPdl1Input || pdl1InputReady} className="sr-only" onChange={(event) => { setPdl1WsiFile(event.target.files?.[0] ?? null); setPdl1UploadMessage(""); }} />
               </label>
-
-              <button
-                type="button"
-                disabled={!item.latest_wsi || !featureFile || runningPdl1}
-                onClick={handlePdl1Run}
-                className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F] disabled:bg-slate-300"
-              >
-                {runningPdl1
-                  ? "분석 중"
-                  : "분석 실행"}
+              <label className={`rounded-lg border p-3 transition ${pdl1AnnotationFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white"}`}>
+                <span className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-700">HALO annotation 파일</span>
+                  {pdl1AnnotationFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
+                </span>
+                <span className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className={`rounded-md px-3 py-2 text-xs font-semibold text-white ${uploadingPdl1Input || pdl1InputReady ? "bg-slate-300" : "bg-[#3446B8] hover:bg-[#29399F]"}`}>HALO annotation 선택</span>
+                  <span className="min-w-0 truncate text-xs text-slate-600">{pdl1AnnotationFile?.name ?? "선택된 파일이 없습니다."}</span>
+                </span>
+                <input type="file" accept=".annotations" disabled={uploadingPdl1Input || pdl1InputReady} className="sr-only" onChange={(event) => { setPdl1AnnotationFile(event.target.files?.[0] ?? null); setPdl1UploadMessage(""); }} />
+              </label>
+              <label className="text-xs font-semibold text-slate-700">ROI layer
+                <select value={pdl1RoiLayer} disabled={uploadingPdl1Input || pdl1InputReady} onChange={(event) => setPdl1RoiLayer(event.target.value as "Tumor" | "Tumor-JS")} className="mt-2 block rounded border border-slate-300 bg-white px-2 py-1 disabled:bg-slate-100">
+                  <option value="Tumor">Tumor</option><option value="Tumor-JS">Tumor-JS</option>
+                </select>
+              </label>
+              <button type="button" disabled={!pdl1WsiFile || !pdl1AnnotationFile || uploadingPdl1Input || pdl1InputReady} onClick={handlePdl1Upload} className="w-fit rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F] disabled:bg-slate-300">
+                {uploadingPdl1Input ? "업로드 중..." : pdl1InputReady ? "업로드 완료" : "서버에 업로드"}
               </button>
+              {pdl1UploadMessage ? <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{pdl1UploadMessage}</p> : null}
+              {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
             </div>
-          </div>
-
-          {featureFile ? (
-            <p className="mt-2 text-xs text-slate-500">
-              선택 파일: {featureFile.name}
-            </p>
-          ) : null}
-
-          <AnalysisProgress status={pdl1Status} />
-
-          <div className="mt-3">
-            <AnalysisStatus status={pdl1Status} />
-          </div>
-
-          <AiResultButton
-            status={pdl1Status}
-            onClick={() => setIsResultOpen(true)}
-          />
-
-          {message ? (
-            <p className="mt-3 border-l-2 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-blue-800">
-              {message}
-            </p>
-          ) : null}
-
-          {error ? (
-            <p className="mt-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">
-              {error}
-            </p>
-          ) : null}
-        </section>
+            <div className="mt-3 flex items-center justify-between rounded-xl border border-[#DDE2F7] bg-white p-3">
+              <div><p className="text-xs font-semibold text-slate-700">02 PD-L1 AI 분석</p><p className="mt-1 text-xs text-slate-500">WSI와 HALO annotation이 모두 업로드된 후 실행합니다.</p></div>
+              <button type="button" disabled={!pdl1InputReady || runningPdl1} onClick={handlePdl1Run} className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{runningPdl1 ? "분석 요청 중" : "분석 실행"}</button>
+            </div>
+            <AnalysisProgress status={pdl1Status} /><div className="mt-3"><AnalysisStatus status={pdl1Status} /></div>
+            {message ? <p className="mt-3 text-xs text-blue-800">{message}</p> : null}
+          </section>
         ) : null}
 
         {isGene ? (
@@ -802,6 +810,10 @@ function WorkArea({
                 {[
                   ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
                   ["Confidence", percent(pdl1Result.confidence)],
+                  ["Class 0 확률", percent(pdl1Result.probabilities.class_0)],
+                  ["Class 1 확률", percent(pdl1Result.probabilities.class_1)],
+                  ["Class 2 확률", percent(pdl1Result.probabilities.class_2)],
+                  ["Model revision", pdl1ModelRevision],
                   ["모델명", pdl1?.model_name ?? "-"],
                   ["모델 버전", pdl1?.model_version_name ?? "-"],
                 ].map(([label, value]) => (
@@ -984,64 +996,27 @@ function WorkArea({
 
               {isPdl1 ? (
                 pdl1Result ? (
-                  <div className="space-y-5">
-                    <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
-                        <dt className="text-slate-500">TPS 예측 구간</dt>
-                        <dd className="mt-1 text-xl font-bold text-blue-800">
-                          {pdl1Result.predicted_tps_range_label ?? "-"}
-                        </dd>
+                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
+                    {[
+                      ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
+                      ["Confidence", percent(pdl1Result.confidence)],
+                      ["Model revision", pdl1ModelRevision],
+                      ["Class 0 확률", percent(pdl1Result.probabilities?.class_0)],
+                      ["Class 1 확률", percent(pdl1Result.probabilities?.class_1)],
+                      ["Class 2 확률", percent(pdl1Result.probabilities?.class_2)],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
+                        <dt className="text-slate-500">{label}</dt>
+                        <dd className="mt-1 font-bold text-slate-900">{value}</dd>
                       </div>
-                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
-                        <dt className="text-slate-500">Confidence</dt>
-                        <dd className="mt-1 font-bold text-slate-900">
-                          {percent(pdl1Result.confidence)}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
-                        <dt className="text-slate-500">모델명</dt>
-                        <dd className="mt-1 font-bold text-slate-900">
-                          {pdl1?.model_name ?? "-"}
-                        </dd>
-                      </div>
-                      <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
-                        <dt className="text-slate-500">모델 버전</dt>
-                        <dd className="mt-1 font-bold text-slate-900">
-                          {pdl1?.model_version_name ?? "-"}
-                        </dd>
-                      </div>
-                    </dl>
-
-                    <div className="rounded-xl border border-[#DDE2F7] bg-white p-4">
-                      <h3 className="text-sm font-bold text-slate-800">
-                        Probabilities
-                      </h3>
-                      <dl className="mt-3 grid gap-2 text-sm sm:grid-cols-3">
-                        {Object.entries(pdl1Result.probabilities ?? {}).map(
-                          ([key, value]) => (
-                            <div
-                              key={key}
-                              className="flex justify-between rounded-lg border border-[#DDE2F7] bg-[#F7F8FC] px-3 py-2"
-                            >
-                              <dt className="text-slate-500">{key}</dt>
-                              <dd className="font-semibold text-slate-800">
-                                {percent(value)}
-                              </dd>
-                            </div>
-                          ),
-                        )}
-                      </dl>
-                    </div>
-                  </div>
+                    ))}
+                  </dl>
                 ) : (
-                  <StateMessage
-                    variant="empty"
-                    title="저장된 AI 결과 상세가 없습니다."
-                  />
+                  <StateMessage variant="empty" title="저장된 AI 결과 상세가 없습니다." />
                 )
               ) : null}
 
-              {isGene ? (
+        {isGene ? (
                 geneResults.length > 0 ? (
                   <dl className="grid gap-2 sm:grid-cols-2">
                     {geneTargets.map((gene) => {

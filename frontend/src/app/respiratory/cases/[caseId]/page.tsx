@@ -22,6 +22,7 @@ import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-error
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
+import { MedicalOpinionPanel } from "./medical-opinion-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
@@ -1537,13 +1538,22 @@ export default function RespiratoryCaseDetailPage() {
             <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} />
           </div>
         ) : selectedInfoMenu === "AI_SUMMARY" ? (
-          <AiSummaryPanel
-            aiResults={tnmAnalysisResults}
-            clinicalResults={tnmClinicalResults}
-            error={aiResultError}
-            retrying={panelRetrying === "AI"}
-            onRetry={retryAiResults}
-          />
+          <div className="space-y-3">
+            <MedicalOpinionPanel
+              key={caseId}
+              caseId={caseId}
+              confirmedResultCount={tnmClinicalResults.filter((result) => result.result_status === "CONFIRMED").length}
+              apiBaseUrl={API_BASE_URL}
+              authorizedFetch={authorizedFetch}
+            />
+            <AiSummaryPanel
+              aiResults={tnmAnalysisResults}
+              clinicalResults={tnmClinicalResults}
+              error={aiResultError}
+              retrying={panelRetrying === "AI"}
+              onRetry={retryAiResults}
+            />
+          </div>
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
           <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">

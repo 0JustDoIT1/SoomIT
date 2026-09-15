@@ -8,6 +8,7 @@ import { StatusBadge } from "@/components/workspace/status-badge";
 import {
   fetchRadiologyAnalysis,
   fetchRadiologyAnalysisResult,
+  fetchRadiologyXrayImage,
   RadiologyApiError,
   startRadiologyAnalysis,
   submitRadiologyAnalysisForReview,
@@ -103,12 +104,76 @@ function formatPercent(value: string | null, scale = 100) {
   return Number.isFinite(number) ? `${(number * scale).toFixed(1)}%` : value;
 }
 
-function AnalysisResultView({ data }: { data: RadiologyAnalysisResult }) {
+type XrayResult = Extract<RadiologyAnalysisResult["result"], { assessment: string }>;
+
+function formatPayloadPercent(value: number | string | null | undefined) {
+  if (value === null || value === undefined) return "-";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : String(value);
+}
+
+function XrayImagePanel({
+  title,
+  imageUrl,
+  result,
+  showDetections,
+}: {
+  title: string;
+  imageUrl: string | null;
+  result: XrayResult;
+  showDetections: boolean;
+}) {
+  const width = Number(result.image.width);
+  const height = Number(result.image.height);
+  const canOverlay = Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0;
+  const detections = result.detections.filter((detection) => (
+    Array.isArray(detection.bbox_xyxy)
+    && detection.bbox_xyxy.length === 4
+    && detection.bbox_xyxy.every((value) => Number.isFinite(Number(value)))
+  ));
+
+  return <section className="rounded-xl border border-slate-200 bg-slate-950 p-3">
+    <p className="mb-2 text-xs font-semibold text-slate-200">{title}</p>
+    {imageUrl && canOverlay ? <div className="relative mx-auto w-full overflow-hidden bg-black" style={{ aspectRatio: `${width} / ${height}` }}>
+      <Image src={imageUrl} alt={title} fill unoptimized sizes="(min-width: 1280px) 50vw, 100vw" className="object-contain" />
+      {showDetections ? detections.map((detection, index) => {
+        const [left, top, right, bottom] = detection.bbox_xyxy as [number, number, number, number];
+        const boxWidth = Math.max(0, right - left);
+        const boxHeight = Math.max(0, bottom - top);
+        return <div key={`${detection.class_name ?? "detection"}-${index}`} className="absolute border-2 border-rose-400" style={{ left: `${(left / width) * 100}%`, top: `${(top / height) * 100}%`, width: `${(boxWidth / width) * 100}%`, height: `${(boxHeight / height) * 100}%` }}>
+          <span className="absolute left-0 top-0 -translate-y-full whitespace-nowrap bg-rose-500 px-1.5 py-0.5 text-[10px] font-semibold text-white">{detection.class_name ?? "-"} {formatPayloadPercent(detection.score)}</span>
+        </div>;
+      }) : null}
+    </div> : <div className="flex min-h-48 items-center justify-center border border-dashed border-slate-600 text-xs text-slate-400">{imageUrl ? "Image dimensions are unavailable." : "Image is loading."}</div>}
+  </section>;
+}
+
+function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisResult; sourceImageUrl: string | null }) {
   if ("assessment" in data.result) {
-    return <dl className="grid gap-3 text-xs sm:grid-cols-2"><div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">판정</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.assessment_label}</dd></div><div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">의심 점수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.suspicion_score)}</dd></div></dl>;
+    const result = data.result;
+    const probabilities = result.classification.probabilities ?? {};
+    const labels = [
+      ["Normal", probabilities.Normal],
+      ["Other Lung Disease", probabilities["Other Lung Disease"]],
+      ["Suspicious Lung Cancer", probabilities["Suspicious Lung Cancer"]],
+    ] as const;
+    return <div className="space-y-4">
+      <div className="grid gap-4 xl:grid-cols-2">
+        <XrayImagePanel title="\uc6d0\ubcf8 X-ray" imageUrl={sourceImageUrl} result={result} showDetections={false} />
+        <XrayImagePanel title="AI \uc758\uc2ec \ubd80\uc704 Detection" imageUrl={sourceImageUrl} result={result} showDetections />
+      </div>
+      <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-5">
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">\ud310\uc815</dt><dd className="mt-2 text-lg font-bold text-slate-900">{result.assessment_label}</dd></div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">\uc758\uc2ec \uc810\uc218</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPayloadPercent(result.classification.suspicion_score ?? result.suspicion_score)}</dd></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><dt className="text-slate-500">Prediction</dt><dd className="mt-2 break-words font-semibold text-slate-900">{result.classification.prediction ?? "-"}</dd></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><dt className="text-slate-500">assessment</dt><dd className="mt-2 break-words font-semibold text-slate-900">{result.classification.assessment ?? "-"}</dd></div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4"><dt className="text-slate-500">model_revision</dt><dd className="mt-2 break-words font-semibold text-slate-900">{result.model_revision ?? "-"}</dd></div>
+      </dl>
+      <div className="grid gap-3 sm:grid-cols-3">{labels.map(([label, probability]) => <div key={label} className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs"><p className="text-slate-500">{label}</p><p className="mt-1 text-base font-bold text-slate-900">{formatPayloadPercent(probability)}</p></div>)}</div>
+    </div>;
   }
   if ("nodules" in data.result) {
-    return <div className="text-xs"><dl className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">전체 악성 위험도</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.overall_malignancy_risk, 1)}</dd></div><div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">결절 개수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.nodules.length}</dd></div></dl><div className="mt-3 grid gap-2">{data.result.nodules.map((nodule) => <div key={nodule.nodule_no} className="grid gap-1 rounded-lg border border-slate-100 bg-white px-4 py-3 text-slate-700 sm:grid-cols-[100px_1fr_1fr]"><strong className="text-slate-800">결절 {nodule.nodule_no}</strong><span>검출 신뢰도 {formatPercent(nodule.detection_confidence)}</span><span>악성 위험도 {formatPercent(nodule.malignancy_risk, 1)}</span></div>)}</div></div>;
+    return <div className="text-xs"><dl className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">\uc804\uccb4 \uc545\uc131 \uc704\ud5d8\ub3c4</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.overall_malignancy_risk, 1)}</dd></div><div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">\uacb0\uc808 \uac1c\uc218</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.nodules.length}</dd></div></dl></div>;
   }
   return <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">{[["T", data.result.predicted_t], ["N", data.result.predicted_n], ["M", data.result.predicted_m], ["Stage", data.result.predicted_stage_group], ["Confidence", formatPercent(data.result.confidence)]].map(([label, value]) => <div key={label} className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-blue-50/50 p-4"><dt className="text-violet-600">{label}</dt><dd className="mt-2 text-xl font-bold text-slate-900">{value ?? "-"}</dd></div>)}</dl>;
 }
@@ -162,6 +227,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [actionMessage, setActionMessage] = useState("");
   const [actionError, setActionError] = useState("");
   const [analysisResult, setAnalysisResult] = useState<RadiologyAnalysisResult | null>(null);
+  const [serverImageUrl, setServerImageUrl] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
@@ -186,6 +252,27 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (!isXray || !image?.id) {
+      return;
+    }
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    void fetchRadiologyXrayImage(order.id, image.id, controller.signal)
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        objectUrl = URL.createObjectURL(blob);
+        setServerImageUrl(objectUrl);
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setServerImageUrl(null);
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [image?.id, isXray, order.id]);
 
   useEffect(() => {
     if (!trackedAnalysisId || !trackedAnalysisStatus || !["PENDING", "RUNNING"].includes(trackedAnalysisStatus)) return;
@@ -214,6 +301,20 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       if (timer) clearTimeout(timer);
     };
   }, [trackedAnalysisId, trackedAnalysisStatus]);
+
+  useEffect(() => {
+    if (!trackedAnalysisId || trackedAnalysisStatus !== "SUCCEEDED" || analysisResult) return;
+    const controller = new AbortController();
+    void fetchRadiologyAnalysisResult(trackedAnalysisId, controller.signal)
+      .then((result) => {
+        if (!controller.signal.aborted) {
+          setAnalysisResult(result);
+          setShowResultNotice(true);
+        }
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [analysisResult, trackedAnalysisId, trackedAnalysisStatus]);
 
   async function handleStartAnalysis() {
     setStartingAnalysis(true);
@@ -397,7 +498,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
 
         <section className="rounded-xl border border-violet-100 bg-white p-5 shadow-sm" aria-labelledby="ai-result-heading">
           <h3 id="ai-result-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-violet-600">03</span>AI 분석 결과</h3>
-          {showResultNotice && analysisResult ? <div className="mt-4"><AnalysisResultView data={analysisResult} /></div> : <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">분석 완료 후 결과가 표시됩니다.</div>}
+          {showResultNotice && analysisResult ? <div className="mt-4"><AnalysisResultView data={analysisResult} sourceImageUrl={serverImageUrl} /></div> : <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">분석 완료 후 결과가 표시됩니다.</div>}
         </section>
 
         <section className={`rounded-xl border p-5 shadow-sm ${item.workflow_status === "REVIEW_COMPLETED" ? "border-emerald-200 bg-emerald-50/60" : "border-violet-200 bg-gradient-to-r from-violet-50/90 to-blue-50/70"}`} aria-labelledby="review-heading">

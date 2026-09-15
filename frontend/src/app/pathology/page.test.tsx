@@ -2,8 +2,16 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
-import { fetchPathologyCaseWorkflow, fetchPathologyWorkstation } from "./_lib/pathology-workstation-api";
-beforeEach(() => { sessionStorage.clear(); vi.clearAllMocks(); });
+import {
+  fetchPathologyCaseWorkflow,
+  fetchPathologyWorkstation,
+  fetchPdl1Analyses,
+} from "./_lib/pathology-workstation-api";
+beforeEach(() => {
+  sessionStorage.clear();
+  vi.clearAllMocks();
+  vi.mocked(fetchPdl1Analyses).mockResolvedValue([]);
+});
 
 function emptyWorkflow(caseId: string, patientName = caseId) {
   return {
@@ -39,7 +47,8 @@ it("reopens a restored recent case absent from the worklist without auto-selecti
 
 vi.mock("./_lib/pathology-workstation-api", () => ({
   fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyWorkstation: vi.fn(),
-  runPdl1Analysis: vi.fn(), submitPathologyForReview: vi.fn(),
+  fetchPdl1Analyses: vi.fn(),
+  runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), submitPathologyForReview: vi.fn(),
 }));
 
 it("keeps selection and workflow across numbered/next/previous pages and loading", async () => {
