@@ -7,11 +7,11 @@ describe("CaseInfoMenu", () => {
     const onSelect = vi.fn();
     render(<CaseInfoMenu selected="STAGING" onSelect={onSelect} />);
 
-    for (const label of ["전체 요약", "흉부 X선", "흉부 CT", "PET-CT / TNM 병기", "조직/유전자", "PD-L1", "치료 결정", "처방"]) {
+    for (const label of ["전체 요약", "흉부 X선", "흉부 CT", "PET-CT / TNM 병기", "조직/유전자", "PD-L1", "치료 결정", "처방", "AI 종합 분석"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
     }
 
-    expect(onSelect.mock.calls.map(([key]) => key)).toEqual(["OVERVIEW", "XRAY", "CT", "STAGING", "PATHOLOGY", "GENE", "TREATMENT", "PRESCRIPTION"]);
+    expect(onSelect.mock.calls.map(([key]) => key)).toEqual(["OVERVIEW", "XRAY", "CT", "STAGING", "PATHOLOGY", "GENE", "TREATMENT", "PRESCRIPTION", "AI_SUMMARY"]);
   });
 
   it("marks only the selected workspace as the current page", () => {

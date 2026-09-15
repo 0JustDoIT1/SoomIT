@@ -29,5 +29,9 @@ describe("CaseWorkspaceEmpty preview", () => {
 
     await user.click(screen.getByRole("button", { name: "치료 결정" }));
     expect(screen.getByRole("heading", { name: "치료·처방 현황" })).toBeTruthy();
+
+    await user.click(screen.getByRole("button", { name: "AI 종합 분석" }));
+    expect(screen.getByRole("heading", { name: "AI 종합 분석" })).toBeTruthy();
+    expect(screen.getByText("AI 결과는 확정 진단이 아닙니다")).toBeTruthy();
   });
 });

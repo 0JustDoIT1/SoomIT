@@ -1,0 +1,7 @@
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: [build, --file, Dockerfile.m, --tag, gcr.io/$PROJECT_ID/tnm-m-serve:latest, .]
+images: [gcr.io/$PROJECT_ID/tnm-m-serve:latest]
+timeout: 3600s
+options:
+  machineType: E2_HIGHCPU_32

@@ -41,21 +41,23 @@ def extract_dicom_zip(
     return root
 
 
-def dicom_directory_to_nifti(dicom_root: Path, destination: Path) -> Path:
-    import SimpleITK as sitk
+def dicom_directory_to_nifti(
+    dicom_root: Path,
+    destination: Path,
+    *,
+    metadata_path: Path | None = None,
+) -> Path:
+    """Convert one raw CT DICOM series with the bundled training-compatible converter."""
+    from packages.final_ct_analysis_deploy_ready.code.dicom_to_nifti import (
+        convert_dicom_series,
+    )
 
-    candidates: list[list[str]] = []
-    for directory in {path.parent for path in dicom_root.rglob("*") if path.is_file()}:
-        for series_id in sitk.ImageSeriesReader.GetGDCMSeriesIDs(str(directory)) or []:
-            names = sitk.ImageSeriesReader.GetGDCMSeriesFileNames(str(directory), series_id)
-            if names:
-                candidates.append(list(names))
-    if not candidates:
-        raise InvalidCtInput("DICOM archive does not contain a readable image series")
-    files = max(candidates, key=len)
-    reader = sitk.ImageSeriesReader()
-    reader.SetFileNames(files)
-    image = reader.Execute()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    sitk.WriteImage(image, str(destination), True)
+    try:
+        convert_dicom_series(
+            dicom_dir=dicom_root,
+            output_nifti=destination,
+            metadata_path=metadata_path,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        raise InvalidCtInput(str(exc)) from exc
     return destination

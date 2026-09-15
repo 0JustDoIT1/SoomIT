@@ -1,68 +1,30 @@
 name: soomit-infra
 
+
 x-django-base: &django-base
   build:
     context: ../backend
   image: soomit-backend:local
   restart: unless-stopped
-  environment: &common-environment
-    POSTGRES_HOST: ${POSTGRES_HOST:?Set POSTGRES_HOST}
-    POSTGRES_PORT: ${POSTGRES_PORT:-5432}
-    POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB}
-    POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER}
-    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
-    DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?Set DJANGO_SECRET_KEY}
-    DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
+  env_file:
+    - ../backend/.env
+  environment:
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
     GOOGLE_APPLICATION_CREDENTIALS: /app/gcs-key.json
-    PDL1_INFERENCE_SERVICE_URL: ${PDL1_INFERENCE_SERVICE_URL:?Set PDL1_INFERENCE_SERVICE_URL}
-    PDL1_INFERENCE_TIMEOUT_SECONDS: ${PDL1_INFERENCE_TIMEOUT_SECONDS:-1800}
-    PDL1_INFERENCE_SERVICE_USE_ID_TOKEN: ${PDL1_INFERENCE_SERVICE_USE_ID_TOKEN:-1}
-    PDL1_ANNOTATION_MAX_UPLOAD_BYTES: ${PDL1_ANNOTATION_MAX_UPLOAD_BYTES:-8388608}
-    PDL1_GCS_BUCKET: ${PDL1_GCS_BUCKET:-}
-    CT_ANALYSIS_PHASE1_SERVICE_URL: ${CT_ANALYSIS_PHASE1_SERVICE_URL:?Set CT_ANALYSIS_PHASE1_SERVICE_URL}
-    CT_ANALYSIS_PHASE1_TIMEOUT_SECONDS: ${CT_ANALYSIS_PHASE1_TIMEOUT_SECONDS:-3600}
-    CT_ANALYSIS_PHASE1_SERVICE_USE_ID_TOKEN: ${CT_ANALYSIS_PHASE1_SERVICE_USE_ID_TOKEN:-1}
-    CT_ANALYSIS_PHASE2_SERVICE_URL: ${CT_ANALYSIS_PHASE2_SERVICE_URL:?Set CT_ANALYSIS_PHASE2_SERVICE_URL}
-    CT_ANALYSIS_PHASE2_TIMEOUT_SECONDS: ${CT_ANALYSIS_PHASE2_TIMEOUT_SECONDS:-900}
-    CT_ANALYSIS_PHASE2_SERVICE_USE_ID_TOKEN: ${CT_ANALYSIS_PHASE2_SERVICE_USE_ID_TOKEN:-1}
-    PATHOLOGY_ANALYSIS_SERVICE_URL: ${PATHOLOGY_ANALYSIS_SERVICE_URL:?Set PATHOLOGY_ANALYSIS_SERVICE_URL}
-    PATHOLOGY_ANALYSIS_TIMEOUT_SECONDS: ${PATHOLOGY_ANALYSIS_TIMEOUT_SECONDS:-3600}
-    PATHOLOGY_ANALYSIS_SERVICE_USE_ID_TOKEN: ${PATHOLOGY_ANALYSIS_SERVICE_USE_ID_TOKEN:-1}
-    EMBEDDING_SERVICE_URL: ${EMBEDDING_SERVICE_URL:?Set EMBEDDING_SERVICE_URL}
-    EMBEDDING_SERVICE_TIMEOUT_SECONDS: ${EMBEDDING_SERVICE_TIMEOUT_SECONDS:-120}
-    EMBEDDING_SERVICE_USE_ID_TOKEN: ${EMBEDDING_SERVICE_USE_ID_TOKEN:-0}
-    MEDGEMMA_SERVICE_URL: ${MEDGEMMA_SERVICE_URL:?Set MEDGEMMA_SERVICE_URL}
-    MEDGEMMA_SERVICE_TIMEOUT_SECONDS: ${MEDGEMMA_SERVICE_TIMEOUT_SECONDS:-290}
-    MEDGEMMA_SERVICE_USE_ID_TOKEN: ${MEDGEMMA_SERVICE_USE_ID_TOKEN:-0}
-    AI_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?Set AI_SERVICE_TOKEN}
-    GENKIT_SERVICE_URL: ${GENKIT_SERVICE_URL:-}
-    GENKIT_SERVICE_TIMEOUT_SECONDS: ${GENKIT_SERVICE_TIMEOUT_SECONDS:-300}
-    GENKIT_SERVICE_USE_ID_TOKEN: ${GENKIT_SERVICE_USE_ID_TOKEN:-0}
-    HIRA_SERVICE_KEY: ${HIRA_SERVICE_KEY:-}
-    MFDS_SERVICE_KEY: ${MFDS_SERVICE_KEY:-}
-    MFDS_DUR_SERVICE_KEY: ${MFDS_DUR_SERVICE_KEY:-}
+    ORTHANC_BASE_URL: http://orthanc:8042
   depends_on:
     redis:
       condition: service_healthy
 
+
 services:
   celery_worker:
     <<: *django-base
-    environment:
-      <<: *common-environment
-      ORTHANC_BASE_URL: http://orthanc:8042
-      ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
-      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
-      ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
-      XRAY_GCS_BUCKET: ${XRAY_GCS_BUCKET:?Set XRAY_GCS_BUCKET}
-      XRAY_SERVICE_URL: ${XRAY_SERVICE_URL:?Set XRAY_SERVICE_URL}
-      XRAY_SERVICE_TIMEOUT_SECONDS: ${XRAY_SERVICE_TIMEOUT_SECONDS:-300}
-      XRAY_SERVICE_USE_ID_TOKEN: ${XRAY_SERVICE_USE_ID_TOKEN:-1}
     volumes:
       - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command: ['celery', '-A', 'config', 'worker', '-l', 'info']
+
 
   celery_beat:
     <<: *django-base
@@ -74,22 +36,17 @@ services:
         'beat',
         '-l',
         'info',
+        '--scheduler=celery.beat:PersistentScheduler',
         '--schedule=/var/lib/celery/celerybeat-schedule',
       ]
     volumes:
       - celery_beat_data:/var/lib/celery
 
+
   django:
     <<: *django-base
-    environment:
-      <<: *common-environment
-      KAKAO_REST_API_KEY: ${KAKAO_REST_API_KEY:?Set KAKAO_REST_API_KEY}
-      ORTHANC_BASE_URL: http://orthanc:8042
-      ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
-      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
-      ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
     volumes:
-      - ./gcs-key.json:/app/gcs-key.json:ro
+      - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command:
       [
         'gunicorn',
@@ -109,6 +66,7 @@ services:
       orthanc:
         condition: service_healthy
 
+
   nextjs:
     build:
       context: ../frontend
@@ -117,6 +75,9 @@ services:
     image: soomit-frontend:local
     container_name: soomit-infra-nextjs
     restart: unless-stopped
+    env_file:
+      - ../frontend/.env
+
 
   realtime:
     build:
@@ -129,6 +90,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
 
   nginx:
     image: nginx:1.27-alpine
@@ -149,12 +111,14 @@ services:
       realtime:
         condition: service_started
 
+
   certbot:
     image: certbot/certbot
     container_name: soomit-infra-certbot
     volumes:
       - certbot_conf:/etc/letsencrypt
       - certbot_www:/var/www/certbot
+
 
   redis:
     image: redis:7-alpine
@@ -169,6 +133,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
 
   orthanc:
     image: orthancteam/orthanc:26.7.0
@@ -207,6 +172,7 @@ services:
       timeout: 5s
       retries: 10
 
+
 volumes:
   celery_beat_data:
     name: soomit_infra_celery_beat_data
@@ -218,3 +184,6 @@ volumes:
     name: soomit_infra_certbot_conf
   certbot_www:
     name: soomit_infra_certbot_www
+
+
+

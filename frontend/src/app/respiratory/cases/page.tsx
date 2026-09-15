@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../_lib/respiratory-api";
 import { getCaseListFetchError, getCaseListHttpError } from "./case-list-errors";
+import { getCaseListEmptyState } from "./case-list-empty-state";
 import { CASES_PER_PAGE, getVisiblePageNumbers, paginateCases } from "./case-pagination";
 
 type CaseItem = {
@@ -104,6 +105,7 @@ export default function RespiratoryCasesPage() {
 
   const pagination = useMemo(() => paginateCases(filteredCases, currentPage), [filteredCases, currentPage]);
   const visiblePages = getVisiblePageNumbers(pagination.page, pagination.pageCount);
+  const emptyState = getCaseListEmptyState(search);
 
   return (
     <div className="h-full overflow-auto bg-slate-50 px-6 py-5">
@@ -125,7 +127,7 @@ export default function RespiratoryCasesPage() {
           <div className="flex items-center justify-between gap-4 border-b border-slate-200 px-5 py-4">
             <div>
               <h2 className="font-bold text-slate-900">담당 Case 목록</h2>
-              <p className="mt-1 text-xs text-slate-500">실제 API에서 조회된 Case만 표시합니다.</p>
+              <p className="mt-1 text-xs text-slate-500">현재 로그인한 담당의에게 배정된 진행 중 Case만 표시합니다.</p>
             </div>
             <input
               type="search"
@@ -192,7 +194,7 @@ export default function RespiratoryCasesPage() {
                     </tr>
                   ))}
                   {filteredCases.length === 0 && (
-                    <tr><td colSpan={6}><EmptyState title={search ? "검색 조건에 맞는 Case가 없습니다." : "현재 배정된 Case가 없습니다."} /></td></tr>
+                    <tr><td colSpan={6}><EmptyState title={emptyState.title} description={emptyState.description} /></td></tr>
                   )}
                 </tbody>
               </table>
@@ -223,8 +225,8 @@ function Badge({ label, tone }: { label: string; tone: "blue" | "slate" }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${color}`}>{label}</span>;
 }
 
-function EmptyState({ title, children }: { title: string; children?: React.ReactNode }) {
-  return <div className="flex min-h-56 flex-col items-center justify-center px-6 py-12 text-center text-sm text-slate-500"><p>{title}</p>{children}</div>;
+function EmptyState({ title, description, children }: { title: string; description?: string; children?: React.ReactNode }) {
+  return <div className="flex min-h-56 flex-col items-center justify-center px-6 py-12 text-center text-sm text-slate-500"><p className="font-semibold text-slate-700">{title}</p>{description && <p className="mt-2 text-xs text-slate-400">{description}</p>}{children}</div>;
 }
 
 function formatDateTime(value: string) {

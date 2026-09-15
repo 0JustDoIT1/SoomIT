@@ -78,21 +78,57 @@ function getSpecialistValues(stage: string, detail: unknown): [string, string][]
     GENE: [["종합 해석", "interpretation"], ["추가 검사 권고", "additional_test_recommended"]],
   };
   const values = pickValues(section, fields[stage] ?? []);
+  if (stage === "GENE") {
+    values.push(...getClinicalGeneFindings(section.findings));
+  }
   if (stage === "GENE") { const pdl1 = asRecord(root.pdl1); if (pdl1) values.push(...pickValues(pdl1, [["확정 PD-L1 TPS", "tps_percent"], ["PD-L1 해석", "interpretation"], ["PD-L1 소견", "note"]])); }
   return values;
 }
 
 function getAiValues(stage: string, detail: unknown): [string, string][] {
   const root = asRecord(detail); if (!root) return [];
+  if (stage === "GENE") return getAiGeneFindings(root.genes);
   const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PATHOLOGY" ? "pathology" : stage === "STAGING" ? "tnm" : stage === "GENE" ? "gene" : "";
   const section = asRecord(root[sectionKey]); if (!section) return [];
   const fields: Record<string, [string, string][]> = {
     XRAY: [["AI 판정 후보", "assessment_label"], ["의심 점수", "suspicion_score"]], CT: [["AI 악성 위험도", "overall_malignancy_risk"]],
     PATHOLOGY: [["AI 악성 판정 후보", "malignancy_assessment_label"], ["악성 확률", "malignancy_probability"], ["조직형 후보", "predicted_histologic_type"], ["아형 후보", "predicted_subtype"], ["아형 confidence", "subtype_confidence"]],
     STAGING: [["T 후보", "predicted_t"], ["N 후보", "predicted_n"], ["M 후보", "predicted_m"], ["Stage Group 후보", "predicted_stage_group"], ["confidence", "confidence"]],
-    GENE: [["유전자", "gene"], ["변이 후보", "variant"], ["변이 유형", "variant_type"], ["AI 해석 후보", "interpretation"], ["confidence", "confidence"]],
   };
   return pickValues(section, fields[stage] ?? []);
+}
+
+function getClinicalGeneFindings(value: unknown): [string, string][] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const finding = asRecord(item);
+    const symbol = finding?.gene_symbol;
+    if (!finding || !symbol) return [];
+    const assessment = finding.assessment_label ?? finding.assessment;
+    const alteration = finding.alteration_code;
+    const summary = [assessment, alteration].filter((part) => part !== null && part !== undefined && part !== "").map(String).join(" · ");
+    return summary ? [[String(symbol), summary] as [string, string]] : [];
+  });
+}
+
+function getAiGeneFindings(value: unknown): [string, string][] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const finding = asRecord(item);
+    const symbol = finding?.gene_symbol;
+    if (!finding || !symbol) return [];
+    const status = finding.predicted_status_label ?? finding.predicted_status;
+    const probability = formatProbability(finding.predicted_probability);
+    const summary = [status, probability].filter(Boolean).map(String).join(" · ");
+    return summary ? [[String(symbol), summary] as [string, string]] : [];
+  });
+}
+
+function formatProbability(value: unknown) {
+  if (value === null || value === undefined || value === "") return "";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return String(value);
+  return `${(number <= 1 ? number * 100 : number).toFixed(2)}%`;
 }
 function pickValues(source: ResultRecord, fields: [string, string][]): [string, string][] { return fields.flatMap(([label, key]) => { const value = source[key]; if (value === null || value === undefined || value === "") return []; return [[label, typeof value === "boolean" ? (value ? "예" : "아니요") : String(value)]]; }); }
 function asRecord(value: unknown): ResultRecord | null { return value && typeof value === "object" && !Array.isArray(value) ? value as ResultRecord : null; }

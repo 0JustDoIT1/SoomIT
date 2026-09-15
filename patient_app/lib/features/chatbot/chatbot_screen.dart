@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'services/chatbot_service.dart';
+
 class ChatbotScreen extends StatefulWidget {
   const ChatbotScreen({super.key});
 
@@ -14,7 +16,22 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   final ScrollController _scrollController =
       ScrollController();
 
+  final ChatbotService _chatbotService =
+      ChatbotService();
+
   bool _isReplying = false;
+
+  /*
+   * 테스트용 JWT
+   *
+   * 지금은 로그인 기능을 구현하기 전이므로
+   * Django shell에서 발급한 access token을
+   * 임시로 넣어서 API 연결만 확인한다.
+   *
+   * 실제 로그인 구현 후에는 반드시 삭제할 것.
+   */
+  static const String _testAccessToken =
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzg5Mzk0ODkyLCJpYXQiOjE3ODkzOTQ1OTIsImp0aSI6ImI2MjhmZDlhZjJjMjRmMDU5YzgxZmFhY2UwNzYwYjVhIiwidXNlcl9pZCI6IjVlM2JiNTdkLTJmNzItNGMxNi1hZDU5LTY2MzdhZmY0MWUwOSJ9.WzQkMMeBwDAwYgFxFoZxvz3Og6MICwZg0uM1XbBXBQ8';
 
   final List<_ChatMessage> _messages = [
     const _ChatMessage(
@@ -59,13 +76,24 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     );
   }
 
-  void _sendMessage([String? preset]) {
+  Future<void> _sendMessage([
+    String? preset,
+  ]) async {
     final text =
         preset ?? _controller.text.trim();
 
     if (text.isEmpty || _isReplying) {
       return;
     }
+
+    /*
+     * 현재 질문을 넣기 전의 대화 내용을
+     * API history로 만든다.
+     *
+     * 서버 제한:
+     * history 최대 20개
+     */
+    final history = _buildHistory();
 
     setState(() {
       _messages.add(
@@ -81,91 +109,120 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     _controller.clear();
     _scrollToBottom();
 
-    final answer =
-        _getTemporaryAnswer(text);
+    try {
+      if (_testAccessToken ==
+          'PASTE_TEST_ACCESS_TOKEN_HERE') {
+        throw Exception(
+          '테스트용 JWT access token을 입력해주세요.',
+        );
+      }
 
-    Future.delayed(
-      const Duration(
-        milliseconds: 700,
-      ),
-      () {
-        if (!mounted) {
-          return;
-        }
+      final answer =
+          await _chatbotService.sendMessage(
+        message: text,
+        history: history,
+        accessToken: _testAccessToken,
+      );
 
-        setState(() {
-          _messages.add(
-            _ChatMessage(
-              text: answer,
-              isUser: false,
-            ),
-          );
+      if (!mounted) {
+        return;
+      }
 
-          _isReplying = false;
-        });
+      setState(() {
+        _messages.add(
+          _ChatMessage(
+            text: answer,
+            isUser: false,
+          ),
+        );
 
-        _scrollToBottom();
-      },
-    );
+        _isReplying = false;
+      });
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _messages.add(
+          _ChatMessage(
+            text: _getErrorMessage(e),
+            isUser: false,
+          ),
+        );
+
+        _isReplying = false;
+      });
+    }
+
+    _scrollToBottom();
   }
 
-  String _getTemporaryAnswer(
-    String message,
+  List<Map<String, String>>
+      _buildHistory() {
+    final history = _messages
+        .map(
+          (message) =>
+              <String, String>{
+            'role': message.isUser
+                ? 'user'
+                : 'assistant',
+            'content': message.text,
+          },
+        )
+        .toList();
+
+    /*
+     * 서버에서 history 최대 20개까지만 허용.
+     * 최근 대화 20개만 전달한다.
+     */
+    if (history.length > 20) {
+      return history.sublist(
+        history.length - 20,
+      );
+    }
+
+    return history;
+  }
+
+  String _getErrorMessage(
+    Object error,
   ) {
-    final text =
-        message.toLowerCase();
+    final message =
+        error.toString().replaceFirst(
+              'Exception: ',
+              '',
+            );
 
-    if (text.contains('ct') &&
-        (text.contains('준비') ||
-            text.contains('검사'))) {
-      return 'CT 검사 전 준비사항은 검사 종류와 '
-          '조영제 사용 여부에 따라 달라질 수 있어요.\n\n'
-          '예약된 검사 안내사항을 먼저 확인하고, '
-          '금식 여부나 복용 중인 약은 병원의 안내를 따라주세요.';
+    if (message.contains(
+      '인증이 필요합니다.',
+    )) {
+      return '테스트 인증이 만료되었어요.\n'
+          '새 access token을 발급한 뒤 다시 시도해주세요.';
     }
 
-    if (text.contains('문진')) {
-      return '문진표는 홈 화면의 「진료 전 문진」에서 '
-          '작성할 수 있어요.\n\n'
-          '작성 완료 전에는 임시저장과 수정이 가능하지만, '
-          '작성 완료 후에는 수정할 수 없습니다.';
+    if (message.contains(
+      'AI 서비스에 연결할 수 없습니다.',
+    )) {
+      return '현재 AI 서비스에 연결할 수 없어요.\n'
+          '잠시 후 다시 시도해주세요.';
     }
 
-    if (text.contains('예약')) {
-      return '예약 메뉴에서 현재 예약 및 검사 일정을 '
-          '확인할 수 있어요.\n\n'
-          '예약 변경 또는 취소는 앱에서 요청할 수 있으며, '
-          '최종 처리는 병원 확인 후 진행됩니다.';
+    if (message.contains(
+      'AI 서비스가 아직 설정되지 않았습니다.',
+    )) {
+      return '현재 AI 서비스 설정을 확인하고 있어요.\n'
+          '백엔드 Genkit 설정을 확인해주세요.';
     }
 
-    if (text.contains('복약') ||
-        text.contains('약')) {
-      return '복약 메뉴에서 예정된 복약 일정을 확인하고, '
-          '복용 후 「복용 완료」를 선택할 수 있어요.\n\n'
-          '약의 변경이나 중단은 반드시 의료진과 상담해주세요.';
+    if (message.contains(
+      '테스트용 JWT',
+    )) {
+      return message;
     }
 
-    if (text.contains('호흡곤란') ||
-        text.contains('객혈') ||
-        text.contains('흉통')) {
-      return '심한 호흡곤란, 객혈, 심한 흉통 등의 '
-          '증상이 있다면 앱의 안내만으로 판단하지 말고 '
-          '의료기관에 문의해주세요.\n\n'
-          '숨-잇 챗봇은 진단이나 응급도 판단을 제공하지 않습니다.';
-    }
-
-    if (text.contains('폐암') &&
-        (text.contains('확진') ||
-            text.contains('진단'))) {
-      return '숨-잇 챗봇은 폐암 확진이나 '
-          '의료적 진단을 제공할 수 없어요.\n\n'
-          '검사결과와 진단에 대해서는 '
-          '담당 의료진의 설명을 확인해주세요.';
-    }
-
-    return '현재는 앱 사용방법, 검사 준비사항, '
-        '일반 건강정보에 대한 안내를 도와드리고 있어요.\n\n'
-        '궁금한 내용을 조금 더 구체적으로 질문해주세요.';
+    return '챗봇 답변을 불러오지 못했어요.\n'
+        '$message';
   }
 
   @override
@@ -216,7 +273,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           Container(
             width: 42,
             height: 42,
-            decoration: const BoxDecoration(
+            decoration:
+                const BoxDecoration(
               color: Color(
                 0xFFEDE8FF,
               ),
@@ -587,11 +645,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                   ),
                 ),
               ),
-              onPressed: () {
-                _sendMessage(
-                  question,
-                );
-              },
+              onPressed:
+                  _isReplying
+                      ? null
+                      : () {
+                          _sendMessage(
+                            question,
+                          );
+                        },
             );
           },
         ),
@@ -640,13 +701,16 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     _controller,
                 minLines: 1,
                 maxLines: 4,
+                enabled:
+                    !_isReplying,
                 textInputAction:
                     TextInputAction.send,
                 decoration:
                     const InputDecoration(
                   hintText:
                       '궁금한 내용을 입력해주세요.',
-                  hintStyle: TextStyle(
+                  hintStyle:
+                      TextStyle(
                     color: Color(
                       0xFFA59EAD,
                     ),
