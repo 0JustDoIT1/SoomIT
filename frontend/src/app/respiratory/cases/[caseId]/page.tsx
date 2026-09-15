@@ -21,11 +21,12 @@ import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
+import { AiSummaryPanel } from "./ai-summary-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
-import { canApplyCaseResponse } from "../../_lib/case-request-guard";
+import { applyCaseResponse, canApplyCaseResponse } from "../../_lib/case-request-guard";
 
 type CaseItem = {
   id: string;
@@ -453,7 +454,7 @@ export default function RespiratoryCaseDetailPage() {
   const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
   const [panelRetrying, setPanelRetrying] = useState<"AI" | "CLINICAL" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
-  useEffect(() => { activeCaseIdRef.current = caseId; }, [caseId]);
+  activeCaseIdRef.current = caseId;
 
   const [selectedTreatmentMenu, setSelectedTreatmentMenu] =
   useState<TreatmentSubMenu>("AI_RECOMMENDATION");
@@ -485,6 +486,7 @@ export default function RespiratoryCaseDetailPage() {
   useEffect(() => {
     if (isPreview) return;
     const controller = new AbortController();
+    const applyCurrentResponse = (apply: () => void) => applyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted, apply);
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -531,12 +533,12 @@ export default function RespiratoryCaseDetailPage() {
         const caseDetailData: CaseItem =
           await caseDetailResponse.json();
 
-        if (!controller.signal.aborted) {
+        if (canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)) {
           setCases(caseListData);
           setSelectedCase(caseDetailData);
           setLoading(false);
+          setPdl1Results([]);
         }
-        setPdl1Results([]);
 
         const [tnmAnalysisRequest, tnmClinicalRequest, regimenCandidateRequest, treatmentDecisionRequest, prescriptionRequest] =
           await Promise.allSettled([
@@ -554,16 +556,16 @@ export default function RespiratoryCaseDetailPage() {
             ? aiAnalysisPayload as TnmAnalysisResult[]
             : [];
 
-          if (!controller.signal.aborted) {
+          applyCurrentResponse(() => {
             setTnmAnalysisResults(tnmAnalysisData);
             setPdl1Results(selectPdl1Results(aiAnalysisPayload));
-          }
-        } else if (!controller.signal.aborted) {
-          setAiResultError(
+          });
+        } else {
+          applyCurrentResponse(() => setAiResultError(
             tnmAnalysisRequest.status === "fulfilled"
               ? getAiResultHttpError(tnmAnalysisRequest.value.status)
               : getAiResultNetworkError(),
-          );
+          ));
         }
 
         if (tnmClinicalRequest.status === "fulfilled" && tnmClinicalRequest.value.ok) {
@@ -571,13 +573,13 @@ export default function RespiratoryCaseDetailPage() {
           const tnmClinicalData: TnmClinicalResult[] =
             await tnmClinicalResponse.json();
 
-          if (!controller.signal.aborted) setTnmClinicalResults(tnmClinicalData);
-        } else if (!controller.signal.aborted) {
-          setClinicalResultError(
+          applyCurrentResponse(() => setTnmClinicalResults(tnmClinicalData));
+        } else {
+          applyCurrentResponse(() => setClinicalResultError(
             tnmClinicalRequest.status === "fulfilled"
               ? getClinicalResultHttpError(tnmClinicalRequest.value.status)
               : getClinicalResultNetworkError(),
-          );
+          ));
         }
 
         if (regimenCandidateRequest.status === "fulfilled" && regimenCandidateRequest.value.ok) {
@@ -585,13 +587,13 @@ export default function RespiratoryCaseDetailPage() {
           const regimenCandidateData: CaseRegimenCandidate[] =
             await regimenCandidateResponse.json();
 
-          if (!controller.signal.aborted) setRegimenCandidates(regimenCandidateData);
-        } else if (!controller.signal.aborted) {
-          setRegimenLoadError(
+          applyCurrentResponse(() => setRegimenCandidates(regimenCandidateData));
+        } else {
+          applyCurrentResponse(() => setRegimenLoadError(
             regimenCandidateRequest.status === "fulfilled"
               ? getPanelFetchError(regimenCandidateRequest.value.status, "치료요법 후보")
               : "치료요법 후보 조회 중 네트워크 오류가 발생했습니다.",
-          );
+          ));
         }
 
         if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.ok) {
@@ -599,7 +601,7 @@ export default function RespiratoryCaseDetailPage() {
           const treatmentDecisionData: CaseTreatmentDecision =
             await treatmentDecisionResponse.json();
 
-          if (controller.signal.aborted) return;
+          if (!canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)) return;
           setCaseTreatmentDecision(treatmentDecisionData);
           setCaseTreatmentForm({
             treatment_type: treatmentDecisionData.treatment_type ?? "",
@@ -611,20 +613,16 @@ export default function RespiratoryCaseDetailPage() {
             rationale: treatmentDecisionData.rationale ?? "",
           });
         } else if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.status === 404) {
-          setCaseTreatmentDecision(null);
-          setCaseTreatmentForm({
-            treatment_type: "",
-            selected_regimen: "",
-            treatment_plan: "",
-            targeted_therapy_plan: "",
-            rationale: "",
+          applyCurrentResponse(() => {
+            setCaseTreatmentDecision(null);
+            setCaseTreatmentForm({ treatment_type: "", selected_regimen: "", treatment_plan: "", targeted_therapy_plan: "", rationale: "" });
           });
-        } else if (!controller.signal.aborted) {
-          setTreatmentLoadError(
+        } else {
+          applyCurrentResponse(() => setTreatmentLoadError(
             treatmentDecisionRequest.status === "fulfilled"
               ? getPanelFetchError(treatmentDecisionRequest.value.status, "치료 결정")
               : "치료 결정 조회 중 네트워크 오류가 발생했습니다.",
-          );
+          ));
         }
 
         if (prescriptionRequest.status === "fulfilled" && prescriptionRequest.value.ok) {
@@ -632,23 +630,22 @@ export default function RespiratoryCaseDetailPage() {
           const prescriptionData: CasePrescription[] =
             await prescriptionResponse.json();
 
-          if (!controller.signal.aborted) setCasePrescriptions(prescriptionData);
-        } else if (!controller.signal.aborted) {
-          setPrescriptionLoadError(
+          applyCurrentResponse(() => setCasePrescriptions(prescriptionData));
+        } else {
+          applyCurrentResponse(() => setPrescriptionLoadError(
             prescriptionRequest.status === "fulfilled"
               ? getPanelFetchError(prescriptionRequest.value.status, "처방 목록")
               : "처방 목록 조회 중 네트워크 오류가 발생했습니다.",
-          );
+          ));
         }
       } catch (err) {
-        if (controller.signal.aborted) return;
-        setError(
+        applyCurrentResponse(() => setError(
           err instanceof Error
             ? err.message
             : "Case 조회 중 오류가 발생했습니다."
-        );
+        ));
       } finally {
-        if (!controller.signal.aborted) setLoading(false);
+        applyCurrentResponse(() => setLoading(false));
       }
     };
 
@@ -807,7 +804,9 @@ export default function RespiratoryCaseDetailPage() {
     }
     if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
       setSelectedMainMenu(menu);
+      return;
     }
+    if (menu === "AI_SUMMARY") setSelectedMainMenu("AI");
   };
 
   const latestPdl1Result =
@@ -1486,7 +1485,7 @@ export default function RespiratoryCaseDetailPage() {
       </aside>
 
       {/* D. 상세 영역 */}
-      <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0" : "min-w-0 overflow-y-auto p-3"}>
+      <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0" : "min-w-0 overflow-x-auto overflow-y-auto p-3"}>
         <CaseWorkflowBar
           currentStage={selectedCase.current_stage}
           hasPdl1Result={Boolean(latestPdl1Result || geneClinicalResult?.result_detail?.pdl1)}
@@ -1500,13 +1499,15 @@ export default function RespiratoryCaseDetailPage() {
             <span className="h-5 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
             <div className="min-w-0">
               <h1 className="truncate text-sm font-bold text-slate-900">
-              {getDetailTitle(
-                selectedMainMenu,
-                selectedResultMenu,
-                selectedAiMenu,
-                selectedTreatmentMenu,
-                selectedPrescriptionMenu
-              )}
+              {selectedInfoMenu === "AI_SUMMARY"
+                ? "AI 종합 분석"
+                : getDetailTitle(
+                    selectedMainMenu,
+                    selectedResultMenu,
+                    selectedAiMenu,
+                    selectedTreatmentMenu,
+                    selectedPrescriptionMenu
+                  )}
               </h1>
               <p className="truncate text-[10px] text-slate-400">
               {selectedCase.patient_name} ·{" "}
@@ -1530,6 +1531,14 @@ export default function RespiratoryCaseDetailPage() {
             />
             <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} />
           </div>
+        ) : selectedInfoMenu === "AI_SUMMARY" ? (
+          <AiSummaryPanel
+            aiResults={tnmAnalysisResults}
+            clinicalResults={tnmClinicalResults}
+            error={aiResultError}
+            retrying={panelRetrying === "AI"}
+            onRetry={retryAiResults}
+          />
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
           <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">

@@ -12,6 +12,7 @@ import { CaseOverviewPanel } from "./case-overview-panel";
 import { ResultReviewPanel } from "./result-review-panel";
 import { BiomarkerSourceHeader } from "./biomarker-source-header";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
+import { AiSummaryPanel } from "./ai-summary-panel";
 
 export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorMessage?: string; isPreview?: boolean }) {
   const [selectedMenu, setSelectedMenu] = useState<CaseInfoKey>("STAGING");
@@ -22,7 +23,7 @@ export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorM
       <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(0,1fr)] overflow-hidden">
         <CasePatientSidebar cases={[]} selectedId="" searchText="" onSearchChange={() => undefined} onSelect={() => undefined} />
         <CaseInfoMenu selected={selectedMenu} onSelect={setSelectedMenu} />
-        <main className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-hidden p-2 pb-0">
+        <main className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0">
           <CaseWorkflowBar currentStage="" />
           <CurrentActionQueue actions={[]} onNavigate={() => undefined} />
           {errorMessage && <p role="alert" className="sr-only">{errorMessage}</p>}
@@ -56,6 +57,7 @@ function PreviewWorkspace({ menu }: { menu: CaseInfoKey }) {
   if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
     return <div><TreatmentPrescriptionOverview treatment={null} prescriptions={[]} /><CaseInfoWorkspace menu={menu} /></div>;
   }
+  if (menu === "AI_SUMMARY") return <AiSummaryPanel aiResults={[]} clinicalResults={[]} />;
   return <CaseInfoWorkspace menu={menu} />;
 }
 

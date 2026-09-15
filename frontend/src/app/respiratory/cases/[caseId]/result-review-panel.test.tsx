@@ -48,4 +48,27 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText("AI 후보 없음")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "원본 영상" })).toBeTruthy();
   });
+
+  it("maps the actual gene findings arrays from clinical and AI serializers", () => {
+    render(
+      <ResultReviewPanel
+        stage="GENE"
+        clinicalResult={{
+          exam_type: "GENE",
+          result_status: "CONFIRMED",
+          result_detail: { gene: { findings: [{ gene_symbol: "EGFR", alteration_code: "L858R", assessment_label: "양성" }] } },
+        }}
+        aiResult={{
+          analysis_type: "GENE_PREDICTION",
+          status: "COMPLETED",
+          result_detail: { genes: [{ gene_symbol: "ALK", predicted_status_label: "음성 예측", predicted_probability: "0.9321" }] },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("EGFR")).toBeTruthy();
+    expect(screen.getByText("양성 · L858R")).toBeTruthy();
+    expect(screen.getByText("ALK")).toBeTruthy();
+    expect(screen.getByText("음성 예측 · 93.21%")).toBeTruthy();
+  });
 });

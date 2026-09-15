@@ -1,0 +1,277 @@
+type AiSummaryResult = {
+  id?: string;
+  analysis_type: string;
+  analysis_type_label?: string;
+  status?: string;
+  status_label?: string;
+  model_name?: string;
+  model_version_name?: string;
+  created_at?: string | null;
+  completed_at?: string | null;
+  error_message?: string | null;
+  result_detail?: unknown;
+};
+
+type ClinicalSummaryResult = {
+  id?: string;
+  exam_type: string;
+  result_status?: string;
+  result_status_label?: string;
+  result_date?: string | null;
+  result_detail?: unknown;
+};
+
+const ANALYSIS_CONFIG = [
+  { type: "XRAY_SCREENING", label: "흉부 X선", clinical: ["XRAY"] },
+  { type: "CT_NODULE", label: "흉부 CT", clinical: ["CT"] },
+  { type: "TNM_STAGING", label: "PET-CT / TNM 병기", clinical: ["STAGING"] },
+  { type: "PATHOLOGY_DIAGNOSIS", label: "조직 진단", clinical: ["PATHOLOGY"] },
+  { type: "GENE_PREDICTION", label: "유전자 분석", clinical: ["GENE"] },
+  { type: "PDL1_CLASSIFICATION", label: "PD-L1", clinical: ["GENE"] },
+  { type: "TREATMENT_RECOMMENDATION", label: "치료 추천", clinical: [] },
+] as const;
+
+export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = false, onRetry }: { aiResults: AiSummaryResult[]; clinicalResults: ClinicalSummaryResult[]; error?: string; retrying?: boolean; onRetry?: () => void }) {
+  const rows = ANALYSIS_CONFIG.map((config) => ({
+    ...config,
+    ai: selectPreferredAiResult(aiResults, config.type),
+    clinical: findClinicalResult(config.type, config.clinical, clinicalResults),
+  }));
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-3">
+        <div>
+          <p className="text-[10px] font-semibold text-blue-600">조회 전용 진료 지원</p>
+          <h1 className="mt-0.5 text-base font-bold text-slate-900">AI 종합 분석</h1>
+          <p className="mt-1 text-xs text-slate-600">검사별 AI 분석 후보와 의료진 확정 결과를 한 화면에서 비교합니다.</p>
+        </div>
+        <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-semibold text-amber-700">AI 결과는 확정 진단이 아닙니다</span>
+      </header>
+
+      {error && (
+        <div className="m-3 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700" role="alert">
+          <span>{error}</span>
+          {onRetry && <button type="button" onClick={onRetry} disabled={retrying} className="shrink-0 rounded-md border border-rose-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-50">{retrying ? "재시도 중" : "다시 시도"}</button>}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-3">
+        {rows.map(({ type, label, ai, clinical }) => (
+          <article key={type} className="min-w-0 overflow-hidden rounded-lg border border-slate-200">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/70 px-3 py-2.5">
+              <h2 className="truncate text-xs font-bold text-slate-800">{label}</h2>
+              <StatusBadge status={ai?.status} label={ai?.status_label} />
+            </div>
+            <div className="grid min-h-28 grid-cols-2 divide-x divide-slate-200">
+              <SummaryColumn source="AI 분석 후보" tone="blue" primary={getAiDisplaySummary(type, ai)} secondary={getModelLabel(ai)} />
+              <SummaryColumn source="의료진 확정 결과" tone="emerald" primary={getClinicalSummary(type, clinical)} secondary={formatDate(clinical?.result_date)} />
+            </div>
+            {type === "GENE_PREDICTION" && <GeneResultDetails aiDetail={ai?.status === "SUCCEEDED" ? ai.result_detail : null} clinicalDetail={clinical?.result_detail} />}
+            <ComparisonBadge comparison={compareResults(type, ai, clinical)} />
+            {ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{ai.error_message}</p>}
+          </article>
+        ))}
+      </div>
+      <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] leading-4 text-slate-500">이 화면에서는 AI 분석을 실행하거나 결과를 확정하지 않습니다. 최종 진단과 치료 결정은 의료진 확정 결과를 기준으로 합니다.</p>
+    </section>
+  );
+}
+
+function SummaryColumn({ source, tone, primary, secondary }: { source: string; tone: "blue" | "emerald"; primary: string; secondary: string }) {
+  return <div className="min-w-0 p-3"><p className={`text-[9px] font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{source}</p><p className="mt-2 break-words text-xs font-bold text-slate-800">{primary}</p><p className="mt-2 truncate text-[9px] text-slate-400">{secondary}</p></div>;
+}
+
+function StatusBadge({ status, label }: { status?: string; label?: string }) {
+  const color = status === "SUCCEEDED" ? "bg-blue-50 text-blue-700" : status === "FAILED" ? "bg-rose-50 text-rose-700" : status ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500";
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${color}`} title={label && label !== getAnalysisStatusLabel(status) ? label : undefined}>{getAnalysisStatusLabel(status)}</span>;
+}
+
+export function selectPreferredAiResult(results: AiSummaryResult[], analysisType: string) {
+  const matching = results.filter((item) => item.analysis_type === analysisType);
+  const succeeded = matching.filter((item) => item.status === "SUCCEEDED");
+  return newestResult(succeeded.length ? succeeded : matching);
+}
+
+function newestResult(results: AiSummaryResult[]) {
+  return results.reduce<AiSummaryResult | undefined>((latest, item) => {
+    if (!latest) return item;
+    const latestTime = resultTimestamp(latest);
+    const itemTime = resultTimestamp(item);
+    if (latestTime === null || itemTime === null) return latestTime === null && itemTime !== null ? item : latest;
+    return itemTime > latestTime ? item : latest;
+  }, undefined);
+}
+
+function resultTimestamp(result: AiSummaryResult) {
+  const value = result.completed_at || result.created_at;
+  if (!value) return null;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? null : timestamp;
+}
+
+function ComparisonBadge({ comparison }: { comparison: Comparison }) {
+  const styles = comparison.state === "MATCH" ? "bg-emerald-50 text-emerald-700" : comparison.state === "DIFFERENT" ? "bg-amber-50 text-amber-700" : "bg-slate-50 text-slate-500";
+  return <div className="border-t border-slate-200 px-3 py-2" aria-label="AI와 의료진 결과 비교"><div className="flex items-center justify-between gap-2"><span className="text-[9px] text-slate-400">결과 비교</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${styles}`}>{comparison.label}</span></div>{comparison.differences.length > 0 && <ul className="mt-2 space-y-1 border-t border-amber-100 pt-2" aria-label="결과 차이 항목">{comparison.differences.map((difference) => <li key={difference.label} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 text-[9px]"><span className="font-semibold text-slate-600">{difference.label}</span><span className="min-w-0 break-words text-right text-amber-700">AI {formatComparable(difference.ai)} / 의료진 {formatComparable(difference.clinical)}</span></li>)}</ul>}</div>;
+}
+
+function findClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[]) {
+  if (type === "PDL1_CLASSIFICATION") return results.find((item) => item.result_status === "CONFIRMED" && getRecord(item.result_detail, "pdl1"));
+  return results.find((item) => examTypes.includes(item.exam_type) && item.result_status === "CONFIRMED");
+}
+
+function getAiDisplaySummary(type: string, result?: AiSummaryResult) {
+  if (!result) return "분석 결과 없음";
+  if (result.status === "PENDING") return "분석 대기";
+  if (result.status === "RUNNING") return "분석 중";
+  if (result.status === "FAILED") return "분석 실패";
+  if (result.status === "SUCCEEDED" && !result.result_detail) return "결과 상세 없음";
+  return getAiSummary(type, result.result_detail);
+}
+
+function getAnalysisStatusLabel(status?: string) {
+  if (status === "PENDING") return "분석 대기";
+  if (status === "RUNNING") return "분석 중";
+  if (status === "SUCCEEDED") return "분석 완료";
+  if (status === "FAILED") return "분석 실패";
+  return "분석 결과 없음";
+}
+
+function getAiSummary(type: string, detail: unknown) {
+  if (!detail) return "결과 없음";
+  if (type === "XRAY_SCREENING") {
+    const xray = getRecord(detail, "xray");
+    return joinDisplayValues([xray?.assessment_label, formatRatio(xray?.suspicion_score, "의심도")]);
+  }
+  if (type === "CT_NODULE") {
+    const ct = getRecord(detail, "ct");
+    return formatPercent(ct?.overall_malignancy_risk, "악성 위험도", false) || "결과 없음";
+  }
+  if (type === "TNM_STAGING") return joinValues(getRecord(detail, "tnm"), ["predicted_t", "predicted_n", "predicted_m", "predicted_stage_group"]);
+  if (type === "PATHOLOGY_DIAGNOSIS") return joinValues(getRecord(detail, "pathology"), ["malignancy_assessment_label", "predicted_histologic_type", "predicted_subtype"]);
+  if (type === "GENE_PREDICTION") {
+    const genes = getArray(detail, "genes");
+    return summarizeGeneItems(genes, "predicted_status_label");
+  }
+  if (type === "PDL1_CLASSIFICATION") {
+    const pdl1 = getRecord(detail, "pdl1");
+    return joinDisplayValues([pdl1?.predicted_tps_range_label, formatRatio(pdl1?.confidence, "신뢰도")]);
+  }
+  if (type === "TREATMENT_RECOMMENDATION") return joinValues(getRecord(detail, "treatment"), ["overall_opinion", "recommended_plan"]);
+  return "결과 없음";
+}
+
+function getClinicalSummary(type: string, result?: ClinicalSummaryResult) {
+  if (!result) return "확정 결과 없음";
+  if (type === "XRAY_SCREENING") return joinValues(getRecord(result.result_detail, "xray"), ["assessment_label"]);
+  if (type === "CT_NODULE") {
+    const ct = getRecord(result.result_detail, "ct");
+    return joinDisplayValues([ct?.overall_assessment_label, formatPercent(ct?.overall_malignancy_risk, "악성 위험도", false)]);
+  }
+  if (type === "TNM_STAGING") return joinValues(getRecord(result.result_detail, "tnm"), ["t_category", "n_category", "m_category", "stage_group"]);
+  if (type === "PATHOLOGY_DIAGNOSIS") return joinValues(getRecord(result.result_detail, "pathology"), ["malignancy_status_label", "histologic_type", "subtype"]);
+  if (type === "GENE_PREDICTION") {
+    const findings = getArray(getRecord(result.result_detail, "gene"), "findings");
+    return findings.length ? summarizeGeneItems(findings, "assessment_label") : "확정 결과 없음";
+  }
+  if (type === "PDL1_CLASSIFICATION") {
+    const pdl1 = getRecord(result.result_detail, "pdl1");
+    return joinDisplayValues([formatPercent(pdl1?.tps_percent, "TPS", false), pdl1?.interpretation]);
+  }
+  return result.result_status_label || result.result_status || "확정 결과 없음";
+}
+
+function getModelLabel(result?: AiSummaryResult) {
+  if (!result) return "연결된 AI 분석 없음";
+  return [result.model_name, result.model_version_name && `v${result.model_version_name}`, formatDate(result.completed_at)].filter(Boolean).join(" · ") || "모델 정보 없음";
+}
+
+function joinValues(record: Record<string, unknown> | null, keys: string[]) {
+  if (!record) return "결과 없음";
+  const values = keys.map((key) => record[key]).filter((value) => value !== null && value !== undefined && value !== "").map(String);
+  return values.length ? values.join(" · ") : "결과 없음";
+}
+
+function GeneResultDetails({ aiDetail, clinicalDetail }: { aiDetail: unknown; clinicalDetail: unknown }) {
+  const aiGenes = getArray(aiDetail, "genes");
+  const clinicalGenes = getArray(getRecord(clinicalDetail, "gene"), "findings");
+  if (aiGenes.length <= 3 && clinicalGenes.length <= 3) return null;
+
+  return (
+    <details className="border-t border-slate-200 bg-slate-50/50 px-3 py-2">
+      <summary className="cursor-pointer select-none text-[10px] font-semibold text-blue-700">유전자 전체 보기</summary>
+      <div className="mt-2 grid grid-cols-2 gap-3" aria-label="전체 유전자 결과">
+        <GeneResultList title="AI 분석 후보" items={aiGenes} statusKey="predicted_status_label" tone="blue" />
+        <GeneResultList title="의료진 확정 결과" items={clinicalGenes} statusKey="assessment_label" tone="emerald" />
+      </div>
+    </details>
+  );
+}
+
+function GeneResultList({ title, items, statusKey, tone }: { title: string; items: unknown[]; statusKey: string; tone: "blue" | "emerald" }) {
+  return <section className="min-w-0"><h3 className={`text-[9px] font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{title}</h3>{items.length ? <ul className="mt-1.5 space-y-1">{items.map((item, index) => { const gene = asRecord(item); return <li key={`${String(gene?.gene_symbol ?? "gene")}-${index}`} className="flex items-start justify-between gap-2 rounded bg-white px-2 py-1.5 text-[9px]"><span className="font-semibold text-slate-700">{String(gene?.gene_symbol ?? "-")}</span><span className="min-w-0 break-words text-right text-slate-500">{String(gene?.[statusKey] ?? "-")}</span></li>; })}</ul> : <p className="mt-2 text-[9px] text-slate-400">결과 없음</p>}</section>;
+}
+
+function summarizeGeneItems(items: unknown[], statusKey: string) {
+  if (!items.length) return "결과 없음";
+  const visible = items.slice(0, 3).map((item) => joinValues(asRecord(item), ["gene_symbol", statusKey]));
+  const remaining = items.length - visible.length;
+  return `${visible.join(" · ")}${remaining > 0 ? ` · 외 ${remaining}개` : ""}`;
+}
+
+type ComparablePair = { label: string; ai: unknown; clinical: unknown };
+type Comparison = { state: "MATCH" | "DIFFERENT" | "UNAVAILABLE"; label: string; differences: ComparablePair[] };
+
+function compareResults(type: string, ai: AiSummaryResult | undefined, clinical?: ClinicalSummaryResult): Comparison {
+  if (ai?.status !== "SUCCEEDED" || !ai.result_detail || clinical?.result_status !== "CONFIRMED") return { state: "UNAVAILABLE", label: "비교 불가", differences: [] };
+  const pairs = getComparablePairs(type, ai.result_detail, clinical.result_detail);
+  if (!pairs.length) return { state: "UNAVAILABLE", label: "직접 비교 항목 없음", differences: [] };
+  const differences = pairs.filter(({ ai, clinical: confirmed }) => normalizeComparable(ai) !== normalizeComparable(confirmed));
+  return differences.length === 0
+    ? { state: "MATCH", label: "일치", differences: [] }
+    : { state: "DIFFERENT", label: `차이 ${differences.length}건`, differences };
+}
+
+function getComparablePairs(type: string, aiDetail: unknown, clinicalDetail: unknown): ComparablePair[] {
+  if (type === "XRAY_SCREENING") return presentPairs([{ label: "판정", ai: getRecord(aiDetail, "xray")?.assessment, clinical: getRecord(clinicalDetail, "xray")?.assessment }]);
+  if (type === "TNM_STAGING") {
+    const ai = getRecord(aiDetail, "tnm");
+    const clinical = getRecord(clinicalDetail, "tnm");
+    return presentPairs([{ label: "T", ai: ai?.predicted_t, clinical: clinical?.t_category }, { label: "N", ai: ai?.predicted_n, clinical: clinical?.n_category }, { label: "M", ai: ai?.predicted_m, clinical: clinical?.m_category }, { label: "Stage", ai: ai?.predicted_stage_group, clinical: clinical?.stage_group }]);
+  }
+  if (type === "PATHOLOGY_DIAGNOSIS") {
+    const ai = getRecord(aiDetail, "pathology");
+    const clinical = getRecord(clinicalDetail, "pathology");
+    return presentPairs([{ label: "조직형", ai: ai?.predicted_histologic_type, clinical: clinical?.histologic_type }, { label: "아형", ai: ai?.predicted_subtype, clinical: clinical?.subtype }]);
+  }
+  if (type === "GENE_PREDICTION") {
+    const confirmedByGene = new Map(getArray(getRecord(clinicalDetail, "gene"), "findings").map((item) => {
+      const finding = asRecord(item);
+      return [String(finding?.gene_symbol ?? "").toUpperCase(), finding?.assessment] as const;
+    }));
+    return presentPairs(getArray(aiDetail, "genes").map((item) => {
+      const gene = asRecord(item);
+      const symbol = String(gene?.gene_symbol ?? "").toUpperCase();
+      return { label: symbol || "유전자", ai: gene?.predicted_status, clinical: confirmedByGene.get(symbol) };
+    }));
+  }
+  if (type === "PDL1_CLASSIFICATION") {
+    const aiRange = getRecord(aiDetail, "pdl1")?.predicted_tps_range;
+    const tps = toNumber(getRecord(clinicalDetail, "pdl1")?.tps_percent);
+    return aiRange && tps !== null ? [{ label: "TPS 구간", ai: aiRange, clinical: tps < 1 ? "LT_1" : tps < 50 ? "FROM_1_TO_49" : "GE_50" }] : [];
+  }
+  return [];
+}
+
+function presentPairs(pairs: ComparablePair[]) { return pairs.filter(({ ai, clinical }) => ai !== null && ai !== undefined && ai !== "" && clinical !== null && clinical !== undefined && clinical !== ""); }
+function normalizeComparable(value: unknown) { return String(value).replace(/^PREDICTED_/, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase(); }
+function formatComparable(value: unknown) { return String(value).replace(/^PREDICTED_/, "").replaceAll("_", " "); }
+function joinDisplayValues(values: unknown[]) { const present = values.filter((value) => value !== null && value !== undefined && value !== "").map(String); return present.length ? present.join(" · ") : "결과 없음"; }
+function formatRatio(value: unknown, label: string) { return formatPercent(value, label, true); }
+function formatPercent(value: unknown, label: string, ratio: boolean) { const number = toNumber(value); return number === null ? "" : `${label} ${(ratio && number <= 1 ? number * 100 : number).toFixed(1)}%`; }
+function toNumber(value: unknown) { if (value === null || value === undefined || value === "") return null; const number = Number(value); return Number.isFinite(number) ? number : null; }
+
+function getRecord(value: unknown, key: string) { const nested = asRecord(value)?.[key]; return asRecord(nested); }
+function getArray(value: unknown, key: string): unknown[] { const nested = asRecord(value)?.[key]; return Array.isArray(nested) ? nested : []; }
+function asRecord(value: unknown): Record<string, unknown> | null { return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null; }
+function formatDate(value?: string | null) { if (!value) return "확정 시각 없음"; const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR"); }
