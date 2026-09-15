@@ -3,7 +3,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'l10n/app_localizations.dart';
-import 'shared/app_shell.dart';
+// import 'shared/app_shell.dart';
+import 'features/auth/login_screen.dart'; 
 
 void main() {
   runApp(const MedicalApp());
@@ -74,7 +75,7 @@ class MedicalAppState extends State<MedicalApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
 
-      home: const AppShell(),
+      home: const LoginScreen(),
     );
   }
 }
