@@ -13,19 +13,27 @@ import torch
 PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 PROJECT_ROOT = PACKAGE_ROOT
 
-MEDICALNET_MODELS = (
+# "models/resnet.py" lives under external/MedicalNet, so `from models.resnet import
+# ...` needs external/MedicalNet itself (the parent of models/) on sys.path - not the
+# models/ directory.
+MEDICALNET_ROOT = (
     PACKAGE_ROOT
     / "external"
     / "MedicalNet"
-    / "models"
 )
 
 CODE_DIR = PACKAGE_ROOT / "code"
 
 sys.path.insert(0, str(CODE_DIR))
-sys.path.insert(0, str(MEDICALNET_MODELS))
 
-from texture_common_ctmask import TextureCTMaskResNet18
+import texture_common_ctmask as texture_common
+
+# texture_common_ctmask.py ships with a hardcoded personal-machine default for
+# MEDICALNET_ROOT; override it with the real deployed location before the model
+# class's __init__ uses it to extend sys.path (mirrors the morphology package).
+texture_common.MEDICALNET_ROOT = MEDICALNET_ROOT
+
+TextureCTMaskResNet18 = texture_common.TextureCTMaskResNet18
 
 
 CLASS_NAMES = [

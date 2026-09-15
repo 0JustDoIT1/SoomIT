@@ -334,6 +334,28 @@ export async function uploadRadiologyXrayImage(orderId: string, image: File) {
   return response.json() as Promise<RadiologyRegisteredImage>;
 }
 
+export async function uploadRadiologyCtSeries(
+  orderId: string,
+  files: File[],
+  seriesInstanceUid: string,
+) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  formData.set("series_instance_uid", seriesInstanceUid);
+  const response = await staffAuthenticatedFetch(
+    `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/ct-series/upload/`,
+    { method: "POST", headers: { Accept: "application/json" }, body: formData },
+  );
+  if (!response.ok) {
+    const errorData: unknown = await response.json().catch(() => null);
+    throw new RadiologyApiError(
+      getErrorMessage(errorData) ?? "CT Series를 업로드하지 못했습니다.",
+      response.status,
+    );
+  }
+  return response.json() as Promise<RadiologyRegisteredImage>;
+}
+
 export async function fetchRadiologyXrayImage(orderId: string, assetId: string, signal?: AbortSignal) {
   const response = await staffAuthenticatedFetch(
     `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/content/`,

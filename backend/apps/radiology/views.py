@@ -23,7 +23,7 @@ from apps.clinical.models import ClinicalResult
 from apps.patients.models import Appointment
 
 from .models import RadiologyReview
-from .tasks import run_xray_analysis
+from .tasks import run_ct_analysis, run_xray_analysis
 from .services.xray_storage import (
     XrayStorageError,
     build_xray_object_path,
@@ -32,7 +32,10 @@ from .services.xray_storage import (
     upload_xray_image,
 )
 from .services.workflow import is_pet_ct_tnm_order
+from .services.dicom_validation import CtSeriesValidationError, parse_ct_headers, validate_ct_series
+from .services.orthanc_storage import OrthancError, delete_orthanc_series, upload_ct_series
 from .serializers import (
+    CtSeriesUploadSerializer,
     RadiologyAiAnalysisDetailSerializer,
     RadiologyAiResultSerializer,
     RadiologyImageAssetCreateSerializer,
@@ -538,6 +541,77 @@ class RadiologyOrderXrayImageUploadAPIView(RadiologyPermissionMixin, APIView):
         return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
 
 
+class RadiologyOrderCtSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
+    """Upload one CT Series' original DICOM files to Orthanc and register a READY asset.
+
+    Idempotent per (order, series_instance_uid): if a READY asset already exists for
+    the requested Series, it is returned as-is without re-uploading to Orthanc.
+    """
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        order = self.get_order(order_id, for_update=True)
+        if order is None:
+            return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        if order.order_type != ExaminationOrder.OrderType.CT:
+            return Response({"detail": "CT 오더에만 영상을 업로드할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        serializer = CtSeriesUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        uploaded_files = serializer.validated_data["files"]
+        series_instance_uid = serializer.validated_data["series_instance_uid"]
+
+        existing_asset = CaseImageAsset.objects.filter(
+            examination_order=order,
+            series_instance_uid=series_instance_uid,
+            status=CaseImageAsset.Status.READY,
+        ).first()
+        if existing_asset is not None:
+            return Response(RadiologyImageAssetCreateSerializer(existing_asset).data, status=status.HTTP_200_OK)
+
+        try:
+            headers = parse_ct_headers(uploaded_files)
+            validate_ct_series(headers, expected_series_instance_uid=series_instance_uid)
+        except CtSeriesValidationError as exc:
+            return Response({"files": exc.errors}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            upload_result = upload_ct_series([header.dicom_bytes for header in headers])
+        except OrthancError:
+            return Response({"detail": "CT 영상을 Orthanc에 저장하지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+
+        storage_uri = f"orthanc://series/{upload_result.orthanc_series_id}"
+        if CaseImageAsset.objects.filter(storage_uri=storage_uri).exists():
+            return Response(
+                {"detail": "동일한 영상 자산이 이미 등록되어 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            asset = CaseImageAsset.objects.create(
+                case=order.case,
+                examination_order=order,
+                storage_type=CaseImageAsset.StorageType.ORTHANC,
+                storage_uri=storage_uri,
+                image_type=CaseImageAsset.ImageType.CT,
+                workflow_stage=WorkflowStage.CT,
+                status=CaseImageAsset.Status.READY,
+                file_format="DICOM",
+                study_instance_uid=headers[0].study_instance_uid,
+                series_instance_uid=series_instance_uid,
+                orthanc_study_id=upload_result.orthanc_study_id,
+                orthanc_series_id=upload_result.orthanc_series_id,
+                metadata=None,
+            )
+        except Exception:
+            try:
+                delete_orthanc_series(upload_result.orthanc_series_id)
+            except OrthancError:
+                pass
+            raise
+        return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
+
+
 class RadiologyOrderXrayImageContentAPIView(RadiologyPermissionMixin, APIView):
     """Return an authorized X-ray asset without exposing its gs:// URI to the browser."""
 
@@ -626,6 +700,10 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
         if analysis_type == AnalysisType.XRAY_ANALYSIS:
             transaction.on_commit(
                 lambda analysis_id=str(analysis.id): run_xray_analysis.delay(analysis_id)
+            )
+        elif analysis_type == AnalysisType.CT_ANALYSIS:
+            transaction.on_commit(
+                lambda analysis_id=str(analysis.id): run_ct_analysis.delay(analysis_id)
             )
         return Response(
             RadiologyAiAnalysisDetailSerializer(analysis).data,

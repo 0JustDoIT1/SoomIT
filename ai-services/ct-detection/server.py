@@ -51,7 +51,8 @@ runtime_model_sha256 = None
 
 
 class OrthancDetectionRequest(BaseModel):
-    orthanc_series_id: str = Field(min_length=40, max_length=40)
+    # Orthanc resource IDs are 44 chars: 5 groups of 8 hex chars joined by dashes.
+    orthanc_series_id: str = Field(min_length=44, max_length=44)
     series_instance_uid: str | None = Field(default=None, min_length=1, max_length=128)
     case_id: str | None = Field(default=None, min_length=1, max_length=128)
     score_threshold: float = Field(default=DEFAULT_SCORE_THRESHOLD, ge=0.0, le=1.0)

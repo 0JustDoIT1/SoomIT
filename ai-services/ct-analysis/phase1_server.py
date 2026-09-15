@@ -95,7 +95,8 @@ app = FastAPI(title="SoomIT CT analysis phase 1", version="1.0.0", lifespan=life
 
 
 class OrthancPhase1Request(BaseModel):
-    orthanc_series_id: str = Field(min_length=40, max_length=40)
+    # Orthanc resource IDs are 44 chars: 5 groups of 8 hex chars joined by dashes.
+    orthanc_series_id: str = Field(min_length=44, max_length=44)
     case_id: str = Field(min_length=1, max_length=128)
     series_instance_uid: str | None = Field(default=None, max_length=128)
     output_gcs_uri: str | None = None

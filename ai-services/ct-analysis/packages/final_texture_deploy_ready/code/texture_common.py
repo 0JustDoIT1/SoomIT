@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 
 
-ROOT = Path("/home/jupyter-mirae20/ct-project")
+ROOT = Path(__file__).resolve().parents[1]
 
 MEDICALNET_ROOT = (
     ROOT

@@ -7,11 +7,14 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 
 
-ROOT = Path("/home/jupyter-mirae20/ct-project")
+# Fallback default; inference.py overrides MEDICALNET_ROOT with the real deployed
+# location (third_party/MedicalNet, not external/MedicalNet) before instantiating
+# MorphologyCTMaskResNet18.
+ROOT = Path(__file__).resolve().parents[1]
 
 MEDICALNET_ROOT = (
     ROOT
-    / "external"
+    / "third_party"
     / "MedicalNet"
 )
 

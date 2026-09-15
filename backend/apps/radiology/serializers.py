@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.utils import timezone
 from rest_framework import serializers
 
@@ -118,6 +119,7 @@ class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
             "storage_type",
             "storage_uri",
             "file_format",
+            "orthanc_study_id",
             "orthanc_series_id",
             "study_instance_uid",
             "series_instance_uid",
@@ -160,6 +162,25 @@ class RadiologyXrayImageUploadSerializer(serializers.Serializer):
         if not filename.endswith(expected_extensions):
             raise serializers.ValidationError("파일 확장자와 이미지 형식이 일치하지 않습니다.")
         return uploaded_file
+
+
+class CtSeriesUploadSerializer(serializers.Serializer):
+    files = serializers.ListField(
+        child=serializers.FileField(allow_empty_file=False),
+        allow_empty=False,
+        write_only=True,
+    )
+    series_instance_uid = serializers.CharField(max_length=128)
+
+    def validate_files(self, uploaded_files):
+        if len(uploaded_files) > settings.CT_SERIES_MAX_FILE_COUNT:
+            raise serializers.ValidationError(
+                f"파일 수가 너무 많습니다. 최대 {settings.CT_SERIES_MAX_FILE_COUNT}개까지 업로드할 수 있습니다.",
+            )
+        total_size = sum(uploaded_file.size for uploaded_file in uploaded_files)
+        if total_size > settings.CT_SERIES_MAX_UPLOAD_BYTES:
+            raise serializers.ValidationError("업로드 총 용량이 허용된 크기를 초과했습니다.")
+        return uploaded_files
 
 
 class RadiologyAiAnalysisSummarySerializer(serializers.Serializer):

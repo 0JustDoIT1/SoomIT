@@ -7,7 +7,9 @@ import torch.nn as nn
 from torch.utils.data import Dataset
 
 
-ROOT = Path("/home/jupyter-mirae20/ct-project")
+# Fallback default; callers (e.g. inference.py) override MEDICALNET_ROOT with the
+# real deployed location before instantiating TextureCTMaskResNet18.
+ROOT = Path(__file__).resolve().parents[1]
 
 MEDICALNET_ROOT = (
     ROOT

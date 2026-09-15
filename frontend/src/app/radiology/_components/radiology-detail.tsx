@@ -2,9 +2,19 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import dynamic from "next/dynamic";
 
 import { StatusBadge } from "@/components/workspace/status-badge";
 
+import {
+  groupBySeriesInstanceUid,
+  isLikelyLocalizer,
+  parseDicomHeaders,
+  pickDefaultSeriesUid,
+  summarizeSeries,
+  validateCtSeries,
+  type DicomHeaderInfo,
+} from "../_lib/dicom-header";
 import {
   fetchRadiologyAnalysis,
   fetchRadiologyAnalysisResult,
@@ -12,11 +22,17 @@ import {
   RadiologyApiError,
   startRadiologyAnalysis,
   submitRadiologyAnalysisForReview,
+  uploadRadiologyCtSeries,
   uploadRadiologyXrayImage,
   type RadiologyAnalysisDetail,
   type RadiologyAnalysisResult,
   type RadiologyWorklistItem,
 } from "../_lib/radiology-api";
+
+const CtSeriesPreview = dynamic(
+  () => import("./ct-series-preview").then((module) => module.CtSeriesPreview),
+  { ssr: false },
+);
 
 type TrackedAnalysis = Pick<
   RadiologyAnalysisDetail,
@@ -69,6 +85,20 @@ function isPreviewableImage(file: File) {
   return file.type === "image/jpeg" || file.type === "image/png";
 }
 
+const NON_DICOM_EXTENSIONS = new Set(["txt", "ds_store", "db", "ini", "ico", "json", "xml", "log"]);
+
+function isLikelyDicomFile(file: File) {
+  const name = file.name.toLowerCase();
+  if (name === "thumbs.db" || name === ".ds_store" || name.startsWith(".")) return false;
+  const extension = name.includes(".") ? name.split(".").pop() ?? "" : "";
+  if (extension && NON_DICOM_EXTENSIONS.has(extension)) return false;
+  return true;
+}
+
+function filterDicomFolderFiles(files: File[]) {
+  return files.filter(isLikelyDicomFile);
+}
+
 function formatDateTime(value: string | null) {
   if (!value) return "-";
   const date = new Date(value);
@@ -110,6 +140,77 @@ function formatPayloadPercent(value: number | string | null | undefined) {
   if (value === null || value === undefined) return "-";
   const numeric = Number(value);
   return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : String(value);
+}
+
+function getNested(payload: unknown, path: string[]): unknown {
+  let current: unknown = payload;
+  for (const key of path) {
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[key];
+  }
+  return current;
+}
+
+function getNestedString(payload: unknown, path: string[]): string | null {
+  const value = getNested(payload, path);
+  return typeof value === "string" ? value : null;
+}
+
+function getNestedNumber(payload: unknown, path: string[]): number | null {
+  const value = getNested(payload, path);
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function formatMm(value: number | null) {
+  return value === null ? "-" : `${value.toFixed(1)} mm`;
+}
+
+function formatMm3(value: number | null) {
+  return value === null ? "-" : `${value.toFixed(0)} mm³`;
+}
+
+const MORPHOLOGY_LABELS: Record<string, string> = {
+  POSITIVE: "있음",
+  NEGATIVE: "없음",
+};
+
+const TEXTURE_LABELS: Record<string, string> = {
+  GGO: "간유리음영(GGO)",
+  PART_SOLID: "부분 고형(Part-solid)",
+  SOLID: "고형(Solid)",
+};
+
+function CtNoduleCard({ nodule }: { nodule: Extract<RadiologyAnalysisResult["result"], { nodules: unknown[] }>["nodules"][number] }) {
+  const payload = nodule.finding_payload;
+  const diameter = getNestedNumber(payload, ["quantification", "maximum_3d_diameter_mm"])
+    ?? getNestedNumber(payload, ["quantification", "equivalent_diameter_mm"]);
+  const volume = getNestedNumber(payload, ["quantification", "volume_mm3"]);
+  const spiculation = getNestedString(payload, ["morphology", "prediction", "spiculation", "prediction"]);
+  const lobulation = getNestedString(payload, ["morphology", "prediction", "lobulation", "prediction"]);
+  const texturePattern = getNestedString(payload, ["texture", "prediction_label"]);
+  const malignancyPrediction = getNestedString(payload, ["malignancy", "prediction", "prediction"]);
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-4 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm font-bold text-slate-900">결절 #{nodule.nodule_no}</p>
+        {malignancyPrediction ? (
+          <StatusBadge
+            status={malignancyPrediction === "MALIGNANT" ? "AI_FAILED" : "AI_COMPLETED"}
+            label={malignancyPrediction === "MALIGNANT" ? "악성 의심" : "양성 의심"}
+          />
+        ) : null}
+      </div>
+      <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div><dt className="text-slate-400">직경</dt><dd className="mt-1 font-semibold text-slate-800">{formatMm(diameter)}</dd></div>
+        <div><dt className="text-slate-400">부피</dt><dd className="mt-1 font-semibold text-slate-800">{formatMm3(volume)}</dd></div>
+        <div><dt className="text-slate-400">악성도</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(nodule.malignancy_risk, 1)}</dd></div>
+        <div><dt className="text-slate-400">질감(Texture)</dt><dd className="mt-1 font-semibold text-slate-800">{texturePattern ? TEXTURE_LABELS[texturePattern] ?? texturePattern : "-"}</dd></div>
+        <div><dt className="text-slate-400">Spiculation</dt><dd className="mt-1 font-semibold text-slate-800">{spiculation ? MORPHOLOGY_LABELS[spiculation] ?? spiculation : "-"}</dd></div>
+        <div><dt className="text-slate-400">Lobulation</dt><dd className="mt-1 font-semibold text-slate-800">{lobulation ? MORPHOLOGY_LABELS[lobulation] ?? lobulation : "-"}</dd></div>
+      </dl>
+    </div>
+  );
 }
 
 function XrayImagePanel({
@@ -173,7 +274,18 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
     </div>;
   }
   if ("nodules" in data.result) {
-    return <div className="text-xs"><dl className="grid gap-3 sm:grid-cols-2"><div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">\uc804\uccb4 \uc545\uc131 \uc704\ud5d8\ub3c4</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(data.result.overall_malignancy_risk, 1)}</dd></div><div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">\uacb0\uc808 \uac1c\uc218</dt><dd className="mt-2 text-lg font-bold text-slate-900">{data.result.nodules.length}</dd></div></dl></div>;
+    const { nodules, overall_malignancy_risk } = data.result;
+    return <div className="space-y-3 text-xs">
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">\uc804\uccb4 \uc545\uc131 \uc704\ud5d8\ub3c4</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(overall_malignancy_risk, 1)}</dd></div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">\uacb0\uc808 \uac1c\uc218</dt><dd className="mt-2 text-lg font-bold text-slate-900">{nodules.length}</dd></div>
+      </dl>
+      {nodules.length > 0 ? (
+        <div className="space-y-2">
+          {nodules.map((nodule) => <CtNoduleCard key={nodule.nodule_no} nodule={nodule} />)}
+        </div>
+      ) : <p className="text-slate-500">\ud0d0\uc9c0\ub41c \uacb0\uc808\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</p>}
+    </div>;
   }
   return <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">{[["T", data.result.predicted_t], ["N", data.result.predicted_n], ["M", data.result.predicted_m], ["Stage", data.result.predicted_stage_group], ["Confidence", formatPercent(data.result.confidence)]].map(([label, value]) => <div key={label} className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-blue-50/50 p-4"><dt className="text-violet-600">{label}</dt><dd className="mt-2 text-xl font-bold text-slate-900">{value ?? "-"}</dd></div>)}</dl>;
 }
@@ -229,6 +341,9 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [analysisResult, setAnalysisResult] = useState<RadiologyAnalysisResult | null>(null);
   const [serverImageUrl, setServerImageUrl] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [dicomHeaders, setDicomHeaders] = useState<DicomHeaderInfo[]>([]);
+  const [parsingDicom, setParsingDicom] = useState(false);
+  const [selectedSeriesUid, setSelectedSeriesUid] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
   const order = item.examination_order;
@@ -243,15 +358,45 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const selectedFileTypes = Array.from(new Set(selectedFiles.map(getFileExtension)));
   const analysisCompleted = trackedAnalysis?.status === "SUCCEEDED";
   const analysisRunning = trackedAnalysis?.status === "RUNNING" || trackedAnalysis?.status === "PENDING";
-  const canStartAnalysis = image?.status === "READY" && trackedAnalysis === null;
   const trackedAnalysisId = trackedAnalysis?.analysis_id;
   const trackedAnalysisStatus = trackedAnalysis?.status;
+  const seriesGroups = useMemo(() => groupBySeriesInstanceUid(dicomHeaders), [dicomHeaders]);
+  const seriesSummaries = useMemo(() => summarizeSeries(seriesGroups), [seriesGroups]);
+  const selectedSeriesFiles = useMemo(
+    () => (selectedSeriesUid ? seriesGroups.get(selectedSeriesUid) ?? [] : []),
+    [seriesGroups, selectedSeriesUid],
+  );
+  const ctSeriesValidation = useMemo(
+    () => (selectedSeriesFiles.length > 0 ? validateCtSeries(selectedSeriesFiles) : null),
+    [selectedSeriesFiles],
+  );
+  const ctReadyToUpload = !isXray && selectedSeriesFiles.length > 0 && ctSeriesValidation?.valid === true;
+  const canStartAnalysis = trackedAnalysis === null && (image?.status === "READY" || ctReadyToUpload);
 
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    if (isXray || selectedFiles.length === 0) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setParsingDicom(true);
+    parseDicomHeaders(selectedFiles)
+      .then((headers) => {
+        if (cancelled) return;
+        setDicomHeaders(headers);
+        setSelectedSeriesUid(pickDefaultSeriesUid(summarizeSeries(groupBySeriesInstanceUid(headers))));
+      })
+      .finally(() => {
+        if (!cancelled) setParsingDicom(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isXray, selectedFiles]);
 
   useEffect(() => {
     if (!isXray || !image?.id) {
@@ -317,10 +462,23 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   }, [analysisResult, trackedAnalysisId, trackedAnalysisStatus]);
 
   async function handleStartAnalysis() {
+    if (!canStartAnalysis) return;
     setStartingAnalysis(true);
     setActionError("");
     setActionMessage("");
     try {
+      if (!isXray && image?.status !== "READY") {
+        if (!selectedSeriesUid) throw new RadiologyApiError("분석할 CT Series를 선택해 주세요.");
+        await uploadRadiologyCtSeries(
+          order.id,
+          selectedSeriesFiles.map((header) => header.file),
+          selectedSeriesUid,
+        );
+        setSelectedFiles([]);
+        setDicomHeaders([]);
+        setSelectedSeriesUid(null);
+        onImageUploaded?.();
+      }
       const created = await startRadiologyAnalysis(order.id);
       setTrackedAnalysis(trackAnalysis(created));
       setAnalysisResult(null);
@@ -433,7 +591,13 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                 multiple={!isXray}
                 accept={isXray ? "image/jpeg,image/png" : ".dcm,.dicom,application/dicom"}
                 className="sr-only"
-                onChange={(event) => setSelectedFiles(Array.from(event.target.files ?? []))}
+                {...(!isXray ? { webkitdirectory: "" } : {})}
+                onChange={(event) => {
+                  const picked = Array.from(event.target.files ?? []);
+                  setSelectedFiles(isXray ? picked : filterDicomFolderFiles(picked));
+                  setDicomHeaders([]);
+                  setSelectedSeriesUid(null);
+                }}
               />
             </label>
           </div>
@@ -449,14 +613,62 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
               {isXray && !previewUrl ? <div className="mt-3 flex min-h-72 items-center justify-center border border-dashed border-slate-300 bg-slate-100 px-3 text-center text-slate-500">DICOM 파일은 이 화면에서 미리보기를 제공하지 않습니다.</div> : null}
               {!isXray ? (
                 <div className="mt-3">
-                  <div className="flex min-h-72 flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-100 text-center text-slate-600"><p className="text-sm font-semibold">선택된 DICOM Series</p><p className="mt-2 text-2xl font-bold text-slate-800">{selectedFiles.length} files</p></div>
-                  <div className="mt-3 space-y-1">
-                  {selectedFiles.slice(0, 3).map((file) => <p key={`${file.name}-${file.lastModified}`} className="truncate">{file.name} · {formatFileSize(file.size)}</p>)}
-                  {selectedFiles.length > 3 ? <p className="text-slate-500">외 {selectedFiles.length - 3}개 파일</p> : null}
+                  <div className="flex min-h-72 flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-100 text-center text-slate-600">
+                    <p className="text-sm font-semibold">선택된 DICOM 폴더</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-800">{selectedFiles.length} files</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {parsingDicom ? "DICOM 헤더 분석 중…" : `Series ${seriesGroups.size}개 감지됨`}
+                    </p>
                   </div>
+                  {!parsingDicom && seriesSummaries.length > 0 ? (
+                    <div className="mt-3 space-y-2">
+                      <p className="text-xs font-semibold text-slate-700">분석 대상 Series 선택</p>
+                      {seriesSummaries.map((summary) => {
+                        const isSelected = summary.seriesInstanceUid === selectedSeriesUid;
+                        return (
+                          <label
+                            key={summary.seriesInstanceUid}
+                            className={`flex cursor-pointer items-center justify-between gap-3 rounded-lg border px-3 py-2 text-xs ${isSelected ? "border-blue-400 bg-blue-50" : "border-slate-200 bg-white hover:bg-slate-50"}`}
+                          >
+                            <span className="flex min-w-0 items-center gap-2">
+                              <input
+                                type="radio"
+                                name="ct-series-selection"
+                                checked={isSelected}
+                                onChange={() => setSelectedSeriesUid(summary.seriesInstanceUid)}
+                              />
+                              <span className="truncate font-medium text-slate-800">
+                                {summary.seriesDescription || "설명 없음"}
+                                {isLikelyLocalizer(summary) ? " (Localizer/Scout)" : ""}
+                              </span>
+                            </span>
+                            <span className="shrink-0 text-slate-500">{summary.modality ?? "-"} · {summary.sliceCount} slices</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {!parsingDicom && selectedSeriesFiles.length > 0 ? (
+                    <>
+                      <CtSeriesPreview seriesFiles={selectedSeriesFiles} />
+                      {ctSeriesValidation && !ctSeriesValidation.valid ? (
+                        <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                          <p className="font-semibold">선택한 Series를 분석에 사용할 수 없습니다.</p>
+                          <ul className="mt-1 list-disc space-y-0.5 pl-4">
+                            {ctSeriesValidation.errors.map((error) => <li key={error}>{error}</li>)}
+                          </ul>
+                        </div>
+                      ) : null}
+                    </>
+                  ) : (
+                    <div className="mt-3 space-y-1">
+                    {selectedFiles.slice(0, 3).map((file) => <p key={`${file.name}-${file.lastModified}`} className="truncate">{file.name} · {formatFileSize(file.size)}</p>)}
+                    {selectedFiles.length > 3 ? <p className="text-slate-500">외 {selectedFiles.length - 3}개 파일</p> : null}
+                    </div>
+                  )}
                 </div>
               ) : null}
-              {isXray ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{"\uc120\ud0dd\ud55c PNG \ub610\ub294 JPEG\ub294 \uc5c5\ub85c\ub4dc \ud6c4 \uc601\uc0c1 \uc790\uc0b0\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4."}</p><button type="button" onClick={handleUploadImage} disabled={!previewFile || uploadingImage} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingImage ? "\uc5c5\ub85c\ub4dc \uc911" : "\uc11c\ubc84\uc5d0 \uc5c5\ub85c\ub4dc"}</button></div> : <p className="mt-3 text-slate-500">선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다.</p>}
+              {isXray ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{"\uc120\ud0dd\ud55c PNG \ub610\ub294 JPEG\ub294 \uc5c5\ub85c\ub4dc \ud6c4 \uc601\uc0c1 \uc790\uc0b0\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4."}</p><button type="button" onClick={handleUploadImage} disabled={!previewFile || uploadingImage} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingImage ? "\uc5c5\ub85c\ub4dc \uc911" : "\uc11c\ubc84\uc5d0 \uc5c5\ub85c\ub4dc"}</button></div> : <p className="mt-3 text-slate-500">{ctReadyToUpload ? "아래 \"AI 분석 실행\"을 누르면 선택한 Series가 업로드된 뒤 분석이 시작됩니다." : "선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다."}</p>}
             </div>
           ) : null}
           <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p>

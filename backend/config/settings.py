@@ -204,6 +204,20 @@ ORTHANC_USERNAME = os.environ.get("ORTHANC_USERNAME", "orthanc")
 ORTHANC_PASSWORD = os.environ.get("ORTHANC_PASSWORD", "change-me")
 ORTHANC_TIMEOUT_SECONDS = float(os.environ.get("ORTHANC_TIMEOUT_SECONDS", "30"))
 
+CT_SERIES_MAX_FILE_COUNT = int(os.environ.get("CT_SERIES_MAX_FILE_COUNT", "4000"))
+CT_SERIES_MAX_UPLOAD_BYTES = int(
+    os.environ.get("CT_SERIES_MAX_UPLOAD_BYTES", str(2 * 1024 * 1024 * 1024)),
+)
+CT_SERIES_MIN_SLICE_COUNT = int(os.environ.get("CT_SERIES_MIN_SLICE_COUNT", "10"))
+
+# A CT series upload is a single multipart request with hundreds of file fields
+# and a large total payload, well above Django's small defaults (2.5MB / 1000 fields /
+# 100 files - DATA_UPLOAD_MAX_NUMBER_FILES is a distinct limit from _FIELDS).
+DATA_UPLOAD_MAX_MEMORY_SIZE = CT_SERIES_MAX_UPLOAD_BYTES
+FILE_UPLOAD_MAX_MEMORY_SIZE = CT_SERIES_MAX_UPLOAD_BYTES
+DATA_UPLOAD_MAX_NUMBER_FIELDS = CT_SERIES_MAX_FILE_COUNT + 100
+DATA_UPLOAD_MAX_NUMBER_FILES = CT_SERIES_MAX_FILE_COUNT + 100
+
 # ai-services/embedding (intfloat/multilingual-e5-base). Cloud Run 배포판은
 # IAM 인증이 필요하므로, 로컬처럼 인증 없는 서비스일 때만 EMBEDDING_SERVICE_USE_ID_TOKEN=0으로 끈다.
 EMBEDDING_SERVICE_URL = os.environ[

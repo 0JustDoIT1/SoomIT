@@ -594,8 +594,9 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(analysis.source_image_asset, asset)
         delay.assert_called_once_with(str(analysis.id))
 
+    @patch("apps.radiology.views.run_ct_analysis.delay")
     @patch("apps.radiology.views.run_xray_analysis.delay")
-    def test_ct_and_duplicate_analysis_do_not_enqueue_xray_task(self, delay):
+    def test_ct_enqueues_ct_task_not_xray_task(self, xray_delay, ct_delay):
         self.order.order_type = ExaminationOrder.OrderType.CT
         self.order.save(update_fields=["order_type", "updated_at"])
         ModelVersion.objects.create(
@@ -615,7 +616,9 @@ class RadiologyWorklistAPITestCase(APITestCase):
                 format="json",
             )
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        delay.assert_not_called()
+        analysis = AiAnalysis.objects.get(id=response.data["analysis_id"])
+        ct_delay.assert_called_once_with(str(analysis.id))
+        xray_delay.assert_not_called()
 
         duplicate_order = self._create_order(self.case)
         asset = self._create_asset(
@@ -623,6 +626,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
             storage_uri="test://radiology/xray-duplicate",
         )
         self._create_analysis(asset, AiAnalysis.Status.PENDING)
+        ct_delay.reset_mock()
         with self.captureOnCommitCallbacks(execute=True):
             duplicate = self.client.post(
                 reverse("radiology:order-analysis-create", kwargs={"order_id": duplicate_order.id}),
@@ -630,7 +634,8 @@ class RadiologyWorklistAPITestCase(APITestCase):
                 format="json",
             )
         self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
-        delay.assert_not_called()
+        xray_delay.assert_not_called()
+        ct_delay.assert_not_called()
 
     def test_start_ct_and_tnm_analyses_choose_order_meaning(self):
         self.order.order_type = ExaminationOrder.OrderType.CT

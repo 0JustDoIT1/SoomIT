@@ -22,8 +22,12 @@ CHECKPOINT_PATH = (
     / "med3d_resnet18_best.pth"
 )
 
+# final_malignancy_deploy_ready ships no MedicalNet copy of its own (unlike the
+# morphology/texture packages); reuse the texture package's identical resnet.py
+# rather than the nonexistent BUNDLE_ROOT/external/MedicalNet.
 MEDICALNET_ROOT = (
-    BUNDLE_ROOT
+    PACKAGES_ROOT
+    / "final_texture_deploy_ready"
     / "external"
     / "MedicalNet"
 )

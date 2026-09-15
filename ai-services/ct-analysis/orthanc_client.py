@@ -8,7 +8,11 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 
-ORTHANC_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{40}$")
+# Orthanc resource IDs are 5 groups of 8 hex chars joined by dashes (44 chars total),
+# e.g. "19be9b62-7c4191f3-3d755d4c-26e40161-1a0d0836" - not a bare 40-char hex string.
+ORTHANC_ID_PATTERN = re.compile(
+    r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{8}-[0-9a-fA-F]{8}-[0-9a-fA-F]{8}-[0-9a-fA-F]{8}$"
+)
 
 
 class OrthancDownloadError(RuntimeError):

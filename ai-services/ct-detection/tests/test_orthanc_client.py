@@ -27,9 +27,20 @@ class FakeResponse(io.BytesIO):
         self.close()
 
 
+def _orthanc_id(hex_char: str) -> str:
+    """A realistic Orthanc resource ID: 5 groups of 8 hex chars joined by dashes."""
+    group = hex_char * 8
+    return "-".join([group] * 5)
+
+
 def test_validate_orthanc_series_id_rejects_paths():
     with pytest.raises(OrthancDownloadError, match="invalid Orthanc series ID"):
         validate_orthanc_series_id("../../instances")
+
+
+def test_validate_orthanc_series_id_accepts_dashed_format():
+    series_id = _orthanc_id("a")
+    assert validate_orthanc_series_id(series_id) == series_id
 
 
 def test_download_orthanc_series_checks_uid_and_writes_archive(tmp_path: Path):
@@ -45,7 +56,7 @@ def test_download_orthanc_series_checks_uid_and_writes_archive(tmp_path: Path):
             base_url="https://orthanc.example",
             username="reader",
             password="secret",
-            series_id="a" * 40,
+            series_id=_orthanc_id("a"),
             destination=destination,
             timeout=10,
             max_bytes=1024,
@@ -64,7 +75,7 @@ def test_download_orthanc_series_rejects_mismatched_uid(tmp_path: Path):
                 base_url="https://orthanc.example",
                 username="reader",
                 password="secret",
-                series_id="b" * 40,
+                series_id=_orthanc_id("b"),
                 destination=tmp_path / "series.zip",
                 timeout=10,
                 max_bytes=1024,
