@@ -174,6 +174,14 @@ class CaseImageAsset(TimestampedUUIDModel):
         unique=True,
     )
 
+    # Orthanc 내부 Study ID입니다.
+    orthanc_study_id = models.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        db_index=True,
+    )
+
     # Cloud Run이 Orthanc에서 Series를 내려받을 때 사용하는 Orthanc 내부 ID입니다.
     orthanc_series_id = models.CharField(
         max_length=64,
