@@ -23,6 +23,7 @@ import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./cli
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
 import { MedicalOpinionPanel } from "./medical-opinion-panel";
+import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
@@ -1868,6 +1869,8 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </section>
           </PrescriptionSection>
+        ) : selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "SAFETY_CHECK" ? (
+          <PatientSafetyDataPanel key={caseId} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} />
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "FINAL_PLAN" ? (
           <TreatmentSection className="grid grid-cols-[minmax(280px,0.75fr)_minmax(0,1.25fr)] items-start gap-3">
