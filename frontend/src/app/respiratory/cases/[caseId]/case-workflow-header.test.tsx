@@ -6,8 +6,8 @@ import { CASE_STAGES, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
 
 describe("Case workflow first stage", () => {
-  it("groups GENE with pathology and distinguishes progressed, current and upcoming stages", () => {
-    const { container } = render(<CaseWorkflowBar currentStage="GENE" />);
+  it("groups PATHOLOGY_GENE with pathology and distinguishes progressed, current and upcoming stages", () => {
+    const { container } = render(<CaseWorkflowBar currentStage="PATHOLOGY_GENE" />);
     expect(screen.getByText("조직/유전자")).toBeTruthy();
     expect(screen.getByText("PD-L1")).toBeTruthy();
     expect(container.querySelectorAll('[data-stage-state="progressed"]')).toHaveLength(3);
@@ -20,15 +20,15 @@ describe("Case workflow first stage", () => {
 
   it("places TNM staging before pathology in the clinical flow", () => {
     expect(CASE_STAGES.map((stage) => stage.code)).toEqual([
-      "XRAY", "CT", "STAGING", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION",
+      "XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION",
     ]);
   });
 
   it("marks PD-L1 only when an actual result is available", () => {
-    const { container, rerender } = render(<CaseWorkflowBar currentStage="GENE" />);
+    const { container, rerender } = render(<CaseWorkflowBar currentStage="PATHOLOGY_GENE" />);
     expect(container.querySelectorAll('[data-stage-state="result"]')).toHaveLength(0);
 
-    rerender(<CaseWorkflowBar currentStage="GENE" hasPdl1Result />);
+    rerender(<CaseWorkflowBar currentStage="PATHOLOGY_GENE" hasPdl1Result />);
     expect(container.querySelectorAll('[data-stage-state="result"]')).toHaveLength(1);
     expect(container.querySelector('[data-stage-state="result"]')?.parentElement).toHaveTextContent("PD-L1");
   });

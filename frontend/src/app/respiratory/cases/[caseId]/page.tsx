@@ -74,7 +74,7 @@ type TnmAnalysisResult = {
 
 type TnmClinicalResult = {
   id?: string;
-  exam_type: string;
+  workflow_stage: string;
   exam_name?: string;
   result_status?: string;
   result_status_label?: string;
@@ -92,7 +92,7 @@ type TnmClinicalResult = {
 };
 
 type GeneClinicalResult = {
-  exam_type: string;
+  workflow_stage: string;
   result_date: string | null;
   result_detail: {
     gene?: {
@@ -217,16 +217,16 @@ type MainMenu =
 type ResultSubMenu =
   | "XRAY"
   | "CT"
-  | "PATHOLOGY"
-  | "STAGING"
-  | "GENE";
+  | "PATHOLOGY_GENE"
+  | "PET_CT_TNM"
+  | "PDL1";
 
 type AiSubMenu =
   | "XRAY"
   | "CT"
-  | "PATHOLOGY"
-  | "STAGING"
-  | "GENE";
+  | "PATHOLOGY_GENE"
+  | "PET_CT_TNM"
+  | "PDL1";
 
 type TreatmentSubMenu =
   | "AI_RECOMMENDATION"
@@ -278,15 +278,15 @@ const resultSubMenus: {
     label: "CT",
   },
   {
-    key: "PATHOLOGY",
+    key: "PATHOLOGY_GENE",
     label: "병리",
   },
   {
-    key: "STAGING",
+    key: "PET_CT_TNM",
     label: "TNM",
   },
   {
-    key: "GENE",
+    key: "PATHOLOGY_GENE",
     label: "PD-L1",
   },
 ];
@@ -304,15 +304,15 @@ const aiSubMenus: {
     label: "CT",
   },
   {
-    key: "PATHOLOGY",
+    key: "PATHOLOGY_GENE",
     label: "병리",
   },
   {
-    key: "STAGING",
+    key: "PET_CT_TNM",
     label: "TNM",
   },
   {
-    key: "GENE",
+    key: "PATHOLOGY_GENE",
     label: "PD-L1",
   },
 ];
@@ -360,10 +360,10 @@ const workspaceMainMenus: typeof mainMenus = [
   { key: "PRESCRIPTION", label: "처방", description: "처방 및 안전성 검사" },
 ];
 const workspaceResultSubMenus: typeof resultSubMenus = [
-  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "STAGING", label: "PET-CT / TNM 병기" }, { key: "PATHOLOGY", label: "조직/유전자" }, { key: "GENE", label: "PD-L1" },
+  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PET_CT_TNM", label: "PET-CT / TNM 병기" }, { key: "PATHOLOGY_GENE", label: "조직/유전자" }, { key: "PDL1", label: "PD-L1" },
 ];
 const workspaceAiSubMenus: typeof aiSubMenus = [
-  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "STAGING", label: "PET-CT / TNM 병기" }, { key: "PATHOLOGY", label: "조직/유전자" }, { key: "GENE", label: "PD-L1" },
+  { key: "XRAY", label: "흉부 X선" }, { key: "CT", label: "흉부 CT" }, { key: "PET_CT_TNM", label: "PET-CT / TNM 병기" }, { key: "PATHOLOGY_GENE", label: "조직/유전자" }, { key: "PDL1", label: "PD-L1" },
 ];
 const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
   { key: "AI_RECOMMENDATION", label: "AI 치료 추천" }, { key: "REGIMEN", label: "치료요법 후보" }, { key: "FINAL_PLAN", label: "최종 치료계획" },
@@ -391,7 +391,7 @@ export default function RespiratoryCaseDetailPage() {
 
   const [selectedMainMenu, setSelectedMainMenu] =
   useState<MainMenu>("AI");
-  const [selectedInfoMenu, setSelectedInfoMenu] = useState<CaseInfoKey>("STAGING");
+  const [selectedInfoMenu, setSelectedInfoMenu] = useState<CaseInfoKey>("PET_CT_TNM");
 
   const [expandedMainMenu, setExpandedMainMenu] =
   useState<MainMenu | null>("AI");
@@ -400,7 +400,7 @@ export default function RespiratoryCaseDetailPage() {
   useState<ResultSubMenu>("XRAY");
 
   const [selectedAiMenu, setSelectedAiMenu] =
-  useState<AiSubMenu>("STAGING");
+  useState<AiSubMenu>("PET_CT_TNM");
 
   const [pdl1Results, setPdl1Results] =
   useState<Pdl1Result[]>([]);
@@ -794,12 +794,12 @@ export default function RespiratoryCaseDetailPage() {
   const handleInfoMenuSelect = (menu: CaseInfoKey) => {
     setSelectedInfoMenu(menu);
     if (menu === "OVERVIEW") return;
-    if (["XRAY", "CT", "PATHOLOGY"].includes(menu)) {
+    if (["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(menu)) {
       setSelectedMainMenu("RESULTS");
       setSelectedResultMenu(menu as ResultSubMenu);
       return;
     }
-    if (menu === "STAGING" || menu === "GENE") {
+    if (menu === "PET_CT_TNM" || menu === "PDL1") {
       setSelectedMainMenu("AI");
       setSelectedAiMenu(menu);
       return;
@@ -818,35 +818,35 @@ export default function RespiratoryCaseDetailPage() {
 
   const tnmAnalysisResult = selectPreferredAiResult(
     tnmAnalysisResults,
-    "TNM_STAGING",
+    "PET_CT_TNM_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
   const tnmAnalysis =
     tnmAnalysisResult?.result_detail?.tnm;
 
   const tnmClinicalResult = tnmClinicalResults.find(
-    (result) => result.exam_type === "STAGING"
+    (result) => result.workflow_stage === "PET_CT_TNM"
   );
 
   const tnmClinical =
     tnmClinicalResult?.result_detail?.tnm;
 
   const geneClinicalResult = tnmClinicalResults.find(
-    (result) => result.exam_type === "GENE"
+    (result) => result.workflow_stage === "PATHOLOGY_GENE"
   ) as GeneClinicalResult | undefined;
 
   const geneAiResult = selectPreferredAiResult(
     tnmAnalysisResults,
-    "GENE_PREDICTION",
+    "PATHOLOGY_GENE_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
   const pathologyClinicalResult = tnmClinicalResults.find(
-    (result) => result.exam_type === "PATHOLOGY"
+    (result) => result.workflow_stage === "PATHOLOGY_GENE"
   );
 
   const pathologyAiResult = selectPreferredAiResult(
     tnmAnalysisResults,
-    "PATHOLOGY_DIAGNOSIS",
+    "PATHOLOGY_GENE_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
   const treatmentAnalysisResult = selectPreferredAiResult(
@@ -867,15 +867,15 @@ export default function RespiratoryCaseDetailPage() {
     : [];
 
   const selectedClinicalResult = tnmClinicalResults.find(
-    (result) => result.exam_type === selectedResultMenu,
+    (result) => result.workflow_stage === selectedResultMenu,
   );
 
   const selectedAiType = {
-    XRAY: "XRAY_SCREENING",
-    CT: "CT_NODULE",
-    PATHOLOGY: "PATHOLOGY_DIAGNOSIS",
-    STAGING: "TNM_STAGING",
-    GENE: "GENE_PREDICTION",
+    XRAY: "XRAY_ANALYSIS",
+    CT: "CT_ANALYSIS",
+    PATHOLOGY_GENE: "PATHOLOGY_GENE_ANALYSIS",
+    PET_CT_TNM: "PET_CT_TNM_ANALYSIS",
+    PDL1: "PDL1_ANALYSIS",
   }[selectedResultMenu];
 
   const selectedAiResult = selectPreferredAiResult(
@@ -1492,7 +1492,7 @@ export default function RespiratoryCaseDetailPage() {
       </aside>
 
       {/* D. 상세 영역 */}
-      <main className={selectedInfoMenu === "STAGING" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0" : "min-w-0 overflow-x-auto overflow-y-auto p-3"}>
+      <main className={selectedInfoMenu === "PET_CT_TNM" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0" : "min-w-0 overflow-x-auto overflow-y-auto p-3"}>
         <CaseWorkflowBar
           currentStage={selectedCase.current_stage}
           hasPdl1Result={Boolean(latestPdl1Result || geneClinicalResult?.result_detail?.pdl1)}
@@ -1501,7 +1501,7 @@ export default function RespiratoryCaseDetailPage() {
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
-        <div className={selectedInfoMenu === "STAGING" ? "hidden" : "mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1"}>
+        <div className={selectedInfoMenu === "PET_CT_TNM" ? "hidden" : "mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1"}>
           <div className="flex min-w-0 items-center gap-3">
             <span className="h-5 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
             <div className="min-w-0">
@@ -2233,7 +2233,7 @@ export default function RespiratoryCaseDetailPage() {
           )}
         </TreatmentSection>
         ) : selectedMainMenu === "AI" &&
-        selectedAiMenu === "STAGING" ? (
+        selectedAiMenu === "PET_CT_TNM" ? (
         <div className="min-h-0 overflow-hidden">
           <TnmReviewWorkspace
             key={caseId}
@@ -2448,7 +2448,7 @@ export default function RespiratoryCaseDetailPage() {
           </div>
         </div>
         ) : selectedMainMenu === "AI" &&
-        selectedAiMenu === "GENE" ? (
+        selectedAiMenu === "PDL1" ? (
         <Pdl1ResultPanel
           aiResult={latestPdl1Result}
           clinicalResult={geneClinicalResult}
@@ -2456,7 +2456,7 @@ export default function RespiratoryCaseDetailPage() {
           retrying={panelRetrying === "AI"}
           onRetry={retryAiResults}
         />
-        ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY" ? (
+        ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
         <PathologyGeneReviewPanel
           pathologyClinicalResult={pathologyClinicalResult}
           pathologyAiResult={pathologyAiResult}
@@ -2506,7 +2506,7 @@ export default function RespiratoryCaseDetailPage() {
                 </div>
             </div>
             )}
-        {selectedInfoMenu === "STAGING" && <BottomActionBar />}
+        {selectedInfoMenu === "PET_CT_TNM" && <BottomActionBar />}
         </main>
         </div>
         {pendingCaseId && <CaseChangeDialog onCancel={() => setPendingCaseId(null)} onDiscard={discardDraftAndMove} returnFocusRef={caseTriggerRef} />}
@@ -2796,13 +2796,13 @@ function getStageLabel(stage: string) {
   if (stage === "CT")
     return "CT";
 
-  if (stage === "PATHOLOGY")
+  if (stage === "PATHOLOGY_GENE")
     return "병리";
 
-  if (stage === "STAGING")
+  if (stage === "PET_CT_TNM")
     return "TNM";
 
-  if (stage === "GENE")
+  if (stage === "PDL1")
     return "PD-L1";
 
   if (stage === "TREATMENT")
@@ -2823,13 +2823,13 @@ function getResultMenuLabel(
   if (menu === "CT")
     return "CT";
 
-  if (menu === "PATHOLOGY")
+  if (menu === "PATHOLOGY_GENE")
     return "병리";
 
-  if (menu === "STAGING")
+  if (menu === "PET_CT_TNM")
     return "TNM";
 
-  if (menu === "GENE")
+  if (menu === "PDL1")
     return "PD-L1";
 
   return menu;
@@ -2844,13 +2844,13 @@ function getAiMenuLabel(
   if (menu === "CT")
     return "CT";
 
-  if (menu === "PATHOLOGY")
+  if (menu === "PATHOLOGY_GENE")
     return "병리";
 
-  if (menu === "STAGING")
+  if (menu === "PET_CT_TNM")
     return "TNM";
 
-  if (menu === "GENE")
+  if (menu === "PDL1")
     return "PD-L1";
 
   return menu;

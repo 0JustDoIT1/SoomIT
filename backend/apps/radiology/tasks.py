@@ -47,7 +47,7 @@ def run_xray_analysis(analysis_id):
     )
     if analysis is None:
         return "analysis_not_found"
-    if analysis.analysis_type != AnalysisType.XRAY_SCREENING:
+    if analysis.analysis_type != AnalysisType.XRAY_ANALYSIS:
         return "unsupported_analysis_type"
     if AiResult.objects.filter(ai_analysis=analysis).exists():
         return "already_completed"

@@ -14,7 +14,7 @@ type AiSummaryResult = {
 
 type ClinicalSummaryResult = {
   id?: string;
-  exam_type: string;
+  workflow_stage: string;
   result_status?: string;
   result_status_label?: string;
   result_date?: string | null;
@@ -22,12 +22,11 @@ type ClinicalSummaryResult = {
 };
 
 const ANALYSIS_CONFIG = [
-  { type: "XRAY_SCREENING", label: "흉부 X선", clinical: ["XRAY"] },
-  { type: "CT_NODULE", label: "흉부 CT", clinical: ["CT"] },
-  { type: "TNM_STAGING", label: "PET-CT / TNM 병기", clinical: ["STAGING"] },
-  { type: "PATHOLOGY_DIAGNOSIS", label: "조직 진단", clinical: ["PATHOLOGY"] },
-  { type: "GENE_PREDICTION", label: "유전자 분석", clinical: ["GENE"] },
-  { type: "PDL1_CLASSIFICATION", label: "PD-L1", clinical: ["GENE"] },
+  { type: "XRAY_ANALYSIS", label: "흉부 X선", clinical: ["XRAY"] },
+  { type: "CT_ANALYSIS", label: "흉부 CT", clinical: ["CT"] },
+  { type: "PET_CT_TNM_ANALYSIS", label: "PET-CT / TNM 병기", clinical: ["PET_CT_TNM"] },
+  { type: "PATHOLOGY_GENE_ANALYSIS", label: "조직·유전자 분석", clinical: ["PATHOLOGY_GENE"] },
+  { type: "PDL1_ANALYSIS", label: "PD-L1", clinical: ["PDL1"] },
   { type: "TREATMENT_RECOMMENDATION", label: "치료 추천", clinical: [] },
 ] as const;
 
@@ -67,7 +66,7 @@ export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = f
               <SummaryColumn source="AI 분석 후보" tone="blue" primary={getAiDisplaySummary(type, ai)} secondary={getModelLabel(ai)} />
               <SummaryColumn source="의료진 확정 결과" tone="emerald" primary={getClinicalSummary(type, clinical)} secondary={formatDate(clinical?.result_date)} />
             </div>
-            {type === "GENE_PREDICTION" && <GeneResultDetails aiDetail={ai?.status === "SUCCEEDED" ? ai.result_detail : null} clinicalDetail={clinical?.result_detail} />}
+            {type === "PATHOLOGY_GENE_ANALYSIS" && <GeneResultDetails aiDetail={ai?.status === "SUCCEEDED" ? ai.result_detail : null} clinicalDetail={clinical?.result_detail} />}
             <ComparisonBadge comparison={compareResults(type, ai, clinical)} />
             {ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{ai.error_message}</p>}
           </article>
@@ -116,8 +115,8 @@ function ComparisonBadge({ comparison }: { comparison: Comparison }) {
 }
 
 function findClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[]) {
-  if (type === "PDL1_CLASSIFICATION") return results.find((item) => item.result_status === "CONFIRMED" && getRecord(item.result_detail, "pdl1"));
-  return results.find((item) => examTypes.includes(item.exam_type) && item.result_status === "CONFIRMED");
+  if (type === "PDL1_ANALYSIS") return results.find((item) => item.result_status === "CONFIRMED" && getRecord(item.result_detail, "pdl1"));
+  return results.find((item) => examTypes.includes(item.workflow_stage) && item.result_status === "CONFIRMED");
 }
 
 function getAiDisplaySummary(type: string, result?: AiSummaryResult) {
@@ -139,21 +138,23 @@ function getAnalysisStatusLabel(status?: string) {
 
 function getAiSummary(type: string, detail: unknown) {
   if (!detail) return "결과 없음";
-  if (type === "XRAY_SCREENING") {
+  if (type === "XRAY_ANALYSIS") {
     const xray = getRecord(detail, "xray");
     return joinDisplayValues([xray?.assessment_label, formatRatio(xray?.suspicion_score, "의심도")]);
   }
-  if (type === "CT_NODULE") {
+  if (type === "CT_ANALYSIS") {
     const ct = getRecord(detail, "ct");
     return formatPercent(ct?.overall_malignancy_risk, "악성 위험도", false) || "결과 없음";
   }
-  if (type === "TNM_STAGING") return joinValues(getRecord(detail, "tnm"), ["predicted_t", "predicted_n", "predicted_m", "predicted_stage_group"]);
-  if (type === "PATHOLOGY_DIAGNOSIS") return joinValues(getRecord(detail, "pathology"), ["malignancy_assessment_label", "predicted_histologic_type", "predicted_subtype"]);
-  if (type === "GENE_PREDICTION") {
+  if (type === "PET_CT_TNM_ANALYSIS") return joinValues(getRecord(detail, "tnm"), ["predicted_t", "predicted_n", "predicted_m", "predicted_stage_group"]);
+  if (type === "PATHOLOGY_GENE_ANALYSIS") {
+    const pathology = getRecord(detail, "pathology");
+    const pathologySummary = pathology ? joinValues(pathology, ["malignancy_assessment_label", "predicted_histologic_type", "predicted_subtype"]) : "";
     const genes = getArray(detail, "genes");
-    return summarizeGeneItems(genes, "predicted_status_label");
+    const geneSummary = genes.length ? summarizeGeneItems(genes, "predicted_status_label") : "";
+    return joinDisplayValues([pathologySummary, geneSummary]) || "?? ??";
   }
-  if (type === "PDL1_CLASSIFICATION") {
+  if (type === "PDL1_ANALYSIS") {
     const pdl1 = getRecord(detail, "pdl1");
     return joinDisplayValues([pdl1?.predicted_tps_range_label, formatRatio(pdl1?.confidence, "신뢰도")]);
   }
@@ -163,18 +164,20 @@ function getAiSummary(type: string, detail: unknown) {
 
 function getClinicalSummary(type: string, result?: ClinicalSummaryResult) {
   if (!result) return "확정 결과 없음";
-  if (type === "XRAY_SCREENING") return joinValues(getRecord(result.result_detail, "xray"), ["assessment_label"]);
-  if (type === "CT_NODULE") {
+  if (type === "XRAY_ANALYSIS") return joinValues(getRecord(result.result_detail, "xray"), ["assessment_label"]);
+  if (type === "CT_ANALYSIS") {
     const ct = getRecord(result.result_detail, "ct");
     return joinDisplayValues([ct?.overall_assessment_label, formatPercent(ct?.overall_malignancy_risk, "악성 위험도", false)]);
   }
-  if (type === "TNM_STAGING") return joinValues(getRecord(result.result_detail, "tnm"), ["t_category", "n_category", "m_category", "stage_group"]);
-  if (type === "PATHOLOGY_DIAGNOSIS") return joinValues(getRecord(result.result_detail, "pathology"), ["malignancy_status_label", "histologic_type", "subtype"]);
-  if (type === "GENE_PREDICTION") {
+  if (type === "PET_CT_TNM_ANALYSIS") return joinValues(getRecord(result.result_detail, "tnm"), ["t_category", "n_category", "m_category", "stage_group"]);
+  if (type === "PATHOLOGY_GENE_ANALYSIS") {
+    const pathology = getRecord(result.result_detail, "pathology");
+    const pathologySummary = pathology ? joinValues(pathology, ["malignancy_status_label", "histologic_type", "subtype"]) : "";
     const findings = getArray(getRecord(result.result_detail, "gene"), "findings");
-    return findings.length ? summarizeGeneItems(findings, "assessment_label") : "확정 결과 없음";
+    const geneSummary = findings.length ? summarizeGeneItems(findings, "assessment_label") : "";
+    return joinDisplayValues([pathologySummary, geneSummary]) || "?? ?? ??";
   }
-  if (type === "PDL1_CLASSIFICATION") {
+  if (type === "PDL1_ANALYSIS") {
     const pdl1 = getRecord(result.result_detail, "pdl1");
     return joinDisplayValues([formatPercent(pdl1?.tps_percent, "TPS", false), pdl1?.interpretation]);
   }
@@ -233,29 +236,28 @@ function compareResults(type: string, ai: AiSummaryResult | undefined, clinical?
 }
 
 function getComparablePairs(type: string, aiDetail: unknown, clinicalDetail: unknown): ComparablePair[] {
-  if (type === "XRAY_SCREENING") return presentPairs([{ label: "판정", ai: getRecord(aiDetail, "xray")?.assessment, clinical: getRecord(clinicalDetail, "xray")?.assessment }]);
-  if (type === "TNM_STAGING") {
+  if (type === "XRAY_ANALYSIS") return presentPairs([{ label: "판정", ai: getRecord(aiDetail, "xray")?.assessment, clinical: getRecord(clinicalDetail, "xray")?.assessment }]);
+  if (type === "PET_CT_TNM_ANALYSIS") {
     const ai = getRecord(aiDetail, "tnm");
     const clinical = getRecord(clinicalDetail, "tnm");
     return presentPairs([{ label: "T", ai: ai?.predicted_t, clinical: clinical?.t_category }, { label: "N", ai: ai?.predicted_n, clinical: clinical?.n_category }, { label: "M", ai: ai?.predicted_m, clinical: clinical?.m_category }, { label: "Stage", ai: ai?.predicted_stage_group, clinical: clinical?.stage_group }]);
   }
-  if (type === "PATHOLOGY_DIAGNOSIS") {
-    const ai = getRecord(aiDetail, "pathology");
-    const clinical = getRecord(clinicalDetail, "pathology");
-    return presentPairs([{ label: "조직형", ai: ai?.predicted_histologic_type, clinical: clinical?.histologic_type }, { label: "아형", ai: ai?.predicted_subtype, clinical: clinical?.subtype }]);
-  }
-  if (type === "GENE_PREDICTION") {
+  if (type === "PATHOLOGY_GENE_ANALYSIS") {
+    const aiPathology = getRecord(aiDetail, "pathology");
+    const clinicalPathology = getRecord(clinicalDetail, "pathology");
+    const pathologyPairs = [{ label: "???", ai: aiPathology?.predicted_histologic_type, clinical: clinicalPathology?.histologic_type }, { label: "??", ai: aiPathology?.predicted_subtype, clinical: clinicalPathology?.subtype }];
     const confirmedByGene = new Map(getArray(getRecord(clinicalDetail, "gene"), "findings").map((item) => {
       const finding = asRecord(item);
       return [String(finding?.gene_symbol ?? "").toUpperCase(), finding?.assessment] as const;
     }));
-    return presentPairs(getArray(aiDetail, "genes").map((item) => {
+    const genePairs = getArray(aiDetail, "genes").map((item) => {
       const gene = asRecord(item);
       const symbol = String(gene?.gene_symbol ?? "").toUpperCase();
-      return { label: symbol || "유전자", ai: gene?.predicted_status, clinical: confirmedByGene.get(symbol) };
-    }));
+      return { label: symbol || "???", ai: gene?.predicted_status, clinical: confirmedByGene.get(symbol) };
+    });
+    return presentPairs([...pathologyPairs, ...genePairs]);
   }
-  if (type === "PDL1_CLASSIFICATION") {
+  if (type === "PDL1_ANALYSIS") {
     const aiRange = getRecord(aiDetail, "pdl1")?.predicted_tps_range;
     const tps = toNumber(getRecord(clinicalDetail, "pdl1")?.tps_percent);
     return aiRange && tps !== null ? [{ label: "TPS 구간", ai: aiRange, clinical: tps < 1 ? "LT_1" : tps < 50 ? "FROM_1_TO_49" : "GE_50" }] : [];

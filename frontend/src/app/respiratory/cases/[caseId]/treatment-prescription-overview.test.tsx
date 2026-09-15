@@ -23,14 +23,14 @@ describe("TreatmentPrescriptionOverview", () => {
         treatment={null}
         prescriptions={[]}
         clinicalResults={[
-          { exam_type: "STAGING", result_status: "CONFIRMED", result_status_label: "확정" },
-          { exam_type: "PATHOLOGY", result_status: "CONFIRMED" },
-          { exam_type: "GENE", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 55 } } },
+          { workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정" },
+          { workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED" },
+          { workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 55 } } },
         ]}
         aiResults={[
-          { analysis_type: "TNM_STAGING", status: "COMPLETED", status_label: "완료" },
-          { analysis_type: "GENE_PREDICTION", status: "COMPLETED" },
-          { analysis_type: "PDL1_CLASSIFICATION", status: "COMPLETED", result_detail: { pdl1: { predicted_tps_range_label: "≥50%" } } },
+          { analysis_type: "PET_CT_TNM_ANALYSIS", status: "COMPLETED", status_label: "완료" },
+          { analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "COMPLETED" },
+          { analysis_type: "PDL1_ANALYSIS", status: "COMPLETED", result_detail: { pdl1: { predicted_tps_range_label: "≥50%" } } },
         ]}
       />,
     );

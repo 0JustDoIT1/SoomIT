@@ -4,13 +4,13 @@ export type RadiologyCaseStage =
   | "XRAY"
   | "CT"
   | "PATHOLOGY"
-  | "STAGING"
+  | "PET_CT_TNM"
   | "GENE"
   | "TREATMENT"
   | "PRESCRIPTION";
 
 export type RadiologyWorklistFilters = {
-  exam_type?: "XRAY" | "CT" | "STAGING";
+  order_type?: "XRAY" | "CT" | "PET_CT_TNM";
   status?: "ORDERED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
   priority?: "NORMAL" | "URGENT";
 };
@@ -65,8 +65,8 @@ export type RadiologyWorklistItem = {
   };
   examination_order: {
     id: string;
-    exam_type: "XRAY" | "CT";
-    exam_type_label: string;
+    order_type: "XRAY" | "CT";
+    order_type_label: string;
     priority: "NORMAL" | "URGENT";
     priority_label: string;
     status: "ORDERED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
@@ -136,7 +136,7 @@ export type RadiologyAnalysisDetail = {
   source_image_asset: {
     id: string;
     image_type: string;
-    uploaded_stage: string;
+    workflow_stage: string;
     storage_type: string;
     status: string;
   } | null;
@@ -145,7 +145,7 @@ export type RadiologyAnalysisDetail = {
 
 export type RadiologyAnalysisResult = {
   analysis_id: string;
-  analysis_type: "XRAY_SCREENING" | "CT_NODULE" | "TNM_STAGING";
+  analysis_type: "XRAY_ANALYSIS" | "CT_ANALYSIS" | "PET_CT_TNM_ANALYSIS";
   result:
     | {
         assessment: string;
@@ -207,7 +207,7 @@ export type RadiologyRegisteredImage = RadiologyImageRegistration & {
   id: string;
   status: string;
   image_type: string;
-  uploaded_stage: string;
+  workflow_stage: string;
   created_at: string;
 };
 
@@ -249,7 +249,7 @@ export async function fetchRadiologyWorklist(
   signal: AbortSignal,
 ): Promise<RadiologyWorklistItem[]> {
   const query = new URLSearchParams();
-  if (filters.exam_type) query.set("exam_type", filters.exam_type);
+  if (filters.order_type) query.set("order_type", filters.order_type);
   if (filters.status) query.set("status", filters.status);
   if (filters.priority) query.set("priority", filters.priority);
 
@@ -281,7 +281,7 @@ export async function fetchRadiologyCaseWorklist(
   signal: AbortSignal,
 ): Promise<RadiologyCaseWorklistItem[]> {
   const query = new URLSearchParams();
-  if (filters.exam_type) query.set("exam_type", filters.exam_type);
+  if (filters.order_type) query.set("order_type", filters.order_type);
   if (filters.status) query.set("status", filters.status);
   if (filters.priority) query.set("priority", filters.priority);
   const queryString = query.toString();

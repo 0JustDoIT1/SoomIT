@@ -4,8 +4,11 @@ from celery import shared_task
 from django.db import transaction
 from django.utils import timezone
 
-from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, PDL1AiResult
+from apps.ai_results.models import (
+    AiAnalysis, AiResult, AnalysisType, GeneAiResult, PathologyAiResult, PDL1AiResult,
+)
 
+from .services.pathology_inference import request_pathology_prediction
 from .services.pdl1_inference import request_pdl1_prediction
 from .services.pdl1_storage import download_pdl1_annotation_bytes
 
@@ -31,7 +34,7 @@ def _begin_analysis(analysis_id):
         )
         if analysis is None:
             return None, "analysis_not_found"
-        if analysis.analysis_type != AnalysisType.PDL1_CLASSIFICATION:
+        if analysis.analysis_type != AnalysisType.PDL1_ANALYSIS:
             return None, "unsupported_analysis_type"
         if AiResult.objects.filter(ai_analysis=analysis).exists():
             return None, "already_completed"
@@ -115,6 +118,102 @@ def run_pdl1_analysis(analysis_id):
             confidence=confidence,
             probabilities=prediction["probabilities"],
         )
+        analysis.status = AiAnalysis.Status.SUCCEEDED
+        analysis.completed_at = timezone.now()
+        analysis.error_message = None
+        analysis.save(update_fields=["status", "completed_at", "error_message"])
+    return "succeeded"
+
+
+@shared_task
+def run_pathology_gene_analysis(analysis_id):
+    """Run the shared WSI pathology/gene pipeline and persist one atomic result."""
+    with transaction.atomic():
+        analysis = (
+            AiAnalysis.objects.select_for_update()
+            .select_related("case__patient", "source_image_asset")
+            .filter(id=analysis_id)
+            .first()
+        )
+        if analysis is None:
+            return "analysis_not_found"
+        if analysis.analysis_type != AnalysisType.PATHOLOGY_GENE_ANALYSIS:
+            return "unsupported_analysis_type"
+        if AiResult.objects.filter(ai_analysis=analysis).exists():
+            return "already_completed"
+        if analysis.status == AiAnalysis.Status.RUNNING:
+            return "already_running"
+        if analysis.status != AiAnalysis.Status.PENDING:
+            return "not_pending"
+        analysis.status = AiAnalysis.Status.RUNNING
+        analysis.started_at = timezone.now()
+        analysis.completed_at = None
+        analysis.error_message = None
+        analysis.save(update_fields=["status", "started_at", "completed_at", "error_message"])
+
+    try:
+        analysis = AiAnalysis.objects.select_related("case__patient", "source_image_asset").get(id=analysis_id)
+        asset = analysis.source_image_asset
+        if (
+            asset is None
+            or asset.storage_type != asset.StorageType.GCS
+            or not asset.storage_uri.startswith("gs://")
+        ):
+            raise ValueError("A READY GCS WSI is required.")
+        prediction = request_pathology_prediction(
+            case_id=analysis.case_id,
+            patient_id=analysis.case.patient_id,
+            wsi_id=asset.id,
+            wsi_gcs_uri=asset.storage_uri,
+        )
+    except Exception:
+        with transaction.atomic():
+            failed = AiAnalysis.objects.select_for_update().get(id=analysis_id)
+            if not AiResult.objects.filter(ai_analysis=failed).exists():
+                failed.status = AiAnalysis.Status.FAILED
+                failed.completed_at = timezone.now()
+                failed.error_message = "Pathology and gene analysis failed."
+                failed.save(update_fields=["status", "completed_at", "error_message"])
+        return "failed"
+
+    tissue = prediction["tissue"]
+    gene_predictions = prediction["gene"].get("predictions") or {}
+    with transaction.atomic():
+        analysis = AiAnalysis.objects.select_for_update().get(id=analysis_id)
+        if AiResult.objects.filter(ai_analysis=analysis).exists():
+            return "already_completed"
+        ai_result = AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="pathology-gene-v1",
+            result_payload=prediction,
+            result_files=[],
+        )
+        label = tissue["predicted_label"]
+        PathologyAiResult.objects.create(
+            ai_result=ai_result,
+            malignancy_assessment=(
+                PathologyAiResult.MalignancyAssessment.BENIGN
+                if label == "Benign"
+                else PathologyAiResult.MalignancyAssessment.MALIGNANT
+            ),
+            malignancy_probability=1 - float(tissue["probabilities"]["Benign"]),
+            predicted_histologic_type=None if label == "Benign" else label,
+            predicted_subtype=label if label in {"LUAD", "LUSC"} else None,
+            subtype_confidence=tissue["confidence_score"],
+        )
+        GeneAiResult.objects.bulk_create([
+            GeneAiResult(
+                ai_result=ai_result,
+                gene_symbol=symbol,
+                predicted_status=(
+                    GeneAiResult.PredictedStatus.PREDICTED_POSITIVE
+                    if detail["probability"] >= 0.5
+                    else GeneAiResult.PredictedStatus.PREDICTED_NEGATIVE
+                ),
+                predicted_probability=detail["probability"],
+            )
+            for symbol, detail in gene_predictions.items()
+        ])
         analysis.status = AiAnalysis.Status.SUCCEEDED
         analysis.completed_at = timezone.now()
         analysis.error_message = None

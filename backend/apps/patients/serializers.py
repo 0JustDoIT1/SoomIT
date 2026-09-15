@@ -27,7 +27,7 @@ from .models import (
 class AppointmentSerializer(serializers.ModelSerializer):
     doctor_name = serializers.SerializerMethodField()
     hospital_name = serializers.SerializerMethodField()
-    exam_type = serializers.SerializerMethodField()
+    order_type = serializers.SerializerMethodField()
     display_type = serializers.SerializerMethodField()
 
     appointment_status_label = serializers.CharField(
@@ -59,7 +59,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
             "hospital_name",
 
-            "exam_type",
+            "order_type",
             "display_type",
             
             "cancellation_requested_at",
@@ -84,17 +84,17 @@ class AppointmentSerializer(serializers.ModelSerializer):
         return obj.patient.hospital.name
 
     # 검사 예약일 경우 검사 종류
-    def get_exam_type(self, obj):
+    def get_order_type(self, obj):
         if obj.examination_order is None:
             return None
 
-        return obj.examination_order.exam_type
+        return obj.examination_order.order_type
 
     # Flutter 화면 표시용 예약 종류
     def get_display_type(self, obj):
         # 검사 오더와 연결된 예약
         if obj.examination_order is not None:
-            exam_type = obj.examination_order.exam_type
+            order_type = obj.examination_order.order_type
 
             exam_labels = {
                 "XRAY": "X-ray 검사",
@@ -103,8 +103,8 @@ class AppointmentSerializer(serializers.ModelSerializer):
             }
 
             return exam_labels.get(
-                exam_type,
-                f"{exam_type} 검사",
+                order_type,
+                f"{order_type} 검사",
             )
 
         # examination_order가 없으면 일반 외래 예약
@@ -164,7 +164,7 @@ class PatientAppointmentCancelRequestSerializer(serializers.Serializer):
 # 환자 검사 일정 조회
 # ─────────────────────────────────────────────
 class ExaminationScheduleSerializer(serializers.ModelSerializer):
-    exam_type = serializers.SerializerMethodField()
+    order_type = serializers.SerializerMethodField()
     exam_name = serializers.SerializerMethodField()
 
     appointment_status_label = serializers.CharField(
@@ -187,7 +187,7 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
             "id",
             "scheduled_at",
 
-            "exam_type",
+            "order_type",
             "exam_name",
 
             "appointment_status",
@@ -202,11 +202,11 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
             "preparation_guide",
         ]
 
-    def get_exam_type(self, obj):
+    def get_order_type(self, obj):
         if obj.examination_order is None:
             return None
 
-        return obj.examination_order.exam_type
+        return obj.examination_order.order_type
 
     def get_exam_name(self, obj):
         if obj.examination_order is None:
@@ -219,8 +219,8 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
         }
 
         return exam_names.get(
-            obj.examination_order.exam_type,
-            obj.examination_order.exam_type,
+            obj.examination_order.order_type,
+            obj.examination_order.order_type,
         )
 
     def get_hospital_name(self, obj):
@@ -239,7 +239,7 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
         if obj.examination_order is None:
             return None
 
-        exam_type = obj.examination_order.exam_type
+        order_type = obj.examination_order.order_type
 
         guides = {
             "XRAY": "검사 전 별도의 준비사항은 없습니다.",
@@ -248,7 +248,7 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
         }
 
         return guides.get(
-            exam_type,
+            order_type,
             "검사 전 안내사항을 확인해주세요.",
         )
 
@@ -396,6 +396,7 @@ class SymptomLogSerializer(serializers.ModelSerializer):
             "id",
             "risk_level",
             "risk_level_label",
+            "logged_at",
             "created_at",
             "updated_at",
         ]
@@ -833,3 +834,40 @@ class MedicationScheduleSerializer(serializers.ModelSerializer):
 class MedicationIntakeTakenSerializer(serializers.Serializer):
     medication_schedule_id = serializers.UUIDField()
     scheduled_at = serializers.DateTimeField()
+
+class MedicationIntakeLogSerializer(serializers.ModelSerializer):
+    medication_schedule_id = serializers.UUIDField(
+        source="medication_schedule.id",
+        read_only=True,
+    )
+
+    reminder_time = serializers.TimeField(
+        source="medication_schedule.reminder_time",
+        read_only=True,
+    )
+
+    status_label = serializers.CharField(
+        source="get_status_display",
+        read_only=True,
+    )
+
+    items = MedicationScheduleItemSerializer(
+        source="medication_schedule.items",
+        many=True,
+        read_only=True,
+    )
+
+    class Meta:
+        model = MedicationIntakeLog
+        fields = [
+            "id",
+            "medication_schedule_id",
+            "reminder_time",
+            "scheduled_at",
+            "taken_at",
+            "status",
+            "status_label",
+            "items",
+            "created_at",
+            "updated_at",
+        ]

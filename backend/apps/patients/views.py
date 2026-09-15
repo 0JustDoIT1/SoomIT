@@ -1,11 +1,14 @@
 import hashlib
+from datetime import datetime, time, timedelta
+from zoneinfo import ZoneInfo
+
 from django.utils import timezone
 from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import APIException, ValidationError
 
 from apps.notifications.models import NotificationLog
 
@@ -49,11 +52,13 @@ from .serializers import (
     PatientQuestionnaireCreateSerializer,
     MedicationScheduleSerializer,
     MedicationIntakeTakenSerializer,
+    MedicationIntakeLogSerializer,
     SymptomLogSerializer,
     PatientAppointmentRequestSerializer,
     PatientAppointmentCancelRequestSerializer,
     PatientAppointmentChangeRequestSerializer,
     PatientQuestionnaireUpdateSerializer,
+    
 )
 
 # 원무과 - 환자 목록 조회 / 신규 환자 등록
@@ -729,6 +734,85 @@ class PatientMedicationScheduleListAPIView(ListAPIView):
     description="환자가 복용 완료 버튼을 누르면 해당 복약 일정을 TAKEN 상태로 기록합니다.",
     request=MedicationIntakeTakenSerializer,
 )
+
+@extend_schema(
+    tags=["환자앱-복약"],
+    summary="환자 복약 기록 조회",
+    description=(
+        "현재 환자의 복약 기록을 최신순으로 조회합니다. "
+        "date=YYYY-MM-DD를 전달하면 한국 날짜 기준으로 필터링합니다."
+    ),
+)
+class PatientMedicationIntakeLogListAPIView(ListAPIView):
+    serializer_class = MedicationIntakeLogSerializer
+
+    def get_queryset(self):
+        # TODO: 환자 로그인 구현 후 request.user 기반 환자로 변경
+        patient = Patient.objects.first()
+
+        if patient is None:
+            return MedicationIntakeLog.objects.none()
+
+        patient_account = (
+            PatientAccount.objects
+            .filter(
+                patient=patient,
+                link_status="LINKED",
+            )
+            .first()
+        )
+
+        if patient_account is None:
+            return MedicationIntakeLog.objects.none()
+
+        queryset = (
+            MedicationIntakeLog.objects
+            .filter(
+                medication_schedule__patient_account=patient_account,
+            )
+            .select_related(
+                "medication_schedule",
+            )
+            .prefetch_related(
+                "medication_schedule__items__prescription_item__drug",
+            )
+            .order_by("-scheduled_at")
+        )
+
+        date_value = self.request.query_params.get("date")
+
+        if date_value:
+            try:
+                selected_date = datetime.strptime(
+                    date_value,
+                    "%Y-%m-%d",
+                ).date()
+            except ValueError as error:
+                raise ValidationError(
+                    {
+                        "date": (
+                            "날짜 형식은 YYYY-MM-DD여야 합니다."
+                        ),
+                    }
+                ) from error
+
+            korea_timezone = ZoneInfo("Asia/Seoul")
+
+            start_at = datetime.combine(
+                selected_date,
+                time.min,
+                tzinfo=korea_timezone,
+            )
+
+            end_at = start_at + timedelta(days=1)
+
+            queryset = queryset.filter(
+                scheduled_at__gte=start_at,
+                scheduled_at__lt=end_at,
+            )
+
+        return queryset
+    
 class PatientMedicationIntakeTakenAPIView(APIView):
     def post(self, request):
         serializer = MedicationIntakeTakenSerializer(
@@ -832,11 +916,62 @@ def calculate_symptom_risk(symptom_type, severity):
 
     return SymptomLog.RiskLevel.GREEN
 
+
+KOREA_TIME_ZONE = ZoneInfo("Asia/Seoul")
+
+
+def _korea_day_window(recorded_at):
+    korea_recorded_at = timezone.localtime(
+        recorded_at,
+        KOREA_TIME_ZONE,
+    )
+    record_date = korea_recorded_at.date()
+    day_start = datetime.combine(
+        record_date,
+        time.min,
+        tzinfo=KOREA_TIME_ZONE,
+    )
+    return record_date, day_start, day_start + timedelta(days=1)
+
+
+def _symptom_type_with_object_particle(symptom_type):
+    if not symptom_type:
+        return symptom_type
+
+    last_character_code = ord(symptom_type[-1]) - 0xAC00
+    if 0 <= last_character_code <= 11171:
+        particle = "을" if last_character_code % 28 else "를"
+    else:
+        particle = "을(를)"
+
+    return f"{symptom_type}{particle}"
+
+
+class DailySymptomDuplicate(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "daily_symptom_duplicate"
+
+    def __init__(self, symptom_type, record_date, existing_record_id):
+        detail = {
+            "code": self.default_code,
+            "detail": (
+                f"오늘 이미 {_symptom_type_with_object_particle(symptom_type)} "
+                "기록했어요."
+            ),
+            "symptom_type": symptom_type,
+            "record_date": record_date.isoformat(),
+            "existing_record_id": str(existing_record_id),
+        }
+        super().__init__(detail=detail, code=self.default_code)
+
+
 class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
     serializer_class = SymptomLogSerializer
 
     def get_queryset(self):
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
+        # 로컬 개발용 임시 연결.
+        # TODO(patient-auth): 환자 로그인 구현 후 request.user의 PatientAccount로
+        # 환자를 식별하고, 비로그인 401/의료진 403/타 환자 접근 차단을 적용해야 한다.
         patient = Patient.objects.first()
 
         if patient is None:
@@ -849,11 +984,37 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
         )
 
     def perform_create(self, serializer):
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
+        # TODO(patient-auth): 환자 로그인 구현 후 request.user의 PatientAccount로
+        # 환자를 식별하고, 비로그인 401/의료진 403/타 환자 접근 차단을 적용해야 한다.
         patient = Patient.objects.first()
-    
+
+        recorded_at = timezone.now()
+        record_date, day_start, day_end = _korea_day_window(
+            recorded_at,
+        )
+
+        symptom_type = serializer.validated_data["symptom_type"]
+        existing_record = (
+            SymptomLog.objects
+            .filter(
+                patient=patient,
+                symptom_type=symptom_type,
+                logged_at__gte=day_start,
+                logged_at__lt=day_end,
+            )
+            .order_by("-logged_at", "-created_at")
+            .first()
+        )
+
+        if existing_record is not None:
+            raise DailySymptomDuplicate(
+                symptom_type=symptom_type,
+                record_date=record_date,
+                existing_record_id=existing_record.id,
+            )
+
         case = None
-    
+
         if patient is not None:
             case = (
                 patient.cases
@@ -861,19 +1022,19 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
                 .order_by("-created_at")
                 .first()
             )
-    
-        symptom_type = serializer.validated_data["symptom_type"]
+
         severity = serializer.validated_data["severity"]
-    
+
         risk_level = calculate_symptom_risk(
             symptom_type=symptom_type,
             severity=severity,
         )
-    
+
         serializer.save(
             patient=patient,
             case=case,
             risk_level=risk_level,
+            logged_at=recorded_at,
         )
         
 @extend_schema(

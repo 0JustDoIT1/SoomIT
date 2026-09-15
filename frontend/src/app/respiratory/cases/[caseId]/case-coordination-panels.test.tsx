@@ -28,14 +28,14 @@ describe("CaseCoordinationPanels", () => {
     fetchAvailabilityMock.mockReset();
     createOrderMock.mockReset();
     fetchAvailabilityMock.mockResolvedValue({
-      subtype_review_completed: true,
-      active_orders: { PDL1: false, GENE: false },
+      pathology_gene_review_completed: true,
+      active_orders: { PDL1: false, PATHOLOGY_GENE: false },
     });
     createOrderMock.mockResolvedValue({
       examination_order_id: "order-1",
       pathology_work_item_id: "work-1",
-      pathology_test_type: "PDL1",
-      pathology_test_type_label: "PD-L1 검사",
+      order_type: "PDL1",
+      order_type_label: "PD-L1 검사",
       order_status: "ORDERED",
       created_at: "2026-09-13T00:00:00Z",
     });
@@ -84,8 +84,8 @@ describe("CaseCoordinationPanels", () => {
 
   it("blocks ordering before the subtype result is confirmed", async () => {
     fetchAvailabilityMock.mockResolvedValue({
-      subtype_review_completed: false,
-      active_orders: { PDL1: false, GENE: false },
+      pathology_gene_review_completed: false,
+      active_orders: { PDL1: false, PATHOLOGY_GENE: false },
     });
     render(<CaseCoordinationPanels caseId="case-1" />);
 
@@ -95,8 +95,8 @@ describe("CaseCoordinationPanels", () => {
 
   it("blocks a duplicate active order of the selected type", async () => {
     fetchAvailabilityMock.mockResolvedValue({
-      subtype_review_completed: true,
-      active_orders: { PDL1: true, GENE: false },
+      pathology_gene_review_completed: true,
+      active_orders: { PDL1: true, PATHOLOGY_GENE: false },
     });
     render(<CaseCoordinationPanels caseId="case-1" />);
 

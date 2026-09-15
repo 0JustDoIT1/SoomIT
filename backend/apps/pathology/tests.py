@@ -14,9 +14,8 @@ from apps.ai_results.models import (
     ModelVersion,
     PathologyAiResult,
     PDL1AiResult,
-    SpecimenAdequacyAiResult,
 )
-from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult, PathologyResult
 from apps.patients.models import Patient
 from apps.pathology.models import (
@@ -77,13 +76,12 @@ class PathologyReadAPITestCase(APITestCase):
             patient=self.patient,
             case_code="TEST-CASE-001",
             primary_doctor=self.user,
-            current_stage=Stage.PATHOLOGY,
+            current_stage=WorkflowStage.PATHOLOGY_GENE,
         )
 
         self.pathology_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.SUBTYPE,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
             requesting_doctor=self.user,
             purpose="Test pathology order",
             status=ExaminationOrder.Status.COMPLETED,
@@ -102,7 +100,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.image_asset = CaseImageAsset.objects.create(
             case=self.case,
             examination_order=self.pathology_order,
-            uploaded_stage=Stage.PATHOLOGY,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             image_type=CaseImageAsset.ImageType.WSI,
             storage_type=CaseImageAsset.StorageType.GCS,
             storage_uri="gcs://test-bucket/test-slide.svs",
@@ -137,14 +135,14 @@ class PathologyReadAPITestCase(APITestCase):
         self.model_version = ModelVersion.objects.create(
             model_name="pathology-model",
             version="1.0",
-            analysis_type="PATHOLOGY_DIAGNOSIS",
+            analysis_type="PATHOLOGY_GENE_ANALYSIS",
         )
         self.ai_analysis = AiAnalysis.objects.create(
             case=self.case,
             examination_order=self.pathology_order,
             source_image_asset=self.image_asset,
             model_version=self.model_version,
-            analysis_type="PATHOLOGY_DIAGNOSIS",
+            analysis_type="PATHOLOGY_GENE_ANALYSIS",
             status=AiAnalysis.Status.SUCCEEDED,
         )
         self.ai_result = AiResult.objects.create(
@@ -161,41 +159,17 @@ class PathologyReadAPITestCase(APITestCase):
             subtype_confidence=0.8125,
         )
 
-        self.adequacy_model_version = ModelVersion.objects.create(
-            model_name="adequacy-model",
-            version="1.0",
-            analysis_type="SPECIMEN_ADEQUACY",
-        )
-        self.adequacy_analysis = AiAnalysis.objects.create(
-            case=self.case,
-            source_image_asset=self.image_asset,
-            model_version=self.adequacy_model_version,
-            analysis_type="SPECIMEN_ADEQUACY",
-            status=AiAnalysis.Status.SUCCEEDED,
-        )
-        self.adequacy_result = AiResult.objects.create(
-            ai_analysis=self.adequacy_analysis,
-            schema_version="1.0",
-            result_payload={},
-        )
-        SpecimenAdequacyAiResult.objects.create(
-            ai_result=self.adequacy_result,
-            adequacy_status="ADEQUATE",
-            tumor_cell_ratio=62.50,
-            confidence=0.9250,
-        )
-
         self.pdl1_model_version = ModelVersion.objects.create(
             model_name="pdl1-amd-mil",
             version="final_model",
-            analysis_type="PDL1_CLASSIFICATION",
+            analysis_type="PDL1_ANALYSIS",
         )
         self.pdl1_analysis = AiAnalysis.objects.create(
             case=self.case,
             examination_order=self.pathology_order,
             source_image_asset=self.image_asset,
             model_version=self.pdl1_model_version,
-            analysis_type="PDL1_CLASSIFICATION",
+            analysis_type="PDL1_ANALYSIS",
             status=AiAnalysis.Status.SUCCEEDED,
         )
         self.pdl1_ai_result = AiResult.objects.create(
@@ -218,7 +192,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.clinical_result = ClinicalResult.objects.create(
             case=self.case,
             examination_order=self.pathology_order,
-            stage=Stage.PATHOLOGY,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             source_image_asset=self.image_asset,
             reviewed_ai_result=self.ai_result,
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
@@ -294,7 +268,7 @@ class PathologyReadAPITestCase(APITestCase):
         other_case = LungCancerCase.objects.create(
             patient=other_patient,
             case_code="TEST-CASE-002",
-            current_stage=Stage.PATHOLOGY,
+            current_stage=WorkflowStage.PATHOLOGY_GENE,
         )
         self.ai_analysis.case = other_case
         self.ai_analysis.save(update_fields=["case"])
@@ -322,7 +296,7 @@ class PathologyReadAPITestCase(APITestCase):
         other_case = LungCancerCase.objects.create(
             patient=other_patient,
             case_code="OTHER-REVIEW-CASE",
-            current_stage=Stage.PATHOLOGY,
+            current_stage=WorkflowStage.PATHOLOGY_GENE,
         )
 
         response = self.client.post(
@@ -391,8 +365,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.work_item.save(update_fields=["status", "updated_at"])
         pdl1_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            order_type=ExaminationOrder.OrderType.PDL1,
             requesting_doctor=self.user,
             purpose="PD-L1 follow-up",
             status=ExaminationOrder.Status.COMPLETED,
@@ -420,7 +393,7 @@ class PathologyReadAPITestCase(APITestCase):
         pdl1_asset = CaseImageAsset.objects.create(
             case=self.case,
             examination_order=pdl1_order,
-            uploaded_stage=Stage.PATHOLOGY,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             image_type=CaseImageAsset.ImageType.WSI,
             storage_type=CaseImageAsset.StorageType.GCS,
             storage_uri="gcs://test-bucket/pdl1-slide.svs",
@@ -432,7 +405,7 @@ class PathologyReadAPITestCase(APITestCase):
             examination_order=pdl1_order,
             source_image_asset=pdl1_asset,
             model_version=self.pdl1_model_version,
-            analysis_type="PDL1_CLASSIFICATION",
+            analysis_type="PDL1_ANALYSIS",
             status=AiAnalysis.Status.SUCCEEDED,
         )
         AiResult.objects.create(
@@ -463,8 +436,7 @@ class PathologyReadAPITestCase(APITestCase):
 
         gene_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.GENE,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
             requesting_doctor=self.user,
             purpose="Gene follow-up",
         )
@@ -493,15 +465,13 @@ class PathologyReadAPITestCase(APITestCase):
     def test_follow_up_orders_without_specimens_use_direct_order_in_workstation(self):
         pdl1_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            order_type=ExaminationOrder.OrderType.PDL1,
             requesting_doctor=self.user,
             purpose="PD-L1 follow-up",
         )
         gene_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.GENE,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
             requesting_doctor=self.user,
             purpose="Gene follow-up",
         )
@@ -554,8 +524,7 @@ class PathologyReadAPITestCase(APITestCase):
     def test_pathology_test_filter_does_not_include_other_orders_from_same_case(self):
         pdl1_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            order_type=ExaminationOrder.OrderType.PDL1,
             requesting_doctor=self.user,
             purpose="PD-L1 follow-up",
         )
@@ -578,8 +547,7 @@ class PathologyReadAPITestCase(APITestCase):
     def test_review_and_diagnosis_reject_ai_result_from_another_order(self):
         pdl1_order = ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            order_type=ExaminationOrder.OrderType.PDL1,
             requesting_doctor=self.user,
             purpose="PD-L1 follow-up",
         )
@@ -634,7 +602,7 @@ class PathologyReadAPITestCase(APITestCase):
         other_case = LungCancerCase.objects.create(
             patient=other_patient,
             case_code="OTHER-CASE-001",
-            current_stage=Stage.PATHOLOGY,
+            current_stage=WorkflowStage.PATHOLOGY_GENE,
         )
         PathologyWorkItem.objects.create(
             case=other_case,
@@ -918,28 +886,12 @@ class PathologyReadAPITestCase(APITestCase):
             str(response.data[0]["source_image_asset_id"]),
             str(self.image_asset.id),
         )
-        self.assertEqual(response.data[0]["analysis_type"], "PATHOLOGY_DIAGNOSIS")
+        self.assertEqual(response.data[0]["analysis_type"], "PATHOLOGY_GENE_ANALYSIS")
         self.assertEqual(
             response.data[0]["result_detail"]["pathology"]["predicted_subtype"],
             "Adenocarcinoma",
         )
 
-    def test_authenticated_user_can_read_case_adequacy_ai_results(self):
-        self.client.force_authenticate(user=self.user)
-        url = reverse(
-            "pathology:case-adequacy-result-list",
-            kwargs={"case_id": self.case.id},
-        )
-
-        response = self.client.get(url)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["analysis_type"], "SPECIMEN_ADEQUACY")
-        self.assertEqual(
-            response.data[0]["result_detail"]["specimen_adequacy"]["adequacy_status"],
-            "ADEQUATE",
-        )
 
     def test_authenticated_user_can_read_case_pdl1_ai_results(self):
         self.client.force_authenticate(user=self.user)
@@ -952,7 +904,7 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
-        self.assertEqual(response.data[0]["analysis_type"], "PDL1_CLASSIFICATION")
+        self.assertEqual(response.data[0]["analysis_type"], "PDL1_ANALYSIS")
         detail = response.data[0]["result_detail"]["pdl1"]
         self.assertEqual(detail["predicted_class"], 2)
         self.assertEqual(detail["predicted_tps_range"], "GE_50")
@@ -980,8 +932,7 @@ class PathologyReadAPITestCase(APITestCase):
     def _create_pdl1_order(self):
         return ExaminationOrder.objects.create(
             case=self.case,
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            order_type=ExaminationOrder.OrderType.PDL1,
             requesting_doctor=self.user,
             priority=ExaminationOrder.Priority.NORMAL,
             purpose="PD-L1 upload test",
@@ -1025,7 +976,7 @@ class PathologyReadAPITestCase(APITestCase):
         url = reverse("pathology:case-pdl1-analysis-run", kwargs={"case_id": self.case.id})
         response = self.client.post(url, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        asset = CaseImageAsset.objects.create(case=self.case, examination_order=order, uploaded_stage=Stage.PATHOLOGY, image_type=CaseImageAsset.ImageType.WSI, storage_type=CaseImageAsset.StorageType.GCS, storage_uri="gs://bucket/pdl1/input.svs", file_format="SVS", status=CaseImageAsset.Status.READY, metadata={"pdl1_annotation": {"storage_uri": "gs://bucket/pdl1/input.annotations", "roi_layer": "Tumor"}})
+        asset = CaseImageAsset.objects.create(case=self.case, examination_order=order, workflow_stage=WorkflowStage.PDL1, image_type=CaseImageAsset.ImageType.WSI, storage_type=CaseImageAsset.StorageType.GCS, storage_uri="gs://bucket/pdl1/input.svs", file_format="SVS", status=CaseImageAsset.Status.READY, metadata={"pdl1_annotation": {"storage_uri": "gs://bucket/pdl1/input.annotations", "roi_layer": "Tumor"}})
         specimen = PathologySpecimen.objects.create(case=self.case, examination_order=order, specimen_code="PDL1-UPLOAD", specimen_type=PathologySpecimen.SpecimenType.OTHER, status=PathologySpecimen.Status.READY, created_by_user=self.user)
         WholeSlideImage.objects.create(specimen=specimen, image_asset=asset, slide_code="PDL1-UPLOAD", stain=WholeSlideImage.Stain.PDL1, original_filename="input.svs", sha256="a" * 64, uploaded_by_user=self.user)
         with self.captureOnCommitCallbacks(execute=True):
@@ -1083,7 +1034,7 @@ class PathologyReadAPITestCase(APITestCase):
     def test_case_reports_include_only_confirmed_pathology_results(self):
         draft = ClinicalResult.objects.create(
             case=self.case,
-            stage=Stage.PATHOLOGY,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             result_status=ClinicalResult.ResultStatus.DRAFT,
         )
         PathologyResult.objects.create(
@@ -1149,7 +1100,7 @@ class PathologyReadAPITestCase(APITestCase):
     def test_authenticated_user_can_update_draft_diagnosis(self):
         draft = ClinicalResult.objects.create(
             case=self.case,
-            stage=Stage.PATHOLOGY,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             result_status=ClinicalResult.ResultStatus.DRAFT,
         )
         PathologyResult.objects.create(
@@ -1184,7 +1135,7 @@ class PathologyReadAPITestCase(APITestCase):
     def test_authenticated_user_can_confirm_draft_diagnosis(self):
         draft = ClinicalResult.objects.create(
             case=self.case,
-            stage=Stage.PATHOLOGY,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             result_status=ClinicalResult.ResultStatus.DRAFT,
         )
         PathologyResult.objects.create(

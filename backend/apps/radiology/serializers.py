@@ -12,8 +12,8 @@ from .services.workflow import (
 
 
 class RadiologyWorklistQuerySerializer(serializers.Serializer):
-    exam_type = serializers.ChoiceField(
-        choices=[ExaminationOrder.ExamType.XRAY, ExaminationOrder.ExamType.CT, "STAGING"],
+    order_type = serializers.ChoiceField(
+        choices=ExaminationOrder.OrderType.choices,
         required=False,
     )
     status = serializers.ChoiceField(
@@ -58,7 +58,7 @@ class RadiologyDoctorSummarySerializer(serializers.Serializer):
 
 
 class RadiologyExaminationOrderSummarySerializer(serializers.ModelSerializer):
-    exam_type_label = serializers.SerializerMethodField()
+    order_type_label = serializers.SerializerMethodField()
     priority_label = serializers.CharField(source="get_priority_display", read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
 
@@ -66,8 +66,8 @@ class RadiologyExaminationOrderSummarySerializer(serializers.ModelSerializer):
         model = ExaminationOrder
         fields = [
             "id",
-            "exam_type",
-            "exam_type_label",
+            "order_type",
+            "order_type_label",
             "priority",
             "priority_label",
             "status",
@@ -78,10 +78,8 @@ class RadiologyExaminationOrderSummarySerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
-    def get_exam_type_label(self, obj):
-        if is_pet_ct_tnm_order(obj.worklist_image_assets):
-            return "PET-CT"
-        return obj.get_exam_type_display()
+    def get_order_type_label(self, obj):
+        return obj.get_order_type_display()
 
 
 class RadiologyImageAssetSummarySerializer(serializers.Serializer):
@@ -106,14 +104,14 @@ class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
             "metadata",
             "status",
             "image_type",
-            "uploaded_stage",
+            "workflow_stage",
             "created_at",
         ]
         read_only_fields = [
             "id",
             "status",
             "image_type",
-            "uploaded_stage",
+            "workflow_stage",
             "created_at",
         ]
 
@@ -198,7 +196,7 @@ class RadiologyAiAnalysisDetailSerializer(serializers.ModelSerializer):
         return {
             "id": asset.id,
             "image_type": asset.image_type,
-            "uploaded_stage": asset.uploaded_stage,
+            "workflow_stage": asset.workflow_stage,
             "storage_type": asset.storage_type,
             "status": asset.status,
         }
@@ -211,7 +209,7 @@ class RadiologyAiResultSerializer(serializers.Serializer):
 
     def get_result(self, obj):
         ai_result = obj.ai_result
-        if obj.analysis_type == "XRAY_SCREENING" and hasattr(ai_result, "xray_detail"):
+        if obj.analysis_type == "XRAY_ANALYSIS" and hasattr(ai_result, "xray_detail"):
             detail = ai_result.xray_detail
             payload = ai_result.result_payload if isinstance(ai_result.result_payload, dict) else {}
             classification = payload.get("classification")
@@ -236,7 +234,7 @@ class RadiologyAiResultSerializer(serializers.Serializer):
                 "detections": detections if isinstance(detections, list) else [],
                 "model_revision": payload.get("model_revision"),
             }
-        if obj.analysis_type == "CT_NODULE" and hasattr(ai_result, "ct_detail"):
+        if obj.analysis_type == "CT_ANALYSIS" and hasattr(ai_result, "ct_detail"):
             detail = ai_result.ct_detail
             return {
                 "overall_malignancy_risk": detail.overall_malignancy_risk,
@@ -250,7 +248,7 @@ class RadiologyAiResultSerializer(serializers.Serializer):
                     for nodule in detail.nodule_results.all()
                 ],
             }
-        if obj.analysis_type == "TNM_STAGING" and hasattr(ai_result, "tnm_detail"):
+        if obj.analysis_type == "PET_CT_TNM_ANALYSIS" and hasattr(ai_result, "tnm_detail"):
             detail = ai_result.tnm_detail
             return {
                 "predicted_t": detail.predicted_t,

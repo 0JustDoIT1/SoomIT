@@ -1,0 +1,54 @@
+from datetime import date
+
+from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.accounts.models import Department, DepartmentRole, Hospital, User
+from apps.cases.models import ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.clinical.models import ClinicalResult
+from apps.pathology.models import PathologyWorkItem
+from apps.patients.models import Patient
+
+
+class DoctorExaminationOrderAPITests(TestCase):
+    def setUp(self):
+        hospital = Hospital.objects.create(name="Order Hospital", code="ORDER-HOSP")
+        department = Department.objects.create(hospital=hospital, code="PULMONOLOGY", name="Pulmonology")
+        role = DepartmentRole.objects.create(department=department, role=DepartmentRole.Role.DOCTOR, display_name="Doctor")
+        self.doctor = User.objects.create_user(login_id="order-api-doctor", password="test", name="Doctor", department_role=role, account_status=User.AccountStatus.ACTIVE)
+        patient = Patient.objects.create(hospital=hospital, patient_code="ORDER-PATIENT", name="Patient", birth_date=date(1970, 1, 1), sex=Patient.Sex.FEMALE, phone_number="010-0000-0000", phone_number_hash="order-api")
+        self.case = LungCancerCase.objects.create(patient=patient, case_code="ORDER-CASE", primary_doctor=self.doctor, current_stage=WorkflowStage.XRAY)
+        token = RefreshToken.for_user(self.doctor)
+        token["hospital_id"] = str(hospital.id)
+        token["department_id"] = str(department.id)
+        token["department_code"] = department.code
+        token["role"] = role.role
+        self.client = APIClient()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
+        self.url = reverse("doctor-examination-order-list-create", kwargs={"case_id": self.case.id})
+
+    def confirm(self, stage):
+        return ClinicalResult.objects.create(case=self.case, workflow_stage=stage, result_status=ClinicalResult.ResultStatus.CONFIRMED)
+
+    def post_order(self, order_type):
+        return self.client.post(self.url, {"order_type": order_type, "priority": "NORMAL", "purpose": "Next examination", "clinical_note": ""}, format="json")
+
+    def test_requires_confirmed_predecessor_and_blocks_active_duplicate(self):
+        self.assertEqual(self.post_order("CT").status_code, 400)
+        self.confirm(WorkflowStage.XRAY)
+        created = self.post_order("CT")
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.data["order_type"], "CT")
+        self.assertIsNone(created.data["pathology_work_item_id"])
+        self.assertEqual(self.post_order("CT").status_code, 400)
+
+    def test_pathology_gene_order_creates_upload_work_item_atomically(self):
+        self.confirm(WorkflowStage.PET_CT_TNM)
+        created = self.post_order("PATHOLOGY_GENE")
+        self.assertEqual(created.status_code, 201)
+        order = ExaminationOrder.objects.get(id=created.data["id"])
+        work_item = PathologyWorkItem.objects.get(id=created.data["pathology_work_item_id"])
+        self.assertEqual(work_item.examination_order, order)
+        self.assertEqual(work_item.task_type, PathologyWorkItem.TaskType.WSI_UPLOAD)

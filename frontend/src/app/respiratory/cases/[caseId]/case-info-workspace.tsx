@@ -1,11 +1,11 @@
 import { CaseInfoKey, getCaseInfoLabel } from "./case-info-menu";
 
-const RESULT_STAGES: CaseInfoKey[] = ["XRAY", "CT", "PATHOLOGY"];
+const RESULT_STAGES: CaseInfoKey[] = ["XRAY", "CT", "PATHOLOGY_GENE"];
 
 export function CaseInfoWorkspace({ menu }: { menu: CaseInfoKey }) {
   if (menu === "OVERVIEW") return <OverviewWorkspace />;
   if (RESULT_STAGES.includes(menu)) return <ResultWorkspace menu={menu} />;
-  if (menu === "GENE") return <BiomarkerWorkspace />;
+  if (menu === "PDL1") return <BiomarkerWorkspace />;
   if (menu === "TREATMENT") return <TreatmentWorkspace />;
   if (menu === "PRESCRIPTION") return <PrescriptionWorkspace />;
   return null;

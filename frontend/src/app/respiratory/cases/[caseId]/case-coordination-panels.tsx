@@ -6,7 +6,7 @@ import { createFollowUpPathologyOrder, fetchFollowUpPathologyOrderAvailability, 
 import { getDecisionTypeLabel } from "./clinical-display-labels";
 
 type ClinicianDecision = { source_stage: string; decision_type: string; target_stage: string | null; reason: string | null; decided_by: string; decided_at: string };
-const TEST_LABELS: Record<FollowUpPathologyTestType, string> = { PDL1: "PD-L1 검사", GENE: "유전자 검사" };
+const TEST_LABELS: Record<FollowUpPathologyTestType, string> = { PDL1: "PD-L1 검사", PATHOLOGY_GENE: "조직·유전자 검사" };
 const EMPTY_ORDER: FollowUpPathologyOrderRequest = { pathology_test_type: "PDL1", priority: "NORMAL", purpose: "", clinical_note: "" };
 
 type CaseCoordinationPanelsProps = { caseId: string; decision?: ClinicianDecision | null; onOrderCreated?: () => void };
@@ -50,7 +50,7 @@ function CaseCoordinationPanelsContent({ caseId, decision, onOrderCreated }: Cas
     setCreating(true); setMessage(""); setError("");
     try {
       const result = await createFollowUpPathologyOrder(authorizedFetch, caseId, { ...order, purpose: order.purpose.trim(), clinical_note: order.clinical_note.trim() });
-      setMessage(`${result.pathology_test_type_label} 오더가 생성되었습니다.`);
+      setMessage(`${result.order_type_label} 오더가 생성되었습니다.`);
       setCreatedOrder(result);
       setOrder(EMPTY_ORDER); setIsEditingOrder(false); setIsReviewing(false);
       await loadAvailability();
@@ -60,7 +60,7 @@ function CaseCoordinationPanelsContent({ caseId, decision, onOrderCreated }: Cas
     } finally { setCreating(false); }
   }
 
-  const subtypeCompleted = availability?.subtype_review_completed ?? false;
+  const subtypeCompleted = availability?.pathology_gene_review_completed ?? false;
   const hasActiveOrder = availability?.active_orders[order.pathology_test_type] ?? false;
   const canReview = !loading && subtypeCompleted && !hasActiveOrder && order.purpose.trim().length > 0;
 
@@ -120,14 +120,14 @@ function CaseCoordinationPanelsContent({ caseId, decision, onOrderCreated }: Cas
       {message ? <p className="mt-3 bg-blue-50 px-3 py-2 text-xs text-blue-700">{message}</p> : null}
       {error ? <p role="alert" className="mt-3 bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p> : null}
       {createdOrder ? <dl aria-label="생성된 검사 오더" className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 rounded-md border border-emerald-200 bg-emerald-50/60 p-3 text-xs">
-        <DecisionValue label="검사" value={createdOrder.pathology_test_type_label} />
+        <DecisionValue label="검사" value={createdOrder.order_type_label} />
         <DecisionValue label="상태" value={getOrderStatusLabel(createdOrder.order_status)} />
         <DecisionValue label="생성 시각" value={formatDateTime(createdOrder.created_at)} />
         <DecisionValue label="오더 ID" value={createdOrder.examination_order_id} />
       </dl> : null}
       {!isEditingOrder ? <button type="button" disabled={loading || !subtypeCompleted} onClick={() => setIsEditingOrder(true)} className="mt-4 w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2.5 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:border-slate-200 disabled:bg-slate-100 disabled:text-slate-400">오더 작성 시작</button> : <>
       <div className="mt-4 grid grid-cols-2 gap-3 text-xs">
-        <label className="font-medium text-slate-600">검사 종류<select aria-label="검사 종류" value={order.pathology_test_type} disabled={loading || creating || isReviewing} onChange={(event) => setOrder((current) => ({ ...current, pathology_test_type: event.target.value as FollowUpPathologyTestType }))} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-800"><option value="PDL1">PD-L1 검사</option><option value="GENE">유전자 검사</option></select></label>
+        <label className="font-medium text-slate-600">검사 종류<select aria-label="검사 종류" value={order.pathology_test_type} disabled={loading || creating || isReviewing} onChange={(event) => setOrder((current) => ({ ...current, pathology_test_type: event.target.value as FollowUpPathologyTestType }))} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-800"><option value="PDL1">PD-L1 검사</option><option value="PATHOLOGY_GENE">조직·유전자 검사</option></select></label>
         <label className="font-medium text-slate-600">우선순위<select aria-label="우선순위" value={order.priority} disabled={loading || creating || isReviewing} onChange={(event) => setOrder((current) => ({ ...current, priority: event.target.value as "NORMAL" | "URGENT" }))} className="mt-1 w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-slate-800"><option value="NORMAL">일반</option><option value="URGENT">긴급</option></select></label>
         <label className="col-span-2 font-medium text-slate-600">검사 목적 <span className="text-red-500">*</span><input aria-label="검사 목적" value={order.purpose} disabled={creating || isReviewing} maxLength={500} onChange={(event) => setOrder((current) => ({ ...current, purpose: event.target.value }))} placeholder="검사를 요청하는 목적을 입력하세요." className="mt-1 w-full rounded-md border border-slate-200 px-3 py-2 text-slate-800" /></label>
         <label className="col-span-2 font-medium text-slate-600">임상 소견<textarea aria-label="임상 소견" value={order.clinical_note} disabled={creating || isReviewing} rows={2} maxLength={1000} onChange={(event) => setOrder((current) => ({ ...current, clinical_note: event.target.value }))} placeholder="검사에 참고할 임상 소견을 입력하세요." className="mt-1 w-full resize-none rounded-md border border-slate-200 px-3 py-2 text-slate-800" /></label>

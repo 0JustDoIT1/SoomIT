@@ -83,7 +83,7 @@ type AiAnalysis = {
 
 type ClinicalResult = {
   id: string;
-  exam_type: string;
+  workflow_stage: string;
   exam_name: string;
   result_status: string;
   result_status_label: string;
@@ -191,7 +191,7 @@ function RespiratoryAiAnalysisContent() {
 
     for (const result of clinicalResults) {
       // API 응답은 최신 확정 결과부터 정렬된다. 같은 검사 유형은 첫 결과를 유지한다.
-      if (!map.has(result.exam_type)) map.set(result.exam_type, result);
+      if (!map.has(result.workflow_stage)) map.set(result.workflow_stage, result);
     }
 
     return map;
@@ -641,24 +641,24 @@ function getClinicalResult(
   analysisType: string,
   clinicalMap: Map<string, ClinicalResult>
 ) {
-  if (analysisType === 'XRAY_SCREENING') {
+  if (analysisType === 'XRAY_ANALYSIS') {
     return clinicalMap.get('XRAY');
   }
 
-  if (analysisType === 'CT_NODULE') {
+  if (analysisType === 'CT_ANALYSIS') {
     return clinicalMap.get('CT');
   }
 
-  if (analysisType === 'PATHOLOGY_DIAGNOSIS') {
-    return clinicalMap.get('PATHOLOGY');
+  if (analysisType === 'PATHOLOGY_GENE_ANALYSIS') {
+    return clinicalMap.get('PATHOLOGY_GENE');
   }
 
-  if (analysisType === 'TNM_STAGING') {
-    return clinicalMap.get('STAGING');
+  if (analysisType === 'PET_CT_TNM_ANALYSIS') {
+    return clinicalMap.get('PET_CT_TNM');
   }
 
-  if (analysisType === 'GENE_PREDICTION') {
-    return clinicalMap.get('GENE');
+  if (analysisType === 'PATHOLOGY_GENE_ANALYSIS') {
+    return clinicalMap.get('PATHOLOGY_GENE');
   }
 
   return undefined;

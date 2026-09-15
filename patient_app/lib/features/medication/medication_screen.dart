@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'models/medication_schedule.dart';
 import 'services/medication_service.dart';
+import 'widgets/medication_history_tab.dart';
 
 class MedicationScreen extends StatefulWidget {
   const MedicationScreen({super.key});
@@ -17,75 +18,10 @@ class _MedicationScreenState extends State<MedicationScreen> {
 
   final Set<String> _takenScheduleIds = {};
   final Set<String> _submittingScheduleIds = {};
-  
-  Future<void> _markAsTaken(
-    MedicationSchedule schedule,
-  ) async {
-    if (_submittingScheduleIds.contains(schedule.id)) {
-      return;
-    }
-  
-    setState(() {
-      _submittingScheduleIds.add(schedule.id);
-    });
-  
-    try {
-      final now = DateTime.now();
-
-      final timeParts = schedule.reminderTime.split(':');
-      final hour = int.parse(timeParts[0]);
-      final minute = int.parse(timeParts[1]);
-  
-      final scheduledAt = DateTime(
-        now.year,
-        now.month,
-        now.day,
-        hour,
-        minute,
-      );
-  
-      await _medicationService.markAsTaken(
-        medicationScheduleId: schedule.id,
-        scheduledAt: scheduledAt,
-      );
-  
-      if (!mounted) return;
-  
-      setState(() {
-        _takenScheduleIds.add(schedule.id);
-      });
-  
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('복용 완료로 기록되었습니다.'),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-  
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('복용 기록 저장에 실패했습니다.\n$e'),
-        ),
-      );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _submittingScheduleIds.remove(schedule.id);
-        });
-      }
-    }
-  }
 
   @override
   void initState() {
     super.initState();
-
-    final now = DateTime.now();
-    debugPrint('NOW = $now');
-    debugPrint('TIMEZONE = ${now.timeZoneName}');
-    debugPrint('OFFSET = ${now.timeZoneOffset}');
-
     _medicationFuture = _medicationService.getMedicationSchedules();
   }
 
@@ -97,141 +33,264 @@ class _MedicationScreenState extends State<MedicationScreen> {
     await _medicationFuture;
   }
 
+  bool _isTaken(MedicationSchedule schedule) {
+    return schedule.todayStatus == 'TAKEN' ||
+        _takenScheduleIds.contains(schedule.id);
+  }
+
+  Future<void> _markAsTaken(MedicationSchedule schedule) async {
+    if (_submittingScheduleIds.contains(schedule.id)) {
+      return;
+    }
+
+    setState(() {
+      _submittingScheduleIds.add(schedule.id);
+    });
+
+    try {
+      /*
+       * 에뮬레이터 시간대가 GMT여도
+       * 한국 날짜 기준으로 복약 예정 시각을 생성한다.
+       */
+      final koreaNow = DateTime.now().toUtc().add(const Duration(hours: 9));
+
+      final timeParts = schedule.reminderTime.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      /*
+       * 한국 시각을 UTC로 변환한다.
+       * 예: 한국 오전 9시 → UTC 오전 0시
+       */
+      final scheduledAt = DateTime.utc(
+        koreaNow.year,
+        koreaNow.month,
+        koreaNow.day,
+        hour,
+        minute,
+      ).subtract(const Duration(hours: 9));
+
+      await _medicationService.markAsTaken(
+        medicationScheduleId: schedule.id,
+        scheduledAt: scheduledAt,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _takenScheduleIds.add(schedule.id);
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('복용 완료로 기록되었습니다.')));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('복용 기록 저장에 실패했습니다.\n$e')));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _submittingScheduleIds.remove(schedule.id);
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: const Color(0xFFF7F8FA),
-      appBar: AppBar(
-        title: const Text(
-          '복약 관리',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        backgroundColor: const Color(0xFFF7F8FA),
+        appBar: AppBar(
+          title: const Text(
+            '복약 관리',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.white,
+          elevation: 0,
+          bottom: const TabBar(
+            indicatorColor: Color(0xFF6E4DB2),
+            indicatorWeight: 3,
+            labelColor: Color(0xFF6E4DB2),
+            unselectedLabelColor: Color(0xFF8B95A1),
+            labelStyle: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+            tabs: [
+              Tab(text: '오늘의 복약'),
+              Tab(text: '복약 기록'),
+            ],
           ),
         ),
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.white,
-        elevation: 0,
-      ),
-      body: SafeArea(
-        child: RefreshIndicator(
-          onRefresh: _refresh,
-          child: FutureBuilder<List<MedicationSchedule>>(
-            future: _medicationFuture,
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(
-                  child: CircularProgressIndicator(),
-                );
-              }
+        body: TabBarView(
+          children: [
+            SafeArea(
+              child: RefreshIndicator(
+                onRefresh: _refresh,
+                child: FutureBuilder<List<MedicationSchedule>>(
+                  future: _medicationFuture,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
 
-              if (snapshot.hasError) {
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(20),
-                  children: [
-                    const SizedBox(height: 120),
-                    const Icon(
-                      Icons.error_outline,
-                      size: 48,
-                    ),
-                    const SizedBox(height: 16),
-                    const Center(
-                      child: Text(
-                        '복약 정보를 불러오지 못했습니다.',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
+                    if (snapshot.hasError) {
+                      return _MedicationErrorView(error: snapshot.error);
+                    }
+
+                    final schedules = snapshot.data ?? [];
+
+                    if (schedules.isEmpty) {
+                      return const _EmptyMedicationView();
+                    }
+
+                    final takenCount = schedules.where(_isTaken).length;
+
+                    return ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 16,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    Center(
-                      child: Text(
-                        '${snapshot.error}',
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 13,
+                      children: [
+                        const Text(
+                          '오늘 복용할 약을 확인하고 기록하세요.',
+                          style: TextStyle(
+                            color: Color(0xFF4E5968),
+                            fontSize: 14,
+                          ),
                         ),
-                      ),
-                    ),
-                  ],
-                );
-              }
+                        const SizedBox(height: 22),
 
-              final schedules = snapshot.data ?? [];
-
-              if (schedules.isEmpty) {
-                return ListView(
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  padding: const EdgeInsets.all(20),
-                  children: const [
-                    SizedBox(height: 120),
-                    Icon(
-                      Icons.medication_outlined,
-                      size: 52,
-                    ),
-                    SizedBox(height: 16),
-                    Center(
-                      child: Text(
-                        '등록된 복약 일정이 없습니다.',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
+                        _TodayMedicationHeader(
+                          takenCount: takenCount,
+                          totalCount: schedules.length,
                         ),
-                      ),
-                    ),
-                  ],
-                );
-              }
 
-              return ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 16,
+                        const SizedBox(height: 16),
+
+                        ...schedules.map(
+                          (schedule) => _MedicationScheduleCard(
+                            key: ValueKey(schedule.id),
+                            schedule: schedule,
+                            isTaken: _isTaken(schedule),
+                            isSubmitting: _submittingScheduleIds.contains(
+                              schedule.id,
+                            ),
+                            onTaken: () => _markAsTaken(schedule),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
-                children: [
-                  const Text(
-                    '처방받은 약과 복약 시간을 확인하세요.',
-                    style: TextStyle(
-                      fontSize: 14,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
+              ),
+            ),
 
-                  ...schedules.map(
-                    (schedule) => _MedicationScheduleCard(
-                      schedule: schedule,
-                      isTaken:
-                          schedule.todayStatus == 'TAKEN' ||
-                          _takenScheduleIds.contains(schedule.id),
-                      isSubmitting:
-                          _submittingScheduleIds.contains(schedule.id),
-                      onTaken: () => _markAsTaken(schedule),
-                    ),
-                  ),
-                ],
-              );
-            },
-          ),
+            const SafeArea(child: MedicationHistoryTab()),
+          ],
         ),
       ),
     );
   }
 }
-  
-class _MedicationScheduleCard extends StatelessWidget {
+
+class _TodayMedicationHeader extends StatelessWidget {
+  final int takenCount;
+  final int totalCount;
+
+  const _TodayMedicationHeader({
+    required this.takenCount,
+    required this.totalCount,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final koreaNow = DateTime.now().toUtc().add(const Duration(hours: 9));
+
+    final weekdays = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+
+    final dateText =
+        '${koreaNow.month}월 ${koreaNow.day}일 '
+        '${weekdays[koreaNow.weekday - 1]}';
+
+    return Row(
+      children: [
+        Expanded(
+          child: Text(
+            dateText,
+            style: const TextStyle(
+              color: Color(0xFF191F28),
+              fontSize: 18,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 7),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF0E9FF),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Text(
+            '$takenCount / $totalCount 복용 완료',
+            style: const TextStyle(
+              color: Color(0xFF6E4DB2),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _MedicationScheduleCard extends StatefulWidget {
   final MedicationSchedule schedule;
   final bool isTaken;
   final bool isSubmitting;
   final VoidCallback onTaken;
 
   const _MedicationScheduleCard({
+    super.key,
     required this.schedule,
     required this.isTaken,
     required this.isSubmitting,
     required this.onTaken,
   });
+
+  @override
+  State<_MedicationScheduleCard> createState() =>
+      _MedicationScheduleCardState();
+}
+
+class _MedicationScheduleCardState extends State<_MedicationScheduleCard> {
+  bool _isExpanded = false;
+
+  MedicationSchedule get schedule => widget.schedule;
+
+  String get _medicineTitle {
+    if (schedule.items.isEmpty) {
+      return '처방약';
+    }
+
+    final firstDrugName = schedule.items.first.drugName;
+    final remainingCount = schedule.items.length - 1;
+
+    if (remainingCount == 0) {
+      return firstDrugName;
+    }
+
+    return '$firstDrugName 외 $remainingCount개';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -240,35 +299,33 @@ class _MedicationScheduleCard extends StatelessWidget {
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       elevation: 0,
+      color: widget.isTaken ? const Color(0xFFF8FBF9) : Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         side: BorderSide(
-          color: Theme.of(context)
-              .colorScheme
-              .outlineVariant,
+          color: widget.isTaken
+              ? const Color(0xFFCDE8D7)
+              : Theme.of(context).colorScheme.outlineVariant,
         ),
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Container(
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primaryContainer,
-                    borderRadius: BorderRadius.circular(12),
+                    color: const Color(0xFFF0E9FF),
+                    borderRadius: BorderRadius.circular(13),
                   ),
-                  child: Icon(
-                    Icons.access_time,
-                    color: Theme.of(context)
-                        .colorScheme
-                        .primary,
+                  child: const Icon(
+                    Icons.medication_outlined,
+                    color: Color(0xFF6E4DB2),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -277,92 +334,119 @@ class _MedicationScheduleCard extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        '복약 시간',
-                        style: TextStyle(
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
                       Text(
-                        displayTime,
+                        _medicineTitle,
                         style: const TextStyle(
-                          fontSize: 21,
+                          color: Color(0xFF191F28),
+                          fontSize: 17,
                           fontWeight: FontWeight.w700,
                         ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.schedule,
+                            size: 17,
+                            color: Color(0xFF6B7280),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            displayTime,
+                            style: const TextStyle(
+                              color: Color(0xFF4E5968),
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
 
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 10,
-                    vertical: 5,
+                const SizedBox(width: 8),
+
+                _AlarmStatusBadge(enabled: schedule.enabled),
+              ],
+            ),
+          ),
+
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 46,
+                    child: FilledButton.icon(
+                      onPressed: widget.isTaken || widget.isSubmitting
+                          ? null
+                          : widget.onTaken,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: const Color(0xFF6E4DB2),
+                        disabledBackgroundColor: const Color(0xFFE8F5ED),
+                        disabledForegroundColor: const Color(0xFF268451),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      icon: widget.isSubmitting
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : Icon(
+                              widget.isTaken ? Icons.check_circle : Icons.check,
+                            ),
+                      label: Text(
+                        widget.isSubmitting
+                            ? '처리 중...'
+                            : widget.isTaken
+                            ? '복용 완료'
+                            : '복용 완료하기',
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    color: schedule.enabled
-                        ? Theme.of(context)
-                            .colorScheme
-                            .primaryContainer
-                        : Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    schedule.enabled ? '알림 ON' : '알림 OFF',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
+                ),
+                const SizedBox(width: 8),
+
+                SizedBox(
+                  width: 46,
+                  height: 46,
+                  child: OutlinedButton(
+                    onPressed: () {
+                      setState(() {
+                        _isExpanded = !_isExpanded;
+                      });
+                    },
+                    style: OutlinedButton.styleFrom(
+                      padding: EdgeInsets.zero,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: AnimatedRotation(
+                      turns: _isExpanded ? 0.5 : 0,
+                      duration: const Duration(milliseconds: 200),
+                      child: const Icon(Icons.keyboard_arrow_down),
                     ),
                   ),
                 ),
               ],
             ),
+          ),
 
-            const SizedBox(height: 18),
-            const Divider(),
-            const SizedBox(height: 8),
-
-            ...schedule.items.map(
-              (item) => _MedicationItemView(
-                item: item,
-              ),
-            ),
-            const SizedBox(height: 16),
-
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: FilledButton.icon(
-                onPressed: isTaken || isSubmitting
-                    ? null
-                    : onTaken,
-                icon: isSubmitting
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                        ),
-                      )
-                    : Icon(
-                        isTaken
-                            ? Icons.check_circle
-                            : Icons.check,
-                      ),
-                label: Text(
-                  isSubmitting
-                      ? '처리 중...'
-                      : isTaken
-                          ? '복용 완료'
-                          : '복용 완료하기',
-                ),
-              ),
-            ),
-          ],
-        ),
+          AnimatedSize(
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeInOut,
+            child: _isExpanded
+                ? _MedicationDetails(items: schedule.items)
+                : const SizedBox.shrink(),
+          ),
+        ],
       ),
     );
   }
@@ -382,99 +466,154 @@ class _MedicationScheduleCard extends StatelessWidget {
     final displayHour = hour == 0
         ? 12
         : hour > 12
-            ? hour - 12
-            : hour;
+        ? hour - 12
+        : hour;
 
     return '$period $displayHour:$minute';
   }
 }
 
-class _MedicationItemView extends StatelessWidget {
-  final MedicationItem item;
+class _AlarmStatusBadge extends StatelessWidget {
+  final bool enabled;
 
-  const _MedicationItemView({
-    required this.item,
-  });
+  const _AlarmStatusBadge({required this.enabled});
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 8,
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+      decoration: BoxDecoration(
+        color: enabled ? const Color(0xFFF0E9FF) : const Color(0xFFF2F4F6),
+        borderRadius: BorderRadius.circular(20),
       ),
       child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(
-            Icons.medication_outlined,
-            size: 22,
+          Icon(
+            enabled
+                ? Icons.notifications_active_outlined
+                : Icons.notifications_off_outlined,
+            size: 15,
+            color: enabled ? const Color(0xFF6E4DB2) : const Color(0xFF8B95A1),
           ),
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item.drugName,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-
-                Text(
-                  item.ingredientName,
-                  style: const TextStyle(
-                    fontSize: 13,
-                  ),
-                ),
-
-                if (item.dose != null)
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      top: 6,
-                    ),
-                    child: Text(
-                      '${_formatDose(item.dose!)} ${item.unit}',
-                      style: const TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-
-                if (item.frequency != null)
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      top: 4,
-                    ),
-                    child: Text(
-                      item.frequency!,
-                      style: const TextStyle(
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-
-                if (item.instructions != null)
-                  Padding(
-                    padding: const EdgeInsets.only(
-                      top: 4,
-                    ),
-                    child: Text(
-                      item.instructions!,
-                      style: const TextStyle(
-                        fontSize: 13,
-                      ),
-                    ),
-                  ),
-              ],
+          const SizedBox(width: 4),
+          Text(
+            enabled ? 'ON' : 'OFF',
+            style: TextStyle(
+              color: enabled
+                  ? const Color(0xFF6E4DB2)
+                  : const Color(0xFF8B95A1),
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+class _MedicationDetails extends StatelessWidget {
+  final List<MedicationItem> items;
+
+  const _MedicationDetails({required this.items});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 18),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFAF8FD),
+        border: Border(top: BorderSide(color: Color(0xFFE9E3F0))),
+      ),
+      child: items.isEmpty
+          ? const Text(
+              '등록된 상세 약 정보가 없습니다.',
+              style: TextStyle(color: Color(0xFF6B7280), fontSize: 13),
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '상세정보',
+                  style: TextStyle(
+                    color: Color(0xFF191F28),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+
+                ...items.asMap().entries.map((entry) {
+                  final index = entry.key;
+                  final item = entry.value;
+
+                  return Column(
+                    children: [
+                      if (index > 0) ...[
+                        const SizedBox(height: 16),
+                        const Divider(height: 1),
+                        const SizedBox(height: 16),
+                      ],
+                      _MedicationItemDetails(item: item),
+                    ],
+                  );
+                }),
+              ],
+            ),
+    );
+  }
+}
+
+class _MedicationItemDetails extends StatelessWidget {
+  final MedicationItem item;
+
+  const _MedicationItemDetails({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            const Icon(
+              Icons.medication_outlined,
+              size: 20,
+              color: Color(0xFF6E4DB2),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                item.drugName,
+                style: const TextStyle(
+                  color: Color(0xFF191F28),
+                  fontSize: 15,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+
+        _DetailRow(label: '성분명', value: item.ingredientName),
+
+        if (item.dose != null)
+          _DetailRow(
+            label: '1회 복용량',
+            value: '${_formatDose(item.dose!)} ${item.unit}',
+          ),
+
+        _DetailRow(label: '투여 경로', value: item.route),
+
+        if (item.frequency != null && item.frequency!.trim().isNotEmpty)
+          _DetailRow(label: '복용 횟수', value: item.frequency!),
+
+        if (item.instructions != null && item.instructions!.trim().isNotEmpty)
+          _DetailRow(label: '복용 방법', value: item.instructions!),
+      ],
     );
   }
 
@@ -490,5 +629,97 @@ class _MedicationItemView extends StatelessWidget {
     }
 
     return value.toString();
+  }
+}
+
+class _DetailRow extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _DetailRow({required this.label, required this.value});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 88,
+            child: Text(
+              label,
+              style: const TextStyle(color: Color(0xFF8B95A1), fontSize: 13),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: Color(0xFF333D4B),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MedicationErrorView extends StatelessWidget {
+  final Object? error;
+
+  const _MedicationErrorView({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(20),
+      children: [
+        const SizedBox(height: 120),
+        const Icon(Icons.error_outline, size: 48),
+        const SizedBox(height: 16),
+        const Center(
+          child: Text(
+            '복약 정보를 불러오지 못했습니다.',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: Text(
+            '$error',
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _EmptyMedicationView extends StatelessWidget {
+  const _EmptyMedicationView();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(20),
+      children: const [
+        SizedBox(height: 120),
+        Icon(Icons.medication_outlined, size: 52),
+        SizedBox(height: 16),
+        Center(
+          child: Text(
+            '등록된 복약 일정이 없습니다.',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ],
+    );
   }
 }

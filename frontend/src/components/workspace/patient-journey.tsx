@@ -1,9 +1,9 @@
 type CaseStage =
   | "XRAY"
   | "CT"
-  | "PATHOLOGY"
-  | "STAGING"
-  | "GENE"
+  | "PET_CT_TNM"
+  | "PATHOLOGY_GENE"
+  | "PDL1"
   | "TREATMENT"
   | "PRESCRIPTION";
 
@@ -18,13 +18,10 @@ const journeySteps: Array<{
 }> = [
   { label: "X-ray", stage: "XRAY" },
   { label: "CT", stage: "CT" },
-  {
-    label: "PET-CT",
-    stage: null,
-    description: "TNM 예측 입력 영상",
-  },
-  { label: "TNM 예측", stage: "STAGING" },
-  { label: "병리", stage: "PATHOLOGY" },
+  { label: "PET-CT / TNM", stage: "PET_CT_TNM" },
+  { label: "조직·유전자", stage: "PATHOLOGY_GENE" },
+  { label: "PD-L1", stage: "PDL1" },
+  { label: "치료", stage: "TREATMENT" },
 ];
 
 export function PatientJourney({ currentStage }: PatientJourneyProps) {

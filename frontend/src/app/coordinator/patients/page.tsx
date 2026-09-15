@@ -340,9 +340,9 @@ export default function PatientsPage() {
   const getStageLabel = (stage: string) => {
     if (stage === "XRAY") return "X-ray";
     if (stage === "CT") return "CT";
-    if (stage === "PATHOLOGY") return "병리";
-    if (stage === "STAGING") return "TNM 병기";
-    if (stage === "GENE") return "유전자 검사";
+    if (stage === "PET_CT_TNM") return "PET-CT 및 TNM 병기 평가";
+    if (stage === "PATHOLOGY_GENE") return "조직·유전자 검사";
+    if (stage === "PDL1") return "PD-L1 검사";
     if (stage === "TREATMENT") return "치료 의사결정";
     if (stage === "PRESCRIPTION") return "처방";
     return stage;

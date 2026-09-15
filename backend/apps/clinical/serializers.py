@@ -6,7 +6,7 @@ from .models import ClinicalResult
 from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
 
 class PatientClinicalResultSerializer(serializers.ModelSerializer):
-    exam_type = serializers.CharField(source="stage")
+    workflow_stage = serializers.CharField()
     exam_name = serializers.SerializerMethodField()
     result_status_label = serializers.CharField(
         source="get_result_status_display",
@@ -19,7 +19,7 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
         model = ClinicalResult
         fields = [
             "id",
-            "exam_type",
+            "workflow_stage",
             "exam_name",
             "result_status",
             "result_status_label",
@@ -31,14 +31,14 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
         exam_names = {
             "XRAY": "흉부 X-ray 검사",
             "CT": "흉부 CT 검사",
-            "PATHOLOGY": "병리 검사",
-            "TNM": "병기 검사",
-            "GENE": "유전자 검사",
+            "PET_CT_TNM": "PET-CT 및 TNM 병기 평가",
+            "PATHOLOGY_GENE": "조직·유전자 검사",
+            "PDL1": "PD-L1 검사",
         }
 
         return exam_names.get(
-            obj.stage,
-            obj.get_stage_display(),
+            obj.workflow_stage,
+            obj.get_workflow_stage_display(),
         )
 
     def get_result_date(self, obj):
@@ -85,7 +85,7 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
 
 # 호흡기내과 - Case 검사 결과 상세 조회용
 class DoctorClinicalResultSerializer(serializers.ModelSerializer):
-    exam_type = serializers.CharField(source="stage", read_only=True)
+    workflow_stage = serializers.CharField(read_only=True)
     exam_name = serializers.SerializerMethodField()
     result_status_label = serializers.CharField(
         source="get_result_status_display",
@@ -98,7 +98,7 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
         model = ClinicalResult
         fields = [
             "id",
-            "exam_type",
+            "workflow_stage",
             "exam_name",
             "result_status",
             "result_status_label",
@@ -110,14 +110,14 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
         exam_names = {
             "XRAY": "흉부 X-ray 검사",
             "CT": "흉부 CT 검사",
-            "PATHOLOGY": "병리 검사",
-            "STAGING": "TNM 병기 검사",
-            "GENE": "유전자 검사",
+            "PET_CT_TNM": "PET-CT 및 TNM 병기 평가",
+            "PATHOLOGY_GENE": "조직·유전자 검사",
+            "PDL1": "PD-L1 검사",
         }
 
         return exam_names.get(
-            obj.stage,
-            obj.get_stage_display(),
+            obj.workflow_stage,
+            obj.get_workflow_stage_display(),
         )
 
     def get_result_date(self, obj):

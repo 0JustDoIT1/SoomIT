@@ -16,12 +16,13 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnologist
 from apps.ai_results.models import AiAnalysis, AnalysisType, ModelVersion
-from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, Stage
+from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from .serializers import (
     PathologyAiAnalysisSerializer,
+    PathologyGeneAnalysisRunSerializer,
     PDL1AnalysisRunSerializer,
     PDL1InputUploadSerializer,
     PathologyDiagnosisSerializer,
@@ -38,7 +39,7 @@ from .services.pdl1_sample_catalog import PDL1SampleCatalogError, list_pdl1_test
 from .services.review_submission import ReviewSubmissionError, submit_for_review
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
-from .tasks import run_pdl1_analysis
+from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
 from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
 
 
@@ -72,9 +73,8 @@ def _workstation_queryset(request):
     analysis_queryset = (
         AiAnalysis.objects.filter(
             analysis_type__in=[
-                AnalysisType.PATHOLOGY_DIAGNOSIS,
-                AnalysisType.PDL1_CLASSIFICATION,
-                AnalysisType.GENE_PREDICTION,
+                AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+                AnalysisType.PDL1_ANALYSIS,
             ],
         )
         .select_related(
@@ -92,7 +92,7 @@ def _workstation_queryset(request):
         "wsi__specimen__examination_order",
     ).order_by("-created_at")
     confirmed_queryset = ClinicalResult.objects.filter(
-        stage="PATHOLOGY",
+        workflow_stage__in=["PATHOLOGY_GENE", "PDL1"],
         result_status=ClinicalResult.ResultStatus.CONFIRMED,
     ).select_related(
         "pathology_detail", "confirmed_by_user", "examination_order",
@@ -130,12 +130,14 @@ class CasePathologyDiagnosisListAPIView(ListAPIView):
         return (
             ClinicalResult.objects.filter(
                 case_id=self.kwargs["case_id"],
-                stage="PATHOLOGY",
+                workflow_stage="PATHOLOGY_GENE",
             )
             .select_related(
                 "pathology_detail",
+                "gene_detail",
                 "confirmed_by_user",
             )
+            .prefetch_related("gene_detail__gene_findings")
             .order_by("-confirmed_at", "-updated_at")
         )
 
@@ -162,7 +164,7 @@ class CasePathologyReportListAPIView(ListAPIView):
         return (
             ClinicalResult.objects.filter(
                 case_id=self.kwargs["case_id"],
-                stage="PATHOLOGY",
+                workflow_stage="PATHOLOGY_GENE",
                 result_status=ClinicalResult.ResultStatus.CONFIRMED,
                 pathology_detail__isnull=False,
             )
@@ -186,10 +188,11 @@ class PathologyDiagnosisDetailAPIView(APIView):
         return get_object_or_404(
             ClinicalResult.objects.select_related(
                 "pathology_detail",
+                "gene_detail",
                 "confirmed_by_user",
-            ),
+            ).prefetch_related("gene_detail__gene_findings"),
             id=diagnosis_id,
-            stage="PATHOLOGY",
+            workflow_stage="PATHOLOGY_GENE",
         )
 
     @transaction.atomic
@@ -246,7 +249,7 @@ class CasePathologyAiAnalysisListAPIView(ListAPIView):
         return (
             AiAnalysis.objects.filter(
                 case_id=self.kwargs["case_id"],
-                analysis_type="PATHOLOGY_DIAGNOSIS",
+                analysis_type="PATHOLOGY_GENE_ANALYSIS",
             )
             .select_related(
                 "case",
@@ -258,24 +261,68 @@ class CasePathologyAiAnalysisListAPIView(ListAPIView):
         )
 
 
-class CaseSpecimenAdequacyAiAnalysisListAPIView(ListAPIView):
-    serializer_class = PathologyAiAnalysisSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        return (
-            AiAnalysis.objects.filter(
-                case_id=self.kwargs["case_id"],
-                analysis_type="SPECIMEN_ADEQUACY",
-            )
-            .select_related(
-                "case",
-                "model_version",
-                "ai_result",
-                "ai_result__specimen_adequacy_detail",
-            )
-            .order_by("-created_at")
+class CasePathologyGeneAnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = get_object_or_404(
+            LungCancerCase,
+            id=case_id,
+            patient__hospital_id=pathology_hospital_id(request),
         )
+        serializer = PathologyGeneAnalysisRunSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        order = (
+            ExaminationOrder.objects.select_for_update()
+            .filter(case=case, order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE)
+            .exclude(status=ExaminationOrder.Status.CANCELLED)
+            .order_by("-created_at")
+            .first()
+        )
+        if order is None:
+            raise ValidationError({"detail": "This case has no active pathology/gene order."})
+        wsis = WholeSlideImage.objects.select_related("image_asset").filter(
+            specimen__examination_order=order,
+            stain=WholeSlideImage.Stain.HE,
+            is_current=True,
+            image_asset__storage_type=CaseImageAsset.StorageType.GCS,
+            image_asset__status=CaseImageAsset.Status.READY,
+        )
+        wsi_id = serializer.validated_data.get("wsi_id")
+        if wsi_id:
+            wsis = wsis.filter(id=wsi_id)
+        wsi = wsis.order_by("-created_at").first()
+        if wsi is None or not wsi.image_asset.storage_uri.startswith("gs://"):
+            raise ValidationError({"detail": "A READY H&E WSI stored in GCS is required."})
+        if AiAnalysis.objects.filter(
+            examination_order=order,
+            analysis_type=AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+            status__in=[AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING],
+        ).exists():
+            raise ValidationError({"detail": "A pathology/gene analysis is already pending or running."})
+        model_version = ModelVersion.objects.filter(
+            model_name="pathology-analysis",
+            version="pathology-analysis-v1",
+            analysis_type=AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+        ).first()
+        if model_version is None:
+            return Response(
+                {"detail": "No pathology/gene model version is available."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        analysis = AiAnalysis.objects.create(
+            case=case,
+            examination_order=order,
+            source_image_asset=wsi.image_asset,
+            analysis_type=AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+            model_version=model_version,
+            status=AiAnalysis.Status.PENDING,
+            input_metadata={"wsi_id": str(wsi.id)},
+        )
+        transaction.on_commit(
+            lambda analysis_id=str(analysis.id): run_pathology_gene_analysis.delay(analysis_id)
+        )
+        return Response(PathologyAiAnalysisSerializer(analysis).data, status=status.HTTP_201_CREATED)
+
 
 
 class CasePDL1AiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
@@ -286,7 +333,7 @@ class CasePDL1AiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
             AiAnalysis.objects.filter(
                 case_id=self.kwargs["case_id"],
                 case__patient__hospital_id=pathology_hospital_id(self.request),
-                analysis_type="PDL1_CLASSIFICATION",
+                analysis_type="PDL1_ANALYSIS",
             )
             .select_related(
                 "case",
@@ -316,8 +363,7 @@ class PathologyOrderPDL1InputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
             ExaminationOrder.objects.select_for_update().select_related("case__patient"),
             id=order_id,
             case__patient__hospital_id=pathology_hospital_id(request),
-            exam_type=ExaminationOrder.ExamType.WSI,
-            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            order_type=ExaminationOrder.OrderType.PDL1,
         )
         if WholeSlideImage.objects.filter(
             specimen__examination_order=order,
@@ -359,7 +405,7 @@ class PathologyOrderPDL1InputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
                 },
             )
             asset = CaseImageAsset.objects.create(
-                case=order.case, examination_order=order, uploaded_stage=Stage.PATHOLOGY,
+                case=order.case, examination_order=order, workflow_stage=WorkflowStage.PDL1,
                 image_type=CaseImageAsset.ImageType.WSI, storage_type=CaseImageAsset.StorageType.GCS,
                 storage_uri=wsi_uri, file_format=Path(wsi_file.name).suffix.lstrip(".").upper(),
                 status=CaseImageAsset.Status.READY,
@@ -387,8 +433,8 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
         PDL1AnalysisRunSerializer(data=request.data).is_valid(raise_exception=True)
         order = (
             ExaminationOrder.objects.select_for_update().filter(
-                case=case, exam_type=ExaminationOrder.ExamType.WSI,
-                pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+                case=case,
+                order_type=ExaminationOrder.OrderType.PDL1,
             ).exclude(status=ExaminationOrder.Status.CANCELLED).order_by("-created_at").first()
         )
         if order is None:
@@ -400,14 +446,14 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
         ).order_by("-created_at").first()
         if wsi is None or not (wsi.image_asset.metadata or {}).get("pdl1_annotation", {}).get("storage_uri"):
             raise ValidationError({"detail": "Upload both PD-L1 WSI and HALO annotation before analysis."})
-        if AiAnalysis.objects.filter(examination_order=order, analysis_type=AnalysisType.PDL1_CLASSIFICATION, status__in=[AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING]).exists():
+        if AiAnalysis.objects.filter(examination_order=order, analysis_type=AnalysisType.PDL1_ANALYSIS, status__in=[AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING]).exists():
             raise ValidationError({"detail": "A PD-L1 analysis is already pending or running."})
-        model_version = ModelVersion.objects.filter(model_name="pdl1-amd-mil", version="final_model", analysis_type=AnalysisType.PDL1_CLASSIFICATION).first()
+        model_version = ModelVersion.objects.filter(model_name="pdl1-amd-mil", version="final_model", analysis_type=AnalysisType.PDL1_ANALYSIS).first()
         if model_version is None:
             return Response({"detail": "No PD-L1 model version is available."}, status=status.HTTP_400_BAD_REQUEST)
         analysis = AiAnalysis.objects.create(
             case=case, examination_order=order, source_image_asset=wsi.image_asset,
-            analysis_type=AnalysisType.PDL1_CLASSIFICATION, model_version=model_version,
+            analysis_type=AnalysisType.PDL1_ANALYSIS, model_version=model_version,
             status=AiAnalysis.Status.PENDING,
             input_metadata={"roi_layer": wsi.image_asset.metadata["pdl1_annotation"]["roi_layer"]},
         )
@@ -469,7 +515,7 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
         workflow_status_value = self.request.query_params.get("workflow_status")
         task_type_value = self.request.query_params.get("task_type")
         assigned_to_value = self.request.query_params.get("assigned_to")
-        pathology_test_type_value = self.request.query_params.get("pathology_test_type")
+        order_type_value = self.request.query_params.get("order_type")
 
         if task_type_value:
             queryset = queryset.filter(task_type=task_type_value)
@@ -477,17 +523,17 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
         if assigned_to_value:
             queryset = queryset.filter(assigned_to_id=assigned_to_value)
 
-        if pathology_test_type_value:
+        if order_type_value:
             queryset = queryset.filter(
-                Q(examination_order__pathology_test_type=pathology_test_type_value)
+                Q(examination_order__order_type=order_type_value)
                 | Q(
                     examination_order__isnull=True,
-                    specimen__examination_order__pathology_test_type=pathology_test_type_value,
+                    specimen__examination_order__order_type=order_type_value,
                 )
                 | Q(
                     examination_order__isnull=True,
                     specimen__examination_order__isnull=True,
-                    wsi__specimen__examination_order__pathology_test_type=pathology_test_type_value,
+                    wsi__specimen__examination_order__order_type=order_type_value,
                 )
             ).distinct()
 
@@ -532,9 +578,8 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
 
 class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
     order_rank = {
-        ExaminationOrder.PathologyTestType.SUBTYPE: 0,
-        ExaminationOrder.PathologyTestType.PDL1: 1,
-        ExaminationOrder.PathologyTestType.GENE: 2,
+        ExaminationOrder.OrderType.PATHOLOGY_GENE: 0,
+        ExaminationOrder.OrderType.PDL1: 1,
     }
 
     def get(self, request, case_id):
@@ -546,7 +591,7 @@ class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
         work_items_by_order = {}
         for work_item in _workstation_queryset(request).filter(case=case):
             order = _pathology_order(work_item)
-            if order is None or order.pathology_test_type not in self.order_rank:
+            if order is None or order.order_type not in self.order_rank:
                 continue
             current = work_items_by_order.get(order.id)
             if current is None or (
@@ -558,7 +603,7 @@ class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
         work_items = sorted(
             work_items_by_order.values(),
             key=lambda item: (
-                self.order_rank[_pathology_order(item).pathology_test_type],
+                self.order_rank[_pathology_order(item).order_type],
                 _pathology_order(item).created_at,
             ),
         )
@@ -584,9 +629,8 @@ class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
 
 class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
     analysis_types_by_test = {
-        ExaminationOrder.PathologyTestType.SUBTYPE: AnalysisType.PATHOLOGY_DIAGNOSIS,
-        ExaminationOrder.PathologyTestType.PDL1: AnalysisType.PDL1_CLASSIFICATION,
-        ExaminationOrder.PathologyTestType.GENE: AnalysisType.GENE_PREDICTION,
+        ExaminationOrder.OrderType.PATHOLOGY_GENE: AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+        ExaminationOrder.OrderType.PDL1: AnalysisType.PDL1_ANALYSIS,
     }
 
     def post(self, request, case_id):
@@ -618,11 +662,11 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
             )
         )
         expected_analysis_type = self.analysis_types_by_test.get(
-            order.pathology_test_type if order else None,
+            order.order_type if order else None,
         )
         if expected_analysis_type is None:
             raise ValidationError(
-                {"pathology_test_type": "?꾩옱 ?ㅻ뜑??寃??醫낅쪟瑜??뺤씤?????놁뒿?덈떎."}
+                {"order_type": "?꾩옱 ?ㅻ뜑??寃??醫낅쪟瑜??뺤씤?????놁뒿?덈떎."}
             )
 
         analysis = get_object_or_404(

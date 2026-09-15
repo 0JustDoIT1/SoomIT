@@ -1,18 +1,18 @@
 const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 export const API_BASE_URL = (process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL).replace(/\/+$/, "");
 
-export type FollowUpPathologyTestType = "PDL1" | "GENE";
+export type FollowUpPathologyTestType = "PDL1" | "PATHOLOGY_GENE";
 
 export type FollowUpPathologyOrderAvailability = {
-  subtype_review_completed: boolean;
+  pathology_gene_review_completed: boolean;
   active_orders: Record<FollowUpPathologyTestType, boolean>;
 };
 
 export type FollowUpPathologyOrderResponse = {
   examination_order_id: string;
   pathology_work_item_id: string;
-  pathology_test_type: FollowUpPathologyTestType;
-  pathology_test_type_label: string;
+  order_type: FollowUpPathologyTestType;
+  order_type_label: string;
   order_status: string;
   created_at: string;
 };
