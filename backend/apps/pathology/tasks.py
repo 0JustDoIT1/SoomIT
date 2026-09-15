@@ -134,30 +134,30 @@ def run_pdl1_analysis(analysis_id):
 @shared_task
 def run_pathology_gene_analysis(analysis_id):
     """Run the shared WSI pathology/gene pipeline and persist one atomic result."""
-    with transaction.atomic():
-        analysis = (
-            AiAnalysis.objects.select_for_update()
-            .select_related("case__patient", "source_image_asset")
-            .filter(id=analysis_id)
-            .first()
-        )
-        if analysis is None:
-            return "analysis_not_found"
-        if analysis.analysis_type != AnalysisType.PATHOLOGY_GENE_ANALYSIS:
-            return "unsupported_analysis_type"
-        if AiResult.objects.filter(ai_analysis=analysis).exists():
-            return "already_completed"
-        if analysis.status == AiAnalysis.Status.RUNNING:
-            return "already_running"
-        if analysis.status != AiAnalysis.Status.PENDING:
-            return "not_pending"
-        analysis.status = AiAnalysis.Status.RUNNING
-        analysis.started_at = timezone.now()
-        analysis.completed_at = None
-        analysis.error_message = None
-        analysis.save(update_fields=["status", "started_at", "completed_at", "error_message"])
-
     try:
+        with transaction.atomic():
+            analysis = (
+                AiAnalysis.objects.select_for_update(of=("self",))
+                .select_related("case__patient", "source_image_asset")
+                .filter(id=analysis_id)
+                .first()
+            )
+            if analysis is None:
+                return "analysis_not_found"
+            if analysis.analysis_type != AnalysisType.PATHOLOGY_GENE_ANALYSIS:
+                return "unsupported_analysis_type"
+            if AiResult.objects.filter(ai_analysis=analysis).exists():
+                return "already_completed"
+            if analysis.status == AiAnalysis.Status.RUNNING:
+                return "already_running"
+            if analysis.status != AiAnalysis.Status.PENDING:
+                return "not_pending"
+            analysis.status = AiAnalysis.Status.RUNNING
+            analysis.started_at = timezone.now()
+            analysis.completed_at = None
+            analysis.error_message = None
+            analysis.save(update_fields=["status", "started_at", "completed_at", "error_message"])
+
         analysis = AiAnalysis.objects.select_related("case__patient", "source_image_asset").get(id=analysis_id)
         asset = analysis.source_image_asset
         if (
@@ -172,14 +172,12 @@ def run_pathology_gene_analysis(analysis_id):
             wsi_id=asset.id,
             wsi_gcs_uri=asset.storage_uri,
         )
-    except Exception:
-        with transaction.atomic():
-            failed = AiAnalysis.objects.select_for_update().get(id=analysis_id)
-            if not AiResult.objects.filter(ai_analysis=failed).exists():
-                failed.status = AiAnalysis.Status.FAILED
-                failed.completed_at = timezone.now()
-                failed.error_message = "Pathology and gene analysis failed."
-                failed.save(update_fields=["status", "completed_at", "error_message"])
+    except Exception as exc:
+        logger.exception("Pathology and gene analysis failed for analysis_id=%s", analysis_id)
+        _mark_failed(
+            analysis_id,
+            f"Pathology and gene analysis failed: {type(exc).__name__}.",
+        )
         return "failed"
 
     tissue = prediction["tissue"]
