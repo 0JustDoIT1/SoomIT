@@ -10,9 +10,27 @@ type ImageAsset = {
   status?: string;
   storage_type?: string;
   storage_uri?: string;
+  preview_url?: string | null;
+  viewer_url?: string | null;
 };
 
-export function EvidenceViewerPanel({ assets = [], selectedAssetId }: { assets?: ImageAsset[]; selectedAssetId?: string }) {
+type EvidenceViewerPanelProps = {
+  assets?: ImageAsset[];
+  selectedAssetId?: string;
+  loading?: boolean;
+  error?: string;
+  retrying?: boolean;
+  onRetry?: () => void;
+};
+
+export function EvidenceViewerPanel({
+  assets = [],
+  selectedAssetId,
+  loading = false,
+  error = "",
+  retrying = false,
+  onRetry,
+}: EvidenceViewerPanelProps) {
   const [activeAssetId, setActiveAssetId] = useState(selectedAssetId ?? assets[0]?.id ?? "");
   const viewerRef = useRef<HTMLDivElement>(null);
   const unavailableId = "tnm-reference-api-unavailable";
@@ -33,7 +51,19 @@ export function EvidenceViewerPanel({ assets = [], selectedAssetId }: { assets?:
 
       <div className="grid min-h-0 grid-cols-2 border-y border-slate-100">
         <div ref={viewerRef} className="relative flex min-h-0 items-center justify-center overflow-hidden bg-slate-950 text-white">
-          {imageUrl ? (
+          {loading ? (
+            <p role="status" className="text-xs font-semibold text-slate-300">원본 영상을 불러오는 중입니다.</p>
+          ) : error ? (
+            <div role="alert" className="px-6 text-center">
+              <p className="text-xs font-semibold text-rose-200">원본 영상을 불러오지 못했습니다.</p>
+              <p className="mt-1 text-[10px] leading-4 text-slate-400">{error}</p>
+              {onRetry && (
+                <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 rounded border border-rose-300 px-3 py-1.5 text-[10px] font-semibold text-rose-100 disabled:opacity-50">
+                  {retrying ? "재시도 중" : "영상만 다시 시도"}
+                </button>
+              )}
+            </div>
+          ) : imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img src={imageUrl} alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`} className="h-full w-full object-contain" />
           ) : (
@@ -77,7 +107,8 @@ export function EvidenceViewerPanel({ assets = [], selectedAssetId }: { assets?:
   );
 }
 
-function getBrowserImageUrl(asset?: ImageAsset) {
+export function getBrowserImageUrl(asset?: ImageAsset) {
+  if (asset?.preview_url && /^https?:\/\//i.test(asset.preview_url)) return asset.preview_url;
   if (!asset?.storage_uri || !/^https?:\/\//i.test(asset.storage_uri)) return null;
   if (!asset.file_format) return asset.storage_uri;
   return ["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(asset.file_format.toUpperCase()) ? asset.storage_uri : null;

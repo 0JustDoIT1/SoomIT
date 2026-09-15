@@ -1,9 +1,31 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { EvidenceViewerPanel } from "./evidence-viewer-panel";
+import { EvidenceViewerPanel, getBrowserImageUrl } from "./evidence-viewer-panel";
 
 describe("EvidenceViewerPanel", () => {
+  it("prefers the backend preview URL without exposing a storage URI", () => {
+    expect(getBrowserImageUrl({
+      id: "asset-1",
+      file_format: "DICOM",
+      storage_uri: "orthanc://instances/private",
+      preview_url: "https://example.test/signed-preview",
+    })).toBe("https://example.test/signed-preview");
+  });
+
+  it("renders an independent loading state", () => {
+    render(<EvidenceViewerPanel loading />);
+    expect(screen.getByRole("status")).toHaveTextContent("원본 영상을 불러오는 중입니다.");
+  });
+
+  it("retries only the image request from an error state", () => {
+    const onRetry = vi.fn();
+    render(<EvidenceViewerPanel error="영상 조회 권한이 없습니다." onRetry={onRetry} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("영상 조회 권한이 없습니다.");
+    fireEvent.click(screen.getByRole("button", { name: "영상만 다시 시도" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
   it("shows an honest inline empty state while the image API is unavailable", () => {
     render(<EvidenceViewerPanel />);
     expect(screen.getByText("표시 가능한 원본 영상이 없습니다.")).toBeTruthy();
