@@ -1,4 +1,5 @@
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -101,6 +102,13 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+}
+
+# Staff (radiology/pathology/etc.) JWT via rest_framework_simplejwt. The default
+# 5-minute access token lifetime is too short for large CT series uploads, which
+# can take several minutes to fully transfer before the server validates auth.
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=30),
 }
 
 # ── 환자앱 소셜 로그인/JWT ───────────────────────────────────────
