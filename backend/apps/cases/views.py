@@ -1,15 +1,19 @@
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
+from django.http import HttpResponse
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff
+from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff, get_token_hospital_id
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
+from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
 
-from .models import ExaminationOrder, LungCancerCase
+from .models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from .serializers import (
+    DoctorCaseImageAssetSerializer,
     DoctorLungCancerCaseDetailSerializer,
     DoctorLungCancerCaseSerializer,
     LungCancerCaseDetailSerializer,
@@ -84,6 +88,63 @@ class DoctorLungCancerCaseDetailAPIView(RetrieveAPIView):
                 case_status="ACTIVE",
             )
         )
+
+
+class DoctorCaseImageAssetListAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, case_id):
+        case = get_object_or_404(
+            LungCancerCase,
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+            patient__hospital_id=get_token_hospital_id(request),
+            patient__hospital=request.user.department_role.department,
+        )
+        assets = CaseImageAsset.objects.filter(
+            case=case,
+            workflow_stage__in=[
+                WorkflowStage.XRAY,
+                WorkflowStage.CT,
+                WorkflowStage.PET_CT_TNM,
+            ],
+        ).order_by("-created_at")
+        return Response(DoctorCaseImageAssetSerializer(assets, many=True).data)
+
+
+class DoctorCaseImageAssetPreviewAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, case_id, asset_id):
+        case = get_object_or_404(
+            LungCancerCase,
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+            patient__hospital_id=get_token_hospital_id(request),
+            patient__hospital=request.user.department_role.department,
+        )
+        asset = get_object_or_404(
+            CaseImageAsset,
+            id=asset_id,
+            case=case,
+            workflow_stage=WorkflowStage.XRAY,
+            image_type=CaseImageAsset.ImageType.XRAY,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            status=CaseImageAsset.Status.READY,
+        )
+        try:
+            image_bytes = download_xray_image_bytes(asset.storage_uri)
+        except XrayStorageError:
+            return Response(
+                {"detail": "X-ray 영상을 불러오지 못했습니다."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
+        content_type = "image/png" if asset.file_format.upper() == "PNG" else "image/jpeg"
+        return HttpResponse(image_bytes, content_type=content_type)
 
 
 class DoctorMedicalOpinionAPIView(APIView):

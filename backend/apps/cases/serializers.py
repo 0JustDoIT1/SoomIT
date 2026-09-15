@@ -1,6 +1,37 @@
 from rest_framework import serializers
 
-from .models import ClinicianDecision, ExaminationOrder, LungCancerCase
+from .models import CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
+
+
+class DoctorCaseImageAssetSerializer(serializers.ModelSerializer):
+    preview_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CaseImageAsset
+        fields = [
+            "id",
+            "workflow_stage",
+            "image_type",
+            "file_format",
+            "status",
+            "storage_type",
+            "acquired_at",
+            "study_instance_uid",
+            "series_instance_uid",
+            "orthanc_study_id",
+            "orthanc_series_id",
+            "preview_url",
+        ]
+
+    def get_preview_url(self, obj):
+        if (
+            obj.workflow_stage == WorkflowStage.XRAY
+            and obj.image_type == CaseImageAsset.ImageType.XRAY
+            and obj.storage_type == CaseImageAsset.StorageType.GCS
+            and obj.status == CaseImageAsset.Status.READY
+        ):
+            return f"/api/doctor/cases/{obj.case_id}/image-assets/{obj.id}/preview/"
+        return None
 
 
 class FollowUpPathologyOrderCreateSerializer(serializers.Serializer):
