@@ -1,5 +1,6 @@
 "use client";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import Script from "next/script";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 type Patient = {
   id: string;
@@ -31,6 +32,8 @@ type PatientCreateForm = {
   sex: string;
   phone_number: string;
   address: string;
+  address_detail: string;
+  postal_code: string;
 };
 
 type PatientUpdateForm = {
@@ -48,6 +51,8 @@ const initialCreateForm: PatientCreateForm = {
   sex: "FEMALE",
   phone_number: "",
   address: "",
+  address_detail: "",
+  postal_code: "",
 };
 
 const initialUpdateForm: PatientUpdateForm = {
@@ -73,6 +78,32 @@ export default function PatientsPage() {
     useState<PatientCreateForm>(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [postcodeReady, setPostcodeReady] = useState(false);
+  const [postcodeError, setPostcodeError] = useState("");
+  const addressDetailRef = useRef<HTMLInputElement>(null);
+
+  function openPostcodeSearch() {
+    if (!window.daum?.Postcode) {
+      setPostcodeError("주소 검색 서비스를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+      return;
+    }
+    setPostcodeError("");
+    new window.daum.Postcode({
+      oncomplete: (data) => {
+        if (!data.roadAddress) {
+          setPostcodeError("도로명 주소를 선택해주세요.");
+          return;
+        }
+        setCreateForm((current) => ({
+          ...current,
+          address: data.roadAddress,
+          address_detail: "",
+          postal_code: data.zonecode,
+        }));
+        window.setTimeout(() => addressDetailRef.current?.focus(), 0);
+      },
+    }).open();
+  }
 
   // 환자정보 수정
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
@@ -161,7 +192,8 @@ export default function PatientsPage() {
       !createForm.birth_date ||
       !createForm.sex ||
       !createForm.phone_number.trim() ||
-      !createForm.address.trim()
+      !createForm.address.trim() ||
+      !createForm.postal_code.trim()
     ) {
       setCreateError("모든 필수 정보를 입력해주세요.");
       return;
@@ -183,6 +215,8 @@ export default function PatientsPage() {
             sex: createForm.sex,
             phone_number: createForm.phone_number.trim(),
             address: createForm.address.trim(),
+            address_detail: createForm.address_detail.trim() || null,
+            postal_code: createForm.postal_code.trim(),
           }),
         }
       );
@@ -357,6 +391,13 @@ export default function PatientsPage() {
   };
   return (
     <div>
+      <Script
+        id="daum-postcode-script"
+        src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"
+        strategy="afterInteractive"
+        onReady={() => { setPostcodeReady(Boolean(window.daum?.Postcode)); setPostcodeError(""); }}
+        onError={() => { setPostcodeReady(false); setPostcodeError("주소 검색 서비스를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."); }}
+      />
       {/* 페이지 상단 */}
       <div className="mb-6">
         <div className="flex items-end justify-between gap-4">
@@ -618,17 +659,51 @@ export default function PatientsPage() {
                   />
                 </FormField>
                 <FormField label="주소" required>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      required
+                      readOnly
+                      value={createForm.address}
+                      placeholder="도로명 주소"
+                      className={`${inputClassName} min-w-0 flex-1 bg-slate-50`}
+                    />
+                    <button
+                      type="button"
+                      disabled={!postcodeReady}
+                      onClick={openPostcodeSearch}
+                      className="h-[46px] shrink-0 rounded-lg border border-sky-200 bg-sky-50 px-4 text-sm font-semibold text-sky-700 disabled:cursor-not-allowed disabled:opacity-70"
+                    >
+                      주소 검색
+                    </button>
+                  </div>
+                  {postcodeError ? <p className="mt-1.5 text-xs text-red-600">{postcodeError}</p> : null}
+                </FormField>
+                <FormField label="상세 주소">
                   <input
+                    ref={addressDetailRef}
                     type="text"
-                    value={createForm.address}
+                    maxLength={255}
+                    value={createForm.address_detail}
                     onChange={(e) =>
                       setCreateForm({
                         ...createForm,
-                        address: e.target.value,
+                        address_detail: e.target.value,
                       })
                     }
-                    placeholder="환자 주소"
+                    placeholder="상세 주소를 입력하세요"
                     className={inputClassName}
+                  />
+                </FormField>
+                <FormField label="우편번호" required>
+                  <input
+                    type="text"
+                    required
+                    readOnly
+                    maxLength={10}
+                    value={createForm.postal_code}
+                    placeholder="우편번호"
+                    className={`${inputClassName} bg-slate-50`}
                   />
                 </FormField>
               </div>

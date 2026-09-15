@@ -422,6 +422,8 @@ class PatientSerializer(serializers.ModelSerializer):
             "sex",
             "phone_number",
             "address",
+            "address_detail",
+            "postal_code",
             "created_at",
             "updated_at",
         ]
@@ -445,6 +447,8 @@ class PatientDetailSerializer(serializers.ModelSerializer):
             "sex",
             "phone_number",
             "address",
+            "address_detail",
+            "postal_code",
             "created_at",
             "updated_at",
 
@@ -506,6 +510,8 @@ class PatientDetailSerializer(serializers.ModelSerializer):
 # 원무과(coordinator) - 신규 환자 등록용
 # ─────────────────────────────────────────────
 class PatientCreateSerializer(serializers.ModelSerializer):
+    postal_code = serializers.CharField(max_length=10, required=True)
+
     class Meta:
         model = Patient
         fields = [
@@ -515,6 +521,8 @@ class PatientCreateSerializer(serializers.ModelSerializer):
             "sex",
             "phone_number",
             "address",
+            "address_detail",
+            "postal_code",
         ]
 
 
@@ -530,6 +538,8 @@ class PatientUpdateSerializer(serializers.ModelSerializer):
             "sex",
             "phone_number",
             "address",
+            "address_detail",
+            "postal_code",
         ]
 
     def update(self, instance, validated_data):
@@ -568,6 +578,14 @@ class PatientUpdateSerializer(serializers.ModelSerializer):
         instance.address = validated_data.get(
             "address",
             instance.address,
+        )
+        instance.address_detail = validated_data.get(
+            "address_detail",
+            instance.address_detail,
+        )
+        instance.postal_code = validated_data.get(
+            "postal_code",
+            instance.postal_code,
         )
 
         instance.save()

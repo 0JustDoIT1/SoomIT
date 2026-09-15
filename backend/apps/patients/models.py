@@ -23,6 +23,8 @@ class Patient(TimestampedUUIDModel):
     phone_number = models.CharField(max_length=20)
     phone_number_hash = models.CharField(max_length=64, db_index=True)
     address = models.CharField(max_length=255, null=True, blank=True)
+    address_detail = models.CharField(max_length=255, null=True, blank=True)
+    postal_code = models.CharField(max_length=10, null=True, blank=True)
 
     class Meta:
         db_table = "patients"
