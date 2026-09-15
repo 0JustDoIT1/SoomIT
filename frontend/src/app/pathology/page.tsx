@@ -5,6 +5,7 @@ import { RecentPatients, useRecentPatients } from "@/components/workspace/recent
 import { StateMessage } from "@/components/workspace/state-message";
 
 import {
+  cancelPathologyGeneAnalysis,
   fetchPathologyCaseWorkflow,
   fetchPathologyGeneAnalyses,
   fetchPathologyWorkstation,
@@ -52,14 +53,14 @@ function WorklistSkeleton() {
 }
 
 const geneTargets = [
-  { symbol: "KRAS", label: "KRAS" },
-  { symbol: "TP53", label: "TP53" },
   { symbol: "EGFR", label: "EGFR" },
-  { symbol: "KEAP1", label: "KEAP1" },
-  { symbol: "STK11", label: "STK11" },
+  { symbol: "KRAS", label: "KRAS" },
   { symbol: "BRAF", label: "BRAF" },
   { symbol: "MET", label: "MET" },
   { symbol: "ERBB2", label: "HER2 (ERBB2)" },
+  { symbol: "TP53", label: "TP53" },
+  { symbol: "STK11", label: "STK11" },
+  { symbol: "KEAP1", label: "KEAP1" },
 ];
 
 function workflowDisplayStatus(item: PathologyWorkstationItem) {
@@ -103,6 +104,14 @@ function resultPayloadText(payload: unknown, key: string) {
   if (!payload || typeof payload !== "object" || !(key in payload)) return "-";
   const value = (payload as Record<string, unknown>)[key];
   return typeof value === "string" || typeof value === "number" ? String(value) : "-";
+}
+
+function pathologyGeneStatus(payload: unknown) {
+  if (!payload || typeof payload !== "object" || !("gene" in payload)) return null;
+  const gene = (payload as Record<string, unknown>).gene;
+  if (!gene || typeof gene !== "object" || !("status" in gene)) return null;
+  const status = (gene as Record<string, unknown>).status;
+  return typeof status === "string" ? status : null;
 }
 
 function geneStatus(value: string | undefined) {
@@ -150,6 +159,14 @@ function AnalysisStatus({
     return (
       <span className="inline-flex bg-red-50 px-2 py-1 text-[11px] font-semibold text-red-700">
         분석 실패
+      </span>
+    );
+  }
+
+  if (status === "CANCELLED") {
+    return (
+      <span className="inline-flex bg-slate-100 px-2 py-1 text-[11px] font-semibold text-slate-600">
+        분석 취소됨
       </span>
     );
   }
@@ -319,6 +336,7 @@ function WorkArea({
     item.order_type === "PATHOLOGY_GENE" ? item.latest_gene_analysis : null,
   );
   const [runningPathologyGene, setRunningPathologyGene] = useState(false);
+  const [cancellingPathologyGene, setCancellingPathologyGene] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -341,6 +359,14 @@ function WorkArea({
   );
   const geneResults =
     pathologyGeneAnalysis?.result_detail?.genes ?? [];
+  const pathologyGeneResultStatus = pathologyGeneStatus(
+    pathologyGeneAnalysis?.result_detail?.result_payload,
+  );
+  const pathologyGeneIsLuad =
+    pathologyResult?.predicted_subtype === "LUAD" ||
+    pathologyResult?.predicted_histologic_type === "LUAD";
+  const pathologyGeneNotApplicable =
+    pathologyGeneResultStatus === "NOT_APPLICABLE_NON_LUAD" || !pathologyGeneIsLuad;
 
   useEffect(() => {
     if (
@@ -450,6 +476,28 @@ function WorkArea({
     }
   }
 
+  async function handlePathologyGeneCancel() {
+    if (
+      !pathologyGeneAnalysisId ||
+      (pathologyGeneAnalysisStatus !== "PENDING" && pathologyGeneAnalysisStatus !== "RUNNING") ||
+      cancellingPathologyGene
+    ) return;
+
+    setCancellingPathologyGene(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await cancelPathologyGeneAnalysis(item.case_id, pathologyGeneAnalysisId);
+      setPathologyGeneAnalysis(result);
+      setRunningPathologyGene(false);
+      setMessage("조직·유전자 분석이 취소되었습니다.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "조직·유전자 분석 취소에 실패했습니다.");
+    } finally {
+      setCancellingPathologyGene(false);
+    }
+  }
+
   const currentTestType = item.order_type;
   const isPathologyGene = currentTestType === "PATHOLOGY_GENE";
   const isPdl1 = currentTestType === "PDL1";
@@ -464,6 +512,8 @@ function WorkArea({
   const canRunPathologyGene = pathologyGeneWsiReady &&
     !pathologyGeneAnalysisRunning &&
     !canViewPathologyGeneResult;
+  const canCancelPathologyGene = Boolean(pathologyGeneAnalysisId) &&
+    (pathologyGeneAnalysisStatus === "PENDING" || pathologyGeneAnalysisStatus === "RUNNING");
   const pathologyGeneWsiFilename = pathologyGeneWsiReady
     ? pathologyGeneWsiFile?.name ?? item.latest_wsi?.original_filename ?? null
     : null;
@@ -739,14 +789,26 @@ function WorkArea({
               </p>
             </div>
 
+            <div className="flex gap-2">
             <button
               type="button"
               disabled={!canRunPathologyGene}
               onClick={handlePathologyGeneRun}
-              className="rounded-md bg-slate-300 px-3 py-2 text-xs font-semibold text-white"
+              className="rounded-md bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white hover:bg-[#29399F] disabled:bg-slate-300"
             >
               {pathologyGeneAnalysisRunning ? "분석 실행 중" : "분석 실행"}
             </button>
+            {canCancelPathologyGene ? (
+              <button
+                type="button"
+                disabled={cancellingPathologyGene}
+                onClick={handlePathologyGeneCancel}
+                className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
+              >
+                {cancellingPathologyGene ? "취소 중..." : "분석 취소"}
+              </button>
+            ) : null}
+            </div>
           </div>
 
           <AnalysisProgress status={pathology?.status} />
@@ -813,25 +875,6 @@ function WorkArea({
           </section>
         ) : null}
 
-        {isPathologyGene ? (
-        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
-          <div className="flex justify-between">
-            <div>
-              <h3 className="text-sm font-bold">
-                <span className="mr-2 text-xs text-[#3446B8]">
-                  04
-                </span>
-                유전자 분석 결과
-              </h3>
-
-              <p className="mt-1 text-xs text-slate-500">
-                통합 AI 분석 결과에 포함됩니다.
-              </p>
-            </div>
-          </div>
-        </section>
-        ) : null}
-
         {currentAnalysis?.status === "SUCCEEDED" ? (
           <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -853,30 +896,33 @@ function WorkArea({
             </div>
 
             {isPathologyGene && pathologyResult ? (
-              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
-                {[
-                  [
-                    "예측 아형",
-                    pathologyResult.predicted_subtype ??
-                      pathologyResult.predicted_histologic_type ??
-                      "-",
-                  ],
-                  ["아형 신뢰도", percent(pathologyResult.subtype_confidence)],
-                  [
-                    "악성 판정",
-                    pathologyResult.malignancy_assessment_label ?? "-",
-                  ],
-                  ["악성 확률", percent(pathologyResult.malignancy_probability)],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
-                  >
-                    <dt className="text-xs text-slate-500">{label}</dt>
-                    <dd className="mt-2 font-bold text-slate-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <>
+                <p className="mt-4 text-xs font-bold text-slate-700">조직 결과</p>
+                <dl className="mt-2 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
+                  {[
+                    [
+                      "예측 아형",
+                      pathologyResult.predicted_subtype ??
+                        pathologyResult.predicted_histologic_type ??
+                        "-",
+                    ],
+                    ["아형 신뢰도", percent(pathologyResult.subtype_confidence)],
+                    [
+                      "악성 판정",
+                      pathologyResult.malignancy_assessment_label ?? "-",
+                    ],
+                    ["악성 확률", percent(pathologyResult.malignancy_probability)],
+                  ].map(([label, value]) => (
+                    <div
+                      key={label}
+                      className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
+                    >
+                      <dt className="text-xs text-slate-500">{label}</dt>
+                      <dd className="mt-2 font-bold text-slate-900">{value}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </>
             ) : null}
 
             {isPdl1 && pdl1Result ? (
@@ -902,29 +948,39 @@ function WorkArea({
               </dl>
             ) : null}
 
-            {isPathologyGene && geneResults.length > 0 ? (
-              <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {geneTargets.map((gene) => {
-                  const result = geneResults.find(
-                    (entry) => entry.gene_symbol === gene.symbol,
-                  );
+            {isPathologyGene ? (
+              <div className="mt-5">
+                <p className="text-xs font-bold text-slate-700">유전자 결과</p>
+                {pathologyGeneNotApplicable ? (
+                  <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                    유전자 분석 비대상
+                    <span className="ml-2 text-xs text-slate-400">NOT_APPLICABLE_NON_LUAD</span>
+                  </div>
+                ) : (
+                  <dl className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {geneTargets.map((gene) => {
+                      const result = geneResults.find(
+                        (entry) => entry.gene_symbol === gene.symbol,
+                      );
 
-                  return (
-                    <div
-                      key={gene.symbol}
-                      className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-sm"
-                    >
-                      <dt className="font-bold text-slate-800">{gene.label}</dt>
-                      <dd className="mt-2 font-semibold text-slate-700">
-                        {geneStatus(result?.predicted_status)}
-                      </dd>
-                      <dd className="mt-1 text-xs text-slate-500">
-                        Probability {percent(result?.predicted_probability)}
-                      </dd>
-                    </div>
-                  );
-                })}
-              </dl>
+                      return (
+                        <div
+                          key={gene.symbol}
+                          className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-sm"
+                        >
+                          <dt className="font-bold text-slate-800">{gene.label}</dt>
+                          <dd className="mt-2 font-semibold text-slate-700">
+                            {geneStatus(result?.predicted_status)}
+                          </dd>
+                          <dd className="mt-1 text-xs text-slate-500">
+                            Probability {percent(result?.predicted_probability)}
+                          </dd>
+                        </div>
+                      );
+                    })}
+                  </dl>
+                )}
+              </div>
             ) : null}
           </section>
         ) : null}
@@ -1091,8 +1147,15 @@ function WorkArea({
               ) : null}
 
         {isPathologyGene ? (
-                geneResults.length > 0 ? (
-                  <dl className="grid gap-2 sm:grid-cols-2">
+                <div className="mt-5">
+                  <p className="text-xs font-bold text-slate-700">유전자 결과</p>
+                  {pathologyGeneNotApplicable ? (
+                    <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-sm text-slate-600">
+                      유전자 분석 비대상
+                      <span className="ml-2 text-xs text-slate-400">NOT_APPLICABLE_NON_LUAD</span>
+                    </div>
+                  ) : (
+                  <dl className="mt-2 grid gap-2 sm:grid-cols-2">
                     {geneTargets.map((gene) => {
                       const result = geneResults.find(
                         (entry) => entry.gene_symbol === gene.symbol,
@@ -1107,12 +1170,8 @@ function WorkArea({
                       );
                     })}
                   </dl>
-                ) : (
-                  <StateMessage
-                    variant="empty"
-                    title="저장된 AI 결과 상세가 없습니다."
-                  />
-                )
+                  )}
+                </div>
               ) : null}
             </div>
 

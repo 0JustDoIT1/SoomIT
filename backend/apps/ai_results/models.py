@@ -41,6 +41,7 @@ class AiAnalysis(CreatedOnlyUUIDModel):
         RUNNING = "RUNNING", "실행중"
         SUCCEEDED = "SUCCEEDED", "성공"
         FAILED = "FAILED", "실패"
+        CANCELLED = "CANCELLED", "취소"
 
     case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="ai_analyses")
     examination_order = models.ForeignKey(

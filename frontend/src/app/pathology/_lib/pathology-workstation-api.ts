@@ -191,6 +191,14 @@ export async function runPathologyGeneAnalysis(caseId: string, wsiId: string) {
   return readJson<PathologyAiAnalysis>(response);
 }
 
+export async function cancelPathologyGeneAnalysis(caseId: string, analysisId: string) {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/${encodeURIComponent(analysisId)}/cancel/`),
+    { method: "POST" },
+  );
+  return readJson<PathologyAiAnalysis>(response);
+}
+
 export async function runPdl1Analysis(caseId: string) {
   const response = await staffAuthenticatedFetch(
     url(`/api/pathology/cases/${encodeURIComponent(caseId)}/pdl1-results/run/`),

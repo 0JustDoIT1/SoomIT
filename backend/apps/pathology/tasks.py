@@ -17,10 +17,14 @@ from .services.pdl1_storage import download_pdl1_annotation_bytes
 logger = logging.getLogger(__name__)
 
 
-def _mark_failed(analysis_id, error_message="PD-L1 analysis failed."):
+def _mark_failed(analysis_id, error_message="PD-L1 analysis failed.", preserve_cancelled=False):
     with transaction.atomic():
         analysis = AiAnalysis.objects.select_for_update().filter(id=analysis_id).first()
-        if analysis is None or AiResult.objects.filter(ai_analysis=analysis).exists():
+        if (
+            analysis is None
+            or AiResult.objects.filter(ai_analysis=analysis).exists()
+            or (preserve_cancelled and analysis.status == AiAnalysis.Status.CANCELLED)
+        ):
             return
         analysis.status = AiAnalysis.Status.FAILED
         analysis.completed_at = timezone.now()
@@ -146,6 +150,8 @@ def run_pathology_gene_analysis(analysis_id):
                 return "analysis_not_found"
             if analysis.analysis_type != AnalysisType.PATHOLOGY_GENE_ANALYSIS:
                 return "unsupported_analysis_type"
+            if analysis.status == AiAnalysis.Status.CANCELLED:
+                return "cancelled"
             if AiResult.objects.filter(ai_analysis=analysis).exists():
                 return "already_completed"
             if analysis.status == AiAnalysis.Status.RUNNING:
@@ -159,6 +165,8 @@ def run_pathology_gene_analysis(analysis_id):
             analysis.save(update_fields=["status", "started_at", "completed_at", "error_message"])
 
         analysis = AiAnalysis.objects.select_related("case__patient", "source_image_asset").get(id=analysis_id)
+        if analysis.status == AiAnalysis.Status.CANCELLED:
+            return "cancelled"
         asset = analysis.source_image_asset
         if (
             asset is None
@@ -177,6 +185,7 @@ def run_pathology_gene_analysis(analysis_id):
         _mark_failed(
             analysis_id,
             f"Pathology and gene analysis failed: {type(exc).__name__}.",
+            preserve_cancelled=True,
         )
         return "failed"
 
@@ -184,6 +193,8 @@ def run_pathology_gene_analysis(analysis_id):
     gene_predictions = prediction["gene"].get("predictions") or {}
     with transaction.atomic():
         analysis = AiAnalysis.objects.select_for_update().get(id=analysis_id)
+        if analysis.status == AiAnalysis.Status.CANCELLED:
+            return "cancelled"
         if AiResult.objects.filter(ai_analysis=analysis).exists():
             return "already_completed"
         ai_result = AiResult.objects.create(

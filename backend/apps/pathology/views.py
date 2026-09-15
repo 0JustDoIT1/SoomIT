@@ -412,6 +412,39 @@ class CasePathologyGeneAnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
         return Response(PathologyAiAnalysisSerializer(analysis).data, status=status.HTTP_201_CREATED)
 
 
+class CasePathologyGeneAnalysisCancelAPIView(PathologyStaffAPIViewMixin, APIView):
+    @transaction.atomic
+    def post(self, request, case_id, analysis_id):
+        case = get_object_or_404(
+            LungCancerCase,
+            id=case_id,
+            patient__hospital_id=pathology_hospital_id(request),
+        )
+        analysis = get_object_or_404(
+            AiAnalysis.objects.select_for_update().filter(
+                id=analysis_id,
+                case=case,
+                analysis_type=AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+            ),
+        )
+        if not WholeSlideImage.objects.filter(
+            specimen__case=case,
+            specimen__examination_order__order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            image_asset_id=analysis.source_image_asset_id,
+            stain=WholeSlideImage.Stain.HE,
+            is_current=True,
+        ).exists():
+            raise ValidationError({"detail": "This analysis is not linked to the current H&E WSI."})
+        if analysis.status not in [AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING]:
+            raise ValidationError({"detail": "Only pending or running pathology/gene analyses can be cancelled."})
+
+        analysis.status = AiAnalysis.Status.CANCELLED
+        analysis.completed_at = timezone.now()
+        analysis.error_message = None
+        analysis.save(update_fields=["status", "completed_at", "error_message"])
+        return Response(PathologyAiAnalysisSerializer(analysis).data)
+
+
 
 class CasePDL1AiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     serializer_class = PathologyAiAnalysisSerializer

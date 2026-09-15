@@ -25,6 +25,7 @@ from apps.pathology.models import (
 )
 from apps.pathology.services.workflow import calculate_workflow_status
 from apps.pathology.services.pdl1_storage import PDL1StorageError
+from apps.pathology.tasks import run_pathology_gene_analysis
 
 
 class PathologyReadAPITestCase(APITestCase):
@@ -923,6 +924,74 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(analysis.source_image_asset_id, self.image_asset.id)
         self.assertNotEqual(analysis.examination_order_id, newer_order.id)
         delay.assert_called_once_with(str(analysis.id))
+
+    def test_pathology_gene_analysis_cancel_marks_pending_analysis_cancelled(self):
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=self.pathology_order,
+            source_image_asset=self.image_asset,
+            model_version=self.model_version,
+            analysis_type="PATHOLOGY_GENE_ANALYSIS",
+            status=AiAnalysis.Status.PENDING,
+        )
+        self.authenticate_pathology_user()
+
+        response = self.client.post(
+            reverse(
+                "pathology:case-pathology-gene-analysis-cancel",
+                kwargs={"case_id": self.case.id, "analysis_id": analysis.id},
+            ),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        analysis.refresh_from_db()
+        self.assertEqual(analysis.status, AiAnalysis.Status.CANCELLED)
+        self.assertIsNotNone(analysis.completed_at)
+
+    def test_pathology_gene_analysis_cancel_rejects_completed_analysis(self):
+        self.authenticate_pathology_user()
+
+        response = self.client.post(
+            reverse(
+                "pathology:case-pathology-gene-analysis-cancel",
+                kwargs={"case_id": self.case.id, "analysis_id": self.ai_analysis.id},
+            ),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.ai_analysis.refresh_from_db()
+        self.assertEqual(self.ai_analysis.status, AiAnalysis.Status.SUCCEEDED)
+
+    @patch("apps.pathology.tasks.request_pathology_prediction")
+    def test_cancelled_pathology_gene_task_does_not_save_late_result(self, prediction):
+        self.image_asset.storage_uri = "gs://test-bucket/test-slide.svs"
+        self.image_asset.save(update_fields=["storage_uri"])
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=self.pathology_order,
+            source_image_asset=self.image_asset,
+            model_version=self.model_version,
+            analysis_type="PATHOLOGY_GENE_ANALYSIS",
+            status=AiAnalysis.Status.PENDING,
+        )
+
+        def cancel_analysis(**kwargs):
+            AiAnalysis.objects.filter(id=analysis.id).update(status=AiAnalysis.Status.CANCELLED)
+            return {
+                "tissue": {
+                    "predicted_label": "LUAD",
+                    "confidence_score": 0.9,
+                    "probabilities": {"Benign": 0.05, "LUAD": 0.9, "LUSC": 0.05},
+                },
+                "gene": {"predictions": {"EGFR": {"probability": 0.7}}},
+            }
+
+        prediction.side_effect = cancel_analysis
+
+        self.assertEqual(run_pathology_gene_analysis(str(analysis.id)), "cancelled")
+        self.assertFalse(AiResult.objects.filter(ai_analysis=analysis).exists())
+        analysis.refresh_from_db()
+        self.assertEqual(analysis.status, AiAnalysis.Status.CANCELLED)
 
     def test_workstation_excludes_analysis_for_noncurrent_he_wsi(self):
         self.wsi.is_current = False
