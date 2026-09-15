@@ -1,10 +1,9 @@
-import base64
-import json
 from dataclasses import dataclass
-from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
 
+import requests
 from django.conf import settings
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 
 class OrthancError(RuntimeError):
@@ -26,32 +25,50 @@ class OrthancSeriesUploadResult:
     instance_ids: list[str]
 
 
-def _auth_header():
-    token = base64.b64encode(
-        f"{settings.ORTHANC_USERNAME}:{settings.ORTHANC_PASSWORD}".encode("utf-8"),
-    ).decode("ascii")
-    return f"Basic {token}"
+def _build_session():
+    """A pooled, retrying session for bulk instance uploads to one Orthanc host.
 
-
-def _upload_instance(dicom_bytes):
-    """Upload one DICOM Part10 file via Orthanc's REST API and return its JSON response."""
-    request = Request(
-        f"{settings.ORTHANC_BASE_URL}/instances",
-        data=dicom_bytes,
-        method="POST",
-        headers={
-            "Content-Type": "application/dicom",
-            "Authorization": _auth_header(),
-        },
+    A CT series can be hundreds of sequential requests; without connection reuse
+    and retries, a single transient reset (observed against the small Orthanc VM
+    under sustained load) aborts the whole upload. Orthanc's POST /instances is
+    idempotent per DICOM instance (a re-sent instance is just reported as already
+    stored), so retrying POITs is safe here.
+    """
+    session = requests.Session()
+    session.auth = (settings.ORTHANC_USERNAME, settings.ORTHANC_PASSWORD)
+    retry = Retry(
+        total=5,
+        connect=5,
+        read=5,
+        backoff_factor=1.5,
+        status_forcelist=[502, 503, 504],
+        allowed_methods=frozenset(["GET", "POST", "DELETE"]),
     )
+    adapter = HTTPAdapter(pool_connections=1, pool_maxsize=1, max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
+
+
+def _upload_instance(session, dicom_bytes):
+    """Upload one DICOM Part10 file via Orthanc's REST API and return its JSON response."""
     try:
-        with urlopen(request, timeout=settings.ORTHANC_TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except HTTPError as exc:
-        raise OrthancUploadError(f"Orthanc 업로드가 실패했습니다. (HTTP {exc.code})") from exc
-    except (URLError, TimeoutError) as exc:
+        response = session.post(
+            f"{settings.ORTHANC_BASE_URL}/instances",
+            data=dicom_bytes,
+            headers={"Content-Type": "application/dicom"},
+            timeout=settings.ORTHANC_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else "?"
+        raise OrthancUploadError(f"Orthanc 업로드가 실패했습니다. (HTTP {status_code})") from exc
+    except requests.RequestException as exc:
         raise OrthancUploadError("Orthanc에 연결할 수 없습니다.") from exc
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+
+    try:
+        payload = response.json()
+    except ValueError as exc:
         raise OrthancUploadError("Orthanc 업로드 응답이 올바른 JSON이 아닙니다.") from exc
 
     required = {"ID", "ParentSeries", "ParentStudy"}
@@ -70,11 +87,12 @@ def upload_ct_series(dicom_files):
     instance_ids = []
     study_ids = set()
     series_ids = set()
-    for dicom_bytes in dicom_files:
-        result = _upload_instance(dicom_bytes)
-        instance_ids.append(result["ID"])
-        study_ids.add(result["ParentStudy"])
-        series_ids.add(result["ParentSeries"])
+    with _build_session() as session:
+        for dicom_bytes in dicom_files:
+            result = _upload_instance(session, dicom_bytes)
+            instance_ids.append(result["ID"])
+            study_ids.add(result["ParentStudy"])
+            series_ids.add(result["ParentSeries"])
 
     if len(study_ids) != 1 or len(series_ids) != 1:
         raise OrthancSeriesConsistencyError(
@@ -90,13 +108,12 @@ def upload_ct_series(dicom_files):
 
 def delete_orthanc_series(orthanc_series_id):
     """Best-effort cleanup for a Series uploaded before its DB asset could be created."""
-    request = Request(
-        f"{settings.ORTHANC_BASE_URL}/series/{orthanc_series_id}",
-        method="DELETE",
-        headers={"Authorization": _auth_header()},
-    )
     try:
-        with urlopen(request, timeout=settings.ORTHANC_TIMEOUT_SECONDS):
-            pass
-    except (HTTPError, URLError, TimeoutError) as exc:
+        with _build_session() as session:
+            response = session.delete(
+                f"{settings.ORTHANC_BASE_URL}/series/{orthanc_series_id}",
+                timeout=settings.ORTHANC_TIMEOUT_SECONDS,
+            )
+            response.raise_for_status()
+    except requests.RequestException as exc:
         raise OrthancUploadError("업로드된 Orthanc Series를 정리하지 못했습니다.") from exc

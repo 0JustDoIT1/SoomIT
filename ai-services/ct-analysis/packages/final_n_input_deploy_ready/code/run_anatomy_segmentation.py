@@ -6,6 +6,7 @@ from pathlib import Path
 
 import nibabel as nib
 import numpy as np
+from totalsegmentator.nifti_ext_header import load_multilabel_nifti
 
 
 TOTAL_ROIS = [
@@ -38,6 +39,20 @@ TOTAL_ROIS = [
     *[f"rib_right_{i}" for i in range(1, 13)],
 ]
 
+VESSEL_ROIS = [
+    "lung_airways",
+    "lung_airways_wall",
+    "lung_arteries",
+    "lung_veins",
+]
+
+# Multi-label output file names, written directly under the anatomy output dir.
+# These are pure intermediates: build_canonical_anatomy.py reads them once to
+# produce the final per-structure files downstream code actually consumes, and
+# orchestrator.py deletes them before the work tree is uploaded to GCS.
+TOTAL_MULTILABEL_NAME = "thoracic_total_multilabel.nii.gz"
+VESSEL_MULTILABEL_NAME = "lung_vessels_multilabel.nii.gz"
+
 
 def run_command(cmd):
     print("RUN:")
@@ -45,35 +60,53 @@ def run_command(cmd):
     subprocess.run(cmd, check=True)
 
 
-def validate_geometry(ct_path, mask_paths):
-    ct = nib.load(ct_path)
+def load_label_map(path):
+    """Returns (nibabel image, {class_name: label_id}) for a --ml TotalSegmentator
+    output. Names are read from the NIfTI extended header rather than assuming a
+    fixed label-ID scheme, since TotalSegmentator's label ordering has changed
+    across major versions.
+    """
+    image, label_map = load_multilabel_nifti(str(path))
+    return image, {name: int(label_id) for label_id, name in label_map.items()}
 
+
+def validate_labels_present(name_to_id, required_names, source_name):
+    missing = [name for name in required_names if name not in name_to_id]
+    if missing:
+        raise RuntimeError(
+            f"{source_name} multi-label output is missing expected classes: {missing}"
+        )
+
+
+def labelmap_sidecar_path(multilabel_path):
+    return multilabel_path.with_suffix("").with_suffix(".labelmap.json")
+
+
+def write_label_map(name_to_id, multilabel_path):
+    """build_canonical_anatomy.py runs in the main conda env, which does not have
+    the totalsegmentator package installed (it stays isolated in the totalseg
+    env alongside TotalSegmentator itself). Persist the name->label-id mapping
+    as a plain JSON sidecar so that script can read it with nibabel alone.
+    """
+    with open(labelmap_sidecar_path(multilabel_path), "w", encoding="utf-8") as f:
+        json.dump(name_to_id, f, indent=2, ensure_ascii=False)
+
+
+def validate_geometry(ct, labeled_images):
     results = {}
     failed = []
 
-    for path in mask_paths:
-        img = nib.load(path)
-        data = np.asarray(img.dataobj)
-
+    for name, img in labeled_images.items():
         shape_match = img.shape == ct.shape
-        affine_match = np.allclose(
-            img.affine,
-            ct.affine,
-            atol=1e-5,
-        )
+        affine_match = np.allclose(img.affine, ct.affine, atol=1e-5)
 
-        voxels = int(
-            (data > 0).sum()
-        )
-
-        results[path.name] = {
+        results[name] = {
             "shape_match": bool(shape_match),
             "affine_match": bool(affine_match),
-            "foreground_voxels": voxels,
         }
 
         if not shape_match or not affine_match:
-            failed.append(path.name)
+            failed.append(name)
 
     return results, failed
 
@@ -105,29 +138,21 @@ def main():
 
     ct_path = Path(args.ct).resolve()
     output_root = Path(args.output_dir).resolve()
+    output_root.mkdir(parents=True, exist_ok=True)
 
-    total_dir = output_root / "thoracic_total"
-    vessel_dir = output_root / "lung_vessels"
-
-    total_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    vessel_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
+    total_ml_path = output_root / TOTAL_MULTILABEL_NAME
+    vessel_ml_path = output_root / VESSEL_MULTILABEL_NAME
 
     totalsegmentator = str(Path(sys.executable).with_name("TotalSegmentator"))
 
     total_cmd = [
         totalsegmentator,
         "-i", str(ct_path),
-        "-o", str(total_dir),
+        "-o", str(total_ml_path),
         "-ta", "total",
         "-rs",
         *TOTAL_ROIS,
+        "--ml",
         "-d", args.device,
     ]
 
@@ -136,56 +161,49 @@ def main():
     vessel_cmd = [
         totalsegmentator,
         "-i", str(ct_path),
-        "-o", str(vessel_dir),
+        "-o", str(vessel_ml_path),
         "-ta", "lung_vessels",
+        "--ml",
         "-d", args.device,
     ]
 
     run_command(vessel_cmd)
 
-    expected_total = [
-        total_dir / f"{name}.nii.gz"
-        for name in TOTAL_ROIS
-    ]
+    if not total_ml_path.exists():
+        raise RuntimeError(f"Missing multi-label output: {total_ml_path}")
+    if not vessel_ml_path.exists():
+        raise RuntimeError(f"Missing multi-label output: {vessel_ml_path}")
 
-    expected_vessel = [
-        vessel_dir / "lung_airways.nii.gz",
-        vessel_dir / "lung_airways_wall.nii.gz",
-        vessel_dir / "lung_arteries.nii.gz",
-        vessel_dir / "lung_veins.nii.gz",
-    ]
+    total_image, total_name_to_id = load_label_map(total_ml_path)
+    vessel_image, vessel_name_to_id = load_label_map(vessel_ml_path)
 
-    expected = (
-        expected_total
-        + expected_vessel
-    )
+    validate_labels_present(total_name_to_id, TOTAL_ROIS, "total")
+    validate_labels_present(vessel_name_to_id, VESSEL_ROIS, "lung_vessels")
 
-    missing = [
-        str(path)
-        for path in expected
-        if not path.exists()
-    ]
+    write_label_map(total_name_to_id, total_ml_path)
+    write_label_map(vessel_name_to_id, vessel_ml_path)
 
-    if missing:
-        raise RuntimeError(
-            "Missing anatomy masks:\n"
-            + "\n".join(missing)
-        )
-
+    ct = nib.load(ct_path)
     qa, failed = validate_geometry(
-        ct_path,
-        expected,
+        ct,
+        {
+            TOTAL_MULTILABEL_NAME: total_image,
+            VESSEL_MULTILABEL_NAME: vessel_image,
+        },
     )
 
     metadata = {
         "case_id": args.case_id,
         "source_ct": str(ct_path),
         "anatomy_model": "TotalSegmentator",
+        "output_mode": "multilabel",
         "task_total": "total",
         "task_lung_vessels": "lung_vessels",
         "geometry_qa_pass": len(failed) == 0,
         "geometry_failed_masks": failed,
         "masks": qa,
+        "total_label_map": total_name_to_id,
+        "vessel_label_map": vessel_name_to_id,
     }
 
     metadata_path = (

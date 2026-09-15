@@ -69,6 +69,29 @@ def anatomy_python():
     return os.environ.get("TOTALSEG_PYTHON")
 
 
+# run_anatomy_segmentation.py's two --ml multi-label outputs. build_canonical_
+# anatomy.py already extracts everything downstream needs from them (the 5 lung
+# lobe masks under thoracic_total/, and the 7 canonical_anatomy/ masks), so
+# nothing else reads these large intermediates again.
+ANATOMY_MULTILABEL_FILES = (
+    "thoracic_total_multilabel.nii.gz",
+    "thoracic_total_multilabel.labelmap.json",
+    "lung_vessels_multilabel.nii.gz",
+    "lung_vessels_multilabel.labelmap.json",
+)
+
+
+def prune_intermediate_anatomy_masks(anatomy_dir):
+    """Delete the raw TotalSegmentator multi-label volumes (and their label-map
+    sidecars) once build_canonical_anatomy.py has extracted the final
+    lobe/canonical masks from them. Metadata JSON files are left untouched.
+    """
+    for filename in ANATOMY_MULTILABEL_FILES:
+        mask_path = anatomy_dir / filename
+        if mask_path.exists():
+            mask_path.unlink()
+
+
 def load_json(path):
     path = Path(path)
 
@@ -471,6 +494,22 @@ def phase1(
         t_input_dir
         / "crop_metadata.json"
     )
+
+    # ==================================================
+    # 6.5 Prune intermediate anatomy masks
+    #
+    # canonical_anatomy/ (7 masks) already folds in everything Phase 2's
+    # extract_anatomy_features.py and build_t_input.py need except the 5 raw
+    # lung lobes, which build_t_input.py also already consumed above. The
+    # remaining ~45 individual TotalSegmentator masks (ribs, vertebrae,
+    # sternum, aorta, pulmonary_vein, heart, esophagus) and all 4 raw
+    # lung_vessels masks are pure intermediates: nothing downstream reads them
+    # again, and writing/uploading dozens of full-resolution NIfTI files is
+    # the dominant cost of this pipeline for thick series. Drop them before
+    # the caller uploads work_root to GCS.
+    # ==================================================
+
+    prune_intermediate_anatomy_masks(anatomy_dir)
 
     # ==================================================
     # 7. Phase 1 result
