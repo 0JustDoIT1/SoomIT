@@ -97,7 +97,7 @@ services:
       ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
       ORTHANC_TIMEOUT_SECONDS: ${ORTHANC_TIMEOUT_SECONDS:-30}
     volumes:
-      - ./gcs-key.json:/app/gcs-key.json:ro
+      - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command:
       [
         'gunicorn',
