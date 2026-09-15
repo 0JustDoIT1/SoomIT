@@ -8,6 +8,7 @@
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.venv/
+.cache/
 models/
-external/CPMNetv2/.git/
 test-output/

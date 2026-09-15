@@ -1,25 +1,106 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "project": "soomit-506909",
-  "bucket": "gs://soomit-bucket/models",
+  "region": "asia-southeast1",
+  "model_bucket": "gs://soomit-bucket/models",
   "services": [
     {
       "service": "xray-serve",
       "status": "deployed",
+      "runtime": "gpu",
       "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/xray/xray-v1/",
       "manifest": "gs://soomit-bucket/models/xray/xray-v1/model_manifest.json"
     },
     {
       "service": "ct-detection-serve",
       "status": "deployed",
+      "runtime": "gpu",
       "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/",
       "manifest": "gs://soomit-bucket/models/ct-detection/cpmnetv2-hn25-v1.0.0/model_manifest.json"
+    },
+    {
+      "service": "ct-analysis-phase1-serve",
+      "status": "deployed",
+      "runtime": "gpu",
+      "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/ct-analysis/",
+      "artifacts": [
+        "vista3d_lidc_best.pt",
+        "morphology_med3d_final.pt",
+        "texture_med3d_final.pt",
+        "med3d_resnet18_best.pth"
+      ]
+    },
+    {
+      "service": "ct-analysis-phase2-serve",
+      "status": "deployed",
+      "runtime": "cpu",
+      "artifact_storage": "none",
+      "description": "Deterministic Phase 1 artifact and T-mask feature extraction; no learned checkpoint."
     },
     {
       "service": "pdl1-serve",
       "status": "deployed",
+      "runtime": "gpu",
       "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/pdl1/final_model/",
       "manifest": "gs://soomit-bucket/models/pdl1/final_model/model_manifest.json"
+    },
+    {
+      "service": "pathology-analysis-serve",
+      "status": "deployed",
+      "runtime": "gpu",
+      "artifact_storage": "gcs_and_container",
+      "artifact_prefix": "gs://soomit-bucket/models/pathology-analysis/",
+      "artifacts": [
+        "tissue/clam_model_full.pt",
+        "gene/clam_mutation_model_full.pt"
+      ],
+      "container_model": "MahmoodLab/UNI2-h"
+    },
+    {
+      "service": "embedding-serve",
+      "status": "deployed",
+      "runtime": "cpu",
+      "artifact_storage": "container_image",
+      "container_model": "intfloat/multilingual-e5-base"
+    },
+    {
+      "service": "medgemma-serve",
+      "status": "deployed",
+      "runtime": "gpu",
+      "artifact_storage": "container_image",
+      "container_model": "google/medgemma-4b-it"
+    },
+    {
+      "service": "tnm-t-serve",
+      "status": "deployed",
+      "runtime": "gpu",
+      "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/tnm/t/"
+    },
+    {
+      "service": "tnm-m-serve",
+      "status": "deployed",
+      "runtime": "gpu",
+      "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/tnm/m/"
+    },
+    {
+      "service": "tnm-serve",
+      "status": "deployed",
+      "runtime": "cpu",
+      "artifact_storage": "gcs",
+      "artifact_prefix": "gs://soomit-bucket/models/tnm/core/"
+    },
+    {
+      "service": "genkit-serve",
+      "status": "deployed",
+      "runtime": "cpu",
+      "artifact_storage": "external_api",
+      "description": "Gemini-backed orchestration service; no local learned checkpoint."
     }
   ]
 }

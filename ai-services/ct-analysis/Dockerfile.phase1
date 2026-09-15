@@ -30,8 +30,15 @@ RUN mkdir -p /opt/totalseg-home \
     && /opt/totalseg/bin/totalseg_download_weights -t lung_vessels
 
 COPY artifact.py storage_io.py input_io.py orthanc_client.py model_artifacts.py phase1_server.py visualization.py ./
-COPY packages ./packages
-COPY external ./external
+COPY packages/final_ct_analysis_deploy_ready ./packages/final_ct_analysis_deploy_ready
+COPY packages/final_segmentation_deploy_ready ./packages/final_segmentation_deploy_ready
+COPY packages/final_quantification_deploy_ready ./packages/final_quantification_deploy_ready
+COPY packages/final_morphology_deploy_ready ./packages/final_morphology_deploy_ready
+COPY packages/final_texture_deploy_ready ./packages/final_texture_deploy_ready
+COPY packages/final_malignancy_deploy_ready ./packages/final_malignancy_deploy_ready
+COPY packages/final_t_input_deploy_ready ./packages/final_t_input_deploy_ready
+COPY packages/final_n_input_deploy_ready ./packages/final_n_input_deploy_ready
+COPY external/VISTA ./external/VISTA
 
 RUN mkdir -p \
       /app/packages/final_segmentation_deploy_ready/model \

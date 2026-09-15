@@ -8,4 +8,7 @@ tests/
 **/__pycache__/
 *.py[cod]
 .env
-.env.*
+.env.local
+.env.development
+.env.production
+test-output/

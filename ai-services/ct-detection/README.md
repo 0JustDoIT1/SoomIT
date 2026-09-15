@@ -27,6 +27,10 @@ local copy with:
 
     (Get-FileHash models/best_val_loss.pt -Algorithm SHA256).Hash.ToLower()
 
+The `models/` directory is intentionally not tracked. Create it only when a
+local checkpoint is needed; production downloads and verifies the checkpoint
+from the configured GCS URI during container startup.
+
 ## API
 
     GET  /health

@@ -5,9 +5,9 @@
 .env.local
 .env.development
 .env.production
-__pycache__/
-*.py[cod]
-.pytest_cache/
-models/
-external/CPMNetv2/.git/
+node_modules/
+dist/
+coverage/
+.npm/
+*.log
 test-output/
