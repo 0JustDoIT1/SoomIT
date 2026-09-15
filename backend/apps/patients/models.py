@@ -83,22 +83,76 @@ class PatientAccount(TimestampedUUIDModel):
         REJECTED = "REJECTED", "거부됨"
 
     patient = models.ForeignKey(
-        Patient, on_delete=models.PROTECT, null=True, blank=True, related_name="accounts"
+        Patient,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="accounts",
+    )
+
+    # 환자앱 회원가입 기본정보
+    name = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+    )
+    birth_date = models.DateField(
+        null=True,
+        blank=True,
+    )
+    sex = models.CharField(
+        max_length=10,
+        choices=Patient.Sex.choices,
+        null=True,
+        blank=True,
     )
     phone_number = models.CharField(max_length=20)
     phone_number_hash = models.CharField(max_length=64, unique=True)
-    phone_verified_at = models.DateTimeField()
-    link_status = models.CharField(max_length=20, choices=LinkStatus.choices, default=LinkStatus.UNLINKED)
-    linked_at = models.DateTimeField(null=True, blank=True)
+    phone_verified_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+    postal_code = models.CharField(
+        max_length=10,
+        null=True,
+        blank=True,
+    )
+    address = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+    )
+    address_detail = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+    )
+
+    # 병원 환자정보 연결 상태
+    link_status = models.CharField(
+        max_length=20,
+        choices=LinkStatus.choices,
+        default=LinkStatus.UNLINKED,
+    )
+    linked_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
     linked_by_user = models.ForeignKey(
-        User, on_delete=models.PROTECT, null=True, blank=True, related_name="linked_patient_accounts"
+        User,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="linked_patient_accounts",
     )
 
     class Meta:
         db_table = "patient_accounts"
         constraints = [
             models.UniqueConstraint(
-                fields=["patient"], condition=Q(patient__isnull=False), name="uq_patient_account_patient"
+                fields=["patient"],
+                condition=Q(patient__isnull=False),
+                name="uq_patient_account_patient",
             ),
         ]
 
@@ -123,7 +177,7 @@ class SocialAccount(models.Model):
             models.UniqueConstraint(fields=["patient_account", "provider"], name="uq_social_account_provider"),
         ]
 
-
+        
 # ── 2-5. patient_questionnaires ─────────────────────────────────
 class PatientQuestionnaire(TimestampedUUIDModel):
     patient = models.ForeignKey(Patient, on_delete=models.PROTECT, related_name="questionnaires")

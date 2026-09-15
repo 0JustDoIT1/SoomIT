@@ -103,6 +103,33 @@ REST_FRAMEWORK = {
     'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
+# ── 환자앱 소셜 로그인/JWT ───────────────────────────────────────
+PATIENT_JWT_SIGNING_KEY = os.environ.get(
+    "PATIENT_JWT_SIGNING_KEY",
+    "",
+)
+PATIENT_JWT_ALGORITHM = "HS256"
+PATIENT_JWT_ISSUER = "soom-it-patient-api"
+PATIENT_JWT_AUDIENCE = "soom-it-patient-app"
+
+PATIENT_ACCESS_TOKEN_MINUTES = int(
+    os.environ.get(
+        "PATIENT_ACCESS_TOKEN_MINUTES",
+        "15",
+    )
+)
+PATIENT_REFRESH_TOKEN_DAYS = int(
+    os.environ.get(
+        "PATIENT_REFRESH_TOKEN_DAYS",
+        "14",
+    )
+)
+
+PATIENT_GOOGLE_CLIENT_ID = os.environ.get(
+    "PATIENT_GOOGLE_CLIENT_ID",
+    "",
+)
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Soom-it API',
     'VERSION': '1.6.0',
