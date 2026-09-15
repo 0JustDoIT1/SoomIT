@@ -6,10 +6,13 @@ import { StateMessage } from "@/components/workspace/state-message";
 
 import {
   fetchPathologyCaseWorkflow,
+  fetchPathologyGeneAnalyses,
   fetchPathologyWorkstation,
   fetchPdl1Analyses,
+  runPathologyGeneAnalysis,
   runPdl1Analysis,
   uploadPdl1Input,
+  uploadPathologyGeneInput,
   submitPathologyForReview,
   type PathologyWorkstationItem,
   type PathologyCaseWorkflow,
@@ -166,28 +169,6 @@ function AnalysisStatus({
   );
 }
 
-function AiResultButton({
-  status,
-  onClick,
-}: {
-  status: string | undefined;
-  onClick: () => void;
-}) {
-  if (status !== "SUCCEEDED") {
-    return null;
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="mt-4 rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F]"
-    >
-      AI 결과 보기
-    </button>
-  );
-}
-
 function PatientSummary({
   item,
 }: {
@@ -324,6 +305,20 @@ function WorkArea({
   const [pdl1InputReady, setPdl1InputReady] = useState(Boolean(item.latest_wsi?.pdl1_input_ready));
   const [uploadingPdl1Input, setUploadingPdl1Input] = useState(false);
   const [pdl1UploadMessage, setPdl1UploadMessage] = useState("");
+  const [pathologyGeneWsiFile, setPathologyGeneWsiFile] = useState<File | null>(null);
+  const [uploadingPathologyGeneWsi, setUploadingPathologyGeneWsi] = useState(false);
+  const [pathologyGeneUploadMessage, setPathologyGeneUploadMessage] = useState("");
+  const [pathologyGeneWsiId, setPathologyGeneWsiId] = useState<string | null>(
+    item.order_type === "PATHOLOGY_GENE" &&
+    item.latest_wsi?.stain === "HE" &&
+    item.latest_wsi.image_status === "READY"
+      ? item.latest_wsi.id
+      : null,
+  );
+  const [pathologyGeneAnalysis, setPathologyGeneAnalysis] = useState<PathologyAiAnalysis | null>(
+    item.order_type === "PATHOLOGY_GENE" ? item.latest_gene_analysis : null,
+  );
+  const [runningPathologyGene, setRunningPathologyGene] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -333,7 +328,7 @@ function WorkArea({
   const [error, setError] = useState("");
 
   const pathology =
-    item.order_type === "PATHOLOGY_GENE" ? item.latest_ai_analysis : null;
+    item.order_type === "PATHOLOGY_GENE" ? pathologyGeneAnalysis : null;
   const pdl1 = pdl1Analyses[0] ?? null;
   const pdl1Status = runningPdl1 ? "RUNNING" : pdl1?.status;
   const pdl1AnalysisId = pdl1?.id;
@@ -345,7 +340,7 @@ function WorkArea({
     "model_revision",
   );
   const geneResults =
-    item.latest_gene_analysis?.result_detail?.genes ?? [];
+    pathologyGeneAnalysis?.result_detail?.genes ?? [];
 
   useEffect(() => {
     if (
@@ -361,6 +356,28 @@ function WorkArea({
     const timer = window.setInterval(() => { void refresh(); }, 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
   }, [item.case_id, item.order_type, pdl1AnalysisId, pdl1AnalysisStatus]);
+
+  const pathologyGeneAnalysisId = pathologyGeneAnalysis?.id;
+  const pathologyGeneAnalysisStatus = pathologyGeneAnalysis?.status;
+
+  useEffect(() => {
+    if (
+      item.order_type !== "PATHOLOGY_GENE" ||
+      !pathologyGeneAnalysisId ||
+      (pathologyGeneAnalysisStatus !== "PENDING" &&
+        pathologyGeneAnalysisStatus !== "RUNNING")
+    ) return;
+    let cancelled = false;
+    const refresh = () => fetchPathologyGeneAnalyses(item.case_id)
+      .then((analyses) => {
+        const analysis = analyses.find((entry) => entry.id === pathologyGeneAnalysisId);
+        if (!cancelled && analysis) setPathologyGeneAnalysis(analysis);
+      })
+      .catch(() => undefined);
+    void refresh();
+    const timer = window.setInterval(() => { void refresh(); }, 3000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [item.case_id, item.order_type, pathologyGeneAnalysisId, pathologyGeneAnalysisStatus]);
 
   async function handlePdl1Run() {
     if (!pdl1InputReady) return;
@@ -400,12 +417,58 @@ function WorkArea({
     }
   }
 
+  async function handlePathologyGeneWsiUpload() {
+    const orderId = item.examination_order?.id;
+    if (item.order_type !== "PATHOLOGY_GENE" || !orderId || !pathologyGeneWsiFile) return;
+    setUploadingPathologyGeneWsi(true);
+    setError("");
+    setPathologyGeneUploadMessage("");
+    try {
+      const result = await uploadPathologyGeneInput(orderId, pathologyGeneWsiFile);
+      setPathologyGeneWsiId(result.wsi_id);
+      setPathologyGeneUploadMessage("H&E WSI 파일이 서버에 업로드되었습니다.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "H&E WSI 업로드에 실패했습니다.");
+    } finally {
+      setUploadingPathologyGeneWsi(false);
+    }
+  }
+
+  async function handlePathologyGeneRun() {
+    if (!pathologyGeneWsiId || runningPathologyGene) return;
+    setRunningPathologyGene(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await runPathologyGeneAnalysis(item.case_id, pathologyGeneWsiId);
+      setPathologyGeneAnalysis(result);
+      setMessage("조직·유전자 분석 요청이 등록되었습니다.");
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "조직·유전자 분석 요청에 실패했습니다.");
+    } finally {
+      setRunningPathologyGene(false);
+    }
+  }
+
   const currentTestType = item.order_type;
   const isPathologyGene = currentTestType === "PATHOLOGY_GENE";
   const isPdl1 = currentTestType === "PDL1";
   const isKnownTestType = isPathologyGene || isPdl1;
+  const pathologyGeneWsiReady = Boolean(pathologyGeneWsiId);
+  const pathologyGeneAnalysisRunning =
+    runningPathologyGene ||
+    pathologyGeneAnalysisStatus === "PENDING" ||
+    pathologyGeneAnalysisStatus === "RUNNING";
+  const canViewPathologyGeneResult =
+    pathologyGeneAnalysisStatus === "SUCCEEDED";
+  const canRunPathologyGene = pathologyGeneWsiReady &&
+    !pathologyGeneAnalysisRunning &&
+    !canViewPathologyGeneResult;
+  const pathologyGeneWsiFilename = pathologyGeneWsiReady
+    ? pathologyGeneWsiFile?.name ?? item.latest_wsi?.original_filename ?? null
+    : null;
   const currentAnalysis = isPathologyGene
-    ? item.latest_ai_analysis
+    ? pathologyGeneAnalysis
     : isPdl1
       ? pdl1
       : null;
@@ -617,33 +680,74 @@ function WorkArea({
         ) : null}
 
         {isPathologyGene ? (
-        <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
+          <>
+            <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
+              <h3 className="text-sm font-bold">H&amp;E WSI 업로드</h3>
+              <div className="mt-3 flex flex-col items-start gap-2">
+                {pathologyGeneWsiReady ? (
+                  <>
+                    <span className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">
+                      H&amp;E WSI 업로드 완료
+                    </span>
+                    {pathologyGeneWsiFilename ? (
+                      <p className="text-xs text-slate-600">{pathologyGeneWsiFilename}</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <>
+                    <label className={`cursor-pointer rounded-lg px-3 py-2 text-xs font-semibold text-white transition ${pathologyGeneWsiFile ? "bg-emerald-500" : "bg-[#3446B8] hover:bg-[#29399F]"} ${uploadingPathologyGeneWsi ? "cursor-not-allowed opacity-60" : ""}`}>
+                      <span>{pathologyGeneWsiFile ? "H&E WSI 선택 완료" : "H&E WSI 선택"}</span>
+                      <input
+                        type="file"
+                        accept=".svs"
+                        disabled={uploadingPathologyGeneWsi}
+                        className="sr-only"
+                        onChange={(event) => {
+                          setPathologyGeneWsiFile(event.target.files?.[0] ?? null);
+                          setPathologyGeneUploadMessage("");
+                          setError("");
+                        }}
+                      />
+                    </label>
+                    {pathologyGeneWsiFile ? <p className="text-xs text-slate-600">{pathologyGeneWsiFile.name}</p> : null}
+                    <button
+                      type="button"
+                      disabled={!pathologyGeneWsiFile || uploadingPathologyGeneWsi || !item.examination_order?.id}
+                      onClick={handlePathologyGeneWsiUpload}
+                      className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
+                    >
+                      {uploadingPathologyGeneWsi ? "업로드 중..." : "서버에 업로드"}
+                    </button>
+                  </>
+                )}
+              </div>
+              {pathologyGeneUploadMessage ? <p role="status" className="mt-2 text-xs text-emerald-700">{pathologyGeneUploadMessage}</p> : null}
+              {error ? <p role="alert" className="mt-2 text-xs text-red-700">{error}</p> : null}
+            </section>
+            <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-sm font-bold">
                 <span className="mr-2 text-xs text-[#3446B8]">
                   02
                 </span>
-                LUAD/LUSC 분석
+                통합 AI 분석
               </h3>
 
               <p className="mt-1 text-xs text-slate-500">
-                현재 상태:{" "}
-                {pathology?.status_label ?? "결과 없음"}
+                H&amp;E WSI 업로드 후 아형과 유전자 분석을 함께 실행합니다.
               </p>
             </div>
 
             <button
-              disabled
+              type="button"
+              disabled={!canRunPathologyGene}
+              onClick={handlePathologyGeneRun}
               className="rounded-md bg-slate-300 px-3 py-2 text-xs font-semibold text-white"
             >
-              분석 실행
+              {pathologyGeneAnalysisRunning ? "분석 실행 중" : "분석 실행"}
             </button>
           </div>
-
-          <p className="mt-2 text-xs text-slate-500">
-            아형분류 분석 API 연결 대기
-          </p>
 
           <AnalysisProgress status={pathology?.status} />
 
@@ -651,11 +755,16 @@ function WorkArea({
             <AnalysisStatus status={pathology?.status} />
           </div>
 
-          <AiResultButton
-            status={pathology?.status}
+          <button
+            type="button"
+            disabled={!canViewPathologyGeneResult}
             onClick={() => setIsResultOpen(true)}
-          />
+            className="mt-3 rounded-md bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
+          >
+            AI 결과 보기
+          </button>
         </section>
+          </>
         ) : null}
 
         {isPdl1 ? (
@@ -712,40 +821,14 @@ function WorkArea({
                 <span className="mr-2 text-xs text-[#3446B8]">
                   04
                 </span>
-                유전자 분석
+                유전자 분석 결과
               </h3>
 
               <p className="mt-1 text-xs text-slate-500">
-                유전자 분석 API 연결 대기
+                통합 AI 분석 결과에 포함됩니다.
               </p>
             </div>
-
-            <button
-              disabled
-              className="rounded-md bg-slate-300 px-3 py-2 text-xs font-semibold text-white"
-            >
-              분석 실행
-            </button>
           </div>
-
-          <AnalysisProgress
-            status={
-              item.latest_gene_analysis?.status
-            }
-          />
-
-          <div className="mt-3">
-            <AnalysisStatus
-              status={
-                item.latest_gene_analysis?.status
-              }
-            />
-          </div>
-
-          <AiResultButton
-            status={item.latest_gene_analysis?.status}
-            onClick={() => setIsResultOpen(true)}
-          />
         </section>
         ) : null}
 

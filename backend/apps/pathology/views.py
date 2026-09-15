@@ -34,6 +34,7 @@ from .serializers import (
     PathologyWorkItemSerializer,
     PathologyWorkstationSerializer,
     WholeSlideImageSerializer,
+    PathologyGeneInputUploadSerializer,
 )
 from .services.pdl1_sample_catalog import PDL1SampleCatalogError, list_pdl1_test_samples
 from .services.review_submission import ReviewSubmissionError, submit_for_review
@@ -41,7 +42,7 @@ from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
 from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
 from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
-
+from .services.pathology_storage import PathologyStorageError, upload_pathology_wsi
 
 PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
 
@@ -241,9 +242,8 @@ class PathologyDiagnosisConfirmAPIView(PathologyDiagnosisDetailAPIView):
         return Response(PathologyDiagnosisSerializer(diagnosis).data)
 
 
-class CasePathologyAiAnalysisListAPIView(ListAPIView):
+class CasePathologyAiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
     serializer_class = PathologyAiAnalysisSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return (
@@ -261,6 +261,95 @@ class CasePathologyAiAnalysisListAPIView(ListAPIView):
         )
 
 
+class PathologyOrderPathologyGeneInputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
+    def post(self, request, order_id):
+        hospital_id = pathology_hospital_id(request)
+
+        order = get_object_or_404(
+            ExaminationOrder.objects.select_related("case"),
+            id=order_id,
+            case__patient__hospital_id=hospital_id,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+        )
+
+        serializer = PathologyGeneInputUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        wsi_file = serializer.validated_data["wsi_file"]
+        original_filename = wsi_file.name
+
+        try:
+            wsi_uri = upload_pathology_wsi(
+                hospital_id=hospital_id,
+                case_id=order.case_id,
+                order_id=order.id,
+                uploaded_file=wsi_file,
+            )
+
+            wsi_file.seek(0)
+            file_sha256 = sha256(wsi_file.read()).hexdigest()
+
+            with transaction.atomic():
+                specimen, _ = PathologySpecimen.objects.get_or_create(
+                    case=order.case,
+                    examination_order=order,
+                    defaults={
+                        "specimen_code": f"HE-{order.id}",
+                        "specimen_type": PathologySpecimen.SpecimenType.OTHER,
+                        "status": PathologySpecimen.Status.READY,
+                        "created_by_user": request.user,
+                    },
+                )
+
+                WholeSlideImage.objects.filter(
+                    specimen=specimen,
+                    stain=WholeSlideImage.Stain.HE,
+                    is_current=True,
+                ).update(is_current=False)
+
+                image_asset = CaseImageAsset.objects.create(
+                    case=order.case,
+                    examination_order=order,
+                    workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+                    image_type=CaseImageAsset.ImageType.WSI,
+                    storage_type=CaseImageAsset.StorageType.GCS,
+                    storage_uri=wsi_uri,
+                    file_format=".svs",
+                    status=CaseImageAsset.Status.READY,
+                )
+
+                wsi = WholeSlideImage.objects.create(
+                    specimen=specimen,
+                    image_asset=image_asset,
+                    slide_code=f"HE-{order.id}",
+                    stain=WholeSlideImage.Stain.HE,
+                    original_filename=original_filename,
+                    sha256=file_sha256,
+                    is_current=True,
+                    uploaded_by_user=request.user,
+                )
+
+                PathologyWorkItem.objects.filter(
+                    case=order.case,
+                    examination_order=order,
+                ).update(
+                    specimen=specimen,
+                    wsi=wsi,
+                )
+
+        except Exception:
+            raise
+
+        return Response(
+            {
+                "wsi_id": wsi.id,
+                "storage_uri": wsi_uri,
+                "original_filename": original_filename,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
 class CasePathologyGeneAnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
     @transaction.atomic
     def post(self, request, case_id):
@@ -271,28 +360,27 @@ class CasePathologyGeneAnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
         )
         serializer = PathologyGeneAnalysisRunSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        order = (
-            ExaminationOrder.objects.select_for_update()
-            .filter(case=case, order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE)
-            .exclude(status=ExaminationOrder.Status.CANCELLED)
-            .order_by("-created_at")
-            .first()
-        )
-        if order is None:
-            raise ValidationError({"detail": "This case has no active pathology/gene order."})
-        wsis = WholeSlideImage.objects.select_related("image_asset").filter(
-            specimen__examination_order=order,
+        wsi_id = serializer.validated_data["wsi_id"]
+        wsi = WholeSlideImage.objects.select_related(
+            "image_asset",
+            "specimen__examination_order",
+        ).filter(
+            id=wsi_id,
+            specimen__case=case,
+            specimen__examination_order__order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+        ).exclude(
+            specimen__examination_order__status=ExaminationOrder.Status.CANCELLED,
+        ).filter(
             stain=WholeSlideImage.Stain.HE,
             is_current=True,
             image_asset__storage_type=CaseImageAsset.StorageType.GCS,
             image_asset__status=CaseImageAsset.Status.READY,
-        )
-        wsi_id = serializer.validated_data.get("wsi_id")
-        if wsi_id:
-            wsis = wsis.filter(id=wsi_id)
-        wsi = wsis.order_by("-created_at").first()
+        ).first()
         if wsi is None or not wsi.image_asset.storage_uri.startswith("gs://"):
             raise ValidationError({"detail": "A READY H&E WSI stored in GCS is required."})
+        order = ExaminationOrder.objects.select_for_update().get(
+            id=wsi.specimen.examination_order_id,
+        )
         if AiAnalysis.objects.filter(
             examination_order=order,
             analysis_type=AnalysisType.PATHOLOGY_GENE_ANALYSIS,

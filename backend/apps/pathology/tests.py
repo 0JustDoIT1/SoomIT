@@ -871,7 +871,7 @@ class PathologyReadAPITestCase(APITestCase):
         )
 
     def test_authenticated_user_can_read_case_pathology_ai_results(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:case-ai-result-list",
             kwargs={"case_id": self.case.id},
@@ -891,6 +891,71 @@ class PathologyReadAPITestCase(APITestCase):
             response.data[0]["result_detail"]["pathology"]["predicted_subtype"],
             "Adenocarcinoma",
         )
+
+    @patch("apps.pathology.views.run_pathology_gene_analysis.delay")
+    def test_pathology_gene_run_uses_submitted_wsi_order(self, delay):
+        newer_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            requesting_doctor=self.user,
+            purpose="Newer pathology order without WSI",
+        )
+        ModelVersion.objects.create(
+            model_name="pathology-analysis",
+            version="pathology-analysis-v1",
+            analysis_type="PATHOLOGY_GENE_ANALYSIS",
+        )
+        self.authenticate_pathology_user()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse(
+                    "pathology:case-pathology-gene-analysis-run",
+                    kwargs={"case_id": self.case.id},
+                ),
+                {"wsi_id": str(self.wsi.id)},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        analysis = AiAnalysis.objects.get(id=response.data["id"])
+        self.assertEqual(analysis.examination_order_id, self.pathology_order.id)
+        self.assertEqual(analysis.source_image_asset_id, self.image_asset.id)
+        self.assertNotEqual(analysis.examination_order_id, newer_order.id)
+        delay.assert_called_once_with(str(analysis.id))
+
+    def test_workstation_excludes_analysis_for_noncurrent_he_wsi(self):
+        self.wsi.is_current = False
+        self.wsi.save(update_fields=["is_current", "updated_at"])
+        current_asset = CaseImageAsset.objects.create(
+            case=self.case,
+            examination_order=self.pathology_order,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            image_type=CaseImageAsset.ImageType.WSI,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gs://test-bucket/current-slide.svs",
+            file_format="SVS",
+            status=CaseImageAsset.Status.READY,
+        )
+        WholeSlideImage.objects.create(
+            specimen=self.specimen,
+            image_asset=current_asset,
+            slide_code=self.wsi.slide_code,
+            version=2,
+            stain=WholeSlideImage.Stain.HE,
+            original_filename="current-slide.svs",
+            sha256="b" * 64,
+            is_current=True,
+            uploaded_by_user=self.user,
+        )
+        self.authenticate_pathology_user()
+
+        response = self.client.get(
+            reverse("pathology:case-workflow", kwargs={"case_id": self.case.id}),
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["orders"][0]["latest_gene_analysis"])
 
 
     def test_authenticated_user_can_read_case_pdl1_ai_results(self):

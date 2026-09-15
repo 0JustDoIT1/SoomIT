@@ -22,7 +22,7 @@ class PDL1AnalysisRunSerializer(serializers.Serializer):
 
 
 class PathologyGeneAnalysisRunSerializer(serializers.Serializer):
-    wsi_id = serializers.UUIDField(required=False)
+    wsi_id = serializers.UUIDField()
 
 
 class PathologyGeneInputUploadSerializer(serializers.Serializer):
@@ -678,11 +678,24 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
         return PathologyAiAnalysisSerializer(analyses[0]).data if analyses else None
 
     def get_latest_gene_analysis(self, obj):
+        current_wsi = next(
+            (
+                wsi
+                for wsi in self._wsis(obj)
+                if wsi.stain == WholeSlideImage.Stain.HE and wsi.is_current
+            ),
+            None,
+        )
+        if current_wsi is None:
+            return None
         analysis = next(
             (
                 item
                 for item in self._order_analyses(obj)
-                if item.analysis_type == "PATHOLOGY_GENE_ANALYSIS"
+                if (
+                    item.analysis_type == "PATHOLOGY_GENE_ANALYSIS"
+                    and item.source_image_asset_id == current_wsi.image_asset_id
+                )
             ),
             None,
         )

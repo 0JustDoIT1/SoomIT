@@ -138,6 +138,13 @@ export async function fetchPdl1Analyses(caseId: string) {
   return readJson<PathologyAiAnalysis[]>(response);
 }
 
+export async function fetchPathologyGeneAnalyses(caseId: string) {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/`),
+  );
+  return readJson<PathologyAiAnalysis[]>(response);
+}
+
 export async function uploadPdl1Input(
   orderId: string,
   wsiFile: File,
@@ -153,6 +160,35 @@ export async function uploadPdl1Input(
     { method: "POST", body },
   );
   return readJson<{ upload_ready: boolean }>(response);
+}
+
+export async function uploadPathologyGeneInput(
+  orderId: string,
+  wsiFile: File,
+) {
+  const body = new FormData();
+  body.set("wsi_file", wsiFile);
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/orders/${encodeURIComponent(orderId)}/pathology-gene-input/`),
+    { method: "POST", body },
+  );
+  return readJson<{
+    wsi_id: string;
+    storage_uri: string;
+    original_filename: string;
+  }>(response);
+}
+
+export async function runPathologyGeneAnalysis(caseId: string, wsiId: string) {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/run/`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wsi_id: wsiId }),
+    },
+  );
+  return readJson<PathologyAiAnalysis>(response);
 }
 
 export async function runPdl1Analysis(caseId: string) {
