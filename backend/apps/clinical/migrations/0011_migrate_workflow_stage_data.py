@@ -5,7 +5,7 @@ def forwards(apps, schema_editor):
     ClinicalResult = apps.get_model("clinical", "ClinicalResult")
     LungCancerCase = apps.get_model("cases", "LungCancerCase")
     adequacy_ids = list(
-        ClinicalResult.objects.filter(adequacy_detail__isnull=False).values_list("id", flat=True)
+        ClinicalResult.objects.filter(specimen_adequacy_detail__isnull=False).values_list("id", flat=True)
     )
     ClinicalResult.objects.filter(id__in=adequacy_ids).delete()
     mapping = {"STAGING": "PET_CT_TNM", "PATHOLOGY": "PATHOLOGY_GENE", "GENE": "PATHOLOGY_GENE"}
