@@ -1,5 +1,6 @@
 name: soomit-infra
 
+
 x-django-base: &django-base
   build:
     context: ../backend
@@ -16,12 +17,14 @@ x-django-base: &django-base
     redis:
       condition: service_healthy
 
+
 services:
   celery_worker:
     <<: *django-base
     volumes:
       - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command: ['celery', '-A', 'config', 'worker', '-l', 'info']
+
 
   celery_beat:
     <<: *django-base
@@ -38,6 +41,7 @@ services:
       ]
     volumes:
       - celery_beat_data:/var/lib/celery
+
 
   django:
     <<: *django-base
@@ -62,6 +66,7 @@ services:
       orthanc:
         condition: service_healthy
 
+
   nextjs:
     build:
       context: ../frontend
@@ -72,6 +77,7 @@ services:
     restart: unless-stopped
     env_file:
       - ../frontend/.env
+
 
   realtime:
     build:
@@ -84,6 +90,7 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+
 
   nginx:
     image: nginx:1.27-alpine
@@ -104,12 +111,14 @@ services:
       realtime:
         condition: service_started
 
+
   certbot:
     image: certbot/certbot
     container_name: soomit-infra-certbot
     volumes:
       - certbot_conf:/etc/letsencrypt
       - certbot_www:/var/www/certbot
+
 
   redis:
     image: redis:7-alpine
@@ -124,6 +133,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+
 
   orthanc:
     image: orthancteam/orthanc:26.7.0
@@ -162,6 +172,7 @@ services:
       timeout: 5s
       retries: 10
 
+
 volumes:
   celery_beat_data:
     name: soomit_infra_celery_beat_data
@@ -173,3 +184,6 @@ volumes:
     name: soomit_infra_certbot_conf
   certbot_www:
     name: soomit_infra_certbot_www
+
+
+

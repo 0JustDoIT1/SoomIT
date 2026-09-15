@@ -25,6 +25,7 @@ from apps.pathology.models import (
     WholeSlideImage,
 )
 from apps.pathology.services.workflow import calculate_workflow_status
+from apps.pathology.services.pdl1_storage import PDL1StorageError
 
 
 class PathologyReadAPITestCase(APITestCase):
@@ -958,111 +959,82 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(detail["predicted_tps_range_label"], "≥50%")
         self.assertNotIn("tps_percent", detail)
 
-    @patch("apps.pathology.views.request_pdl1_prediction")
-    def test_authenticated_user_can_run_pdl1_analysis(self, mock_predict):
-        mock_predict.return_value = {
-            "main_index": "P-0019599",
-            "pdl1_image_id": "597881",
-            "patch_count": 1059,
-            "predicted_class": 2,
-            "predicted_tps_range": "GE_50",
-            "confidence": 0.9977335929870605,
-            "probabilities": {
-                "class_0": 0.000016584608601988293,
-                "class_1": 0.002249843906611204,
-                "class_2": 0.9977335929870605,
-            },
-        }
-        self.pathology_order.pathology_test_type = ExaminationOrder.PathologyTestType.PDL1
-        self.pathology_order.save(update_fields=["pathology_test_type", "updated_at"])
-        self.wsi.stain = WholeSlideImage.Stain.PDL1
-        self.wsi.save(update_fields=["stain", "updated_at"])
-        self.authenticate_pathology_user()
-        url = reverse(
-            "pathology:case-pdl1-analysis-run",
-            kwargs={"case_id": self.case.id},
-        )
-
-        response = self.client.post(
-            url,
+    @patch("apps.pathology.views.list_pdl1_test_samples")
+    def test_pdl1_test_sample_list_hides_gcs_uris(self, list_samples):
+        list_samples.return_value = (
             {
-                "annotation_file": SimpleUploadedFile(
-                    "slide.annotations",
-                    b"<Annotations />",
-                    content_type="application/xml",
-                ),
-                "wsi_id": str(self.wsi.id),
+                "sample_id": "demo-pdl1",
+                "display_name": "Demo PD-L1",
                 "roi_layer": "Tumor",
             },
-            format="multipart",
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data["status"], AiAnalysis.Status.SUCCEEDED)
-        self.assertEqual(
-            response.data["result_detail"]["pdl1"]["predicted_tps_range"],
-            "GE_50",
-        )
-        self.assertNotIn(
-            "tps_percent",
-            response.data["result_detail"]["pdl1"],
-        )
-        created_analysis = AiAnalysis.objects.get(id=response.data["id"])
-        self.assertEqual(created_analysis.source_image_asset, self.image_asset)
-        self.assertEqual(created_analysis.ai_result.pdl1_detail.predicted_class, 2)
-        mock_predict.assert_called_once_with(
-            wsi_gcs_uri="gcs://test-bucket/test-slide.svs",
-            annotation_content=b"<Annotations />",
-            roi_layer="Tumor",
-            main_index=str(self.case.patient_id),
-            pdl1_image_id=str(self.wsi.id),
-        )
-
-    @patch("apps.pathology.views.request_pdl1_prediction")
-    def test_pdl1_analysis_requires_wsi_from_pdl1_order(self, mock_predict):
-        from apps.pathology.services.pdl1_inference import PDL1InferenceError
-
-        mock_predict.side_effect = PDL1InferenceError(
-            "추론 서비스에 연결할 수 없습니다.",
         )
         self.authenticate_pathology_user()
-        url = reverse(
-            "pathology:case-pdl1-analysis-run",
-            kwargs={"case_id": self.case.id},
+
+        response = self.client.get(reverse("pathology:pdl1-test-sample-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["results"][0]["sample_id"], "demo-pdl1")
+        self.assertNotIn("wsi_gcs_uri", response.data["results"][0])
+        self.assertNotIn("annotation_gcs_uri", response.data["results"][0])
+
+    def _create_pdl1_order(self):
+        return ExaminationOrder.objects.create(
+            case=self.case,
+            exam_type=ExaminationOrder.ExamType.WSI,
+            pathology_test_type=ExaminationOrder.PathologyTestType.PDL1,
+            requesting_doctor=self.user,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="PD-L1 upload test",
+            status=ExaminationOrder.Status.ORDERED,
         )
 
+    @patch("apps.pathology.views.upload_pdl1_input")
+    def test_pdl1_input_upload_links_two_files_to_the_independent_order(self, upload):
+        order = self._create_pdl1_order()
+        upload.side_effect = ["gs://bucket/pathology/pdl1/wsi/input.svs", "gs://bucket/pathology/pdl1/annotation/input.annotations"]
+        self.authenticate_pathology_user()
         response = self.client.post(
-            url,
-            {
-                "annotation_file": SimpleUploadedFile(
-                    "slide.annotations", b"<Annotations />"
-                ),
-            },
+            reverse("pathology:order-pdl1-input-upload", kwargs={"order_id": order.id}),
+            {"wsi_file": SimpleUploadedFile("input.svs", b"wsi"), "annotation_file": SimpleUploadedFile("input.annotations", b"annotation"), "roi_layer": "Tumor"},
             format="multipart",
         )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["upload_ready"])
+        asset = CaseImageAsset.objects.get(id=response.data["wsi"]["image_asset_id"])
+        self.assertEqual(asset.status, CaseImageAsset.Status.READY)
+        self.assertEqual(asset.metadata["pdl1_annotation"]["storage_uri"], "gs://bucket/pathology/pdl1/annotation/input.annotations")
+        self.assertEqual(WholeSlideImage.objects.get(image_asset=asset).stain, WholeSlideImage.Stain.PDL1)
+        self.assertEqual(upload.call_count, 2)
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("wsi_id", response.data)
-        mock_predict.assert_not_called()
-
-    def test_pdl1_analysis_rejects_non_annotation_file(self):
-        self.client.force_authenticate(user=self.user)
-        url = reverse(
-            "pathology:case-pdl1-analysis-run",
-            kwargs={"case_id": self.case.id},
-        )
-
+    @patch("apps.pathology.views.upload_pdl1_input", side_effect=PDL1StorageError("GCS unavailable"))
+    def test_pdl1_input_upload_failure_creates_no_ready_asset(self, upload):
+        order = self._create_pdl1_order()
+        self.authenticate_pathology_user()
         response = self.client.post(
-            url,
-            {
-                "annotation_file": SimpleUploadedFile("features.txt", b"annotation"),
-                "wsi_id": str(self.wsi.id),
-            },
+            reverse("pathology:order-pdl1-input-upload", kwargs={"order_id": order.id}),
+            {"wsi_file": SimpleUploadedFile("input.svs", b"wsi"), "annotation_file": SimpleUploadedFile("input.annotations", b"annotation"), "roi_layer": "Tumor"},
             format="multipart",
         )
+        self.assertEqual(response.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertFalse(CaseImageAsset.objects.filter(examination_order=order).exists())
 
+    @patch("apps.pathology.views.run_pdl1_analysis.delay")
+    def test_pdl1_analysis_requires_uploaded_pair_then_enqueues(self, delay):
+        order = self._create_pdl1_order()
+        self.authenticate_pathology_user()
+        url = reverse("pathology:case-pdl1-analysis-run", kwargs={"case_id": self.case.id})
+        response = self.client.post(url, {}, format="json")
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("annotation_file", response.data)
+        asset = CaseImageAsset.objects.create(case=self.case, examination_order=order, uploaded_stage=Stage.PATHOLOGY, image_type=CaseImageAsset.ImageType.WSI, storage_type=CaseImageAsset.StorageType.GCS, storage_uri="gs://bucket/pdl1/input.svs", file_format="SVS", status=CaseImageAsset.Status.READY, metadata={"pdl1_annotation": {"storage_uri": "gs://bucket/pdl1/input.annotations", "roi_layer": "Tumor"}})
+        specimen = PathologySpecimen.objects.create(case=self.case, examination_order=order, specimen_code="PDL1-UPLOAD", specimen_type=PathologySpecimen.SpecimenType.OTHER, status=PathologySpecimen.Status.READY, created_by_user=self.user)
+        WholeSlideImage.objects.create(specimen=specimen, image_asset=asset, slide_code="PDL1-UPLOAD", stain=WholeSlideImage.Stain.PDL1, original_filename="input.svs", sha256="a" * 64, uploaded_by_user=self.user)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(url, {}, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        analysis = AiAnalysis.objects.get(id=response.data["id"])
+        self.assertEqual(analysis.source_image_asset, asset)
+        self.assertEqual(analysis.input_metadata, {"roi_layer": "Tumor"})
+        delay.assert_called_once_with(str(analysis.id))
 
     def test_unauthenticated_user_cannot_access_case_diagnoses(self):
         url = reverse(

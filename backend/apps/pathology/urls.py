@@ -7,6 +7,8 @@ from .views import (
     CasePathologyReportListAPIView,
     CasePDL1AiAnalysisListAPIView,
     CasePDL1AnalysisRunAPIView,
+    PDL1TestSampleListAPIView,
+    PathologyOrderPDL1InputUploadAPIView,
     CaseSpecimenAdequacyAiAnalysisListAPIView,
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
@@ -72,6 +74,16 @@ urlpatterns = [
         "cases/<uuid:case_id>/pdl1-results/run/",
         CasePDL1AnalysisRunAPIView.as_view(),
         name="case-pdl1-analysis-run",
+    ),
+    path(
+        "pdl1-test-samples/",
+        PDL1TestSampleListAPIView.as_view(),
+        name="pdl1-test-sample-list",
+    ),
+    path(
+        "orders/<uuid:order_id>/pdl1-input/",
+        PathologyOrderPDL1InputUploadAPIView.as_view(),
+        name="order-pdl1-input-upload",
     ),
     path(
         "cases/<uuid:case_id>/diagnoses/",

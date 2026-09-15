@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
+from django.http import HttpResponse
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
@@ -27,6 +28,7 @@ from .services.xray_storage import (
     XrayStorageError,
     build_xray_object_path,
     delete_xray_image,
+    download_xray_image_bytes,
     upload_xray_image,
 )
 from .services.workflow import is_pet_ct_tnm_order
@@ -553,6 +555,30 @@ class RadiologyOrderXrayImageUploadAPIView(RadiologyPermissionMixin, APIView):
                 pass
             raise
         return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
+
+
+class RadiologyOrderXrayImageContentAPIView(RadiologyPermissionMixin, APIView):
+    """Return an authorized X-ray asset without exposing its gs:// URI to the browser."""
+
+    def get(self, request, order_id, asset_id):
+        order = self.get_order(order_id)
+        if order is None:
+            return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        asset = CaseImageAsset.objects.filter(
+            id=asset_id,
+            examination_order=order,
+            image_type=CaseImageAsset.ImageType.XRAY,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            status=CaseImageAsset.Status.READY,
+        ).first()
+        if asset is None:
+            return Response({"detail": "X-ray 영상 자산을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            image_bytes = download_xray_image_bytes(asset.storage_uri)
+        except XrayStorageError:
+            return Response({"detail": "X-ray 영상을 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        content_type = "image/png" if asset.file_format.upper() == "PNG" else "image/jpeg"
+        return HttpResponse(image_bytes, content_type=content_type)
 
 
 class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
