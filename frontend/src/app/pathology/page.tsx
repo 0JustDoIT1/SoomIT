@@ -200,7 +200,7 @@ function PatientSummary({
       `${item.patient.sex || "-"} / ${item.patient.birth_date || "-"}`,
     ],
     ["Case Code", item.case.case_code || "-"],
-    ["현재 검사", item.pathology_test_type_label ?? "-"],
+    ["현재 검사", item.order_type_label ?? "-"],
     ["현재 상태", workflowDisplayStatus(item)],
     ["의뢰 의사", item.requesting_doctor?.name ?? "-"],
   ];
@@ -289,7 +289,7 @@ function SelectedCaseOverview({
           ["Case 상태", workflow.case.case_status || "-"],
           ["담당자", item?.assigned_to_name ?? "-"],
           ["의뢰 의사", item?.requesting_doctor?.name ?? "-"],
-          ["현재 검사", item?.pathology_test_type_label ?? "-"],
+          ["현재 검사", item?.order_type_label ?? "-"],
         ].map(([label, value]) => (
           <div key={label} className="border-l-2 border-[#CDD3EE] pl-3">
             <dt className="text-[11px] text-slate-400">{label}</dt>
@@ -313,7 +313,7 @@ function WorkArea({
   const [pdl1Analyses, setPdl1Analyses] = useState<
     PathologyAiAnalysis[]
   >(
-    item.pathology_test_type === "PDL1" && item.latest_ai_analysis
+    item.order_type === "PDL1" && item.latest_ai_analysis
       ? [item.latest_ai_analysis]
       : [],
   );
@@ -333,7 +333,7 @@ function WorkArea({
   const [error, setError] = useState("");
 
   const pathology =
-    item.pathology_test_type === "SUBTYPE" ? item.latest_ai_analysis : null;
+    item.order_type === "PATHOLOGY_GENE" ? item.latest_ai_analysis : null;
   const pdl1 = pdl1Analyses[0] ?? null;
   const pdl1Status = runningPdl1 ? "RUNNING" : pdl1?.status;
   const pdl1AnalysisId = pdl1?.id;
@@ -349,7 +349,7 @@ function WorkArea({
 
   useEffect(() => {
     if (
-      item.pathology_test_type !== "PDL1" ||
+      item.order_type !== "PDL1" ||
       !pdl1AnalysisId ||
       (pdl1AnalysisStatus !== "PENDING" && pdl1AnalysisStatus !== "RUNNING")
     ) return;
@@ -360,7 +360,7 @@ function WorkArea({
     void refresh();
     const timer = window.setInterval(() => { void refresh(); }, 3000);
     return () => { cancelled = true; window.clearInterval(timer); };
-  }, [item.case_id, item.pathology_test_type, pdl1AnalysisId, pdl1AnalysisStatus]);
+  }, [item.case_id, item.order_type, pdl1AnalysisId, pdl1AnalysisStatus]);
 
   async function handlePdl1Run() {
     if (!pdl1InputReady) return;
@@ -400,25 +400,20 @@ function WorkArea({
     }
   }
 
-  const currentTestType = item.pathology_test_type;
-  const isSubtype = currentTestType === "SUBTYPE";
+  const currentTestType = item.order_type;
+  const isPathologyGene = currentTestType === "PATHOLOGY_GENE";
   const isPdl1 = currentTestType === "PDL1";
-  const isGene = currentTestType === "GENE";
-  const isKnownTestType = isSubtype || isPdl1 || isGene;
-  const currentAnalysis = isSubtype
+  const isKnownTestType = isPathologyGene || isPdl1;
+  const currentAnalysis = isPathologyGene
     ? item.latest_ai_analysis
     : isPdl1
       ? pdl1
-      : isGene
-        ? item.latest_gene_analysis
-        : null;
-  const expectedAnalysisType = isSubtype
+      : null;
+  const expectedAnalysisType = isPathologyGene
     ? "PATHOLOGY_GENE_ANALYSIS"
     : isPdl1
       ? "PDL1_ANALYSIS"
-      : isGene
-        ? "PATHOLOGY_GENE_ANALYSIS"
-        : null;
+      : null;
   const alreadySubmitted =
     reviewSubmitted ||
     item.diagnostic_review_status === "PENDING" ||
@@ -429,20 +424,16 @@ function WorkArea({
     item.workflow_status !== "REVIEW_COMPLETED" &&
     !alreadySubmitted &&
     !submittingReview;
-  const testTitle = isSubtype
-    ? "아형분류 검사"
+  const testTitle = isPathologyGene
+    ? "조직·유전자 검사"
     : isPdl1
       ? "PD-L1 검사"
-      : isGene
-        ? "유전자 검사"
-        : "검사 종류 미확인";
-  const testDescription = isSubtype
-    ? "LUAD / LUSC 아형 분류"
+      : "검사 종류 미확인";
+  const testDescription = isPathologyGene
+    ? "조직·유전자 분석"
     : isPdl1
       ? "PD-L1 TPS 분석"
-      : isGene
-        ? "8개 유전자 변이 분석"
-        : "현재 오더의 검사 종류를 확인할 수 없습니다.";
+      : "현재 오더의 검사 종류를 확인할 수 없습니다.";
   const workflowSteps = [
     {
       label: "조직데이터",
@@ -625,7 +616,7 @@ function WorkArea({
         </section>
         ) : null}
 
-        {isSubtype ? (
+        {isPathologyGene ? (
         <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <div className="flex items-center justify-between">
             <div>
@@ -713,7 +704,7 @@ function WorkArea({
           </section>
         ) : null}
 
-        {isGene ? (
+        {isPathologyGene ? (
         <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
           <div className="flex justify-between">
             <div>
@@ -778,7 +769,7 @@ function WorkArea({
               </button>
             </div>
 
-            {isSubtype && pathologyResult ? (
+            {isPathologyGene && pathologyResult ? (
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
                 {[
                   [
@@ -828,7 +819,7 @@ function WorkArea({
               </dl>
             ) : null}
 
-            {isGene && geneResults.length > 0 ? (
+            {isPathologyGene && geneResults.length > 0 ? (
               <dl className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
                 {geneTargets.map((gene) => {
                   const result = geneResults.find(
@@ -911,11 +902,11 @@ function WorkArea({
                     id="pathology-result-title"
                     className="text-lg font-bold text-[#3446B8]"
                   >
-                    {isSubtype
-                      ? "아형분류 AI 결과"
+                    {isPathologyGene
+                      ? "조직·유전자 AI 결과"
                       : isPdl1
                         ? "PD-L1 AI 결과"
-                        : "유전자 AI 결과"}
+                        : "AI 결과"}
                   </h2>
 
                   <span className="rounded-md bg-[#F1F3FF] px-2 py-1 text-[11px] font-semibold text-[#3446B8]">
@@ -940,7 +931,7 @@ function WorkArea({
             </header>
 
             <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5 sm:px-6">
-              {isSubtype ? (
+              {isPathologyGene ? (
                 pathologyResult ? (
                   <>
                     <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
@@ -1016,7 +1007,7 @@ function WorkArea({
                 )
               ) : null}
 
-        {isGene ? (
+        {isPathologyGene ? (
                 geneResults.length > 0 ? (
                   <dl className="grid gap-2 sm:grid-cols-2">
                     {geneTargets.map((gene) => {
@@ -1133,7 +1124,7 @@ export default function PathologyDashboardPage() {
     void fetchPathologyWorkstation({
       page,
 
-     pathologyTestType:
+     orderType:
       tab === "worklist" &&
       examFilter !== "ALL"
         ? examFilter
@@ -1368,17 +1359,14 @@ export default function PathologyDashboardPage() {
                           전체
                         </option>
 
-                        <option value="SUBTYPE">
-                          아형분류 검사
+                        <option value="PATHOLOGY_GENE">
+                          조직·유전자 검사
                         </option>
 
                         <option value="PDL1">
                           PD-L1 검사
                         </option>
 
-                        <option value="GENE">
-                          유전자 검사
-                        </option>
                       </select>
                     </label>
 

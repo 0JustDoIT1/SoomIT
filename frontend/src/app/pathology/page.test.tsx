@@ -127,9 +127,9 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
       body_site: "LUNG",
       status: "READY",
     },
-    pathology_test_type: "SUBTYPE",
-    pathology_test_type_label: "아형분류 검사",
-    current_exam_or_task: "아형분류 검사",
+    order_type: "PATHOLOGY_GENE",
+    order_type_label: "조직·유전자 검사",
+    current_exam_or_task: "조직·유전자 검사",
     task_type: "PATHOLOGY_ANALYSIS",
     status: "COMPLETED",
     priority: "ROUTINE",
@@ -171,8 +171,8 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
       id: "exam-1",
       status: "COMPLETED",
       priority: "ROUTINE",
-      pathology_test_type: "SUBTYPE",
-      pathology_test_type_label: "아형분류 검사",
+      order_type: "PATHOLOGY_GENE",
+      order_type_label: "조직·유전자 검사",
       created_at: "2026-01-01T00:00:00Z",
     },
     workflow_status: "AI_COMPLETED",
@@ -204,7 +204,7 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
   expect(screen.getByText("Slide")).toBeInTheDocument();
 
   const workflow = screen.getByRole("list", {
-    name: "아형분류 검사 workflow",
+    name: "조직·유전자 검사 workflow",
   });
   for (const step of ["조직데이터", "AI 분석", "AI 분석 결과", "의사에게 제출"]) {
     expect(within(workflow).getByText(step)).toBeInTheDocument();
@@ -218,5 +218,5 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
 
   const resultButtons = screen.getAllByRole("button", { name: "AI 결과 보기" });
   await userEvent.click(resultButtons[resultButtons.length - 1]);
-  expect(screen.getByRole("dialog", { name: "아형분류 AI 결과" })).toBeInTheDocument();
+  expect(screen.getByRole("dialog", { name: "조직·유전자 AI 결과" })).toBeInTheDocument();
 });

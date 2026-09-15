@@ -11,8 +11,8 @@ export type PathologyWorkstationItem = {
   patient: { id: string; name: string; patient_code: string; birth_date: string; sex: string };
   case: { id: string; case_code: string; current_stage: string; case_status: string };
   specimen: { id: string; specimen_code: string; specimen_type: string; body_site: string | null; status: string } | null;
-  pathology_test_type: "SUBTYPE" | "PDL1" | "GENE" | null;
-  pathology_test_type_label: string | null;
+  order_type: "PATHOLOGY_GENE" | "PDL1" | null;
+  order_type_label: string | null;
   current_exam_or_task: string;
   task_type: string;
   status: string;
@@ -36,8 +36,8 @@ export type PathologyWorkstationItem = {
     id: string;
     status: string;
     priority: string;
-    pathology_test_type: "SUBTYPE" | "PDL1" | "GENE" | null;
-    pathology_test_type_label: string | null;
+    order_type: "PATHOLOGY_GENE" | "PDL1" | null;
+    order_type_label: string | null;
     created_at: string;
   } | null;
   workflow_status: PathologyWorkflowStatus;
@@ -69,7 +69,7 @@ export type PathologyReviewSubmission = {
 type PathologyWorkstationParams = {
   page: number;
   workflowStatus?: string;
-  pathologyTestType?: string;
+  orderType?: string;
   assignedTo?: string;
   signal?: AbortSignal;
 };
@@ -105,13 +105,13 @@ async function readJson<T>(response: Response): Promise<T> {
 export async function fetchPathologyWorkstation({
   page,
   workflowStatus,
-  pathologyTestType,
+  orderType,
   assignedTo,
   signal,
 }: PathologyWorkstationParams) {
   const params = new URLSearchParams({ page: String(page) });
   if (workflowStatus) params.set("workflow_status", workflowStatus);
-  if (pathologyTestType) params.set("pathology_test_type", pathologyTestType);
+  if (orderType) params.set("order_type", orderType);
   if (assignedTo) params.set("assigned_to", assignedTo);
   const response = await staffAuthenticatedFetch(
     url(`/api/pathology/workstation/?${params.toString()}`),

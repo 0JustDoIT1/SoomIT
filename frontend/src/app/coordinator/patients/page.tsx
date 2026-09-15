@@ -610,7 +610,7 @@ export default function PatientsPage() {
                     onChange={(e) =>
                       setCreateForm({
                         ...createForm,
-                        patient_code: e.target.value,
+                        patient_code: e.target.value.replace(/[^A-Za-z0-9]/g, ""),
                       })
                     }
                     placeholder="예: P0003"
@@ -680,8 +680,11 @@ export default function PatientsPage() {
                             months: "flex",
                             month: "space-y-3",
                             month_caption: "flex h-8 items-center justify-center",
-                            dropdowns: "flex flex-row-reverse items-center gap-2",
-                            dropdown: "rounded-md border border-slate-200 bg-white px-2 py-1 text-sm",
+                            dropdowns: "flex items-center gap-2",
+                            dropdown_root: "relative inline-flex",
+                            dropdown: "absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0",
+                            caption_label: "inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-sm",
+                            chevron: "ml-1",
                             nav: "hidden",
                             month_grid: "border-collapse",
                             weekdays: "border-b border-slate-100",
@@ -723,10 +726,10 @@ export default function PatientsPage() {
                     onChange={(e) =>
                       setCreateForm({
                         ...createForm,
-                        phone_number: e.target.value,
+                        phone_number: e.target.value.replace(/\D/g, ""),
                       })
                     }
-                    placeholder="예: 010-1234-5678"
+                    placeholder="예: 01012345678"
                     className={inputClassName}
                   />
                 </FormField>
@@ -1024,7 +1027,7 @@ export default function PatientsPage() {
                     onChange={(e) =>
                       setUpdateForm({
                         ...updateForm,
-                        phone_number: e.target.value,
+                        phone_number: e.target.value.replace(/\D/g, ""),
                       })
                     }
                     className={inputClassName}
