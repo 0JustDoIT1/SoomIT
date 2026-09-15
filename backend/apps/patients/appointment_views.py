@@ -6,8 +6,30 @@ from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from .appointment_serializers import AppointmentCancelSerializer, AppointmentSerializer
-from .models import Appointment
+from .appointment_serializers import (
+    AppointmentCancelSerializer,
+    AppointmentRequestRejectSerializer,
+    AppointmentRequestSerializer,
+    AppointmentSerializer,
+)
+from .models import Appointment, AppointmentRequest
+
+
+def cancel_appointment(appointment, user, cancellation_reason):
+    appointment.appointment_status = Appointment.AppointmentStatus.CANCELLED
+    appointment.cancelled_at = timezone.now()
+    appointment.cancellation_reason = cancellation_reason
+    if user is not None:
+        appointment.cancelled_by_user = user
+    appointment.save(
+        update_fields=[
+            "appointment_status",
+            "cancelled_at",
+            "cancellation_reason",
+            "cancelled_by_user",
+            "updated_at",
+        ]
+    )
 
 
 # 원무과 - 예약 목록 조회
@@ -129,27 +151,113 @@ class AppointmentCancelAPIView(APIView):
 
         serializer.is_valid(raise_exception=True)
 
-        appointment.appointment_status = Appointment.AppointmentStatus.CANCELLED
-        appointment.cancelled_at = timezone.now()
-        appointment.cancellation_reason = (
-            serializer.validated_data["cancellation_reason"]
-        )
-
-        # 로그인 기능 연결 전에는 null 허용
-        if request.user.is_authenticated:
-            appointment.cancelled_by_user = request.user
-
-        appointment.save(
-            update_fields=[
-                "appointment_status",
-                "cancelled_at",
-                "cancellation_reason",
-                "cancelled_by_user",
-                "updated_at",
-            ]
+        cancel_appointment(
+            appointment,
+            request.user if request.user.is_authenticated else None,
+            serializer.validated_data["cancellation_reason"],
         )
 
         return Response(
             AppointmentSerializer(appointment).data,
             status=status.HTTP_200_OK,
         )
+
+
+class AppointmentRequestListAPIView(ListAPIView):
+    serializer_class = AppointmentRequestSerializer
+
+    def get_queryset(self):
+        queryset = AppointmentRequest.objects.select_related(
+            "appointment__patient",
+            "requested_by_patient_account",
+            "processed_by_user",
+        ).order_by("-requested_at")
+        request_status = self.request.query_params.get("status")
+        if request_status:
+            queryset = queryset.filter(status=request_status)
+        return queryset
+
+
+class AppointmentRequestDetailAPIView(RetrieveAPIView):
+    queryset = AppointmentRequest.objects.select_related(
+        "appointment__patient",
+        "requested_by_patient_account",
+        "processed_by_user",
+    )
+    serializer_class = AppointmentRequestSerializer
+    lookup_field = "id"
+
+
+class AppointmentRequestApproveAPIView(APIView):
+    @transaction.atomic
+    def post(self, request, id):
+        try:
+            appointment_request = AppointmentRequest.objects.select_for_update().get(id=id)
+        except AppointmentRequest.DoesNotExist:
+            return Response({"detail": "예약 요청 정보를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+
+        if appointment_request.status != AppointmentRequest.Status.PENDING:
+            return Response({"detail": "요청중 상태에서만 승인할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        appointment = Appointment.objects.select_for_update().get(id=appointment_request.appointment_id)
+        if appointment.appointment_status == Appointment.AppointmentStatus.CANCELLED:
+            return Response({"detail": "이미 취소된 예약 요청은 승인할 수 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        processed_by_user = request.user if request.user.is_authenticated else None
+        if appointment_request.request_type == AppointmentRequest.RequestType.CHANGE:
+            requested_scheduled_at = appointment_request.requested_scheduled_at
+            if requested_scheduled_at is None:
+                return Response({"detail": "변경 희망 일시가 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+            active_statuses = [
+                Appointment.AppointmentStatus.REQUESTED,
+                Appointment.AppointmentStatus.CONFIRMED,
+            ]
+            if appointment.doctor_id and Appointment.objects.filter(
+                doctor_id=appointment.doctor_id,
+                scheduled_at=requested_scheduled_at,
+                appointment_status__in=active_statuses,
+            ).exclude(id=appointment.id).exists():
+                return Response({"detail": "해당 의료진의 같은 시간에 이미 예약이 존재합니다."}, status=status.HTTP_400_BAD_REQUEST)
+            if Appointment.objects.filter(
+                patient_id=appointment.patient_id,
+                scheduled_at=requested_scheduled_at,
+                appointment_status__in=active_statuses,
+            ).exclude(id=appointment.id).exists():
+                return Response({"detail": "같은 시간에 이미 예약이 존재합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+            appointment.scheduled_at = requested_scheduled_at
+            appointment.save(update_fields=["scheduled_at", "updated_at"])
+        elif appointment_request.request_type == AppointmentRequest.RequestType.CANCEL:
+            cancel_appointment(appointment, processed_by_user, appointment_request.reason)
+        else:
+            return Response({"detail": "처리할 수 없는 예약 요청입니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        appointment_request.status = AppointmentRequest.Status.APPROVED
+        appointment_request.processed_by_user = processed_by_user
+        appointment_request.processed_at = timezone.now()
+        appointment_request.save(update_fields=["status", "processed_by_user", "processed_at", "updated_at"])
+        return Response(AppointmentRequestSerializer(appointment_request).data, status=status.HTTP_200_OK)
+
+
+class AppointmentRequestRejectAPIView(APIView):
+    @transaction.atomic
+    def post(self, request, id):
+        serializer = AppointmentRequestRejectSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            appointment_request = AppointmentRequest.objects.select_for_update().get(id=id)
+        except AppointmentRequest.DoesNotExist:
+            return Response({"detail": "예약 요청 정보를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+
+        if appointment_request.status != AppointmentRequest.Status.PENDING:
+            return Response({"detail": "요청중 상태에서만 반려할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        appointment_request.status = AppointmentRequest.Status.REJECTED
+        appointment_request.processed_by_user = request.user if request.user.is_authenticated else None
+        appointment_request.processed_at = timezone.now()
+        appointment_request.rejection_reason = serializer.validated_data.get("rejection_reason")
+        appointment_request.save(
+            update_fields=["status", "processed_by_user", "processed_at", "rejection_reason", "updated_at"]
+        )
+        return Response(AppointmentRequestSerializer(appointment_request).data, status=status.HTTP_200_OK)

@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 from django.utils import timezone
 from django.db import transaction
+from django.db.models import Prefetch
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
@@ -28,6 +29,7 @@ from .models import (
     Patient,
     PatientAccount,
     Appointment,
+    AppointmentRequest,
     CurrentMedication,
     LabResult,
     PatientQuestionnaire,
@@ -234,6 +236,15 @@ class AppointmentListAPIView(ListAPIView):
                 "patient__hospital",
                 "doctor",
                 "examination_order",
+            )
+            .prefetch_related(
+                Prefetch(
+                    "appointment_requests",
+                    queryset=AppointmentRequest.objects.filter(
+                        status=AppointmentRequest.Status.PENDING,
+                    ).order_by("-requested_at"),
+                    to_attr="pending_appointment_requests",
+                )
             )
             .order_by("-scheduled_at")
         )
@@ -1078,7 +1089,7 @@ class PatientAppointmentCancelRequestAPIView(APIView):
             )
 
         try:
-            appointment = Appointment.objects.get(
+            appointment = Appointment.objects.select_for_update().get(
                 id=appointment_id,
                 patient=patient,
             )
@@ -1097,32 +1108,26 @@ class PatientAppointmentCancelRequestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if (
-            appointment.cancellation_requested_at is not None
-            or appointment.cancellation_requested_by_patient_account_id
-            is not None
-        ):
+        if AppointmentRequest.objects.filter(
+            appointment=appointment,
+            status=AppointmentRequest.Status.PENDING,
+        ).exists():
             return Response(
-                {"detail": "이미 취소 요청된 예약입니다."},
+                {"detail": "처리 대기 중인 예약 요청이 있습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        appointment.cancellation_requested_by_patient_account = (
-            patient_account
-        )
-        appointment.cancellation_requested_at = timezone.now()
-
-        appointment.save(
-            update_fields=[
-                "cancellation_requested_by_patient_account",
-                "cancellation_requested_at",
-                "updated_at",
-            ]
+        AppointmentRequest.objects.create(
+            appointment=appointment,
+            request_type=AppointmentRequest.RequestType.CANCEL,
+            original_scheduled_at=appointment.scheduled_at,
+            reason=serializer.validated_data.get("cancellation_reason"),
+            requested_by_patient_account=patient_account,
         )
 
         return Response(
             AppointmentSerializer(appointment).data,
-            status=status.HTTP_200_OK,
+            status=status.HTTP_201_CREATED,
         )
         
 
@@ -1131,8 +1136,7 @@ class PatientAppointmentCancelRequestAPIView(APIView):
     summary="환자 예약 변경 요청",
     description=(
         "환자가 기존 예약의 변경을 요청합니다. "
-        "새 예약은 REQUESTED 상태로 생성되고, "
-        "기존 예약은 취소 요청 상태로 기록됩니다."
+        "원무과 승인 전에는 기존 예약이 변경되지 않습니다."
     ),
     request=PatientAppointmentChangeRequestSerializer,
     responses=AppointmentSerializer,
@@ -1194,12 +1198,12 @@ class PatientAppointmentChangeRequestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if (
-            old_appointment.cancellation_requested_at is not None
-            or old_appointment.cancellation_requested_by_patient_account is not None
-        ):
+        if AppointmentRequest.objects.filter(
+            appointment=old_appointment,
+            status=AppointmentRequest.Status.PENDING,
+        ).exists():
             return Response(
-                {"detail": "이미 취소 요청된 예약은 변경할 수 없습니다."},
+                {"detail": "처리 대기 중인 예약 요청이 있습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         
@@ -1222,27 +1226,9 @@ class PatientAppointmentChangeRequestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        doctor = old_appointment.doctor
-
-        doctor_id = serializer.validated_data.get("doctor_id")
-        if doctor_id is not None:
-            try:
-                doctor = User.objects.get(
-                    id=doctor_id,
-                    department_role__role="DOCTOR",
-                )
-            except User.DoesNotExist:
-                return Response(
-                    {
-                        "doctor_id":
-                            "해당 의사를 찾을 수 없습니다."
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-                
-        if doctor is not None:
+        if old_appointment.doctor is not None:
             doctor_duplicate_exists = Appointment.objects.filter(
-                doctor=doctor,
+                doctor=old_appointment.doctor,
                 scheduled_at=new_scheduled_at,
                 appointment_status__in=[
                     Appointment.AppointmentStatus.REQUESTED,
@@ -1271,30 +1257,16 @@ class PatientAppointmentChangeRequestAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        new_appointment = Appointment.objects.create(
-            patient=patient,
-            doctor=doctor,
-            scheduled_at=new_scheduled_at,
-            appointment_status=Appointment.AppointmentStatus.REQUESTED,
-            visit_status=Appointment.VisitStatus.SCHEDULED,
-            created_by_type=Appointment.CreatedByType.PATIENT,
-            created_by_patient_account=patient_account,
-        )
-
-        old_appointment.cancellation_requested_by_patient_account = (
-            patient_account
-        )
-        old_appointment.cancellation_requested_at = timezone.now()
-
-        old_appointment.save(
-            update_fields=[
-                "cancellation_requested_by_patient_account",
-                "cancellation_requested_at",
-                "updated_at",
-            ]
+        AppointmentRequest.objects.create(
+            appointment=old_appointment,
+            request_type=AppointmentRequest.RequestType.CHANGE,
+            original_scheduled_at=old_appointment.scheduled_at,
+            requested_scheduled_at=new_scheduled_at,
+            reason=serializer.validated_data.get("reason"),
+            requested_by_patient_account=patient_account,
         )
 
         return Response(
-            AppointmentSerializer(new_appointment).data,
+            AppointmentSerializer(old_appointment).data,
             status=status.HTTP_201_CREATED,
         )

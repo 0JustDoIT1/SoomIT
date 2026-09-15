@@ -18,6 +18,21 @@ type Appointment = {
   updated_at: string;
 };
 
+type AppointmentRequest = {
+  id: string;
+  appointment: string;
+  patient_code: string;
+  patient_name: string;
+  request_type: "CHANGE" | "CANCEL";
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  original_scheduled_at: string;
+  requested_scheduled_at: string | null;
+  reason: string | null;
+  requested_at: string;
+  processed_at: string | null;
+  rejection_reason: string | null;
+};
+
 type ViewMode = "WEEK" | "MONTH";
 
 const TIME_SLOTS = [
@@ -43,6 +58,11 @@ export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [selectedAppointment, setSelectedAppointment] =
     useState<Appointment | null>(null);
+  const [appointmentRequests, setAppointmentRequests] = useState<
+    AppointmentRequest[]
+  >([]);
+  const [selectedAppointmentRequest, setSelectedAppointmentRequest] =
+    useState<AppointmentRequest | null>(null);
 
   const [viewMode, setViewMode] = useState<ViewMode>("WEEK");
 
@@ -52,12 +72,17 @@ export default function AppointmentsPage() {
   const [loading, setLoading] = useState(true);
   const [detailLoading, setDetailLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [requestActionLoading, setRequestActionLoading] = useState(false);
 
   const [error, setError] = useState("");
+  const [requestError, setRequestError] = useState("");
   const [actionError, setActionError] = useState("");
+  const [requestActionError, setRequestActionError] = useState("");
 
   const [isCancelMode, setIsCancelMode] = useState(false);
   const [cancellationReason, setCancellationReason] = useState("");
+  const [isRejectMode, setIsRejectMode] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState("");
 
   /*
    * 예약 목록 조회
@@ -88,10 +113,34 @@ export default function AppointmentsPage() {
     }
   };
 
+  const fetchAppointmentRequests = async () => {
+    try {
+      setRequestError("");
+
+      const response = await fetch(
+        "http://127.0.0.1:8000/api/appointments/requests/?status=PENDING"
+      );
+
+      if (!response.ok) {
+        throw new Error("예약 요청 목록을 불러오지 못했습니다.");
+      }
+
+      const data = await response.json();
+      setAppointmentRequests(data);
+    } catch (err) {
+      setRequestError(
+        err instanceof Error
+          ? err.message
+          : "예약 요청 목록 조회 중 오류가 발생했습니다."
+      );
+    }
+  };
+
   useEffect(() => {
     // Initial data synchronization with the existing appointments API.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchAppointments();
+    void fetchAppointments();
+    void fetchAppointmentRequests();
   }, []);
 
   /*
@@ -143,6 +192,134 @@ export default function AppointmentsPage() {
     setIsCancelMode(false);
     setCancellationReason("");
     setActionError("");
+  };
+
+  const openAppointmentRequestDetail = async (
+    appointmentRequestId: string
+  ) => {
+    try {
+      setDetailLoading(true);
+      setSelectedAppointment(null);
+      setRequestActionError("");
+      setIsRejectMode(false);
+      setRejectionReason("");
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/appointments/requests/${appointmentRequestId}/`
+      );
+
+      if (!response.ok) {
+        throw new Error("예약 요청 상세 정보를 불러오지 못했습니다.");
+      }
+
+      setSelectedAppointmentRequest(await response.json());
+    } catch (err) {
+      alert(
+        err instanceof Error
+          ? err.message
+          : "예약 요청 상세 조회 중 오류가 발생했습니다."
+      );
+    } finally {
+      setDetailLoading(false);
+    }
+  };
+
+  const closeAppointmentRequestDetail = () => {
+    if (requestActionLoading) return;
+
+    setSelectedAppointmentRequest(null);
+    setRequestActionError("");
+    setIsRejectMode(false);
+    setRejectionReason("");
+  };
+
+  const handleApproveAppointmentRequest = async () => {
+    if (!selectedAppointmentRequest) return;
+
+    try {
+      setRequestActionLoading(true);
+      setRequestActionError("");
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/appointments/requests/${selectedAppointmentRequest.id}/approve/`,
+        { method: "POST" }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await getApiErrorMessage(response, "예약 요청 승인에 실패했습니다.")
+        );
+      }
+
+      await Promise.all([
+        fetchAppointments(),
+        fetchAppointmentRequests(),
+      ]);
+      setSelectedAppointmentRequest(null);
+      setIsRejectMode(false);
+      setRejectionReason("");
+    } catch (err) {
+      setRequestActionError(
+        err instanceof Error
+          ? err.message
+          : "예약 요청 승인 중 오류가 발생했습니다."
+      );
+    } finally {
+      setRequestActionLoading(false);
+    }
+  };
+
+  const openRejectMode = () => {
+    setRequestActionError("");
+    setRejectionReason("");
+    setIsRejectMode(true);
+  };
+
+  const closeRejectMode = () => {
+    if (requestActionLoading) return;
+
+    setRequestActionError("");
+    setRejectionReason("");
+    setIsRejectMode(false);
+  };
+
+  const handleRejectAppointmentRequest = async () => {
+    if (!selectedAppointmentRequest) return;
+
+    try {
+      setRequestActionLoading(true);
+      setRequestActionError("");
+
+      const response = await fetch(
+        `http://127.0.0.1:8000/api/appointments/requests/${selectedAppointmentRequest.id}/reject/`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            rejection_reason: rejectionReason.trim() || null,
+          }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error(
+          await getApiErrorMessage(response, "예약 요청 반려에 실패했습니다.")
+        );
+      }
+
+      await fetchAppointmentRequests();
+      setSelectedAppointmentRequest(null);
+      setIsRejectMode(false);
+      setRejectionReason("");
+    } catch (err) {
+      setRequestActionError(
+        err instanceof Error
+          ? err.message
+          : "예약 요청 반려 중 오류가 발생했습니다."
+      );
+    } finally {
+      setRequestActionLoading(false);
+    }
   };
 
   /*
@@ -541,6 +718,71 @@ export default function AppointmentsPage() {
           </section>
         )}
 
+      {!loading && appointmentRequests.length > 0 && (
+        <section className="mt-6">
+          <div className="mb-3 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-700">
+              환자 예약 요청
+            </h2>
+
+            <span className="text-xs font-semibold text-pink-500">
+              {appointmentRequests.length}
+            </span>
+          </div>
+
+          <div className="divide-y divide-slate-100 border-y border-slate-200 bg-white">
+            {appointmentRequests.map((appointmentRequest) => (
+              <button
+                key={appointmentRequest.id}
+                type="button"
+                onClick={() =>
+                  openAppointmentRequestDetail(appointmentRequest.id)
+                }
+                className="grid w-full grid-cols-[120px_160px_130px_160px_1fr_90px] items-center gap-5 px-4 py-3 text-left transition hover:bg-pink-50/30"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">
+                    {appointmentRequest.patient_name}
+                  </p>
+
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    {appointmentRequest.patient_code}
+                  </p>
+                </div>
+
+                <div className="text-sm text-slate-600">
+                  {formatDateTime(appointmentRequest.original_scheduled_at)}
+                </div>
+
+                <div className="text-xs font-semibold text-slate-600">
+                  {getAppointmentRequestTypeLabel(appointmentRequest.request_type)}
+                </div>
+
+                <div className="text-sm text-slate-600">
+                  {appointmentRequest.request_type === "CHANGE"
+                    ? formatDateTime(appointmentRequest.requested_scheduled_at)
+                    : "-"}
+                </div>
+
+                <div className="text-xs text-slate-500">
+                  {formatDateTime(appointmentRequest.requested_at)}
+                </div>
+
+                <div className="text-right text-xs font-semibold text-pink-500">
+                  {getAppointmentRequestStatusLabel(appointmentRequest.status)}
+                </div>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {requestError && (
+        <div className="mt-6 border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+          {requestError}
+        </div>
+      )}
+
       {/* 로딩 */}
       {loading && (
         <div className="mt-6 border border-slate-200 bg-white p-8 text-sm text-slate-500">
@@ -938,22 +1180,210 @@ export default function AppointmentsPage() {
       )}
 
       {/* Drawer 배경 */}
-      {selectedAppointment && (
+      {(selectedAppointment || selectedAppointmentRequest) && (
         <div
           className="fixed inset-0 z-40 bg-black/20"
-          onClick={closeAppointmentDetail}
+          onClick={
+            selectedAppointmentRequest
+              ? closeAppointmentRequestDetail
+              : closeAppointmentDetail
+          }
         />
       )}
 
       {/* 예약 상세 Drawer */}
       <div
         className={`fixed right-0 top-0 z-50 h-full w-[440px] bg-white shadow-2xl transition-transform duration-300 ${
-          selectedAppointment
+          selectedAppointment || selectedAppointmentRequest
             ? "translate-x-0"
             : "translate-x-full"
         }`}
       >
-        {selectedAppointment && (
+        {selectedAppointmentRequest ? (
+          <div className="flex h-full flex-col">
+            <div className="border-b border-slate-100 px-6 py-5">
+              <div className="flex items-start justify-between">
+                <div>
+                  <p className="text-xs font-medium text-pink-500">
+                    예약 요청 상세
+                  </p>
+
+                  <h2 className="mt-1 text-xl font-bold text-slate-800">
+                    {selectedAppointmentRequest.patient_name}
+                  </h2>
+
+                  <p className="mt-1 text-sm text-slate-400">
+                    {selectedAppointmentRequest.patient_code}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={closeAppointmentRequestDetail}
+                  className="rounded-full px-3 py-2 text-xl text-slate-400 transition hover:bg-slate-100"
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-6 py-6">
+              {requestActionError && (
+                <div className="mb-5 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-600">
+                  {requestActionError}
+                </div>
+              )}
+
+              <div className="rounded-xl bg-pink-50/60 p-5">
+                <h3 className="mb-4 font-semibold text-slate-700">
+                  요청 정보
+                </h3>
+
+                <div className="space-y-4 text-sm">
+                  <DetailRow
+                    label="요청 유형"
+                    value={getAppointmentRequestTypeLabel(
+                      selectedAppointmentRequest.request_type
+                    )}
+                  />
+
+                  <DetailRow
+                    label="기존 예약일시"
+                    value={formatDateTime(
+                      selectedAppointmentRequest.original_scheduled_at
+                    )}
+                  />
+
+                  <DetailRow
+                    label="희망 예약일시"
+                    value={
+                      selectedAppointmentRequest.request_type === "CHANGE"
+                        ? formatDateTime(
+                            selectedAppointmentRequest.requested_scheduled_at
+                          )
+                        : "-"
+                    }
+                  />
+
+                  <DetailRow
+                    label="요청일시"
+                    value={formatDateTime(
+                      selectedAppointmentRequest.requested_at
+                    )}
+                  />
+
+                  <DetailRow
+                    label="요청 상태"
+                    value={getAppointmentRequestStatusLabel(
+                      selectedAppointmentRequest.status
+                    )}
+                  />
+
+                  <DetailRow
+                    label="요청 사유"
+                    value={selectedAppointmentRequest.reason ?? "-"}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-5 rounded-xl border border-slate-100 p-5">
+                <h3 className="font-semibold text-slate-700">
+                  환자 정보
+                </h3>
+
+                <div className="mt-4 space-y-4 text-sm">
+                  <DetailRow
+                    label="환자번호"
+                    value={selectedAppointmentRequest.patient_code}
+                  />
+
+                  <DetailRow
+                    label="환자명"
+                    value={selectedAppointmentRequest.patient_name}
+                  />
+                </div>
+              </div>
+
+              {selectedAppointmentRequest.status === "PENDING" &&
+                isRejectMode && (
+                  <div className="mt-5 rounded-xl border border-pink-100 bg-pink-50/40 p-5">
+                    <h3 className="font-semibold text-slate-700">
+                      예약 요청 반려
+                    </h3>
+
+                    <p className="mt-1 text-sm text-slate-400">
+                      반려 사유를 입력해주세요.
+                    </p>
+
+                    <textarea
+                      value={rejectionReason}
+                      onChange={(event) =>
+                        setRejectionReason(event.target.value)
+                      }
+                      placeholder="반려 사유를 입력하세요"
+                      rows={4}
+                      disabled={requestActionLoading}
+                      className="mt-4 w-full resize-none rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 disabled:bg-slate-100"
+                    />
+                  </div>
+                )}
+            </div>
+
+            <div className="border-t border-slate-100 p-5">
+              {selectedAppointmentRequest.status === "PENDING" ? (
+                isRejectMode ? (
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={closeRejectMode}
+                      disabled={requestActionLoading}
+                      className="flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      돌아가기
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleRejectAppointmentRequest}
+                      disabled={requestActionLoading}
+                      className="flex-1 rounded-xl border border-pink-200 px-4 py-3 text-sm font-semibold text-pink-600 transition hover:bg-pink-50 disabled:opacity-50"
+                    >
+                      {requestActionLoading ? "반려 처리 중..." : "반려 확정"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={openRejectMode}
+                      disabled={requestActionLoading}
+                      className="flex-1 rounded-xl border border-pink-200 px-4 py-3 text-sm font-medium text-pink-600 transition hover:bg-pink-50 disabled:opacity-50"
+                    >
+                      반려
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleApproveAppointmentRequest}
+                      disabled={requestActionLoading}
+                      className="flex-1 rounded-xl bg-pink-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-pink-600 disabled:opacity-50"
+                    >
+                      {requestActionLoading ? "승인 처리 중..." : "승인"}
+                    </button>
+                  </div>
+                )
+              ) : (
+                <button
+                  type="button"
+                  onClick={closeAppointmentRequestDetail}
+                  className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm font-medium text-slate-600 transition hover:bg-slate-50"
+                >
+                  닫기
+                </button>
+              )}
+            </div>
+          </div>
+        ) : selectedAppointment ? (
           <div className="flex h-full flex-col">
             {/* Header */}
             <div className="border-b border-slate-100 px-6 py-5">
@@ -1188,7 +1618,7 @@ export default function AppointmentsPage() {
               )}
             </div>
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   );
@@ -1230,6 +1660,30 @@ function getAppointmentStatusLabel(
   }
 
   return status;
+}
+
+function getAppointmentRequestTypeLabel(
+  requestType: AppointmentRequest["request_type"]
+) {
+  if (requestType === "CHANGE") {
+    return "예약 변경 요청";
+  }
+
+  return "예약 취소 요청";
+}
+
+function getAppointmentRequestStatusLabel(
+  requestStatus: AppointmentRequest["status"]
+) {
+  if (requestStatus === "PENDING") {
+    return "요청중";
+  }
+
+  if (requestStatus === "APPROVED") {
+    return "승인";
+  }
+
+  return "반려";
 }
 
 function getShortStatusLabel(status: string) {

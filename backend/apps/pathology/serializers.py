@@ -25,6 +25,16 @@ class PathologyGeneAnalysisRunSerializer(serializers.Serializer):
     wsi_id = serializers.UUIDField(required=False)
 
 
+class PathologyGeneInputUploadSerializer(serializers.Serializer):
+    wsi_file = serializers.FileField(write_only=True)
+
+    def validate_wsi_file(self, value):
+        if not value.name.lower().endswith(".svs"):
+            raise serializers.ValidationError(
+                "Pathology H&E WSI must be an SVS file."
+            )
+        return value
+
 class PDL1InputUploadSerializer(serializers.Serializer):
     wsi_file = serializers.FileField(write_only=True)
     annotation_file = serializers.FileField(write_only=True)

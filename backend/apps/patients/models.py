@@ -192,6 +192,45 @@ class Appointment(TimestampedUUIDModel):
         db_table = "appointments"
 
 
+class AppointmentRequest(TimestampedUUIDModel):
+    class RequestType(models.TextChoices):
+        CHANGE = "CHANGE", "변경"
+        CANCEL = "CANCEL", "취소"
+
+    class Status(models.TextChoices):
+        PENDING = "PENDING", "요청중"
+        APPROVED = "APPROVED", "승인"
+        REJECTED = "REJECTED", "반려"
+
+    appointment = models.ForeignKey(
+        Appointment, on_delete=models.PROTECT, related_name="appointment_requests"
+    )
+    request_type = models.CharField(max_length=10, choices=RequestType.choices)
+    status = models.CharField(max_length=10, choices=Status.choices, default=Status.PENDING)
+    original_scheduled_at = models.DateTimeField()
+    requested_scheduled_at = models.DateTimeField(null=True, blank=True)
+    reason = models.TextField(null=True, blank=True)
+    requested_by_patient_account = models.ForeignKey(
+        PatientAccount, on_delete=models.PROTECT, related_name="appointment_requests"
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    processed_by_user = models.ForeignKey(
+        User, on_delete=models.PROTECT, null=True, blank=True, related_name="processed_appointment_requests"
+    )
+    processed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(null=True, blank=True)
+
+    class Meta:
+        db_table = "appointment_requests"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["appointment"],
+                condition=Q(status="PENDING"),
+                name="uq_appointment_request_pending",
+            ),
+        ]
+
+
 # ── 2-7. medication_schedules ───────────────────────────────────
 # v1.6: prescription_id는 Regimen/Cycle 처방 Header(clinical.Prescription)를 가리킴.
 # "복용 알림 단위"이며 특정 약물 1개를 직접 의미하지 않음 → 실제 약물 연결은 MedicationScheduleItem이 담당.

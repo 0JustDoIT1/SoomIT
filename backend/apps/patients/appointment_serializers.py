@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import Appointment
+from .models import Appointment, AppointmentRequest
 
 
 # 원무과 - 예약 목록 / 상세 조회용
@@ -53,5 +53,38 @@ class AppointmentCancelSerializer(serializers.Serializer):
     cancellation_reason = serializers.CharField(
         required=True,
         allow_blank=False,
+        max_length=1000,
+    )
+
+
+class AppointmentRequestSerializer(serializers.ModelSerializer):
+    patient_code = serializers.CharField(source="appointment.patient.patient_code", read_only=True)
+    patient_name = serializers.CharField(source="appointment.patient.name", read_only=True)
+
+    class Meta:
+        model = AppointmentRequest
+        fields = [
+            "id",
+            "appointment",
+            "patient_code",
+            "patient_name",
+            "request_type",
+            "status",
+            "original_scheduled_at",
+            "requested_scheduled_at",
+            "reason",
+            "requested_by_patient_account",
+            "requested_at",
+            "processed_by_user",
+            "processed_at",
+            "rejection_reason",
+        ]
+
+
+class AppointmentRequestRejectSerializer(serializers.Serializer):
+    rejection_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
         max_length=1000,
     )

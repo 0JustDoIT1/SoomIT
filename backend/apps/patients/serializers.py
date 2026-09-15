@@ -7,6 +7,7 @@ from rest_framework import serializers
 
 from .models import (
     Appointment,
+    AppointmentRequest,
     CurrentMedication,
     LabResult,
     MedicationIntakeLog,
@@ -29,6 +30,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
     hospital_name = serializers.SerializerMethodField()
     order_type = serializers.SerializerMethodField()
     display_type = serializers.SerializerMethodField()
+    pending_request = serializers.SerializerMethodField()
 
     appointment_status_label = serializers.CharField(
         source="get_appointment_status_display",
@@ -64,6 +66,7 @@ class AppointmentSerializer(serializers.ModelSerializer):
             
             "cancellation_requested_at",
             "cancellation_requested_by_patient_account",
+            "pending_request",
         ]
 
     # 담당 의사 이름
@@ -109,6 +112,23 @@ class AppointmentSerializer(serializers.ModelSerializer):
 
         # examination_order가 없으면 일반 외래 예약
         return "외래 진료"
+
+    def get_pending_request(self, obj):
+        pending_requests = getattr(obj, "pending_appointment_requests", None)
+        request = pending_requests[0] if pending_requests else None
+        if pending_requests is None:
+            request = obj.appointment_requests.filter(
+                status=AppointmentRequest.Status.PENDING,
+            ).first()
+        if request is None:
+            return None
+        return {
+            "request_type": request.request_type,
+            "status": request.status,
+            "requested_scheduled_at": request.requested_scheduled_at,
+            "requested_at": request.requested_at,
+            "reason": request.reason,
+        }
     
     
 # ─────────────────────────────────────────────
@@ -133,12 +153,13 @@ class PatientAppointmentRequestSerializer(serializers.Serializer):
         return value
  
 class PatientAppointmentChangeRequestSerializer(serializers.Serializer):
-    doctor_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-    )
-
     new_scheduled_at = serializers.DateTimeField()
+    reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        max_length=1000,
+    )
 
     def validate_new_scheduled_at(self, value):
         from django.utils import timezone

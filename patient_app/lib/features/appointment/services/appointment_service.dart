@@ -18,6 +18,15 @@ class AppointmentService {
         .toList();
   }
 
+  Future<Appointment> getAppointment(String appointmentId) async {
+    final appointments = await getAppointments();
+
+    return appointments.firstWhere(
+      (appointment) => appointment.id == appointmentId,
+      orElse: () => throw StateError('Appointment not found.'),
+    );
+  }
+
   Future<Appointment> requestAppointment({
     String? doctorId,
     required DateTime scheduledAt,
@@ -38,12 +47,12 @@ class AppointmentService {
   // 예약 취소 요청
   Future<Appointment> requestCancellation({
     required String appointmentId,
-    String? cancellationReason,
+    required String cancellationReason,
   }) async {
     final response = await DioClient.instance.post(
       '/api/patients/appointments/$appointmentId/cancel-request/',
       data: {
-        'cancellation_reason': cancellationReason ?? '',
+        'cancellation_reason': cancellationReason,
       },
     );
 
@@ -55,14 +64,14 @@ class AppointmentService {
   // 예약 변경 요청
   Future<Appointment> requestChange({
     required String appointmentId,
-    String? doctorId,
     required DateTime newScheduledAt,
+    required String reason,
   }) async {
     final response = await DioClient.instance.post(
       '/api/patients/appointments/$appointmentId/change-request/',
       data: {
-        'doctor_id': doctorId,
         'new_scheduled_at': newScheduledAt.toIso8601String(),
+        'reason': reason,
       },
     );
 

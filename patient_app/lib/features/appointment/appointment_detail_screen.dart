@@ -32,18 +32,29 @@ class _AppointmentDetailScreenState
   bool get _isCancellationRequested =>
       _appointment.cancellationRequestedAt != null;
 
-  bool get _canRequestCancellation {
+  bool get _hasPendingRequest =>
+      _appointment.pendingRequest?.status == 'PENDING';
+
+  bool get _isPendingChangeRequest =>
+      _appointment.pendingRequest?.requestType == 'CHANGE';
+
+  bool get _isEligibleForCancellation {
     return _appointment.appointmentStatus != 'CANCELLED' &&
         !_isCancellationRequested &&
         _appointment.visitStatus == 'SCHEDULED';
   }
 
-  bool get _canRequestChange {
+  bool get _isEligibleForChange {
     return _appointment.appointmentStatus != 'CANCELLED' &&
         !_isCancellationRequested &&
         _appointment.visitStatus == 'SCHEDULED' &&
         _appointment.createdByType == 'PATIENT';
   }
+
+  bool get _canRequestCancellation =>
+      _isEligibleForCancellation && !_hasPendingRequest;
+
+  bool get _canRequestChange => _isEligibleForChange && !_hasPendingRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -70,7 +81,16 @@ class _AppointmentDetailScreenState
             _buildInfoCard(),
             const SizedBox(height: 24),
 
-            if (_isCancellationRequested)
+            if (_hasPendingRequest)
+              ...[
+                _buildPendingRequestCard(),
+                const SizedBox(height: 12),
+                if (_isEligibleForChange) _buildChangeButton(),
+                if (_isEligibleForChange && _isEligibleForCancellation)
+                  const SizedBox(height: 12),
+                if (_isEligibleForCancellation) _buildCancelButton(),
+              ]
+            else if (_isCancellationRequested)
               _buildCancellationRequestedCard()
             else ...[
               if (_canRequestChange) _buildChangeButton(),
@@ -109,13 +129,17 @@ class _AppointmentDetailScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            _isCancellationRequested
-                ? '취소 요청됨'
+            _hasPendingRequest
+                ? _isPendingChangeRequest
+                    ? '예약 변경 요청 처리중'
+                    : '예약 취소 요청 처리중'
+                : _isCancellationRequested
+                    ? '취소 요청됨'
                 : _appointment.appointmentStatusLabel,
             style: TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
-              color: _isCancellationRequested
+              color: _hasPendingRequest || _isCancellationRequested
                   ? const Color(0xFFF04452)
                   : const Color(0xFF2B66F6),
             ),
@@ -202,12 +226,52 @@ class _AppointmentDetailScreenState
     );
   }
 
+  Widget _buildPendingRequestCard() {
+    final request = _appointment.pendingRequest!;
+    final requestTypeLabel = _isPendingChangeRequest ? '예약 변경 요청' : '예약 취소 요청';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: const Color(0xFFF4D68A),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '$requestTypeLabel 처리중',
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF8A5A00),
+            ),
+          ),
+          if (request.requestedScheduledAt != null) ...[
+            const SizedBox(height: 8),
+            Text('희망 예약일시: ${_formatDate(request.requestedScheduledAt!)} ${_formatTime(request.requestedScheduledAt!)}'),
+          ],
+          const SizedBox(height: 6),
+          Text('요청일시: ${_formatDate(request.requestedAt)} ${_formatTime(request.requestedAt)}'),
+          if (request.reason != null && request.reason!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text('요청 사유: ${request.reason}'),
+          ],
+        ],
+      ),
+    );
+  }
+
   Widget _buildChangeButton() {
     return SizedBox(
       width: double.infinity,
       height: 52,
       child: ElevatedButton(
-        onPressed: _isSubmitting
+        onPressed: _isSubmitting || _hasPendingRequest
             ? null
             : _requestAppointmentChange,
         style: ElevatedButton.styleFrom(
@@ -243,7 +307,7 @@ class _AppointmentDetailScreenState
       width: double.infinity,
       height: 52,
       child: OutlinedButton(
-        onPressed: _isSubmitting
+        onPressed: _isSubmitting || _hasPendingRequest
             ? null
             : _showCancellationConfirmDialog,
         style: OutlinedButton.styleFrom(
@@ -320,16 +384,28 @@ class _AppointmentDetailScreenState
       return;
     }
 
+    final reason = await _showRequestReasonDialog(
+      title: '예약 변경 요청 사유',
+      hintText: '변경 요청 사유를 입력해 주세요.',
+    );
+
+    if (reason == null || !mounted) {
+      return;
+    }
+
     setState(() {
       _isSubmitting = true;
     });
 
     try {
-      final newAppointment =
-          await _appointmentService.requestChange(
+      await _appointmentService.requestChange(
         appointmentId: _appointment.id,
-        doctorId: _appointment.doctorId,
         newScheduledAt: newScheduledAt,
+        reason: reason,
+      );
+
+      final updatedAppointment = await _appointmentService.getAppointment(
+        _appointment.id,
       );
 
       if (!mounted) {
@@ -342,10 +418,9 @@ class _AppointmentDetailScreenState
         ),
       );
 
-      Navigator.pop(
-        context,
-        newAppointment,
-      );
+      setState(() {
+        _appointment = updatedAppointment;
+      });
     } catch (e) {
       if (!mounted) {
         return;
@@ -366,6 +441,15 @@ class _AppointmentDetailScreenState
   }
 
   Future<void> _showCancellationConfirmDialog() async {
+    final reason = await _showRequestReasonDialog(
+      title: '예약 취소 요청 사유',
+      hintText: '취소 요청 사유를 입력해 주세요.',
+    );
+
+    if (reason == null || !mounted) {
+      return;
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) {
@@ -403,19 +487,22 @@ class _AppointmentDetailScreenState
       return;
     }
 
-    await _requestCancellation();
+    await _requestCancellation(reason);
   }
 
-  Future<void> _requestCancellation() async {
+  Future<void> _requestCancellation(String cancellationReason) async {
     setState(() {
       _isSubmitting = true;
     });
 
     try {
-      final updatedAppointment =
-          await _appointmentService.requestCancellation(
+      await _appointmentService.requestCancellation(
         appointmentId: _appointment.id,
-        cancellationReason: '환자 요청',
+        cancellationReason: cancellationReason,
+      );
+
+      final updatedAppointment = await _appointmentService.getAppointment(
+        _appointment.id,
       );
 
       if (!mounted) {
@@ -448,6 +535,54 @@ class _AppointmentDetailScreenState
         });
       }
     }
+  }
+
+  Future<String?> _showRequestReasonDialog({
+    required String title,
+    required String hintText,
+  }) async {
+    final controller = TextEditingController();
+
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(title),
+              content: TextField(
+                controller: controller,
+                autofocus: true,
+                maxLength: 1000,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: hintText,
+                ),
+                onChanged: (_) => setDialogState(() {}),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('취소'),
+                ),
+                TextButton(
+                  onPressed: controller.text.trim().isEmpty
+                      ? null
+                      : () => Navigator.pop(
+                            dialogContext,
+                            controller.text.trim(),
+                          ),
+                  child: const Text('확인'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    controller.dispose();
+    return reason;
   }
 
   Widget _buildInfoRow(
