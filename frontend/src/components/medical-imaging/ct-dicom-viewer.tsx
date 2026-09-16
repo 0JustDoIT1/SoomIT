@@ -204,7 +204,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
           );
         }
       }
-      core.getRenderingEngines().forEach((engine) => engine.render());
+      core.getRenderingEngines()?.forEach((engine) => engine.render());
     })();
     return () => {
       disposed = true;

@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 
 export type ImageAsset = {
   id: string;
+  workflow_stage?: string;
   image_type?: string;
   file_format?: string;
   acquired_at?: string | null;
