@@ -1,8 +1,6 @@
 name: soomit-infra
 
 x-django-base: &django-base
-  build:
-    context: ../backend
   image: soomit-backend:local
   restart: unless-stopped
   env_file:
@@ -41,6 +39,8 @@ services:
 
   django:
     <<: *django-base
+    build:
+      context: ../backend
     volumes:
       - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command:
