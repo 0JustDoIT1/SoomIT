@@ -1,5 +1,7 @@
 import { API_BASE_URL } from "@/lib/api";
 
+export { API_BASE_URL };
+
 export type ExaminationOrderType = "CT" | "PET_CT_TNM" | "PATHOLOGY_GENE" | "PDL1";
 export type ExaminationOrderPriority = "NORMAL" | "URGENT";
 export type ExaminationOrderStatus = "ORDERED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
