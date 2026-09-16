@@ -16,7 +16,12 @@ def _format_context(chunks):
 
 def _format_sources(chunks):
     return [
-        {"document": chunk.document.title, "chunk_index": chunk.chunk_index, "distance": chunk.distance}
+        {
+            "document": chunk.document.title,
+            "chunk_index": chunk.chunk_index,
+            "distance": chunk.distance,
+            "excerpt": chunk.content[:400],
+        }
         for chunk in chunks
     ]
 

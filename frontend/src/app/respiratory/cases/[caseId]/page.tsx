@@ -27,6 +27,7 @@ import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
 import { CaseImageEvidence } from "./case-image-evidence";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
+import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
@@ -1600,6 +1601,7 @@ export default function RespiratoryCaseDetailPage() {
           </div>
         ) : selectedInfoMenu === "AI_SUMMARY" ? (
           <div className="space-y-3">
+            <KnowledgeRagPanel apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} />
             <AiSummaryPanel
               key={`${caseId}-${aiReviewRequest?.requestId ?? "default"}`}
               aiResults={tnmAnalysisResults}

@@ -18,6 +18,9 @@ from .serializers import (
 )
 
 
+RAG_UI_MAX_TOKENS = 180
+
+
 class AskKnowledgeAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -30,6 +33,7 @@ class AskKnowledgeAPIView(APIView):
             result = answer_with_rag(
                 request_serializer.validated_data["question"],
                 top_k=request_serializer.validated_data["top_k"],
+                max_tokens=RAG_UI_MAX_TOKENS,
             )
         except (EmbeddingServiceError, MedgemmaServiceError) as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)

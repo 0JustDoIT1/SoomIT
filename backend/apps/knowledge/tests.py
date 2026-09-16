@@ -105,6 +105,7 @@ class RagTests(TestCase):
         self.assertEqual(result["answer"], "이 문서에 따르면 답은 이렇습니다.")
         self.assertEqual(len(result["sources"]), 1)
         self.assertEqual(result["sources"][0]["document"], "테스트 문서")
+        self.assertEqual(result["sources"][0]["excerpt"], "EGFR 변이 관련 치료 지침입니다.")
 
         messages = mock_chat.call_args.args[0]
         self.assertEqual(messages[0]["role"], "system")
@@ -153,7 +154,7 @@ class AskKnowledgeAPITests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["answer"], "답변입니다.")
         self.assertEqual(response.data["sources"][0]["document"], "테스트 문서")
-        mock_answer.assert_called_once_with("EGFR 치료는?", top_k=5)
+        mock_answer.assert_called_once_with("EGFR 치료는?", top_k=5, max_tokens=180)
 
     @patch("apps.knowledge.views.answer_with_rag")
     def test_medgemma_failure_returns_502(self, mock_answer):

@@ -12,6 +12,7 @@ class KnowledgeSourceSerializer(serializers.Serializer):
     document = serializers.CharField()
     chunk_index = serializers.IntegerField()
     distance = serializers.FloatField()
+    excerpt = serializers.CharField(required=False)
 
 
 class AskKnowledgeResponseSerializer(serializers.Serializer):
