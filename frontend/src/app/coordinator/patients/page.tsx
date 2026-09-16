@@ -93,6 +93,10 @@ export default function PatientsPage() {
     useState<PatientCreateForm>(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [patientAccountId, setPatientAccountId] = useState<string | null>(null);
+  const [appLookupStatus, setAppLookupStatus] = useState<"IDLE" | "NOT_FOUND" | "UNLINKED" | "LINKED">("IDLE");
+  const [appLookupLoading, setAppLookupLoading] = useState(false);
+  const [appLookupMessage, setAppLookupMessage] = useState("");
   const [birthDatePickerOpen, setBirthDatePickerOpen] = useState(false);
   const [birthDatePickerMonth, setBirthDatePickerMonth] = useState(new Date());
   const [postcodeReady, setPostcodeReady] = useState(false);
@@ -189,7 +193,35 @@ export default function PatientsPage() {
     setIsUpdateOpen(false);
     setCreateError("");
     setCreateForm(initialCreateForm);
+    setPatientAccountId(null);
+    setAppLookupStatus("IDLE");
+    setAppLookupMessage("");
     setIsCreateOpen(true);
+  };
+
+  const lookupAppMember = async () => {
+    const phone = createForm.phone_number.trim();
+    if (!phone) { setAppLookupMessage("연락처를 먼저 입력해주세요."); return; }
+    setAppLookupLoading(true); setAppLookupMessage("");
+    try {
+      const response = await fetch("http://127.0.0.1:8000/api/patients/app-accounts/lookup/", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone_number: phone }),
+      });
+      if (!response.ok) throw new Error("앱 회원 조회에 실패했습니다.");
+      const data = await response.json();
+      if (data.status === "NOT_FOUND") {
+        setPatientAccountId(null); setAppLookupStatus("NOT_FOUND"); setAppLookupMessage("앱 회원 정보 없음"); return;
+      }
+      if (data.status === "LINKED") {
+        setPatientAccountId(null); setAppLookupStatus("LINKED");
+        setAppLookupMessage(`이미 등록된 환자: ${data.patient.name} (${data.patient.patient_code})`); return;
+      }
+      setPatientAccountId(data.patient_account_id);
+      setAppLookupStatus("UNLINKED"); setAppLookupMessage("앱 정보 연동");
+      setCreateForm((current) => ({ ...current, name: data.name, birth_date: data.birth_date, sex: data.sex, phone_number: data.phone_number, postal_code: data.postal_code, address: data.address ?? "", address_detail: data.address_detail ?? "" }));
+    } catch (err) { setAppLookupMessage(err instanceof Error ? err.message : "앱 회원 조회에 실패했습니다."); }
+    finally { setAppLookupLoading(false); }
   };
   const closeCreateDrawer = () => {
     if (createLoading) return;
@@ -203,6 +235,10 @@ export default function PatientsPage() {
     e: FormEvent<HTMLFormElement>
   ) => {
     e.preventDefault();
+    if (appLookupStatus === "LINKED") {
+      setCreateError("이미 등록된 환자입니다. 신규 등록할 수 없습니다.");
+      return;
+    }
     if (
       !createForm.patient_code.trim() ||
       !createForm.name.trim() ||
@@ -234,6 +270,7 @@ export default function PatientsPage() {
             address: createForm.address.trim(),
             address_detail: createForm.address_detail.trim() || null,
             postal_code: createForm.postal_code.trim(),
+            ...(patientAccountId ? { patient_account_id: patientAccountId } : {}),
           }),
         }
       );
@@ -443,7 +480,8 @@ export default function PatientsPage() {
         {/* 검색 / 필터 */}
         <div className="mt-6 flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
           <div className="flex-1">
-            <input
+                   <div className="flex gap-2">
+                   <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
@@ -720,18 +758,17 @@ export default function PatientsPage() {
                   </select>
                 </FormField>
                 <FormField label="연락처" required>
+                  <div className="flex gap-2">
                   <input
                     type="text"
                     value={createForm.phone_number}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        phone_number: e.target.value.replace(/\D/g, ""),
-                      })
-                    }
+                     onChange={(e) => { setCreateForm({ ...createForm, phone_number: e.target.value.replace(/\D/g, "") }); setPatientAccountId(null); setAppLookupStatus("IDLE"); setAppLookupMessage(""); }}
                     placeholder="예: 01012345678"
-                    className={inputClassName}
-                  />
+                     className={`${inputClassName} flex-1`}
+                   />
+                   <button type="button" onClick={lookupAppMember} disabled={appLookupLoading} className="rounded-lg border border-violet-200 px-3 text-sm font-semibold text-violet-700 disabled:opacity-50">{appLookupLoading ? "조회 중" : "앱 회원 조회"}</button>
+                   </div>
+                   {appLookupMessage && <p className={`mt-1.5 text-xs ${appLookupStatus === "LINKED" ? "text-red-600" : "text-violet-700"}`}>{appLookupMessage}</p>}
                 </FormField>
                 <FormField label="주소" required>
                   <div className="flex gap-2">
@@ -788,7 +825,7 @@ export default function PatientsPage() {
               submitLabel={
                 createLoading ? "등록 중..." : "환자 등록"
               }
-              loading={createLoading}
+               loading={createLoading || appLookupStatus === "LINKED"}
               onCancel={closeCreateDrawer}
             />
           </form>

@@ -533,6 +533,7 @@ class PatientDetailSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────
 class PatientCreateSerializer(serializers.ModelSerializer):
     postal_code = serializers.CharField(max_length=10, required=True)
+    patient_account_id = serializers.UUIDField(required=False, write_only=True)
 
     class Meta:
         model = Patient
@@ -545,7 +546,26 @@ class PatientCreateSerializer(serializers.ModelSerializer):
             "address",
             "address_detail",
             "postal_code",
+            "patient_account_id",
         ]
+
+
+class PatientAccountRegistrationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientAccount
+        fields = [
+            "name",
+            "birth_date",
+            "sex",
+            "phone_number",
+            "postal_code",
+            "address",
+            "address_detail",
+        ]
+
+
+class PatientAccountLookupSerializer(serializers.Serializer):
+    phone_number = serializers.CharField(max_length=20)
 
 
 # ─────────────────────────────────────────────

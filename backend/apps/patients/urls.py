@@ -9,6 +9,8 @@ from .views import (
     ExaminationScheduleListAPIView,
     PatientDetailAPIView,
     PatientListAPIView,
+    PatientAccountLookupAPIView,
+    PatientAccountRegistrationAPIView,
     PatientProfileAPIView,
     PatientNotificationListAPIView,
     PatientNotificationReadAPIView,
@@ -27,6 +29,8 @@ from .views import (
 
 urlpatterns = [
     path("", PatientListAPIView.as_view(), name="patient-list"),
+    path("app-accounts/register/", PatientAccountRegistrationAPIView.as_view(), name="patient-account-register"),
+    path("app-accounts/lookup/", PatientAccountLookupAPIView.as_view(), name="patient-account-lookup"),
     
     # Flutter 환자 앱 - 예약 목록
     path(

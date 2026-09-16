@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'registration_complete_screen.dart';
 
 class PatientLinkScreen extends StatefulWidget {
-  const PatientLinkScreen({super.key});
+  final String patientAccountId;
+
+  const PatientLinkScreen({super.key, required this.patientAccountId});
 
   @override
   State<PatientLinkScreen> createState() =>

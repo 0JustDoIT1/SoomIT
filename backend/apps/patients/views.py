@@ -18,7 +18,7 @@ from rest_framework.generics import (
     ListCreateAPIView,
     RetrieveUpdateAPIView,
 )
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import Hospital, User
@@ -44,6 +44,8 @@ from .serializers import (
     ExaminationScheduleSerializer,
     LabResultSerializer,
     PatientCreateSerializer,
+    PatientAccountLookupSerializer,
+    PatientAccountRegistrationSerializer,
     PatientDetailSerializer,
     PatientProfileSerializer,
     PatientSerializer,
@@ -75,6 +77,63 @@ class PatientListAPIView(ListCreateAPIView):
         # POST /api/patients/
         return PatientCreateSerializer
 
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        hospital = Hospital.objects.first()
+        if hospital is None:
+            raise ValidationError({"hospital": "등록된 병원 정보가 없습니다."})
+
+        phone_number = serializer.validated_data["phone_number"]
+        normalized_phone = "".join(char for char in phone_number if char.isdigit())
+        phone_number_hash = hashlib.sha256(normalized_phone.encode("utf-8")).hexdigest()
+        patient_account_id = serializer.validated_data.pop("patient_account_id", None)
+
+        patient_account = None
+        if patient_account_id is not None:
+            try:
+                patient_account = PatientAccount.objects.select_for_update().get(
+                    id=patient_account_id,
+                )
+            except PatientAccount.DoesNotExist:
+                raise ValidationError({"patient_account_id": "앱 회원 정보를 찾을 수 없습니다."})
+
+            if patient_account.phone_number_hash != phone_number_hash:
+                raise ValidationError({"patient_account_id": "연락처가 일치하지 않습니다."})
+
+            if patient_account.patient_id is not None:
+                patient = patient_account.patient
+                return Response(
+                    {
+                        "detail": "이미 등록된 환자입니다.",
+                        "patient": PatientSerializer(patient).data,
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+        patient = serializer.save(hospital=hospital, phone_number_hash=phone_number_hash)
+
+        if patient_account is not None:
+            patient_account.patient = patient
+            patient_account.link_status = PatientAccount.LinkStatus.LINKED
+            patient_account.linked_at = timezone.now()
+            patient_account.linked_by_user = (
+                request.user if request.user.is_authenticated else None
+            )
+            patient_account.save(
+                update_fields=[
+                    "patient",
+                    "link_status",
+                    "linked_at",
+                    "linked_by_user",
+                    "updated_at",
+                ]
+            )
+
+        return Response(PatientSerializer(patient).data, status=status.HTTP_201_CREATED)
+
     def perform_create(self, serializer):
         # 로그인/병원 연동 전 개발용 처리
         hospital = Hospital.objects.first()
@@ -97,6 +156,68 @@ class PatientListAPIView(ListCreateAPIView):
         serializer.save(
             hospital=hospital,
             phone_number_hash=phone_number_hash,
+        )
+
+
+class PatientAccountRegistrationAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = PatientAccountRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        phone_number = serializer.validated_data["phone_number"]
+        normalized_phone = "".join(char for char in phone_number if char.isdigit())
+        phone_number_hash = hashlib.sha256(normalized_phone.encode("utf-8")).hexdigest()
+        patient_account = serializer.save(
+            patient=None,
+            link_status=PatientAccount.LinkStatus.UNLINKED,
+            phone_number_hash=phone_number_hash,
+        )
+        return Response({"id": str(patient_account.id)}, status=status.HTTP_201_CREATED)
+
+
+class PatientAccountLookupAPIView(APIView):
+    def post(self, request):
+        serializer = PatientAccountLookupSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        normalized_phone = "".join(
+            char for char in serializer.validated_data["phone_number"] if char.isdigit()
+        )
+        phone_number_hash = hashlib.sha256(normalized_phone.encode("utf-8")).hexdigest()
+        patient_account = PatientAccount.objects.select_related("patient").filter(
+            phone_number_hash=phone_number_hash,
+        ).first()
+
+        if patient_account is None:
+            return Response({"status": "NOT_FOUND"})
+
+        if patient_account.patient_id is not None:
+            patient = patient_account.patient
+            return Response(
+                {
+                    "status": "LINKED",
+                    "patient": {
+                        "id": str(patient.id),
+                        "patient_code": patient.patient_code,
+                        "name": patient.name,
+                        "phone_number": patient.phone_number,
+                    },
+                }
+            )
+
+        return Response(
+            {
+                "status": "UNLINKED",
+                "patient_account_id": str(patient_account.id),
+                "name": patient_account.name,
+                "birth_date": patient_account.birth_date,
+                "sex": patient_account.sex,
+                "phone_number": patient_account.phone_number,
+                "postal_code": patient_account.postal_code,
+                "address": patient_account.address,
+                "address_detail": patient_account.address_detail,
+            }
         )
 
 

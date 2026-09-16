@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import '../../core/network/dio_client.dart';
 import 'patient_link_screen.dart';
 
 class ProfileRegistrationScreen extends StatefulWidget {
@@ -23,6 +24,7 @@ class _ProfileRegistrationScreenState
 
   DateTime? _birthDate;
   String? _sex;
+  bool _saving = false;
 
   @override
   void dispose() {
@@ -69,7 +71,7 @@ class _ProfileRegistrationScreenState
     );
   }
 
-  void _continue() {
+  Future<void> _continue() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_birthDate == null) {
@@ -90,13 +92,38 @@ class _ProfileRegistrationScreenState
       return;
     }
 
-    Navigator.of(context).push(
+    setState(() => _saving = true);
+    try {
+      final response = await DioClient.instance.post(
+        '/patients/app-accounts/register/',
+        data: {
+          'name': _nameController.text.trim(),
+          'birth_date': DateFormat('yyyy-MM-dd').format(_birthDate!),
+          'sex': _sex,
+          'phone_number': _phoneController.text.replaceAll(RegExp(r'[^0-9]'), ''),
+          'postal_code': _postalCodeController.text.trim(),
+          'address': _addressController.text.trim(),
+          'address_detail': _addressDetailController.text.trim(),
+        },
+      );
+      final accountId = response.data['id'] as String;
+      if (!mounted) return;
+      Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) {
-          return const PatientLinkScreen();
+          return PatientLinkScreen(patientAccountId: accountId);
         },
       ),
-    );
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('회원가입 저장에 실패했습니다. 다시 시도해주세요.')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _saving = false);
+    }
   }
 
   String? _requiredValidator(
@@ -366,7 +393,7 @@ class _ProfileRegistrationScreenState
               SizedBox(
                 height: 54,
                 child: FilledButton(
-                  onPressed: _continue,
+                  onPressed: _saving ? null : _continue,
                   style: FilledButton.styleFrom(
                     backgroundColor:
                         const Color(0xFF6D4FB3),
@@ -375,8 +402,8 @@ class _ProfileRegistrationScreenState
                           BorderRadius.circular(14),
                     ),
                   ),
-                  child: const Text(
-                    '다음',
+                  child: Text(
+                    _saving ? '저장 중...' : '다음',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
