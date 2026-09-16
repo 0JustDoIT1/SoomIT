@@ -5,6 +5,7 @@ import '../auth/services/patient_auth_service.dart';
 import '../home/models/patient_profile.dart';
 import '../home/services/profile_service.dart';
 import 'patient_info_screen.dart';
+import 'patient_qr_screen.dart';
 import 'notification_setting_screen.dart';
 import 'profile_edit_screen.dart';
 import 'questionnaire_history_screen.dart';
@@ -69,7 +70,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                 const SizedBox(height: 14),
 
-                _buildQuickMenu(),
+                _buildQuickMenu(profile),
 
                 const SizedBox(height: 14),
 
@@ -165,12 +166,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
               ],
             ),
           ),
-
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: Colors.white,
-            size: 28,
-          ),
         ],
       ),
     );
@@ -253,7 +248,27 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // ─────────────────────────────────────────────
   // QR / 프로필 / 알림
   // ─────────────────────────────────────────────
-  Widget _buildQuickMenu() {
+  void _openPatientQr(PatientProfile profile) {
+    if (profile.appLinkStatus != 'LINKED') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('환자코드를 연결한 후 QR을 사용할 수 있습니다.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) {
+          return PatientQrScreen(
+            patientName: profile.name,
+            patientCode: profile.patientCode,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildQuickMenu(PatientProfile profile) {
     final l10n = AppLocalizations.of(context);
 
     return Container(
@@ -270,7 +285,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
               icon: Icons.qr_code_2_rounded,
               title: l10n.qrCode,
               onTap: () {
-                // TODO: QR 코드 화면
+                _openPatientQr(profile);
               },
             ),
           ),

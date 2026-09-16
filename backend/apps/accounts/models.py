@@ -46,7 +46,6 @@ class Department(TimestampedUUIDModel):
 class DepartmentRole(TimestampedUUIDModel):
     class Role(models.TextChoices):
         DOCTOR = "DOCTOR", "의사"
-        NURSE = "NURSE", "간호사"
         TECHNOLOGIST = "TECHNOLOGIST", "방사선/임상병리사"
         MEDICAL_STAFF = "MEDICAL_STAFF", "의료행정직"
 

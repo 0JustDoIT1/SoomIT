@@ -584,8 +584,7 @@ export default function PatientsPage() {
         {/* 검색 / 필터 */}
         <div className="mt-6 flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
           <div className="flex-1">
-                   <div className="flex gap-2">
-                   <input
+            <input
               type="text"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}

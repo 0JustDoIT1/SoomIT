@@ -1,8 +1,6 @@
 name: soomit-infra
 
 x-django-base: &django-base
-  build:
-    context: ../backend
   image: soomit-backend:local
   restart: unless-stopped
   env_file:
@@ -41,6 +39,8 @@ services:
 
   django:
     <<: *django-base
+    build:
+      context: ../backend
     volumes:
       - ../backend/gcs-key.json:/app/gcs-key.json:ro
     command:
@@ -67,6 +67,7 @@ services:
       context: ../frontend
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL}
+        NEXT_PUBLIC_REALTIME_WS_URL: ${NEXT_PUBLIC_REALTIME_WS_URL:?Set NEXT_PUBLIC_REALTIME_WS_URL}
     image: soomit-frontend:local
     container_name: soomit-infra-nextjs
     restart: unless-stopped

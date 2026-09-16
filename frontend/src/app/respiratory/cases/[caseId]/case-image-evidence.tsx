@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 
-import { EvidenceViewerPanel, type ImageAsset } from "./evidence-viewer-panel";
+import { EvidenceViewerPanel, type ImageAsset, type XrayDetection } from "./evidence-viewer-panel";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
@@ -11,6 +11,12 @@ type CaseImageEvidenceProps = {
   authorizedFetch: AuthorizedFetch;
   caseId: string;
   stage: string;
+};
+
+type AiAnalysis = {
+  analysis_type?: string;
+  status?: string;
+  result_detail?: { result_payload?: { image?: { width?: number; height?: number }; detections?: unknown } };
 };
 
 function errorMessage(response: Response, fallback: string) {
@@ -27,6 +33,8 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [retryVersion, setRetryVersion] = useState(0);
+  const [detections, setDetections] = useState<XrayDetection[]>([]);
+  const [detectionImageSize, setDetectionImageSize] = useState<{ width: number; height: number } | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -36,9 +44,13 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       setLoading(true);
       setError("");
       try {
-        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/`, { signal: controller.signal });
+        const [response, aiResponse] = await Promise.all([
+          authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/`, { signal: controller.signal }),
+          authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
+        ]);
         if (!response.ok) throw new Error(await errorMessage(response, "영상 목록을 불러오지 못했습니다."));
         const payload: unknown = await response.json();
+        const aiPayload: unknown = aiResponse.ok ? await aiResponse.json() : [];
         const stageAssets = (Array.isArray(payload) ? payload : [])
           .filter((item): item is ImageAsset => Boolean(item) && typeof item === "object" && "id" in item)
           .filter((item) => item.workflow_stage === stage);
@@ -53,6 +65,15 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           return { ...asset, browser_url: browserUrl };
         }));
         if (!controller.signal.aborted) setAssets(resolvedAssets);
+        const xrayAnalysis = (Array.isArray(aiPayload) ? aiPayload as AiAnalysis[] : []).find((item) => item.analysis_type === "XRAY_ANALYSIS" && item.status === "SUCCEEDED");
+        const resultPayload = xrayAnalysis?.result_detail?.result_payload;
+        const image = resultPayload?.image;
+        const rawDetections = Array.isArray(resultPayload?.detections) ? resultPayload.detections : [];
+        const nextDetections = rawDetections.filter((item): item is XrayDetection => Boolean(item) && typeof item === "object" && typeof (item as XrayDetection).class_name === "string" && typeof (item as XrayDetection).score === "number" && Array.isArray((item as XrayDetection).bbox_xyxy) && (item as XrayDetection).bbox_xyxy.length === 4);
+        if (!controller.signal.aborted) {
+          setDetections(nextDetections);
+          setDetectionImageSize(typeof image?.width === "number" && typeof image?.height === "number" ? { width: image.width, height: image.height } : null);
+        }
       } catch (cause) {
         if (!controller.signal.aborted) {
           setAssets([]);
@@ -70,5 +91,5 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     };
   }, [apiBaseUrl, authorizedFetch, caseId, retryVersion, stage]);
 
-  return <EvidenceViewerPanel assets={assets} loading={loading} error={error} retrying={loading && retryVersion > 0} onRetry={() => setRetryVersion((value) => value + 1)} />;
+  return <EvidenceViewerPanel assets={assets} loading={loading} error={error} retrying={loading && retryVersion > 0} onRetry={() => setRetryVersion((value) => value + 1)} detections={detections} detectionImageSize={detectionImageSize} />;
 }

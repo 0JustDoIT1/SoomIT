@@ -1,5 +1,6 @@
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 import { CaseImageEvidence } from "./case-image-evidence";
+import { CaseDicomEvidence } from "./case-dicom-evidence";
 
 type ResultRecord = Record<string, unknown>;
 type ClinicalResult = { workflow_stage: string; exam_name?: string; result_status?: string; result_status_label?: string; result_date?: string | null; result_detail?: unknown };
@@ -35,7 +36,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
           <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
           <p className="whitespace-nowrap text-[10px] text-slate-400">화면에서 바로 확인하고 필요할 때 크게 볼 수 있습니다.</p>
         </div>
-        <div className="overflow-x-auto">{caseId && apiBaseUrl && authorizedFetch ? <CaseImageEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <EvidenceViewerPanel />}</div>
+        <div className="overflow-x-auto">{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" || stage === "PET_CT_TNM" ? <CaseDicomEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
       <div className="grid grid-cols-2 divide-x divide-slate-200">

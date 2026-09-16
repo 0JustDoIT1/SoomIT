@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import User
+from .models import DoctorProfile, User
 
 
 AUTHENTICATION_ERROR = "입력한 인증 정보를 확인해주세요."
@@ -32,6 +32,33 @@ class StaffProfileSerializer(serializers.Serializer):
         source="department_role.department.hospital",
         read_only=True,
     )
+    doctor_profile = serializers.SerializerMethodField()
+
+    def get_doctor_profile(self, obj):
+        profile = getattr(obj, "doctor_profile", None)
+        if profile is None:
+            return None
+        return {
+            "license_number": profile.license_number,
+            "birth_date": profile.birth_date,
+            "gender": profile.gender,
+            "profile_image_uri": profile.profile_image_uri,
+            "tags": profile.tags,
+        }
+
+
+class DoctorProfileUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoctorProfile
+        fields = ["license_number", "birth_date", "gender", "profile_image_uri", "tags"]
+        extra_kwargs = {"license_number": {"required": False}}
+
+    def validate_tags(self, value):
+        if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):
+            raise serializers.ValidationError("tags must be a list of non-empty strings.")
+        if len(value) > 10:
+            raise serializers.ValidationError("A maximum of 10 tags is allowed.")
+        return [item.strip() for item in value]
 
 
 class StaffLoginSerializer(serializers.Serializer):

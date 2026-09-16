@@ -4,6 +4,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
+from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -12,6 +13,12 @@ from apps.pathology.models import PathologySpecimen, WholeSlideImage
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
+from apps.radiology.services.orthanc_dicomweb import (
+    OrthancDicomWebError,
+    get_series_metadata,
+    list_series_instances,
+    retrieve_instance,
+)
 
 from .models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from .serializers import (
@@ -103,7 +110,6 @@ class DoctorCaseImageAssetListAPIView(APIView):
             primary_doctor=request.user,
             case_status=LungCancerCase.CaseStatus.ACTIVE,
             patient__hospital_id=get_token_hospital_id(request),
-            patient__hospital=request.user.department_role.department,
         )
         assets = CaseImageAsset.objects.filter(
             case=case,
@@ -127,7 +133,6 @@ class DoctorCaseImageAssetPreviewAPIView(APIView):
             primary_doctor=request.user,
             case_status=LungCancerCase.CaseStatus.ACTIVE,
             patient__hospital_id=get_token_hospital_id(request),
-            patient__hospital=request.user.department_role.department,
         )
         asset = get_object_or_404(
             CaseImageAsset,
@@ -156,7 +161,6 @@ def _doctor_case_or_404(request, case_id):
         primary_doctor=request.user,
         case_status=LungCancerCase.CaseStatus.ACTIVE,
         patient__hospital_id=get_token_hospital_id(request),
-        patient__hospital=request.user.department_role.department,
     )
 
 
@@ -168,7 +172,6 @@ def _doctor_slide_or_404(request, slide_id):
         specimen__case__primary_doctor=request.user,
         specimen__case__case_status=LungCancerCase.CaseStatus.ACTIVE,
         specimen__case__patient__hospital_id=get_token_hospital_id(request),
-        specimen__case__patient__hospital=request.user.department_role.department,
     )
 
 
@@ -221,7 +224,6 @@ class DoctorSpecimenSlideListAPIView(APIView):
             case__primary_doctor=request.user,
             case__case_status=LungCancerCase.CaseStatus.ACTIVE,
             case__patient__hospital_id=get_token_hospital_id(request),
-            case__patient__hospital=request.user.department_role.department,
         )
         slides = WholeSlideImage.objects.filter(specimen=specimen, is_current=True).select_related("image_asset").order_by("slide_code")
         return Response([_doctor_slide_summary(slide) for slide in slides])
@@ -286,6 +288,79 @@ class DoctorSlideTileAPIView(APIView):
         except OrthancError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
         response = HttpResponse(tile.content, content_type=tile.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class _DicomPassthroughContentNegotiation(BaseContentNegotiation):
+    def select_parser(self, request, parsers):
+        return parsers[0] if parsers else None
+
+    def select_renderer(self, request, renderers, format_suffix):
+        return renderers[0], renderers[0].media_type
+
+
+def _doctor_dicom_asset_or_404(request, case_id, asset_id):
+    case = _doctor_case_or_404(request, case_id)
+    return get_object_or_404(
+        CaseImageAsset,
+        id=asset_id,
+        case=case,
+        image_type__in=[CaseImageAsset.ImageType.CT, CaseImageAsset.ImageType.PET],
+        storage_type=CaseImageAsset.StorageType.ORTHANC,
+        status=CaseImageAsset.Status.READY,
+    )
+
+
+class DoctorCaseDicomWebMetadataAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _DicomPassthroughContentNegotiation
+
+    def get(self, request, case_id, asset_id):
+        asset = _doctor_dicom_asset_or_404(request, case_id, asset_id)
+        if not asset.study_instance_uid or not asset.series_instance_uid:
+            return Response({"detail": "DICOM Series metadata is not ready."}, status=status.HTTP_409_CONFLICT)
+        try:
+            result = get_series_metadata(asset.study_instance_uid, asset.series_instance_uid)
+        except OrthancDicomWebError:
+            return Response({"detail": "DICOM Series metadata를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        return HttpResponse(result.content, content_type=result.content_type)
+
+
+class DoctorCaseDicomWebInstancesAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _DicomPassthroughContentNegotiation
+
+    def get(self, request, case_id, asset_id):
+        asset = _doctor_dicom_asset_or_404(request, case_id, asset_id)
+        if not asset.study_instance_uid or not asset.series_instance_uid:
+            return Response({"detail": "DICOM Series metadata is not ready."}, status=status.HTTP_409_CONFLICT)
+        try:
+            result = list_series_instances(asset.study_instance_uid, asset.series_instance_uid)
+        except OrthancDicomWebError:
+            return Response({"detail": "DICOM instance 목록을 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        return HttpResponse(result.content, content_type=result.content_type)
+
+
+class DoctorCaseDicomWebInstanceAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _DicomPassthroughContentNegotiation
+
+    def get(self, request, case_id, asset_id, sop_instance_uid):
+        asset = _doctor_dicom_asset_or_404(request, case_id, asset_id)
+        if not asset.study_instance_uid or not asset.series_instance_uid:
+            return Response({"detail": "DICOM Series metadata is not ready."}, status=status.HTTP_409_CONFLICT)
+        accept = request.headers.get("Accept")
+        if accept not in {"application/dicom", 'multipart/related; type="application/dicom"'}:
+            accept = "application/dicom"
+        try:
+            result = retrieve_instance(asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid, accept=accept)
+        except OrthancDicomWebError:
+            return Response({"detail": "DICOM instance를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(result.content, content_type=result.content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response
 

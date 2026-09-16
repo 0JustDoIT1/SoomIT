@@ -82,6 +82,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
 
           <button
             type="button"
+            onClick={() => router.push("/respiratory/settings")}
             className="rounded-md px-2 py-2 text-xs font-medium text-slate-500 transition hover:bg-blue-50 hover:text-blue-700"
           >
             <span aria-hidden="true">⚙</span> 설정
