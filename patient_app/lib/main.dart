@@ -1,13 +1,21 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'features/notification/firebase_messaging_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 
-import 'l10n/app_localizations.dart';
-// import 'shared/app_shell.dart';
 import 'features/auth/auth_gate.dart';
+import 'firebase_options.dart';
+import 'l10n/app_localizations.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+
   runApp(const MedicalApp());
 }
 
@@ -28,7 +36,12 @@ class MedicalAppState extends State<MedicalApp> {
   @override
   void initState() {
     super.initState();
+
     _loadSavedLanguage();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      FirebaseMessagingService.instance.initialize();
+    });
   }
 
   Future<void> _loadSavedLanguage() async {
@@ -36,7 +49,7 @@ class MedicalAppState extends State<MedicalApp> {
 
     final savedLanguage = prefs.getString('language_code');
 
-    if (savedLanguage == null) return;
+    if (savedLanguage == null || !mounted) return;
 
     setState(() {
       _locale = Locale(savedLanguage);
@@ -47,6 +60,8 @@ class MedicalAppState extends State<MedicalApp> {
     final prefs = await SharedPreferences.getInstance();
 
     await prefs.setString('language_code', languageCode);
+
+    if (!mounted) return;
 
     setState(() {
       _locale = Locale(languageCode);

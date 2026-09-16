@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "884846153419",
+    "project_id": "soomit-patient-260916",
+    "storage_bucket": "soomit-patient-260916.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:884846153419:android:fa3743654ccd587263954e",
+        "android_client_info": {
+          "package_name": "com.soomit.patient"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB14_SsN45YR9EqDPZ3Ty52XB4h3SGhNHk"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
