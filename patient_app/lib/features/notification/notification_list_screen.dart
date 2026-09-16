@@ -2,22 +2,19 @@ import 'package:flutter/material.dart';
 
 import '../home/models/patient_notification.dart';
 import '../home/services/notification_service.dart';
+import 'notification_navigation_service.dart';
 
 class NotificationListScreen extends StatefulWidget {
   const NotificationListScreen({super.key});
 
   @override
-  State<NotificationListScreen> createState() =>
-      _NotificationListScreenState();
+  State<NotificationListScreen> createState() => _NotificationListScreenState();
 }
 
-class _NotificationListScreenState
-    extends State<NotificationListScreen> {
-  final NotificationService _notificationService =
-      NotificationService();
+class _NotificationListScreenState extends State<NotificationListScreen> {
+  final NotificationService _notificationService = NotificationService();
 
-  late Future<List<PatientNotification>>
-      _notificationsFuture;
+  late Future<List<PatientNotification>> _notificationsFuture;
 
   @override
   void initState() {
@@ -26,8 +23,7 @@ class _NotificationListScreenState
   }
 
   void _loadNotifications() {
-    _notificationsFuture =
-        _notificationService.getNotifications();
+    _notificationsFuture = _notificationService.getNotifications();
   }
 
   Future<void> _refreshNotifications() async {
@@ -38,17 +34,13 @@ class _NotificationListScreenState
     await _notificationsFuture;
   }
 
-  Future<void> _markAsRead(
-    PatientNotification notification,
-  ) async {
+  Future<void> _markAsRead(PatientNotification notification) async {
     if (notification.isRead) {
       return;
     }
 
     try {
-      await _notificationService.markAsRead(
-        notification.id,
-      );
+      await _notificationService.markAsRead(notification.id);
 
       if (!mounted) return;
 
@@ -58,21 +50,16 @@ class _NotificationListScreenState
     } catch (_) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '알림 읽음 처리에 실패했습니다.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('알림 읽음 처리에 실패했습니다.')));
     }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor:
-          const Color(0xFFF4F6F9),
+      backgroundColor: const Color(0xFFF4F6F9),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -95,52 +82,34 @@ class _NotificationListScreenState
           },
         ),
       ),
-      body: FutureBuilder<
-          List<PatientNotification>>(
+      body: FutureBuilder<List<PatientNotification>>(
         future: _notificationsFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const Center(
-              child:
-                  CircularProgressIndicator(),
-            );
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
             return _buildErrorState();
           }
 
-          final notifications =
-              snapshot.data ?? [];
+          final notifications = snapshot.data ?? [];
 
           if (notifications.isEmpty) {
             return _buildEmptyState();
           }
 
           return RefreshIndicator(
-            onRefresh:
-                _refreshNotifications,
+            onRefresh: _refreshNotifications,
             child: ListView.separated(
-              physics:
-                  const AlwaysScrollableScrollPhysics(),
-              padding:
-                  const EdgeInsets.all(16),
-              itemCount:
-                  notifications.length,
-              separatorBuilder:
-                  (_, _) =>
-                      const SizedBox(
-                height: 10,
-              ),
-              itemBuilder:
-                  (context, index) {
-                final notification =
-                    notifications[index];
+              physics: const AlwaysScrollableScrollPhysics(),
+              padding: const EdgeInsets.all(16),
+              itemCount: notifications.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 10),
+              itemBuilder: (context, index) {
+                final notification = notifications[index];
 
-                return _buildNotificationCard(
-                  notification,
-                );
+                return _buildNotificationCard(notification);
               },
             ),
           );
@@ -149,94 +118,64 @@ class _NotificationListScreenState
     );
   }
 
-  Widget _buildNotificationCard(
-    PatientNotification notification,
-  ) {
+  Widget _buildNotificationCard(PatientNotification notification) {
     return InkWell(
-      borderRadius:
-          BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(16),
       onTap: () async {
-        await _markAsRead(
-          notification,
-        );
+        await _markAsRead(notification);
 
         if (!mounted) return;
 
-        _showNotificationDetail(
-          notification,
-        );
+        NotificationNavigationService.instance.handlePayload({
+          ...?notification.payload,
+          'notification_type': notification.notificationType,
+        });
+
+        Navigator.of(context).pop();
       },
       child: Container(
         width: double.infinity,
-        padding:
-            const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius:
-              BorderRadius.circular(16),
-          border:
-              notification.isRead
-                  ? null
-                  : Border.all(
-                      color:
-                          const Color(
-                        0xFFDCE9FF,
-                      ),
-                    ),
+          borderRadius: BorderRadius.circular(16),
+          border: notification.isRead
+              ? null
+              : Border.all(color: const Color(0xFFDCE9FF)),
         ),
         child: Row(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildNotificationIcon(
-              notification
-                  .notificationType,
-            ),
+            _buildNotificationIcon(notification.notificationType),
 
             const SizedBox(width: 14),
 
             Expanded(
               child: Column(
-                crossAxisAlignment:
-                    CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
                       Expanded(
                         child: Text(
-                          notification
-                              .title,
-                          style:
-                              TextStyle(
+                          notification.title,
+                          style: TextStyle(
                             fontSize: 15,
-                            fontWeight:
-                                notification
-                                        .isRead
-                                    ? FontWeight
-                                        .w500
-                                    : FontWeight
-                                        .bold,
-                            color:
-                                const Color(
-                              0xFF191F28,
-                            ),
+                            fontWeight: notification.isRead
+                                ? FontWeight.w500
+                                : FontWeight.bold,
+                            color: const Color(0xFF191F28),
                           ),
                         ),
                       ),
 
-                      if (!notification
-                          .isRead)
+                      if (!notification.isRead)
                         Container(
                           width: 8,
                           height: 8,
-                          decoration:
-                              const BoxDecoration(
-                            shape:
-                                BoxShape.circle,
-                            color:
-                                Color(
-                              0xFF3B82F6,
-                            ),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF3B82F6),
                           ),
                         ),
                     ],
@@ -246,31 +185,20 @@ class _NotificationListScreenState
 
                   Text(
                     notification.message,
-                    style:
-                        const TextStyle(
+                    style: const TextStyle(
                       fontSize: 13,
                       height: 1.4,
-                      color:
-                          Color(
-                        0xFF6B7684,
-                      ),
+                      color: Color(0xFF6B7684),
                     ),
                   ),
 
                   const SizedBox(height: 10),
 
                   Text(
-                    _formatDateTime(
-                      notification
-                          .createdAt,
-                    ),
-                    style:
-                        const TextStyle(
+                    _formatDateTime(notification.createdAt),
+                    style: const TextStyle(
                       fontSize: 12,
-                      color:
-                          Color(
-                        0xFFB0B8C1,
-                      ),
+                      color: Color(0xFFB0B8C1),
                     ),
                   ),
                 ],
@@ -282,92 +210,66 @@ class _NotificationListScreenState
     );
   }
 
-  Widget _buildNotificationIcon(
-    String type,
-  ) {
+  Widget _buildNotificationIcon(String type) {
     IconData icon;
 
     switch (type) {
       case 'APPOINTMENT':
-        icon =
-            Icons.calendar_month_rounded;
+        icon = Icons.calendar_month_rounded;
         break;
 
       case 'EXAMINATION':
-        icon =
-            Icons.biotech_rounded;
+        icon = Icons.biotech_rounded;
         break;
 
       case 'RESULT':
-        icon =
-            Icons.description_rounded;
+        icon = Icons.description_rounded;
         break;
 
       case 'MEDICATION':
-        icon =
-            Icons.medication_rounded;
+        icon = Icons.medication_rounded;
         break;
 
       case 'QUESTIONNAIRE':
-        icon =
-            Icons.assignment_rounded;
+        icon = Icons.assignment_rounded;
         break;
 
       case 'HEALTH':
-        icon =
-            Icons.favorite_rounded;
+        icon = Icons.favorite_rounded;
         break;
 
       default:
-        icon =
-            Icons.notifications_rounded;
+        icon = Icons.notifications_rounded;
     }
 
     return Container(
       width: 42,
       height: 42,
       decoration: BoxDecoration(
-        color:
-            const Color(0xFFEAF2FF),
-        borderRadius:
-            BorderRadius.circular(12),
+        color: const Color(0xFFEAF2FF),
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Icon(
-        icon,
-        size: 22,
-        color:
-            const Color(0xFF3B82F6),
-      ),
+      child: Icon(icon, size: 22, color: const Color(0xFF3B82F6)),
     );
   }
 
   Widget _buildEmptyState() {
     return RefreshIndicator(
-      onRefresh:
-          _refreshNotifications,
+      onRefresh: _refreshNotifications,
       child: ListView(
-        physics:
-            const AlwaysScrollableScrollPhysics(),
+        physics: const AlwaysScrollableScrollPhysics(),
         children: const [
           SizedBox(height: 180),
           Icon(
-            Icons
-                .notifications_none_rounded,
+            Icons.notifications_none_rounded,
             size: 52,
-            color:
-                Color(0xFFB0B8C1),
+            color: Color(0xFFB0B8C1),
           ),
           SizedBox(height: 14),
           Center(
             child: Text(
               '새로운 알림이 없습니다.',
-              style: TextStyle(
-                fontSize: 14,
-                color:
-                    Color(
-                  0xFF8B95A1,
-                ),
-              ),
+              style: TextStyle(fontSize: 14, color: Color(0xFF8B95A1)),
             ),
           ),
         ],
@@ -378,15 +280,11 @@ class _NotificationListScreenState
   Widget _buildErrorState() {
     return Center(
       child: Column(
-        mainAxisSize:
-            MainAxisSize.min,
+        mainAxisSize: MainAxisSize.min,
         children: [
           const Text(
             '알림을 불러오지 못했습니다.',
-            style: TextStyle(
-              color:
-                  Color(0xFF8B95A1),
-            ),
+            style: TextStyle(color: Color(0xFF8B95A1)),
           ),
 
           const SizedBox(height: 12),
@@ -397,113 +295,21 @@ class _NotificationListScreenState
                 _loadNotifications();
               });
             },
-            child:
-                const Text('다시 시도'),
+            child: const Text('다시 시도'),
           ),
         ],
       ),
     );
   }
 
-  void _showNotificationDetail(
-    PatientNotification notification,
-  ) {
-    showModalBottomSheet(
-      context: context,
-      showDragHandle: true,
-      builder: (context) {
-        return SafeArea(
-          child: Padding(
-            padding:
-                const EdgeInsets.fromLTRB(
-              20,
-              4,
-              20,
-              24,
-            ),
-            child: Column(
-              mainAxisSize:
-                  MainAxisSize.min,
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Text(
-                  notification.title,
-                  style:
-                      const TextStyle(
-                    fontSize: 18,
-                    fontWeight:
-                        FontWeight.bold,
-                    color:
-                        Color(
-                      0xFF191F28,
-                    ),
-                  ),
-                ),
+  String _formatDateTime(DateTime dateTime) {
+    final local = dateTime.toLocal();
 
-                const SizedBox(height: 12),
-
-                Text(
-                  notification.message,
-                  style:
-                      const TextStyle(
-                    fontSize: 14,
-                    height: 1.5,
-                    color:
-                        Color(
-                      0xFF4E5968,
-                    ),
-                  ),
-                ),
-
-                const SizedBox(height: 16),
-
-                Text(
-                  _formatDateTime(
-                    notification
-                        .createdAt,
-                  ),
-                  style:
-                      const TextStyle(
-                    fontSize: 12,
-                    color:
-                        Color(
-                      0xFF8B95A1,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  String _formatDateTime(
-    DateTime dateTime,
-  ) {
-    final local =
-        dateTime.toLocal();
-
-    final year =
-        local.year.toString();
-    final month =
-        local.month
-            .toString()
-            .padLeft(2, '0');
-    final day =
-        local.day
-            .toString()
-            .padLeft(2, '0');
-    final hour =
-        local.hour
-            .toString()
-            .padLeft(2, '0');
-    final minute =
-        local.minute
-            .toString()
-            .padLeft(2, '0');
+    final year = local.year.toString();
+    final month = local.month.toString().padLeft(2, '0');
+    final day = local.day.toString().padLeft(2, '0');
+    final hour = local.hour.toString().padLeft(2, '0');
+    final minute = local.minute.toString().padLeft(2, '0');
 
     return '$year.$month.$day $hour:$minute';
   }

@@ -16,6 +16,7 @@ import '../notification/notification_list_screen.dart';
 import '../symptom/symptom_screen.dart';
 import '../questionnaire/questionnaire_screen.dart';
 import '../auth/existing_patient_link_screen.dart';
+import '../notification/notification_navigation_service.dart';
 
 import '../medication/medication_screen.dart';
 
@@ -240,28 +241,35 @@ class _HomeScreenState extends State<HomeScreen> {
                 return NotificationCard(
                   notifications: notifications,
                   onNotificationTap: (notification) async {
-                    if (notification.isRead) {
-                      return;
+                    if (!notification.isRead) {
+                      final messenger = ScaffoldMessenger.of(context);
+
+                      try {
+                        await _notificationService.markAsRead(notification.id);
+
+                        if (!mounted) return;
+
+                        setState(() {
+                          _notificationsFuture = _notificationService
+                              .getNotifications();
+                        });
+                      } catch (_) {
+                        if (!mounted) return;
+
+                        messenger.showSnackBar(
+                          const SnackBar(content: Text('알림 읽음 처리에 실패했습니다.')),
+                        );
+
+                        return;
+                      }
                     }
 
-                    final messenger = ScaffoldMessenger.of(context);
+                    if (!mounted) return;
 
-                    try {
-                      await _notificationService.markAsRead(notification.id);
-
-                      if (!mounted) return;
-
-                      setState(() {
-                        _notificationsFuture = _notificationService
-                            .getNotifications();
-                      });
-                    } catch (e) {
-                      if (!mounted) return;
-
-                      messenger.showSnackBar(
-                        const SnackBar(content: Text('알림 읽음 처리에 실패했습니다.')),
-                      );
-                    }
+                    NotificationNavigationService.instance.handlePayload({
+                      ...?notification.payload,
+                      'notification_type': notification.notificationType,
+                    });
                   },
                 );
               },

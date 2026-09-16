@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from django.utils import timezone
 from django.db import IntegrityError, transaction
-from django.db.models import Prefetch
+from django.db.models import Prefetch, Q
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
@@ -696,7 +696,23 @@ class PatientNotificationListAPIView(APIView):
                 recipient_patient_account=(
                     patient_account
                 ),
-                channel="IN_APP",
+            )
+            .filter(
+                Q(
+                    channel=(
+                        NotificationLog.Channel.IN_APP
+                    ),
+                )
+                | Q(
+                    channel=(
+                        NotificationLog.Channel.PUSH
+                    ),
+                    delivery_status=(
+                        NotificationLog
+                        .DeliveryStatus
+                        .SENT
+                    ),
+                )
             )
             .order_by("-created_at")
         )
