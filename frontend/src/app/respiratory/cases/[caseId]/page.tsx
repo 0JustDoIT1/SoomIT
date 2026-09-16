@@ -89,7 +89,14 @@ type TnmClinicalResult = {
       n_category: string | null;
       m_category: string | null;
       stage_group: string | null;
-      evidence: unknown;
+      evidence: {
+        stage?: {
+          ctnm_candidate?: string | null;
+          stage_group_candidate?: string | null;
+          stage_group_status?: string | null;
+          warnings?: string[];
+        };
+      } | null;
       note: string | null;
     };
   };
@@ -858,7 +865,7 @@ export default function RespiratoryCaseDetailPage() {
   ) as TnmAnalysisResult | undefined;
 
   const tnmAnalysis = tnmAnalysisResult?.result_detail?.tnm
-    ? { ...tnmAnalysisResult.result_detail.tnm, ai_result_id: tnmAnalysisResult.result_detail.ai_result_id }
+    ? { ...tnmAnalysisResult.result_detail.tnm, ai_result_id: tnmAnalysisResult.id }
     : undefined;
 
   const tnmClinicalResult = tnmClinicalResults.find(

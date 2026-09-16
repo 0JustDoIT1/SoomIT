@@ -1,6 +1,6 @@
-import { API_BASE_URL } from "@/lib/api";
 "use client";
 
+import { API_BASE_URL } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 
 type Appointment = {
@@ -93,7 +93,7 @@ export default function AppointmentsPage() {
       setError("");
 
       const response = await fetch(
-        `${API_BASE_URL}/api/appointments/"
+        `${API_BASE_URL}/api/appointments/`
       );
 
       if (!response.ok) {
@@ -119,7 +119,7 @@ export default function AppointmentsPage() {
       setRequestError("");
 
       const response = await fetch(
-        `${API_BASE_URL}/api/appointments/requests/?status=PENDING"
+        `${API_BASE_URL}/api/appointments/requests/?status=PENDING`
       );
 
       if (!response.ok) {

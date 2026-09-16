@@ -128,8 +128,8 @@ function getAnalysisLabel(item: RadiologyWorklistItem) {
   return item.examination_order.order_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
 }
 
-function formatPercent(value: string | null, scale = 100) {
-  if (value === null) return "-";
+function formatPercent(value: string | number | null | undefined, scale = 100) {
+  if (value === null || value === undefined) return "-";
   const number = Number(value);
   return Number.isFinite(number) ? `${(number * scale).toFixed(1)}%` : value;
 }

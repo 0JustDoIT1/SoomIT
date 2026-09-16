@@ -12,7 +12,7 @@ const OPTIONS: Record<TnmCategory, string[]> = { T: ["TX","T0","Tis","T1mi","T1a
 const META: Record<TnmCategory, string> = { T: "T 원발 종양", N: "N 림프절", M: "M 원격 전이" };
 const EMPTY_DRAFT: TnmDraft = { selectedValue: "", decisionType: "", opinion: "", rationale: "", unresolvedIssue: "", dirty: false };
 
-export function TnmReviewWorkspace({ aiTnm, clinicalTnm, modelName, modelVersion, caseId, apiBaseUrl, authorizedFetch, onDirtyChange }: { aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; modelName?: string; modelVersion?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onConfirmed?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+export function TnmReviewWorkspace({ aiTnm, clinicalTnm, modelName, modelVersion, caseId, apiBaseUrl, authorizedFetch, onConfirmed, onDirtyChange }: { aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; modelName?: string; modelVersion?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onConfirmed?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
   const [category, setCategory] = useState<TnmCategory>("T");
   const [drafts, setDrafts] = useState<Record<TnmCategory, TnmDraft>>({ T: { ...EMPTY_DRAFT }, N: { ...EMPTY_DRAFT }, M: { ...EMPTY_DRAFT } });
   const tabRefs = useRef<Record<TnmCategory, HTMLButtonElement | null>>({ T: null, N: null, M: null });

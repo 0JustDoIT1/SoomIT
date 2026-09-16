@@ -4,7 +4,7 @@ import type {
 } from "@/types/auth";
 
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL;
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
 
 let staffRefreshPromise: Promise<string> | null = null;
 

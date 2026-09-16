@@ -65,7 +65,7 @@ export type RadiologyWorklistItem = {
   };
   examination_order: {
     id: string;
-    order_type: "XRAY" | "CT";
+    order_type: "XRAY" | "CT" | "PET_CT_TNM";
     order_type_label: string;
     priority: "NORMAL" | "URGENT";
     priority_label: string;
