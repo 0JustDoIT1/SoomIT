@@ -50,13 +50,18 @@ def send_patient_push(
     message,
     payload=None,
 ):
+    notification_payload = {
+        "notification_type": notification_type,
+        **(payload or {}),
+    }
+
     notification_log = NotificationLog.objects.create(
         recipient_patient_account=patient_account,
         notification_type=notification_type,
         channel=NotificationLog.Channel.PUSH,
         title=title,
         message=message,
-        payload=payload or {},
+        payload=notification_payload,
         delivery_status=(
             NotificationLog.DeliveryStatus.PENDING
         ),
@@ -116,7 +121,9 @@ def send_patient_push(
         }
 
     firebase_app = _get_firebase_app()
-    normalized_payload = _normalize_payload(payload)
+    normalized_payload = _normalize_payload(
+        notification_payload
+    )
 
     success_count = 0
     failure_count = 0

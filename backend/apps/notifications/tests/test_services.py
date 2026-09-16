@@ -66,9 +66,27 @@ class PatientPushServiceTests(TestCase):
             payload={"type": "TEST"},
         )
 
-        self.assertEqual(result["success_count"], 1)
-        self.assertEqual(result["failure_count"], 0)
+        self.assertEqual(
+            result["success_count"],
+            1,
+        )
+        self.assertEqual(
+            result["failure_count"],
+            0,
+        )
+
         mock_send.assert_called_once()
+
+        sent_message = mock_send.call_args.args[0]
+
+        self.assertEqual(
+            sent_message.data["notification_type"],
+            "HEALTH",
+        )
+        self.assertEqual(
+            sent_message.data["type"],
+            "TEST",
+        )
 
         notification_log = NotificationLog.objects.get()
 
@@ -76,9 +94,23 @@ class PatientPushServiceTests(TestCase):
             notification_log.delivery_status,
             NotificationLog.DeliveryStatus.SENT,
         )
-        self.assertIsNotNone(notification_log.sent_at)
+        self.assertIsNotNone(
+            notification_log.sent_at,
+        )
+        self.assertEqual(
+            notification_log.payload[
+                "notification_type"
+            ],
+            "HEALTH",
+        )
+        self.assertEqual(
+            notification_log.payload["type"],
+            "TEST",
+        )
 
-    @patch("apps.notifications.services.messaging.send")
+    @patch(
+        "apps.notifications.services.messaging.send"
+    )
     def test_skips_disabled_notification(
         self,
         mock_send,
@@ -96,7 +128,9 @@ class PatientPushServiceTests(TestCase):
             message="테스트 내용",
         )
 
-        self.assertTrue(result["skipped"])
+        self.assertTrue(
+            result["skipped"],
+        )
         mock_send.assert_not_called()
 
         notification_log = NotificationLog.objects.get()
@@ -104,6 +138,12 @@ class PatientPushServiceTests(TestCase):
         self.assertEqual(
             notification_log.delivery_status,
             NotificationLog.DeliveryStatus.FAILED,
+        )
+        self.assertEqual(
+            notification_log.payload[
+                "notification_type"
+            ],
+            "HEALTH",
         )
 
     @patch(
@@ -128,8 +168,15 @@ class PatientPushServiceTests(TestCase):
             message="테스트 내용",
         )
 
-        self.assertEqual(result["success_count"], 0)
-        self.assertEqual(result["failure_count"], 0)
+        self.assertEqual(
+            result["success_count"],
+            0,
+        )
+        self.assertEqual(
+            result["failure_count"],
+            0,
+        )
+
         mock_firebase_app.assert_not_called()
 
         notification_log = NotificationLog.objects.get()
@@ -141,4 +188,10 @@ class PatientPushServiceTests(TestCase):
         self.assertEqual(
             notification_log.error_message,
             "활성화된 기기 토큰이 없습니다.",
+        )
+        self.assertEqual(
+            notification_log.payload[
+                "notification_type"
+            ],
+            "HEALTH",
         )

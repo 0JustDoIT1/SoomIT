@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import '../features/notification/notification_list_screen.dart';
 import '../features/home/models/patient_profile.dart';
 import '../features/home/services/profile_service.dart';
 import 'patient_link_required_screen.dart';
+import '../features/notification/notification_navigation_service.dart';
 
 import 'app_header.dart';
 import 'bottom_nav.dart';
@@ -28,7 +30,7 @@ class _AppShellState extends State<AppShell>
   final ProfileService _profileService = ProfileService();
 
   late final Future<PatientProfile> _profileFuture;
-  int _selectedIndex = 0;
+  late int _selectedIndex;
 
   bool _isChatbotOpen = false;
 
@@ -37,9 +39,27 @@ class _AppShellState extends State<AppShell>
   late final Animation<double> _chatbotScale;
   late final Animation<double> _chatbotOpacity;
 
+  late final StreamSubscription<int> _notificationNavigationSubscription;
+
   @override
   void initState() {
     super.initState();
+
+    _selectedIndex = NotificationNavigationService.instance
+        .consumeInitialTabIndex();
+
+    _notificationNavigationSubscription = NotificationNavigationService
+        .instance
+        .tabRequests
+        .listen((tabIndex) {
+          NotificationNavigationService.instance.consumePendingRequest();
+
+          if (!mounted || tabIndex < 0 || tabIndex > 4) return;
+
+          setState(() {
+            _selectedIndex = tabIndex;
+          });
+        });
 
     _profileFuture = _profileService.getProfile();
 
@@ -68,6 +88,7 @@ class _AppShellState extends State<AppShell>
 
   @override
   void dispose() {
+    _notificationNavigationSubscription.cancel();
     _chatbotController.dispose();
     super.dispose();
   }

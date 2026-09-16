@@ -1,12 +1,14 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'device_token_service.dart';
 
 import '../../firebase_options.dart';
+import 'device_token_service.dart';
+import 'notification_navigation_service.dart';
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
@@ -36,6 +38,7 @@ class FirebaseMessagingService {
 
   StreamSubscription<String>? _tokenRefreshSubscription;
   StreamSubscription<RemoteMessage>? _foregroundMessageSubscription;
+  StreamSubscription<RemoteMessage>? _messageOpenedSubscription;
 
   bool _initialized = false;
 
@@ -45,6 +48,7 @@ class FirebaseMessagingService {
     _initialized = true;
 
     await _initializeLocalNotifications();
+    await _initializeNotificationOpenHandlers();
 
     final settings = await _messaging.requestPermission(
       alert: true,
@@ -99,12 +103,53 @@ class FirebaseMessagingService {
     await _deviceTokenService.deactivateToken(token);
   }
 
+  Future<void> _initializeNotificationOpenHandlers() async {
+    _messageOpenedSubscription = FirebaseMessaging.onMessageOpenedApp.listen((
+      message,
+    ) {
+      _handleRemoteNotificationOpen(message);
+    });
+
+    final initialMessage = await _messaging.getInitialMessage();
+
+    if (initialMessage != null) {
+      _handleRemoteNotificationOpen(initialMessage);
+    }
+  }
+
+  void _handleRemoteNotificationOpen(RemoteMessage message) {
+    debugPrint('FCM 알림 클릭: ${message.messageId}');
+
+    NotificationNavigationService.instance.handlePayload(message.data);
+  }
+
+  void _handleLocalNotificationResponse(NotificationResponse response) {
+    final payload = response.payload;
+
+    if (payload == null || payload.isEmpty) return;
+
+    try {
+      final decodedPayload = jsonDecode(payload);
+
+      if (decodedPayload is! Map) return;
+
+      NotificationNavigationService.instance.handlePayload(
+        Map<String, dynamic>.from(decodedPayload),
+      );
+    } catch (error) {
+      debugPrint('로컬 알림 payload 처리 실패: $error');
+    }
+  }
+
   Future<void> _initializeLocalNotifications() async {
     const initializationSettings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     );
 
-    await _localNotifications.initialize(settings: initializationSettings);
+    await _localNotifications.initialize(
+      settings: initializationSettings,
+      onDidReceiveNotificationResponse: _handleLocalNotificationResponse,
+    );
 
     await _localNotifications
         .resolvePlatformSpecificImplementation<
@@ -134,13 +179,14 @@ class FirebaseMessagingService {
       title: notification.title ?? '숨-잇',
       body: notification.body ?? '',
       notificationDetails: notificationDetails,
-      payload: message.data.toString(),
+      payload: jsonEncode(message.data),
     );
   }
 
   Future<void> dispose() async {
     await _tokenRefreshSubscription?.cancel();
     await _foregroundMessageSubscription?.cancel();
+    await _messageOpenedSubscription?.cancel();
 
     _initialized = false;
   }
