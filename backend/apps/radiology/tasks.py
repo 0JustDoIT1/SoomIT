@@ -11,6 +11,7 @@ from apps.ai_results.models import (
     AnalysisType,
     CtAiResult,
     NoduleAiResult,
+    TnmAiResult,
     XrayAiResult,
 )
 from apps.cases.models import CaseImageAsset
@@ -19,6 +20,9 @@ from .services.ct_analysis_inference import request_ct_phase1_analysis
 from .services.ct_analysis_storage import build_ct_analysis_output_uri
 from .services.xray_inference import request_xray_prediction
 from .services.xray_storage import download_xray_image_bytes
+from .services.pet_dicom_export import cleanup_pet_dicom_gcs_prefix, export_pet_series_for_analysis
+from .services.tnm_m_inference import request_tnm_m_analysis
+from apps.clinical.models import ClinicalResult
 
 
 def _mark_failed(analysis_id, *, error_message="AI analysis failed."):
@@ -246,3 +250,83 @@ def run_ct_analysis(analysis_id):
         locked_analysis.error_message = None
         locked_analysis.save(update_fields=["status", "completed_at", "error_message"])
     return "succeeded"
+
+
+@shared_task
+def run_tnm_m_analysis(analysis_id):
+    analysis = (
+        AiAnalysis.objects.select_related("case__patient", "examination_order", "source_image_asset")
+        .filter(id=analysis_id, analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS)
+        .first()
+    )
+    if analysis is None:
+        return "invalid_analysis"
+    if analysis.status not in [AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING]:
+        return "already_completed"
+    analysis.status = AiAnalysis.Status.RUNNING
+    analysis.started_at = timezone.now()
+    analysis.error_message = None
+    analysis.save(update_fields=["status", "started_at", "error_message"])
+
+    prefix = None
+    try:
+        confirmed = list(
+            ClinicalResult.objects.select_related("reviewed_ai_result__ai_analysis")
+            .filter(
+                case_id=analysis.case_id,
+                result_status=ClinicalResult.ResultStatus.CONFIRMED,
+                workflow_stage="CT",
+                reviewed_ai_result__ai_analysis__analysis_type=AnalysisType.CT_ANALYSIS,
+                reviewed_ai_result__ai_analysis__status=AiAnalysis.Status.SUCCEEDED,
+            )
+        )
+        if len(confirmed) != 1:
+            raise ValueError("정확히 하나의 확정 CT 분석이 필요합니다.")
+        ct_result = confirmed[0].reviewed_ai_result
+        ct_payload = ct_result.result_payload or {}
+        ct_gcs_uri = ct_payload.get("t_input_uri")
+        if not isinstance(ct_gcs_uri, str) or not ct_gcs_uri.startswith("gs://") or ct_gcs_uri.endswith("/"):
+            raise ValueError("확정 CT 분석의 t_input_uri가 유효하지 않습니다.")
+
+        prefix = export_pet_series_for_analysis(analysis)
+        payload = request_tnm_m_analysis(
+            case_id=analysis.case_id,
+            ct_gcs_uri=ct_gcs_uri,
+            pet_dicom_gcs_prefix=prefix,
+            pet_series_instance_uid=analysis.source_image_asset.series_instance_uid,
+        )
+        probability = (payload.get("model_support") or {}).get("m_positive_probability")
+        confidence = Decimal(str(probability)) if probability is not None else None
+        if confidence is not None and not Decimal("0") <= confidence <= Decimal("1"):
+            raise ValueError("M probability is outside the valid range.")
+        with transaction.atomic():
+            locked = AiAnalysis.objects.select_for_update().get(id=analysis.id)
+            result = AiResult.objects.create(
+                ai_analysis=locked,
+                schema_version="tnm-m-v1",
+                result_payload=payload,
+                result_files=[
+                    {"type": key, "uri": value}
+                    for key, value in (payload.get("artifacts") or {}).items()
+                    if isinstance(value, str) and value.startswith("gs://")
+                ],
+            )
+            TnmAiResult.objects.create(
+                ai_result=result,
+                predicted_m=payload.get("m_candidate"),
+                confidence=confidence,
+            )
+            locked.status = AiAnalysis.Status.SUCCEEDED
+            locked.completed_at = timezone.now()
+            locked.error_message = None
+            locked.save(update_fields=["status", "completed_at", "error_message"])
+        return "succeeded"
+    except Exception:
+        _mark_failed(analysis.id, error_message="TNM M analysis failed.")
+        return "failed"
+    finally:
+        if prefix:
+            try:
+                cleanup_pet_dicom_gcs_prefix(prefix)
+            except Exception:
+                pass

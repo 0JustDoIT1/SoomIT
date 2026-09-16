@@ -27,7 +27,7 @@ from apps.clinical.models import ClinicalResult
 from apps.patients.models import Appointment
 
 from .models import RadiologyReview
-from .tasks import run_ct_analysis, run_xray_analysis
+from .tasks import run_ct_analysis, run_tnm_m_analysis, run_xray_analysis
 from .services.xray_storage import (
     XrayStorageError,
     build_xray_object_path,
@@ -763,7 +763,7 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
             analysis_type = AnalysisType.PET_CT_TNM_ANALYSIS
             assets = order.image_assets.filter(
                 status=CaseImageAsset.Status.READY,
-                image_type=CaseImageAsset.ImageType.CT,
+                image_type=CaseImageAsset.ImageType.PET,
                 workflow_stage=WorkflowStage.PET_CT_TNM,
             )
         else:
@@ -815,6 +815,10 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
         elif analysis_type == AnalysisType.CT_ANALYSIS:
             transaction.on_commit(
                 lambda analysis_id=str(analysis.id): run_ct_analysis.delay(analysis_id)
+            )
+        elif analysis_type == AnalysisType.PET_CT_TNM_ANALYSIS:
+            transaction.on_commit(
+                lambda analysis_id=str(analysis.id): run_tnm_m_analysis.delay(analysis_id)
             )
         return Response(
             RadiologyAiAnalysisDetailSerializer(analysis).data,

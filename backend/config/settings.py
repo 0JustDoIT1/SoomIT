@@ -194,6 +194,9 @@ TNM_T_SERVICE_USE_ID_TOKEN = os.environ.get("TNM_T_SERVICE_USE_ID_TOKEN", "0") =
 TNM_M_SERVICE_URL = os.environ.get("TNM_M_SERVICE_URL", "").rstrip("/")
 TNM_M_SERVICE_TIMEOUT_SECONDS = float(os.environ.get("TNM_M_SERVICE_TIMEOUT_SECONDS", "3600"))
 TNM_M_SERVICE_USE_ID_TOKEN = os.environ.get("TNM_M_SERVICE_USE_ID_TOKEN", "0") == "1"
+TNM_OUTPUT_GCS_PREFIX = os.environ.get(
+    "TNM_OUTPUT_GCS_PREFIX", "gs://soomit-bucket/tnm"
+).rstrip("/")
 TNM_SERVICE_URL = os.environ.get("TNM_SERVICE_URL", "").rstrip("/")
 TNM_SERVICE_TIMEOUT_SECONDS = float(os.environ.get("TNM_SERVICE_TIMEOUT_SECONDS", "900"))
 TNM_SERVICE_USE_ID_TOKEN = os.environ.get("TNM_SERVICE_USE_ID_TOKEN", "0") == "1"
