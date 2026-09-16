@@ -18,15 +18,30 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser):
         parser.add_argument("--execute", action="store_true")
+        parser.add_argument(
+            "--analysis-id",
+            action="append",
+            dest="analysis_ids",
+            help="Limit the backfill to one analysis UUID. May be repeated.",
+        )
+        parser.add_argument(
+            "--force",
+            action="store_true",
+            help="Regenerate and replace an existing Cornerstone labelmap.",
+        )
 
     def handle(self, *args, **options):
         execute = options["execute"]
+        analysis_ids = options["analysis_ids"] or []
+        force = options["force"]
 
         results = (
             AiResult.objects.filter(ai_analysis__analysis_type=AnalysisType.CT_ANALYSIS)
             .select_related("ai_analysis")
             .order_by("created_at")
         )
+        if analysis_ids:
+            results = results.filter(ai_analysis_id__in=analysis_ids)
         backfilled = 0
         skipped = 0
         for result in results:
@@ -38,7 +53,7 @@ class Command(BaseCommand):
                 continue
 
             existing = payload.get("cornerstone_segmentation")
-            if isinstance(existing, dict) and existing.get("labelmap_uri"):
+            if not force and isinstance(existing, dict) and existing.get("labelmap_uri"):
                 skipped += 1
                 continue
 
