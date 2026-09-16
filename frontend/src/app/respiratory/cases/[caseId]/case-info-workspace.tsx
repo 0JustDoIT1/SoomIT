@@ -25,7 +25,7 @@ function ResultWorkspace({ menu }: { menu: CaseInfoKey }) {
 }
 
 function BiomarkerWorkspace() {
-  return <WorkspaceFrame title="PD-L1 검사·결과" description="전문과 확정 TPS와 PD-L1 AI 예측 구간을 서로 다른 출처로 표시합니다."><div className="grid grid-cols-2 gap-3"><EmptySection title="전문과 확정 TPS" message="확인 가능한 PD-L1 확정 결과가 없습니다." emphasis /><EmptySection title="PD-L1 AI 분석 후보" message="전용 AI API는 인증 연동 대기 상태입니다." /></div><EmptyTable title="PD-L1 검사 결과 이력" columns={["검사 상태", "확정 TPS", "해석", "판독자", "확정 시각"]} /></WorkspaceFrame>;
+  return <WorkspaceFrame title="PD-L1 검사·결과" description="전문과 확정 TPS와 PD-L1 AI 예측 구간을 서로 다른 출처로 표시합니다."><div className="grid grid-cols-2 gap-3"><EmptySection title="전문과 확정 TPS" message="확인 가능한 PD-L1 확정 결과가 없습니다." emphasis /><EmptySection title="PD-L1 AI 분석 후보" message="현재 Case에 연결된 PD-L1 AI 분석 후보가 없습니다." /></div><EmptyTable title="PD-L1 검사 결과 이력" columns={["검사 상태", "확정 TPS", "해석", "판독자", "확정 시각"]} /></WorkspaceFrame>;
 }
 
 function TreatmentWorkspace() {
@@ -49,5 +49,5 @@ function EmptyTable({ title, columns }: { title: string; columns: string[] }) {
 }
 
 function DisabledButton({ label }: { label: string }) {
-  return <button type="button" disabled className="whitespace-nowrap rounded-md bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-400">{label} · API 연동 대기</button>;
+  return <button type="button" disabled className="whitespace-nowrap rounded-md bg-slate-100 px-4 py-2 text-xs font-semibold text-slate-400">{label} · 실제 Case 선택 후 사용</button>;
 }

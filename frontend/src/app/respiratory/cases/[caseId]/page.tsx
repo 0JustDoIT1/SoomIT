@@ -14,6 +14,7 @@ import { TnmReviewWorkspace } from "./tnm-review-workspace";
 import { CasePatientSidebar } from "./case-patient-sidebar";
 import { BottomActionBar } from "./bottom-action-bar";
 import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
+import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
 import { CaseCoordinationPanels } from "./case-coordination-panels";
 import { Pdl1ResultPanel } from "./pdl1-result-panel";
@@ -105,6 +106,18 @@ type GeneClinicalResult = {
         note: string | null;
       }[];
     };
+    pdl1?: {
+      tps_percent: number | string | null;
+      interpretation: string | null;
+      note: string | null;
+    };
+  };
+};
+
+type Pdl1ClinicalResult = {
+  workflow_stage: string;
+  result_date: string | null;
+  result_detail: {
     pdl1?: {
       tps_percent: number | string | null;
       interpretation: string | null;
@@ -682,7 +695,7 @@ export default function RespiratoryCaseDetailPage() {
       item.patient_code.toLowerCase().includes(keyword) ||
       item.case_code.toLowerCase().includes(keyword)
     );
-  });
+  }).filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
 
   const handleCaseSelect = (id: string) => {
     if (id === caseId) {
@@ -806,22 +819,10 @@ export default function RespiratoryCaseDetailPage() {
 
   const handleInfoMenuSelect = (menu: CaseInfoKey) => {
     setSelectedInfoMenu(menu);
-    if (menu === "OVERVIEW") return;
-    if (["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(menu)) {
-      setSelectedMainMenu("RESULTS");
-      setSelectedResultMenu(menu as ResultSubMenu);
-      return;
-    }
-    if (menu === "PET_CT_TNM" || menu === "PDL1") {
-      setSelectedMainMenu("AI");
-      setSelectedAiMenu(menu);
-      return;
-    }
-    if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
-      setSelectedMainMenu(menu);
-      return;
-    }
-    if (menu === "AI_SUMMARY") setSelectedMainMenu("AI");
+    const navigation = getCaseMenuNavigation(menu);
+    if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
+    if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
+    if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
   };
 
   const latestPdl1Result =
@@ -847,6 +848,13 @@ export default function RespiratoryCaseDetailPage() {
   const geneClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PATHOLOGY_GENE"
   ) as GeneClinicalResult | undefined;
+
+  const pdl1ClinicalResult = tnmClinicalResults.find(
+    (result) => result.workflow_stage === "PDL1",
+  ) as unknown as Pdl1ClinicalResult | undefined;
+  const resolvedPdl1ClinicalResult = pdl1ClinicalResult ?? (
+    geneClinicalResult?.result_detail?.pdl1 ? geneClinicalResult : undefined
+  );
 
   const geneAiResult = selectPreferredAiResult(
     tnmAnalysisResults,
@@ -876,6 +884,7 @@ export default function RespiratoryCaseDetailPage() {
         tnmClinicalResults,
         tnmAnalysisResults,
         casePrescriptions,
+        caseOrders,
       )
     : [];
 
@@ -1508,7 +1517,7 @@ export default function RespiratoryCaseDetailPage() {
       <main className={selectedInfoMenu === "PET_CT_TNM" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0" : "min-w-0 overflow-x-auto overflow-y-auto p-3"}>
         <CaseWorkflowBar
           currentStage={selectedCase.current_stage}
-          hasPdl1Result={Boolean(latestPdl1Result || geneClinicalResult?.result_detail?.pdl1)}
+          hasPdl1Result={Boolean(latestPdl1Result || resolvedPdl1ClinicalResult?.result_detail?.pdl1)}
         />
         <CurrentActionQueue actions={currentActions} onNavigate={(href) => router.push(href)} onOpen={(action) => handleInfoMenuSelect(action.target)} />
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
@@ -1561,6 +1570,7 @@ export default function RespiratoryCaseDetailPage() {
               authorizedFetch={authorizedFetch}
             />
             <AiSummaryPanel
+              key={caseId}
               aiResults={tnmAnalysisResults}
               clinicalResults={tnmClinicalResults}
               error={aiResultError}
@@ -2463,14 +2473,20 @@ export default function RespiratoryCaseDetailPage() {
         ) : selectedMainMenu === "AI" &&
         selectedAiMenu === "PDL1" ? (
         <Pdl1ResultPanel
+          caseId={caseId}
+          apiBaseUrl={API_BASE_URL}
+          authorizedFetch={authorizedFetch}
           aiResult={latestPdl1Result}
-          clinicalResult={geneClinicalResult}
+          clinicalResult={resolvedPdl1ClinicalResult}
           aiError={aiResultError}
           retrying={panelRetrying === "AI"}
           onRetry={retryAiResults}
         />
         ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
         <PathologyGeneReviewPanel
+          caseId={caseId}
+          apiBaseUrl={API_BASE_URL}
+          authorizedFetch={authorizedFetch}
           pathologyClinicalResult={pathologyClinicalResult}
           pathologyAiResult={pathologyAiResult}
           geneClinicalResult={geneClinicalResult}
@@ -2485,6 +2501,9 @@ export default function RespiratoryCaseDetailPage() {
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
+          caseId={caseId}
+          apiBaseUrl={API_BASE_URL}
+          authorizedFetch={authorizedFetch}
           clinicalResult={selectedClinicalResult}
           aiResult={selectedAiResult}
           clinicalError={clinicalResultError}

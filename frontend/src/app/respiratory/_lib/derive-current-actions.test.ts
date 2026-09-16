@@ -12,7 +12,7 @@ describe("deriveCurrentActions", () => {
     const actions = deriveCurrentActions(
       activeCase,
       [{ id: "clinical-1", workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정" }],
-      [{ id: "ai-1", analysis_type: "PET_CT_TNM_ANALYSIS", status: "COMPLETED", status_label: "완료" }],
+      [{ id: "ai-1", analysis_type: "PET_CT_TNM_ANALYSIS", status: "SUCCEEDED", status_label: "성공" }],
       [],
     );
 
@@ -42,13 +42,53 @@ describe("deriveCurrentActions", () => {
     expect(actions).toEqual(expect.arrayContaining([expect.objectContaining({ title: "PD-L1 확정 TPS 확인", target: "PDL1", source: "SPECIALIST" })]));
   });
 
+  it("uses the dedicated PDL1 clinical result without duplicating current-stage work", () => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "PDL1" },
+      [{ id: "pdl1-1", workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 50 } } }],
+      [{ id: "pdl1-ai", analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }],
+      [],
+    );
+
+    expect(actions).toHaveLength(2);
+    expect(actions.filter((action) => action.target === "PDL1")).toHaveLength(2);
+  });
+
   it("opens gene review in the combined pathology and gene workspace", () => {
     const actions = deriveCurrentActions(
       { ...activeCase, current_stage: "PATHOLOGY_GENE" },
       [],
-      [{ id: "gene-ai", analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "COMPLETED" }],
+      [{ id: "gene-ai", analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED" }],
       [],
     );
     expect(actions[0]).toMatchObject({ target: "PATHOLOGY_GENE" });
+  });
+
+  it("creates work only for API-backed active examination orders", () => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "CT" },
+      [],
+      [],
+      [],
+      [
+        { id: "ct-ordered", order_type: "CT", order_type_label: "CT", status: "ORDERED" },
+        { id: "pdl1-completed", order_type: "PDL1", order_type_label: "PD-L1 검사", status: "COMPLETED" },
+        { id: "gene-cancelled", order_type: "PATHOLOGY_GENE", order_type_label: "조직·유전자 검사", status: "CANCELLED" },
+      ],
+    );
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0]).toMatchObject({ source: "ORDER", target: "CT", status: "오더 요청됨" });
+  });
+
+  it("does not create review work for AI analyses without a completed result", () => {
+    for (const status of ["PENDING", "RUNNING", "FAILED"]) {
+      expect(deriveCurrentActions(
+        activeCase,
+        [],
+        [{ id: `ai-${status}`, analysis_type: "PET_CT_TNM_ANALYSIS", status }],
+        [],
+      )).toEqual([]);
+    }
   });
 });

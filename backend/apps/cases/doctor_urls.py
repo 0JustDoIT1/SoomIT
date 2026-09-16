@@ -16,6 +16,11 @@ from apps.clinical.views import (
 from .views import (
     DoctorCaseImageAssetListAPIView,
     DoctorCaseImageAssetPreviewAPIView,
+    DoctorCasePathologySpecimenListAPIView,
+    DoctorSpecimenSlideListAPIView,
+    DoctorSlideViewerAPIView,
+    DoctorSlideThumbnailAPIView,
+    DoctorSlideTileAPIView,
     DoctorFollowUpPathologyOrderAPIView,
     DoctorExaminationOrderAPIView,
     DoctorMedicalOpinionAPIView,
@@ -50,6 +55,11 @@ urlpatterns = [
         DoctorCaseImageAssetPreviewAPIView.as_view(),
         name="doctor-case-image-asset-preview",
     ),
+    path("<uuid:case_id>/specimens/", DoctorCasePathologySpecimenListAPIView.as_view(), name="doctor-case-specimen-list"),
+    path("specimens/<uuid:specimen_id>/slides/", DoctorSpecimenSlideListAPIView.as_view(), name="doctor-specimen-slide-list"),
+    path("slides/<uuid:slide_id>/viewer/", DoctorSlideViewerAPIView.as_view(), name="doctor-slide-viewer"),
+    path("slides/<uuid:slide_id>/thumbnail/", DoctorSlideThumbnailAPIView.as_view(), name="doctor-slide-thumbnail"),
+    path("slides/<uuid:slide_id>/tiles/<int:level>/<int:x>/<int:y>.jpg", DoctorSlideTileAPIView.as_view(), name="doctor-slide-tile"),
     path(
         "<uuid:case_id>/medical-opinion/",
         DoctorMedicalOpinionAPIView.as_view(),

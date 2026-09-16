@@ -52,7 +52,7 @@ function PreviewWorkspace({ menu }: { menu: CaseInfoKey }) {
   if (["XRAY", "CT", "PATHOLOGY_GENE"].includes(menu)) return <ResultReviewPanel stage={menu} />;
   if (menu === "PET_CT_TNM") return <TnmReviewWorkspace />;
   if (menu === "PDL1") {
-    return <div className="space-y-3"><BiomarkerSourceHeader /><PreviewEmpty title="PD-L1 결과 비교" message="전문과 확정 TPS가 없으며 PD-L1 AI 후보는 인증 연결 전까지 조회되지 않습니다." /></div>;
+    return <div className="space-y-3"><BiomarkerSourceHeader /><PreviewEmpty title="PD-L1 결과 비교" message="현재 Case에 연결된 전문과 확정 TPS와 PD-L1 AI 분석 후보가 없습니다." /></div>;
   }
   if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
     return <div><TreatmentPrescriptionOverview treatment={null} prescriptions={[]} /><CaseInfoWorkspace menu={menu} /></div>;
