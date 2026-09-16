@@ -15,6 +15,8 @@ export type ImageAsset = {
   browser_url?: string | null;
 };
 
+export type XrayDetection = { class_name: string; score: number; bbox_xyxy: [number, number, number, number] };
+
 type EvidenceViewerPanelProps = {
   assets?: ImageAsset[];
   selectedAssetId?: string;
@@ -22,6 +24,8 @@ type EvidenceViewerPanelProps = {
   error?: string;
   retrying?: boolean;
   onRetry?: () => void;
+  detections?: XrayDetection[];
+  detectionImageSize?: { width: number; height: number } | null;
 };
 
 export function EvidenceViewerPanel({
@@ -31,6 +35,8 @@ export function EvidenceViewerPanel({
   error = "",
   retrying = false,
   onRetry,
+  detections = [],
+  detectionImageSize,
 }: EvidenceViewerPanelProps) {
   const [activeAssetId, setActiveAssetId] = useState(selectedAssetId ?? assets[0]?.id ?? "");
   const viewerRef = useRef<HTMLDivElement>(null);
@@ -65,8 +71,11 @@ export function EvidenceViewerPanel({
               )}
             </div>
           ) : imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={imageUrl} alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`} className="h-full w-full object-contain" />
+            <div className="relative inline-block h-full max-w-full">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={imageUrl} alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`} className="block h-full max-w-full object-contain" />
+              {activeAsset?.image_type === "XRAY" && detectionImageSize && detections.map((detection, index) => <DetectionBox key={`${detection.class_name}-${index}`} detection={detection} width={detectionImageSize.width} height={detectionImageSize.height} />)}
+            </div>
           ) : (
             <div className="px-6 text-center">
               <p className="text-xs font-semibold text-slate-200">표시 가능한 원본 영상이 없습니다.</p>
@@ -114,4 +123,17 @@ export function getBrowserImageUrl(asset?: ImageAsset) {
   if (!asset?.storage_uri || !/^https?:\/\//i.test(asset.storage_uri)) return null;
   if (!asset.file_format) return asset.storage_uri;
   return ["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(asset.file_format.toUpperCase()) ? asset.storage_uri : null;
+}
+
+function DetectionBox({ detection, width, height }: { detection: XrayDetection; width: number; height: number }) {
+  const [x1, y1, x2, y2] = detection.bbox_xyxy;
+  if (![x1, y1, x2, y2, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
+  const left = Math.max(0, Math.min(100, (x1 / width) * 100));
+  const top = Math.max(0, Math.min(100, (y1 / height) * 100));
+  const boxWidth = Math.max(0, Math.min(100 - left, ((x2 - x1) / width) * 100));
+  const boxHeight = Math.max(0, Math.min(100 - top, ((y2 - y1) / height) * 100));
+  if (!boxWidth || !boxHeight) return null;
+  return <div className="pointer-events-none absolute border-2 border-rose-500 bg-rose-500/10 shadow-[0_0_0_1px_rgba(255,255,255,.65)]" style={{ left: `${left}%`, top: `${top}%`, width: `${boxWidth}%`, height: `${boxHeight}%` }}>
+    <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white">{detection.class_name} {(detection.score * 100).toFixed(0)}%</span>
+  </div>;
 }

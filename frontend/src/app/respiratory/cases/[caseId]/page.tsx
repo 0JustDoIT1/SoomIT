@@ -9,6 +9,7 @@ import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
 import { ResultReviewPanel } from "./result-review-panel";
+import { CaseChatPanel } from "./case-chat-panel";
 import { PathologyGeneReviewPanel } from "./pathology-gene-review-panel";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
 import { CasePatientSidebar } from "./case-patient-sidebar";
@@ -1286,6 +1287,7 @@ export default function RespiratoryCaseDetailPage() {
   return (
     <div className="fixed inset-x-0 bottom-0 top-[54px] flex min-h-0 w-full flex-col overflow-hidden bg-slate-50">
       <CaseSummaryHeader caseData={selectedCase} />
+      <CaseChatPanel caseId={caseId} authorizedFetch={authorizedFetch} />
       <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(0,1fr)] overflow-hidden">
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
 
