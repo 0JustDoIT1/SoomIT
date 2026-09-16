@@ -14,7 +14,6 @@ import '../../l10n/app_localizations.dart';
 import 'settings_screen.dart';
 import '../auth/existing_patient_link_screen.dart';
 
-
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
 
@@ -71,7 +70,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                 const SizedBox(height: 14),
 
-                _buildQuickMenu(),
+                _buildQuickMenu(profile),
 
                 const SizedBox(height: 14),
 
@@ -167,27 +166,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
               ],
             ),
           ),
-
-          IconButton(
-            tooltip: '내 환자 QR 보기',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute<void>(
-                  builder: (context) {
-                    return PatientQrScreen(
-                      patientName: profile.name,
-                      patientCode: profile.patientCode,
-                    );
-                  },
-                ),
-              );
-            },
-            icon: const Icon(
-              Icons.qr_code_2_rounded,
-              color: Colors.white,
-              size: 30,
-            ),
-          ),
         ],
       ),
     );
@@ -270,7 +248,27 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // ─────────────────────────────────────────────
   // QR / 프로필 / 알림
   // ─────────────────────────────────────────────
-  Widget _buildQuickMenu() {
+  void _openPatientQr(PatientProfile profile) {
+    if (profile.appLinkStatus != 'LINKED') {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('환자코드를 연결한 후 QR을 사용할 수 있습니다.')),
+      );
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) {
+          return PatientQrScreen(
+            patientName: profile.name,
+            patientCode: profile.patientCode,
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildQuickMenu(PatientProfile profile) {
     final l10n = AppLocalizations.of(context);
 
     return Container(
@@ -287,7 +285,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
               icon: Icons.qr_code_2_rounded,
               title: l10n.qrCode,
               onTap: () {
-                // TODO: QR 코드 화면
+                _openPatientQr(profile);
               },
             ),
           ),

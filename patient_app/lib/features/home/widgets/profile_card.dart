@@ -2,11 +2,10 @@ import 'package:flutter/material.dart';
 
 import '../models/patient_profile.dart';
 
+import '../../mypage/patient_qr_screen.dart';
+
 class ProfileCard extends StatelessWidget {
-  const ProfileCard({
-    super.key,
-    required this.profile,
-  });
+  const ProfileCard({super.key, required this.profile});
 
   final PatientProfile profile;
 
@@ -16,10 +15,7 @@ class ProfileCard extends StatelessWidget {
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         gradient: const LinearGradient(
-          colors: [
-            Color(0xFF2B66F6),
-            Color(0xFF1B4ED8),
-          ],
+          colors: [Color(0xFF2B66F6), Color(0xFF1B4ED8)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
@@ -39,11 +35,7 @@ class ProfileCard extends StatelessWidget {
               const CircleAvatar(
                 radius: 24,
                 backgroundColor: Colors.white24,
-                child: Icon(
-                  Icons.person,
-                  color: Colors.white,
-                  size: 28,
-                ),
+                child: Icon(Icons.person, color: Colors.white, size: 28),
               ),
 
               const SizedBox(width: 14),
@@ -65,10 +57,7 @@ class ProfileCard extends StatelessWidget {
 
                     const Text(
                       '오늘도 숨 편한 하루 되세요!',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.white70,
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.white70),
                     ),
                   ],
                 ),
@@ -79,10 +68,7 @@ class ProfileCard extends StatelessWidget {
           const SizedBox(height: 16),
 
           Container(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: Colors.white.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(12),
@@ -94,10 +80,7 @@ class ProfileCard extends StatelessWidget {
                   children: [
                     const Text(
                       '환자코드',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: Colors.white70,
-                      ),
+                      style: TextStyle(fontSize: 13, color: Colors.white70),
                     ),
 
                     const SizedBox(width: 10),
@@ -116,7 +99,25 @@ class ProfileCard extends StatelessWidget {
 
                 InkWell(
                   onTap: () {
-                    // TODO: QR 화면 연결
+                    if (profile.appLinkStatus != 'LINKED') {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('환자코드를 연결한 후 QR을 사용할 수 있습니다.'),
+                        ),
+                      );
+                      return;
+                    }
+
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (context) {
+                          return PatientQrScreen(
+                            patientName: profile.name,
+                            patientCode: profile.patientCode,
+                          );
+                        },
+                      ),
+                    );
                   },
                   child: const Row(
                     children: [
