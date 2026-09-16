@@ -1,5 +1,5 @@
 import { ensureCornerstoneInitialized } from "./cornerstone-init";
-import { ctDicomWebInstancesUrl, fetchCtDicomWebInstance, fetchCtDicomWebJson } from "./radiology-api";
+import { ctDicomWebFrameUrl, ctDicomWebMetadataUrl, fetchCtDicomWebJson } from "./radiology-api";
 
 type DicomJsonElement = { vr: string; Value?: unknown[] };
 type DicomJsonDataset = Record<string, DicomJsonElement>;
@@ -26,14 +26,13 @@ export type CtDicomWebSeries = {
 };
 
 /**
- * Loads one CT Series through the authenticated DICOMweb proxy and registers every
- * instance with Cornerstone's wadouri loader (the same fileManager.add pattern
- * CtSeriesPreview already uses for local uploads), returning imageIds ordered by
- * slice position for stack scrolling and volume/MPR construction.
+ * Registers one CT Series with Cornerstone's WADO-RS loader. Metadata is fetched
+ * once up front so volume geometry is available before pixel loading starts;
+ * frames themselves remain lazy and are scheduled by Cornerstone's request pool.
  */
 export async function loadCtDicomWebSeries(orderId: string, assetId: string): Promise<CtDicomWebSeries> {
   const { dicomImageLoader } = await ensureCornerstoneInitialized();
-  const instances = await fetchCtDicomWebJson<DicomJsonDataset[]>(ctDicomWebInstancesUrl(orderId, assetId));
+  const instances = await fetchCtDicomWebJson<DicomJsonDataset[]>(ctDicomWebMetadataUrl(orderId, assetId));
 
   const ordered = instances
     .map((dataset) => ({
@@ -50,13 +49,16 @@ export async function loadCtDicomWebSeries(orderId: string, assetId: string): Pr
     throw new Error("CT Series에 표시할 Instance가 없습니다.");
   }
 
-  const imageIds = await Promise.all(
-    ordered.map(async ({ sopInstanceUid }) => {
-      const bytes = await fetchCtDicomWebInstance(orderId, assetId, sopInstanceUid);
-      const file = new File([bytes], `${sopInstanceUid}.dcm`, { type: "application/dicom" });
-      return dicomImageLoader.wadouri.fileManager.add(file);
-    }),
+  const metadataBySopUid = new Map(
+    instances.map((dataset) => [tagString(dataset, TAG_SOP_INSTANCE_UID), dataset]),
   );
+  const imageIds = ordered.map(({ sopInstanceUid }) => {
+    const imageId = `wadors:${ctDicomWebFrameUrl(orderId, assetId, sopInstanceUid)}`;
+    const metadata = metadataBySopUid.get(sopInstanceUid);
+    if (!metadata) throw new Error(`DICOM metadata가 없습니다: ${sopInstanceUid}`);
+    dicomImageLoader.wadors.metaDataManager.add(imageId, metadata);
+    return imageId;
+  });
 
   return { imageIds };
 }

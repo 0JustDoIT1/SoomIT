@@ -18,7 +18,6 @@ type CtDicomViewerProps = {
 
 type ViewMode = "2D" | "3D";
 
-const VOLUME_ID = "ct-dicom-viewer-volume";
 const TOOL_GROUP_ID = "ct-dicom-viewer-tools";
 const STACK_VIEWPORT_ID = "ct-dicom-viewer-stack";
 const AXIAL_VIEWPORT_ID = "ct-dicom-viewer-axial";
@@ -74,6 +73,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
     let disposed = false;
     let renderingEngine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let resizeObserver: ResizeObserver | null = null;
+    let disableStackPrefetch: (() => void) | null = null;
 
     void (async () => {
       const { core, tools } = await ensureCornerstoneInitialized();
@@ -115,6 +115,14 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
         const viewport = renderingEngine.getViewport(STACK_VIEWPORT_ID) as InstanceType<typeof core.StackViewport>;
         await viewport.setStack(imageIds, Math.floor(imageIds.length / 2));
         viewport.render();
+        tools.utilities.stackPrefetch.setConfiguration({
+          maxImagesToPrefetch: imageIds.length,
+          preserveExistingPool: true,
+        });
+        tools.utilities.stackPrefetch.enable(stackRef.current);
+        disableStackPrefetch = () => {
+          if (stackRef.current) tools.utilities.stackPrefetch.disable(stackRef.current);
+        };
         toolGroup.addViewport(STACK_VIEWPORT_ID, renderingEngine.id);
         viewportIdsRef.current = [STACK_VIEWPORT_ID];
       } else {
@@ -135,14 +143,21 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
         const viewportIds = viewportInputs.map((item) => item.viewportId);
         viewportIdsRef.current = viewportIds;
 
-        await core.volumeLoader.createAndCacheVolumeFromImages(VOLUME_ID, imageIds);
-        await core.setVolumesForViewports(renderingEngine, [{ volumeId: VOLUME_ID }], viewportIds);
+        const volumeId = `cornerstoneStreamingImageVolume:${orderId}:${assetId}`;
+        const volume = await core.volumeLoader.createAndCacheVolume(volumeId, {
+          imageIds,
+          progressiveRendering: true,
+        });
+        await core.setVolumesForViewports(renderingEngine, [{ volumeId }], viewportIds);
         viewportIds.forEach((viewportId) => toolGroup?.addViewport(viewportId, renderingEngine!.id));
         renderingEngine.render();
+        if ("load" in volume && typeof volume.load === "function") {
+          volume.load(() => renderingEngine?.render());
+        }
 
         if (analysisId) {
           try {
-            const loaded = await loadCtCornerstoneSegmentation(analysisId, VOLUME_ID);
+            const loaded = await loadCtCornerstoneSegmentation(analysisId, volumeId);
             if (disposed) return;
             for (const viewportId of viewportIds) {
               await applyCtCornerstoneSegmentationToViewport(viewportId, loaded);
@@ -170,9 +185,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
+      disableStackPrefetch?.();
       renderingEngine?.destroy();
     };
-  }, [loading, error, mode, analysisId]);
+  }, [loading, error, mode, analysisId, orderId, assetId]);
 
   // Synchronizes React state (visibility/opacity) to Cornerstone's own segmentation
   // state, an external system, whenever either changes - never read directly from

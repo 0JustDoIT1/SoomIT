@@ -11,6 +11,7 @@ from .views import (
     RadiologyCaseWorklistAPIView,
     RadiologyOrderAnalysisCreateAPIView,
     RadiologyOrderCtDicomWebInstanceAPIView,
+    RadiologyOrderCtDicomWebFrameAPIView,
     RadiologyOrderCtDicomWebInstancesAPIView,
     RadiologyOrderCtDicomWebMetadataAPIView,
     RadiologyOrderCtSeriesUploadAPIView,
@@ -71,6 +72,11 @@ urlpatterns = [
         "orders/<uuid:order_id>/images/<uuid:asset_id>/dicom-web/instances/<str:sop_instance_uid>/",
         RadiologyOrderCtDicomWebInstanceAPIView.as_view(),
         name="order-ct-dicom-web-instance",
+    ),
+    path(
+        "orders/<uuid:order_id>/images/<uuid:asset_id>/dicom-web/instances/<str:sop_instance_uid>/frames/<int:frame_number>/",
+        RadiologyOrderCtDicomWebFrameAPIView.as_view(),
+        name="order-ct-dicom-web-frame",
     ),
     path(
         "orders/<uuid:order_id>/analyses/",

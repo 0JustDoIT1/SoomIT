@@ -75,6 +75,15 @@ class CtDicomWebViewsTestCase(APITestCase):
             "radiology:order-ct-dicom-web-instance",
             kwargs={"order_id": self.order.id, "asset_id": self.asset.id, "sop_instance_uid": INSTANCE_UID},
         )
+        self.frame_url = reverse(
+            "radiology:order-ct-dicom-web-frame",
+            kwargs={
+                "order_id": self.order.id,
+                "asset_id": self.asset.id,
+                "sop_instance_uid": INSTANCE_UID,
+                "frame_number": 1,
+            },
+        )
         self._authenticate(self.user, self.hospital)
 
     def _authenticate(self, user, hospital):
@@ -115,6 +124,19 @@ class CtDicomWebViewsTestCase(APITestCase):
         retrieve.assert_called_once_with(STUDY_UID, SERIES_UID, INSTANCE_UID)
         self.assertEqual(response.content, b"\x00\x01")
 
+    @patch("apps.radiology.views.retrieve_instance_frame")
+    def test_frame_endpoint_keeps_multipart_response_for_cornerstone(self, retrieve):
+        content_type = 'multipart/related; type="application/octet-stream"; boundary=b1'
+        retrieve.return_value = DicomWebResponse(content=b"multipart-frame", content_type=content_type)
+
+        response = self.client.get(self.frame_url)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        retrieve.assert_called_once_with(STUDY_UID, SERIES_UID, INSTANCE_UID, 1)
+        self.assertEqual(response.content, b"multipart-frame")
+        self.assertEqual(response["Content-Type"], content_type)
+        self.assertEqual(response["Cache-Control"], "private, max-age=3600")
+
     @patch("apps.radiology.views.get_series_metadata", side_effect=OrthancDicomWebError("boom"))
     def test_metadata_endpoint_returns_502_on_storage_error(self, get_metadata):
         response = self.client.get(self.metadata_url)
@@ -131,6 +153,7 @@ class CtDicomWebViewsTestCase(APITestCase):
         self.assertEqual(self.client.get(self.metadata_url).status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(self.client.get(self.instances_url).status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(self.client.get(self.instance_url).status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(self.client.get(self.frame_url).status_code, status.HTTP_404_NOT_FOUND)
 
     def test_requires_authentication(self):
         self.client.force_authenticate(user=None, token=None)

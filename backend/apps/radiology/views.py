@@ -43,6 +43,7 @@ from .services.orthanc_dicomweb import (
     get_series_metadata,
     list_series_instances,
     retrieve_instance,
+    retrieve_instance_frame,
 )
 from .services.ct_visualization_storage import (
     CtVisualizationStorageError,
@@ -788,6 +789,27 @@ class RadiologyOrderCtDicomWebInstanceAPIView(RadiologyOrderCtDicomWebMixin, API
             result = retrieve_instance(asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid)
         except OrthancDicomWebError:
             return Response({"detail": "CT instance를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(result.content, content_type=result.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class RadiologyOrderCtDicomWebFrameAPIView(RadiologyOrderCtDicomWebMixin, APIView):
+    """Proxy one WADO-RS frame while keeping its multipart envelope intact."""
+
+    def get(self, request, order_id, asset_id, sop_instance_uid, frame_number):
+        asset = self.get_ct_asset_or_404(order_id, asset_id)
+        if asset is None:
+            return Response({"detail": "CT 영상 자산을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            result = retrieve_instance_frame(
+                asset.study_instance_uid,
+                asset.series_instance_uid,
+                sop_instance_uid,
+                frame_number,
+            )
+        except OrthancDicomWebError:
+            return Response({"detail": "CT frame을 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
         response = HttpResponse(result.content, content_type=result.content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response

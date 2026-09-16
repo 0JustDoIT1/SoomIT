@@ -27,8 +27,27 @@ export async function ensureCornerstoneInitialized(): Promise<CornerstoneModules
   if (!initialized) {
     initialized = true;
     await modules.core.init();
-    modules.dicomImageLoader.init();
+    modules.dicomImageLoader.init({
+      beforeSend: (_xhr, _imageId, defaultHeaders) => {
+        const accessToken = sessionStorage.getItem("accessToken");
+        return accessToken
+          ? { ...defaultHeaders, Authorization: `Bearer ${accessToken}` }
+          : defaultHeaders;
+      },
+    });
     modules.tools.init();
+    modules.core.volumeLoader.registerVolumeLoader(
+      "cornerstoneStreamingImageVolume",
+      modules.core.cornerstoneStreamingImageVolumeLoader,
+    );
+    modules.core.imageLoadPoolManager.setMaxSimultaneousRequests(
+      modules.core.Enums.RequestType.Interaction,
+      6,
+    );
+    modules.core.imageLoadPoolManager.setMaxSimultaneousRequests(
+      modules.core.Enums.RequestType.Prefetch,
+      4,
+    );
   }
   return modules;
 }

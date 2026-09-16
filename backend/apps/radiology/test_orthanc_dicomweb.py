@@ -6,6 +6,7 @@ from apps.radiology.services.orthanc_dicomweb import (
     OrthancDicomWebError,
     is_valid_dicom_uid,
     retrieve_instance,
+    retrieve_instance_frame,
 )
 
 
@@ -76,3 +77,26 @@ class RetrieveInstanceMultipartTests(SimpleTestCase):
     def test_rejects_invalid_uids_without_calling_orthanc(self):
         with self.assertRaises(OrthancDicomWebError):
             retrieve_instance("not-a-uid", self.SERIES_UID, self.INSTANCE_UID)
+
+    @patch("apps.radiology.services.orthanc_dicomweb._request")
+    def test_frame_response_keeps_orthanc_multipart_envelope(self, request):
+        content_type = (
+            'multipart/related; type="application/octet-stream"; '
+            'transfer-syntax=1.2.840.10008.1.2.1; boundary=frame-boundary'
+        )
+        body = b"--frame-boundary\r\nContent-Type: application/octet-stream\r\n\r\nPIXELS\r\n--frame-boundary--\r\n"
+        request.return_value = (body, content_type)
+
+        result = retrieve_instance_frame(self.STUDY_UID, self.SERIES_UID, self.INSTANCE_UID, 1)
+
+        request.assert_called_once_with(
+            f"/dicom-web/studies/{self.STUDY_UID}/series/{self.SERIES_UID}"
+            f"/instances/{self.INSTANCE_UID}/frames/1",
+            accept='multipart/related; type="application/octet-stream"; transfer-syntax=*',
+        )
+        self.assertEqual(result.content, body)
+        self.assertEqual(result.content_type, content_type)
+
+    def test_frame_rejects_invalid_frame_number(self):
+        with self.assertRaises(OrthancDicomWebError):
+            retrieve_instance_frame(self.STUDY_UID, self.SERIES_UID, self.INSTANCE_UID, 0)

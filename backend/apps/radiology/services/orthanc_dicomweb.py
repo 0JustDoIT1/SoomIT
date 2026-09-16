@@ -108,3 +108,25 @@ def retrieve_instance(study_instance_uid, series_instance_uid, sop_instance_uid)
     )
     dicom_bytes = _extract_dicom_part(content_type_header, content)
     return DicomWebResponse(content=dicom_bytes, content_type="application/dicom")
+
+
+def retrieve_instance_frame(study_instance_uid, series_instance_uid, sop_instance_uid, frame_number=1):
+    """WADO-RS frame retrieval for Cornerstone's ``wadors:`` image loader.
+
+    Keep Orthanc's multipart response intact. The Cornerstone DICOM image loader
+    parses this standard envelope and decodes the negotiated transfer syntax.
+    """
+    if (
+        not is_valid_dicom_uid(study_instance_uid)
+        or not is_valid_dicom_uid(series_instance_uid)
+        or not is_valid_dicom_uid(sop_instance_uid)
+        or not isinstance(frame_number, int)
+        or frame_number < 1
+    ):
+        raise OrthancDicomWebError("Invalid Study/Series/Instance UID or frame number.")
+    content, content_type_header = _request(
+        f"/dicom-web/studies/{study_instance_uid}/series/{series_instance_uid}"
+        f"/instances/{sop_instance_uid}/frames/{frame_number}",
+        accept='multipart/related; type="application/octet-stream"; transfer-syntax=*',
+    )
+    return DicomWebResponse(content=content, content_type=content_type_header)

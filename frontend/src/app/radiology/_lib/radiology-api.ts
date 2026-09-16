@@ -549,6 +549,15 @@ export function ctDicomWebInstanceUrl(orderId: string, assetId: string, sopInsta
   return `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/dicom-web/instances/${sopInstanceUid}/`;
 }
 
+export function ctDicomWebFrameUrl(
+  orderId: string,
+  assetId: string,
+  sopInstanceUid: string,
+  frameNumber = 1,
+) {
+  return `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/dicom-web/instances/${sopInstanceUid}/frames/${frameNumber}/`;
+}
+
 export async function fetchCtDicomWebJson<T>(url: string, signal?: AbortSignal): Promise<T> {
   const response = await staffAuthenticatedFetch(url, {
     method: "GET",
