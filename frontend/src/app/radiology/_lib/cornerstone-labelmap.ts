@@ -82,7 +82,12 @@ export async function applyCtCornerstoneSegmentationToViewport(
         segmentationId,
         segmentIndex: segment.segment_index,
       },
-      { fillAlpha: segment.default_opacity ?? 0.5, renderFill: true, renderOutline: false },
+      {
+        fillAlpha: segment.default_opacity ?? 0.5,
+        renderFill: true,
+        renderOutline: segment.category === "NODULE",
+        outlineWidth: segment.category === "NODULE" ? 2 : 1,
+      },
     );
     if (segment.default_visible === false) {
       tools.segmentation.config.visibility.setSegmentIndexVisibility(

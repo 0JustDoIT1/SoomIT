@@ -56,7 +56,10 @@ export async function loadCtDicomWebSeries(orderId: string, assetId: string): Pr
     const imageId = `wadors:${ctDicomWebFrameUrl(orderId, assetId, sopInstanceUid)}`;
     const metadata = metadataBySopUid.get(sopInstanceUid);
     if (!metadata) throw new Error(`DICOM metadata가 없습니다: ${sopInstanceUid}`);
-    dicomImageLoader.wadors.metaDataManager.add(imageId, metadata);
+    dicomImageLoader.wadors.metaDataManager.add(
+      imageId,
+      metadata as Parameters<typeof dicomImageLoader.wadors.metaDataManager.add>[1],
+    );
     return imageId;
   });
 

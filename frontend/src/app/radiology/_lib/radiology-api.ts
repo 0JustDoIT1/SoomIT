@@ -490,7 +490,7 @@ export async function fetchRadiologyVisualizationLayer(
 ) {
   const response = await staffAuthenticatedFetch(
     `${getApiBaseUrl()}/api/radiology/analyses/${analysisId}/visualization/${layerId}/`,
-    { method: "GET", headers: { Accept: "model/gltf-binary" }, signal },
+    { method: "GET", headers: { Accept: "*/*" }, signal },
   );
   if (!response.ok) {
     throw new RadiologyApiError("CT 3D 레이어를 불러오지 못했습니다.", response.status);
@@ -529,7 +529,7 @@ export function fetchRadiologyCornerstoneSegmentationMetadata(analysisId: string
 export async function fetchRadiologyCornerstoneLabelmap(analysisId: string, signal?: AbortSignal) {
   const response = await staffAuthenticatedFetch(
     `${getApiBaseUrl()}/api/radiology/analyses/${analysisId}/cornerstone-segmentation/labelmap/`,
-    { method: "GET", headers: { Accept: "application/octet-stream" }, signal },
+    { method: "GET", headers: { Accept: "*/*" }, signal },
   );
   if (!response.ok) {
     throw new RadiologyApiError("CT labelmap을 불러오지 못했습니다.", response.status);

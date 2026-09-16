@@ -925,6 +925,8 @@ class RadiologyAnalysisResultAPIView(RadiologyPermissionMixin, APIView):
 class RadiologyAnalysisVisualizationAPIView(RadiologyPermissionMixin, APIView):
     """Proxy an authorized private CT GLB layer without exposing its GCS URI."""
 
+    content_negotiation_class = _PassthroughContentNegotiation
+
     def get(self, request, analysis_id, layer_id):
         analysis = self.get_analysis(analysis_id)
         if (
@@ -998,6 +1000,8 @@ class RadiologyAnalysisCornerstoneSegmentationAPIView(RadiologyPermissionMixin, 
 
 class RadiologyAnalysisCornerstoneLabelmapAPIView(RadiologyPermissionMixin, APIView):
     """Proxy an authorized private Cornerstone3D labelmap without exposing its GCS URI."""
+
+    content_negotiation_class = _PassthroughContentNegotiation
 
     def get(self, request, analysis_id):
         analysis = self.get_analysis(analysis_id)

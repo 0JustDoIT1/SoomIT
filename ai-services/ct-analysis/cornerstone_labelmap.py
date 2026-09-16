@@ -71,7 +71,8 @@ def generate_cornerstone_segmentation(*, segmentation_path: Path, lobe_dir: Path
             continue
         segment_index = 101 + offset
         mask = _resample_to_ct_grid(mask, image.affine, target_shape, target_affine)
-        labelmap[mask] = segment_index
+        # Preserve the higher-priority nodule labels already written above.
+        labelmap[mask & (labelmap == 0)] = segment_index
         segments.append(_segment(segment_index, layer_id, name, "LUNG_LOBE", color, default_visible=True, default_opacity=0.5))
 
     for offset, (layer_id, name, filename, color) in enumerate(ANATOMY_LAYERS):
@@ -81,7 +82,10 @@ def generate_cornerstone_segmentation(*, segmentation_path: Path, lobe_dir: Path
             continue
         segment_index = 201 + offset
         mask = _resample_to_ct_grid(mask, image.affine, target_shape, target_affine)
-        labelmap[mask] = segment_index
+        # A scalar labelmap cannot represent overlaps. Keep nodules highest
+        # priority, then let anatomy replace lung-lobe context where they cross.
+        nodule_voxels = (labelmap >= 1) & (labelmap < 101)
+        labelmap[mask & ~nodule_voxels] = segment_index
         segments.append(_segment(segment_index, layer_id, name, "ANATOMY", color, default_visible=False, default_opacity=0.35))
 
     max_segment_index = max((item["segment_index"] for item in segments), default=0)

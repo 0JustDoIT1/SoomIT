@@ -125,7 +125,7 @@ class CornerstoneSegmentationViewsTestCase(APITestCase):
     def test_labelmap_endpoint_streams_binary_content(self, download):
         download.return_value = b"\x00\x01\x02"
 
-        response = self.client.get(self.labelmap_url)
+        response = self.client.get(self.labelmap_url, HTTP_ACCEPT="application/octet-stream")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         download.assert_called_once_with(CORNERSTONE_SEGMENTATION["labelmap_uri"])

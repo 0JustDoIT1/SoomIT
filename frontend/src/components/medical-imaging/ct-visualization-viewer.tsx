@@ -22,6 +22,7 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [layerProgress, setLayerProgress] = useState({ loaded: 0, total: layers.length });
   const [wireframe, setWireframe] = useState(false);
   const [visibility, setVisibility] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(layers.map((layer) => [layer.id, layer.default_visible])),
@@ -53,8 +54,17 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
     let disposed = false;
     let renderer: import("three").WebGLRenderer | null = null;
     let controls: import("three/addons/controls/OrbitControls.js").OrbitControls | null = null;
+    let scene: import("three").Scene | null = null;
     let frameHandle = 0;
     let resizeObserver: ResizeObserver | null = null;
+    queueMicrotask(() => {
+      if (disposed) return;
+      setLoading(true);
+      setError("");
+      setLayerProgress({ loaded: 0, total: layers.length });
+      setVisibility(Object.fromEntries(layers.map((layer) => [layer.id, layer.default_visible])));
+      setOpacity(Object.fromEntries(layers.map((layer) => [layer.id, layer.default_opacity])));
+    });
 
     void Promise.all([
       import("three"),
@@ -65,7 +75,8 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
         if (disposed || !containerRef.current) return;
         const container = containerRef.current;
 
-        const scene = new THREE.Scene();
+        const activeScene = new THREE.Scene();
+        scene = activeScene;
         const camera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 5000);
         camera.position.set(0, -300, 150);
         camera.up.set(0, 0, 1);
@@ -75,16 +86,17 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
         renderer.setSize(container.clientWidth, container.clientHeight);
         container.appendChild(renderer.domElement);
 
-        scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+        activeScene.add(new THREE.AmbientLight(0xffffff, 0.6));
         const keyLight = new THREE.DirectionalLight(0xffffff, 0.8);
         keyLight.position.set(200, -200, 300);
-        scene.add(keyLight);
+        activeScene.add(keyLight);
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, 0, 0);
         controls.update();
 
         const loader = new GLTFLoader();
+        let completedLayerCount = 0;
         const results = await Promise.all(
           layers.map(async (layer) => {
             try {
@@ -93,6 +105,11 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
               return { layer, scene: gltf.scene as import("three").Object3D };
             } catch {
               return { layer, scene: null };
+            } finally {
+              completedLayerCount += 1;
+              if (!disposed) {
+                setLayerProgress({ loaded: completedLayerCount, total: layers.length });
+              }
             }
           }),
         );
@@ -108,9 +125,21 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
             const material = mesh.material as import("three").MeshStandardMaterial;
             material.transparent = true;
             material.side = THREE.DoubleSide;
+            material.wireframe = false;
+            const wireframeOverlay = new THREE.LineSegments(
+              new THREE.WireframeGeometry(mesh.geometry),
+              new THREE.LineBasicMaterial({
+                color: layer.color,
+                transparent: true,
+                opacity: layer.default_opacity,
+              }),
+            );
+            wireframeOverlay.visible = false;
+            wireframeOverlay.userData.isWireframeOverlay = true;
+            mesh.add(wireframeOverlay);
           });
           meshes.set(layer.id, layerScene);
-          scene.add(layerScene);
+          activeScene.add(layerScene);
           bounds.expandByObject(layerScene);
         }
 
@@ -131,15 +160,21 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
           for (const [layerId, object] of meshes) {
             object.visible = visibilityRef.current[layerId] ?? true;
             object.traverse((child) => {
+              if (child.userData.isWireframeOverlay) {
+                child.visible = wireframeRef.current;
+                const lineMaterial = (child as import("three").LineSegments).material as import("three").LineBasicMaterial;
+                lineMaterial.opacity = opacityRef.current[layerId] ?? 1;
+                return;
+              }
               const mesh = child as import("three").Mesh;
               if (!mesh.isMesh) return;
               const material = mesh.material as import("three").MeshStandardMaterial;
               material.opacity = opacityRef.current[layerId] ?? 1;
-              material.wireframe = wireframeRef.current;
+              material.visible = !wireframeRef.current;
             });
           }
           controls?.update();
-          renderer?.render(scene, camera);
+          renderer?.render(activeScene, camera);
           frameHandle = requestAnimationFrame(renderLoop);
         };
         renderLoop();
@@ -164,6 +199,13 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
       cancelAnimationFrame(frameHandle);
       resizeObserver?.disconnect();
       controls?.dispose();
+      scene?.traverse((child) => {
+        const renderable = child as import("three").Mesh;
+        if (renderable.geometry) renderable.geometry.dispose();
+        const material = renderable.material;
+        if (Array.isArray(material)) material.forEach((item) => item.dispose());
+        else material?.dispose();
+      });
       renderer?.dispose();
       renderer?.domElement.remove();
     };
@@ -181,6 +223,12 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
     <div className="grid min-h-[360px] grid-cols-[1fr_190px] overflow-hidden bg-slate-950">
       <div className="relative min-h-0">
         <div ref={containerRef} className="absolute inset-0" aria-label="CT 3D 뷰어" />
+        {layerProgress.total > 0 && layerProgress.loaded < layerProgress.total && (
+          <div className="absolute left-2 top-2 z-10 rounded bg-black/70 px-2 py-1 text-[10px] font-semibold text-white">
+            3D 레이어 {layerProgress.loaded}/{layerProgress.total}
+            {layerProgress.loaded >= layerProgress.total ? " · 완료" : " · 불러오는 중"}
+          </div>
+        )}
         {loading && (
           <div className="absolute inset-0 grid place-items-center text-xs font-semibold text-slate-300">
             3D 모델을 불러오는 중입니다.

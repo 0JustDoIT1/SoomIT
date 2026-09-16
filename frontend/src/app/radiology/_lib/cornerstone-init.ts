@@ -36,10 +36,6 @@ export async function ensureCornerstoneInitialized(): Promise<CornerstoneModules
       },
     });
     modules.tools.init();
-    modules.core.volumeLoader.registerVolumeLoader(
-      "cornerstoneStreamingImageVolume",
-      modules.core.cornerstoneStreamingImageVolumeLoader,
-    );
     modules.core.imageLoadPoolManager.setMaxSimultaneousRequests(
       modules.core.Enums.RequestType.Interaction,
       6,

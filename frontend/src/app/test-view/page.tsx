@@ -10,6 +10,13 @@ import {
   type RadiologyVisualizationLayer,
 } from "@/app/radiology/_lib/radiology-api";
 
+const CT_TEST_PRESET = {
+  analysisId: "6275047c-fa17-443d-bc80-0828f69b0747",
+  orderId: "937dc266-7e19-4e0f-b3c6-7bfcb2df64e9",
+  assetId: "7b2a428e-3ec8-4854-bf3b-d3dfcc9e80b3",
+  orthancSeriesId: "1ddda848-9c2a7f23-3f580cf0-ee14b84f-e8561c0f",
+} as const;
+
 /**
  * Sandbox page for building/testing the CT DICOMweb + Cornerstone segmentation
  * viewer and the Three.js AI-visualization viewer against real IDs, without
@@ -90,6 +97,23 @@ export default function TestViewPage() {
         </label>
         <button type="submit" className="rounded bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white">
           불러오기
+        </button>
+        <button
+          type="button"
+          className="rounded bg-slate-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+          title={`Orthanc Series: ${CT_TEST_PRESET.orthancSeriesId}`}
+          onClick={() => {
+            setOrderId(CT_TEST_PRESET.orderId);
+            setAssetId(CT_TEST_PRESET.assetId);
+            setAnalysisId(CT_TEST_PRESET.analysisId);
+            setSubmitted({
+              orderId: CT_TEST_PRESET.orderId,
+              assetId: CT_TEST_PRESET.assetId,
+              analysisId: CT_TEST_PRESET.analysisId,
+            });
+          }}
+        >
+          현재 CT 테스트 값 불러오기
         </button>
       </form>
 
