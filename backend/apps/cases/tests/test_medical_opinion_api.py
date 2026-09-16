@@ -29,7 +29,7 @@ class DoctorMedicalOpinionAPITests(SimpleTestCase):
         mock_generate.return_value = {
             "opinion": "의료진 검토가 필요한 소견 초안입니다.",
             "source_results": [
-                {"id": str(result_id), "stage": "CT", "confirmed_at": None},
+                {"id": str(result_id), "workflow_stage": "CT", "confirmed_at": None},
             ],
         }
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 type AiSummaryResult = {
   id?: string;
@@ -32,15 +32,17 @@ const ANALYSIS_CONFIG = [
   { type: "PATHOLOGY_GENE_ANALYSIS", label: "조직·유전자 분석", clinical: ["PATHOLOGY_GENE"] },
   { type: "PDL1_ANALYSIS", label: "PD-L1", clinical: ["PDL1"] },
   { type: "TREATMENT_RECOMMENDATION", label: "치료 추천", clinical: [] },
+  { type: "ALL_ANALYSES", label: "AI 종합 분석", clinical: [] },
 ] as const;
 
-export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = false, onRetry }: { aiResults: AiSummaryResult[]; clinicalResults: ClinicalSummaryResult[]; error?: string; retrying?: boolean; onRetry?: () => void }) {
+export function AiSummaryPanel({ aiResults, clinicalResults, evidenceByAnalysis, reviewRequest, error, retrying = false, onRetry }: { aiResults: AiSummaryResult[]; clinicalResults: ClinicalSummaryResult[]; evidenceByAnalysis?: Partial<Record<string, ReactNode>>; reviewRequest?: { analysisType: string } | null; error?: string; retrying?: boolean; onRetry?: () => void }) {
   const rows = useMemo(() => ANALYSIS_CONFIG.map((config) => ({
     ...config,
     ai: selectPreferredAiResult(aiResults, config.type),
     clinical: findClinicalResult(config.type, config.clinical, clinicalResults),
   })), [aiResults, clinicalResults]);
-  const [selectedType, setSelectedType] = useState<string>(() => rows.find((row) => row.ai || row.clinical)?.type ?? ANALYSIS_CONFIG[0].type);
+  const [selectedType, setSelectedType] = useState<string>(() => reviewRequest?.analysisType ?? rows.find((row) => row.ai || row.clinical)?.type ?? ANALYSIS_CONFIG[0].type);
+  const [openEvidenceType, setOpenEvidenceType] = useState<string | null>(() => reviewRequest?.analysisType ?? null);
   const selected = rows.find((row) => row.type === selectedType) ?? rows[0];
 
   return (
@@ -78,13 +80,21 @@ export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = f
           </div>
           <StatusBadge status={selected.ai?.status} label={selected.ai?.status_label} />
         </div>
-        <div className="mt-4 grid min-h-64 grid-cols-1 overflow-hidden rounded-lg border border-slate-200 md:grid-cols-2 md:divide-x md:divide-slate-200">
-          <SummaryColumn source="AI 소견" tone="blue" primary={getAiDisplaySummary(selected.type, selected.ai)} secondary={getModelLabel(selected.ai)} />
-          <SummaryColumn source="전문과 의료진 확정 소견" tone="emerald" primary={getClinicalSummary(selected.type, selected.clinical)} secondary={formatDate(selected.clinical?.result_date)} />
-        </div>
-        {selected.type === "PATHOLOGY_GENE_ANALYSIS" && <GeneResultDetails aiDetail={selected.ai?.status === "SUCCEEDED" ? selected.ai.result_detail : null} clinicalDetail={selected.clinical?.result_detail} />}
-        <ComparisonBadge comparison={compareResults(selected.type, selected.ai, selected.clinical)} />
-        {selected.ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{selected.ai.error_message}</p>}
+        {evidenceByAnalysis?.[selected.type] && <details open={openEvidenceType === selected.type} onToggle={(event) => setOpenEvidenceType(event.currentTarget.open ? selected.type : null)} className="mt-3 overflow-hidden rounded-lg border border-blue-100 bg-blue-50/30">
+          <summary className="cursor-pointer select-none border-b border-blue-100 px-3 py-2 text-[11px] font-semibold text-blue-700">영상·검체 근거 확인</summary>
+          {openEvidenceType === selected.type && <div className="border-t-0 bg-white p-3">{evidenceByAnalysis[selected.type]}</div>}
+        </details>}
+        {selected.type === "ALL_ANALYSES" ? (
+          <AllAnalysisResults rows={rows.filter((row) => row.type !== "ALL_ANALYSES")} onSelect={(analysisType) => { setSelectedType(analysisType); setOpenEvidenceType(analysisType); }} />
+        ) : <>
+          <div className="mt-4 grid min-h-64 grid-cols-1 overflow-hidden rounded-lg border border-slate-200 md:grid-cols-2 md:divide-x md:divide-slate-200">
+            <SummaryColumn source="AI 소견" tone="blue" primary={getAiDisplaySummary(selected.type, selected.ai)} secondary={getModelLabel(selected.ai)} />
+            <SummaryColumn source="전문과 의료진 확정 소견" tone="emerald" primary={getClinicalSummary(selected.type, selected.clinical)} secondary={formatDate(selected.clinical?.result_date)} />
+          </div>
+          {selected.type === "PATHOLOGY_GENE_ANALYSIS" && <GeneResultDetails aiDetail={selected.ai?.status === "SUCCEEDED" ? selected.ai.result_detail : null} clinicalDetail={selected.clinical?.result_detail} />}
+          <ComparisonBadge comparison={compareResults(selected.type, selected.ai, selected.clinical)} />
+          {selected.ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{selected.ai.error_message}</p>}
+        </>}
       </article>
       <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] leading-4 text-slate-500">이 화면에서는 AI 분석을 실행하거나 결과를 확정하지 않습니다. 최종 진단과 치료 결정은 의료진 확정 결과를 기준으로 합니다.</p>
     </section>
@@ -93,6 +103,16 @@ export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = f
 
 function SummaryColumn({ source, tone, primary, secondary }: { source: string; tone: "blue" | "emerald"; primary: string; secondary: string }) {
   return <div className="min-w-0 p-3"><p className={`text-[9px] font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{source}</p><p className="mt-2 break-words text-xs font-bold text-slate-800">{primary}</p><p className="mt-2 truncate text-[9px] text-slate-400">{secondary}</p></div>;
+}
+
+function AllAnalysisResults({ rows, onSelect }: { rows: { type: string; label: string; ai?: AiSummaryResult; clinical?: ClinicalSummaryResult }[]; onSelect: (analysisType: string) => void }) {
+  return <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+    {rows.map((row) => <button key={row.type} type="button" onClick={() => onSelect(row.type)} className="overflow-hidden rounded-lg border border-slate-200 bg-white text-left transition hover:border-blue-300 hover:shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+      <header className="flex items-center justify-between gap-2 border-b border-slate-100 bg-slate-50 px-3 py-2"><h3 className="text-xs font-bold text-slate-800">{row.label}</h3><StatusBadge status={row.ai?.status} label={row.ai?.status_label} /></header>
+      <div className="grid divide-y divide-slate-100"><SummaryColumn source="AI 소견" tone="blue" primary={getAiDisplaySummary(row.type, row.ai)} secondary={getModelLabel(row.ai)} /><SummaryColumn source="확정 소견" tone="emerald" primary={getClinicalSummary(row.type, row.clinical)} secondary={formatDate(row.clinical?.result_date)} /></div>
+      <span className="block border-t border-slate-100 px-3 py-2 text-[10px] font-semibold text-blue-700">상세 근거 보기</span>
+    </button>)}
+  </div>;
 }
 
 function StatusBadge({ status, label }: { status?: string; label?: string }) {

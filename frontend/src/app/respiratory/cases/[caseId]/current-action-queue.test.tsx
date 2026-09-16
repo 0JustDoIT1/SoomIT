@@ -19,7 +19,7 @@ describe("CurrentActionQueue", () => {
     expect(screen.getByText(/오더 요청됨/)).toBeTruthy();
   });
 
-  it("opens the existing target without creating a new action", () => {
+  it("opens the existing target without rendering a duplicate review", () => {
     const onOpen = vi.fn();
     const action = { id: "order-1", title: "CT 검사 오더 상태 확인", source: "ORDER" as const, sourceLabel: "검사 오더", status: "예약됨", href: "/respiratory/cases/case-1", target: "CT" as const };
     render(<CurrentActionQueue actions={[action]} onNavigate={vi.fn()} onOpen={onOpen} />);

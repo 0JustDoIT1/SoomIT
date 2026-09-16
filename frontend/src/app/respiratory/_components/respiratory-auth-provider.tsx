@@ -7,9 +7,6 @@ import type { LoginUser } from "@/types/auth";
 
 type ContextValue = { user: LoginUser | null; isAuthenticated: boolean; isReady: boolean; logout: () => void; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> };
 const Context = createContext<ContextValue | null>(null);
-const PREVIEW_ENABLED =
-  process.env.NODE_ENV === "development" &&
-  process.env.NEXT_PUBLIC_RESPIRATORY_PREVIEW === "true";
 
 export function RespiratoryAuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
@@ -32,7 +29,7 @@ export function RespiratoryAuthProvider({ children }: { children: ReactNode }) {
     const initializationTimer = window.setTimeout(() => {
       setUser(nextUser);
       setIsReady(true);
-      if (!nextUser && !PREVIEW_ENABLED) router.replace("/login");
+      if (!nextUser) router.replace("/login");
     }, 0);
 
     return () => window.clearTimeout(initializationTimer);
@@ -47,12 +44,6 @@ export function RespiratoryAuthProvider({ children }: { children: ReactNode }) {
   }, [router]);
 
   const authorizedFetch = useCallback((input: RequestInfo | URL, init: RequestInit = {}) => {
-    if (PREVIEW_ENABLED && !sessionStorage.getItem("accessToken")) {
-      const headers = new Headers(init.headers);
-      headers.set("Accept", "application/json");
-      return fetch(input, { ...init, headers, cache: "no-store" });
-    }
-
     const headers = new Headers(init.headers);
     headers.set("Accept", "application/json");
     return staffAuthenticatedFetch(input, {
@@ -63,7 +54,7 @@ export function RespiratoryAuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(user) || PREVIEW_ENABLED, isReady, logout, authorizedFetch }),
+    () => ({ user, isAuthenticated: Boolean(user), isReady, logout, authorizedFetch }),
     [authorizedFetch, isReady, logout, user],
   );
 

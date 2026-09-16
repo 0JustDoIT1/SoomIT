@@ -1,39 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import userEvent from "@testing-library/user-event";
+
 import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 
-describe("CaseWorkspaceEmpty preview", () => {
-  it("identifies the UI preview and exposes no medical records", () => {
-    render(<CaseWorkspaceEmpty isPreview />);
-    expect(screen.getByText("UI 미리보기 · 실제 의료 데이터 없음")).toBeTruthy();
-    expect(screen.getByText("검색 결과가 없습니다.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "임시 저장" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "최종 TNM 확정" })).toBeDisabled();
-  });
+describe("CaseWorkspaceEmpty", () => {
+  it("shows an API error without substituting preview medical data", () => {
+    render(<CaseWorkspaceEmpty errorMessage="Case 접근 권한이 없습니다." />);
 
-  it("uses the current empty components while switching preview menus", async () => {
-    const user = userEvent.setup();
-    render(<CaseWorkspaceEmpty isPreview />);
-
-    await user.click(screen.getByRole("button", { name: "전체 요약" }));
-    expect(screen.getByRole("heading", { name: "전체 요약" })).toBeTruthy();
-    expect(screen.getByText("확인 가능한 전문과 확정 결과가 없습니다.")).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "흉부 CT" }));
-    expect(screen.getByRole("heading", { name: "흉부 CT 검사·결과" })).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "PD-L1" }));
-    expect(screen.getByRole("heading", { name: "PD-L1 검사·결과" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "PD-L1 결과 비교" })).toBeTruthy();
-    expect(screen.getByText("현재 Case에 연결된 전문과 확정 TPS와 PD-L1 AI 분석 후보가 없습니다.")).toBeTruthy();
-    expect(document.body).not.toHaveTextContent("인증 연결 전까지");
-
-    await user.click(screen.getByRole("button", { name: "치료 결정" }));
-    expect(screen.getByRole("heading", { name: "치료·처방 현황" })).toBeTruthy();
-
-    await user.click(screen.getByRole("button", { name: "AI 종합 분석" }));
-    expect(screen.getByRole("heading", { name: "AI 종합 분석" })).toBeTruthy();
-    expect(screen.getByText("AI 결과는 확정 진단이 아닙니다")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Case 정보를 불러올 수 없습니다." })).toBeTruthy();
+    expect(screen.getByText("Case 접근 권한이 없습니다.")).toBeTruthy();
+    expect(screen.queryByText("UI 미리보기")).toBeNull();
   });
 });

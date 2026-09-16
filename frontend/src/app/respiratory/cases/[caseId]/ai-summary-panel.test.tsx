@@ -58,6 +58,38 @@ describe("AiSummaryPanel", () => {
   });
 });
 
+describe("AiSummaryPanel review action", () => {
+  it("opens the requested analysis evidence", () => {
+    render(<AiSummaryPanel
+      aiResults={[{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: 0.4 } } }]}
+      clinicalResults={[]}
+      evidenceByAnalysis={{ CT_ANALYSIS: <p>CT original image</p> }}
+      reviewRequest={{ analysisType: "CT_ANALYSIS" }}
+    />);
+
+    expect(screen.getByRole("tab", { name: "흉부 CT" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("CT original image")).toBeTruthy();
+  });
+});
+
+describe("AiSummaryPanel combined analysis", () => {
+  it("shows every analysis result from the final tab", () => {
+    render(<AiSummaryPanel
+      aiResults={[
+        { analysis_type: "XRAY_ANALYSIS", status: "SUCCEEDED", result_detail: { xray: { assessment_label: "X-ray result" } } },
+        { analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: 0.4 } } },
+      ]}
+      clinicalResults={[]}
+    />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "AI 종합 분석" }));
+    expect(screen.getByText("X-ray result")).toBeTruthy();
+    expect(screen.getAllByText("흉부 CT").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /흉부 CT.*상세 근거 보기/ }));
+    expect(screen.getByRole("tab", { name: "흉부 CT" })).toHaveAttribute("aria-selected", "true");
+  });
+});
+
 describe("selectPreferredAiResult", () => {
   it("prefers the latest successful result over a newer running result", () => {
     const selected = selectPreferredAiResult([

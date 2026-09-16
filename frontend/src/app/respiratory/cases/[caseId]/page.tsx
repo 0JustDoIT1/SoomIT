@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { notFound, useParams, useRouter } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { API_BASE_URL, type ExaminationOrder } from "../../_lib/respiratory-api";
 import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-sections";
@@ -24,7 +24,9 @@ import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-error
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
-import { MedicalOpinionPanel } from "./medical-opinion-panel";
+import { CaseDicomEvidence } from "./case-dicom-evidence";
+import { CaseImageEvidence } from "./case-image-evidence";
+import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
@@ -252,6 +254,15 @@ type PrescriptionSubMenu =
   | "SAFETY_CHECK"
   | "FINAL_PRESCRIPTION";
 
+const analysisTypeByActionTarget: Partial<Record<string, string>> = {
+  XRAY: "XRAY_ANALYSIS",
+  CT: "CT_ANALYSIS",
+  PET_CT_TNM: "PET_CT_TNM_ANALYSIS",
+  PATHOLOGY_GENE: "PATHOLOGY_GENE_ANALYSIS",
+  PDL1: "PDL1_ANALYSIS",
+  TREATMENT: "TREATMENT_RECOMMENDATION",
+};
+
 const mainMenus: {
   key: MainMenu;
   label: string;
@@ -394,7 +405,6 @@ export default function RespiratoryCaseDetailPage() {
   const { authorizedFetch } = useRespiratoryAuth();
 
   const caseId = params.caseId as string;
-  const isPreview = caseId === "preview";
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [selectedCase, setSelectedCase] =
@@ -406,6 +416,7 @@ export default function RespiratoryCaseDetailPage() {
   const [selectedMainMenu, setSelectedMainMenu] =
   useState<MainMenu>("AI");
   const [selectedInfoMenu, setSelectedInfoMenu] = useState<CaseInfoKey>("PET_CT_TNM");
+  const [aiReviewRequest, setAiReviewRequest] = useState<{ analysisType: string; requestId: number } | null>(null);
 
   const [expandedMainMenu, setExpandedMainMenu] =
   useState<MainMenu | null>("AI");
@@ -502,7 +513,6 @@ export default function RespiratoryCaseDetailPage() {
   const hasUnsavedCaseChanges = combineUnsavedCaseChanges({ tnm: tnmDirty, treatment: hasUnsavedTreatmentDraft, prescription: hasUnsavedPrescriptionDraft, unacknowledgedWarnings: hasUnacknowledgedWarnings });
 
   useEffect(() => {
-    if (isPreview) return;
     const controller = new AbortController();
     const applyCurrentResponse = (apply: () => void) => applyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted, apply);
     const fetchData = async () => {
@@ -682,7 +692,7 @@ export default function RespiratoryCaseDetailPage() {
       fetchData();
     }
     return () => controller.abort();
-  }, [authorizedFetch, caseId, isPreview, caseRefreshVersion]);
+  }, [authorizedFetch, caseId, caseRefreshVersion]);
 
   const filteredCases = cases.filter((item) => {
     const keyword = searchText.trim().toLowerCase();
@@ -1278,11 +1288,6 @@ export default function RespiratoryCaseDetailPage() {
     }
   };
 
-  if (isPreview) {
-    if (process.env.NODE_ENV === "production") notFound();
-    return <CaseWorkspaceEmpty isPreview />;
-  }
-
   if (loading) {
     return (
       <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
@@ -1535,13 +1540,14 @@ export default function RespiratoryCaseDetailPage() {
         <CurrentActionQueue
           actions={currentActions}
           onNavigate={(href) => router.push(href)}
-          onOpen={() => undefined}
-          renderExpanded={(action) => {
-            if (!(["XRAY", "CT", "PET_CT_TNM"] as string[]).includes(action.target)) {
-              return <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">{action.title}</p><p className="mt-1">현재 상태: {action.status}</p><p className="mt-2 text-slate-500">이 항목은 영상 검토 대상이 아니므로 상세 화면에서 이어서 처리할 수 있습니다.</p></div>;
+          onOpen={(action) => {
+            const analysisType = analysisTypeByActionTarget[action.target];
+            if (!analysisType) {
+              handleInfoMenuSelect(action.target);
+              return;
             }
-            const analysisType = action.target === "XRAY" ? "XRAY_ANALYSIS" : action.target === "CT" ? "CT_ANALYSIS" : "PET_CT_TNM_ANALYSIS";
-            return <div className="max-h-[620px] overflow-y-auto rounded-lg border border-slate-200 bg-white"><ResultReviewPanel stage={action.target} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} clinicalResult={tnmClinicalResults.find((result) => result.workflow_stage === action.target)} aiResult={selectPreferredAiResult(tnmAnalysisResults, analysisType) as TnmAnalysisResult | undefined} /></div>;
+            handleInfoMenuSelect("AI_SUMMARY");
+            setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
         />
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
@@ -1586,20 +1592,21 @@ export default function RespiratoryCaseDetailPage() {
           </div>
         ) : selectedInfoMenu === "AI_SUMMARY" ? (
           <div className="space-y-3">
-            <MedicalOpinionPanel
-              key={caseId}
-              caseId={caseId}
-              confirmedResultCount={tnmClinicalResults.filter((result) => result.result_status === "CONFIRMED").length}
-              apiBaseUrl={API_BASE_URL}
-              authorizedFetch={authorizedFetch}
-            />
             <AiSummaryPanel
-              key={caseId}
+              key={`${caseId}-${aiReviewRequest?.requestId ?? "default"}`}
               aiResults={tnmAnalysisResults}
               clinicalResults={tnmClinicalResults}
+              reviewRequest={aiReviewRequest}
               error={aiResultError}
               retrying={panelRetrying === "AI"}
               onRetry={retryAiResults}
+              evidenceByAnalysis={{
+                XRAY_ANALYSIS: <CaseImageEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="XRAY" />,
+                CT_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="CT" />,
+                PET_CT_TNM_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="PET_CT_TNM" />,
+                PATHOLOGY_GENE_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="HE" />,
+                PDL1_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="PDL1" />,
+              }}
             />
           </div>
         ) : selectedMainMenu === "PRESCRIPTION" &&

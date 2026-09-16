@@ -1,66 +1,7 @@
-"use client";
-
-import { useState } from "react";
-import { BottomActionBar } from "./bottom-action-bar";
-import { CaseInfoMenu, CaseInfoKey } from "./case-info-menu";
-import { CaseInfoWorkspace } from "./case-info-workspace";
-import { CasePatientSidebar } from "./case-patient-sidebar";
-import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
-import { CurrentActionQueue } from "./current-action-queue";
-import { TnmReviewWorkspace } from "./tnm-review-workspace";
-import { CaseOverviewPanel } from "./case-overview-panel";
-import { ResultReviewPanel } from "./result-review-panel";
-import { BiomarkerSourceHeader } from "./biomarker-source-header";
-import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
-import { AiSummaryPanel } from "./ai-summary-panel";
-
-export function CaseWorkspaceEmpty({ errorMessage, isPreview = false }: { errorMessage?: string; isPreview?: boolean }) {
-  const [selectedMenu, setSelectedMenu] = useState<CaseInfoKey>("PET_CT_TNM");
-
-  return (
-    <div className="fixed inset-x-0 bottom-0 top-[54px] flex min-h-0 w-full flex-col overflow-hidden bg-slate-50">
-      <div className="relative"><CaseSummaryHeader caseData={{ patient_name: "-", patient_code: "-", case_code: "-", primary_doctor_name: null, current_stage: "-", case_status: "-" }} />{isPreview && <span className="absolute right-4 top-2 rounded-full bg-amber-50 px-3 py-1 text-[10px] font-semibold text-amber-700">UI 미리보기 · 실제 의료 데이터 없음</span>}</div>
-      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(0,1fr)] overflow-hidden">
-        <CasePatientSidebar cases={[]} selectedId="" searchText="" onSearchChange={() => undefined} onSelect={() => undefined} />
-        <CaseInfoMenu selected={selectedMenu} onSelect={setSelectedMenu} />
-        <main className="grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0">
-          <CaseWorkflowBar currentStage="" />
-          <CurrentActionQueue actions={[]} onNavigate={() => undefined} />
-          {errorMessage && <p role="alert" className="sr-only">{errorMessage}</p>}
-          <div className="min-h-0 overflow-y-auto">
-            <PreviewWorkspace menu={selectedMenu} />
-          </div>
-          {selectedMenu === "PET_CT_TNM" ? <BottomActionBar /> : <div className="-mx-2 border-t border-slate-200 bg-white" />}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-const EMPTY_CASE = {
-  case_code: "-",
-  patient_name: "-",
-  patient_code: "-",
-  current_stage: "-",
-  case_status: "-",
-  primary_doctor_name: null,
-  updated_at: null,
-};
-
-function PreviewWorkspace({ menu }: { menu: CaseInfoKey }) {
-  if (menu === "OVERVIEW") return <CaseOverviewPanel caseData={EMPTY_CASE} clinicalResults={[]} aiResults={[]} />;
-  if (["XRAY", "CT", "PATHOLOGY_GENE"].includes(menu)) return <ResultReviewPanel stage={menu} />;
-  if (menu === "PET_CT_TNM") return <TnmReviewWorkspace />;
-  if (menu === "PDL1") {
-    return <div className="space-y-3"><BiomarkerSourceHeader /><PreviewEmpty title="PD-L1 결과 비교" message="현재 Case에 연결된 전문과 확정 TPS와 PD-L1 AI 분석 후보가 없습니다." /></div>;
-  }
-  if (menu === "TREATMENT" || menu === "PRESCRIPTION") {
-    return <div><TreatmentPrescriptionOverview treatment={null} prescriptions={[]} /><CaseInfoWorkspace menu={menu} /></div>;
-  }
-  if (menu === "AI_SUMMARY") return <AiSummaryPanel aiResults={[]} clinicalResults={[]} />;
-  return <CaseInfoWorkspace menu={menu} />;
-}
-
-function PreviewEmpty({ title, message }: { title: string; message: string }) {
-  return <section className="rounded-lg border border-slate-200 bg-white p-4"><h2 className="text-sm font-bold text-slate-900">{title}</h2><div className="mt-3 flex min-h-48 items-center justify-center rounded-lg border border-dashed border-slate-200 bg-slate-50/60 px-5 text-center text-xs leading-5 text-slate-400">{message}</div></section>;
+export function CaseWorkspaceEmpty({ errorMessage }: { errorMessage?: string }) {
+  return <section className="mx-auto mt-10 max-w-xl rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <p className="text-xs font-semibold text-blue-600">Case 조회</p>
+    <h1 className="mt-1 text-lg font-bold text-slate-900">Case 정보를 불러올 수 없습니다.</h1>
+    <p className="mt-3 text-sm leading-6 text-slate-600">{errorMessage || "권한이 있는 실제 Case를 선택한 뒤 다시 시도해주세요."}</p>
+  </section>;
 }
