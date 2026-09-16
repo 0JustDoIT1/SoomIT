@@ -106,22 +106,14 @@ class CtDicomWebViewsTestCase(APITestCase):
         list_instances.assert_called_once_with(STUDY_UID, SERIES_UID)
 
     @patch("apps.radiology.views.retrieve_instance")
-    def test_instance_endpoint_forwards_allowed_accept_header(self, retrieve):
+    def test_instance_endpoint_proxies_orthanc_response_regardless_of_client_accept(self, retrieve):
         retrieve.return_value = DicomWebResponse(content=b"\x00\x01", content_type="application/dicom")
 
-        response = self.client.get(self.instance_url, HTTP_ACCEPT="application/dicom")
+        response = self.client.get(self.instance_url, HTTP_ACCEPT="text/html")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        retrieve.assert_called_once_with(STUDY_UID, SERIES_UID, INSTANCE_UID, accept="application/dicom")
+        retrieve.assert_called_once_with(STUDY_UID, SERIES_UID, INSTANCE_UID)
         self.assertEqual(response.content, b"\x00\x01")
-
-    @patch("apps.radiology.views.retrieve_instance")
-    def test_instance_endpoint_falls_back_for_unsupported_accept_header(self, retrieve):
-        retrieve.return_value = DicomWebResponse(content=b"\x00", content_type="application/dicom")
-
-        self.client.get(self.instance_url, HTTP_ACCEPT="text/html")
-
-        retrieve.assert_called_once_with(STUDY_UID, SERIES_UID, INSTANCE_UID, accept="application/dicom")
 
     @patch("apps.radiology.views.get_series_metadata", side_effect=OrthancDicomWebError("boom"))
     def test_metadata_endpoint_returns_502_on_storage_error(self, get_metadata):

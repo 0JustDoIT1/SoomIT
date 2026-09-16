@@ -437,6 +437,86 @@ export async function fetchRadiologyVisualizationLayer(
   return response.arrayBuffer();
 }
 
+export type RadiologyCornerstoneSegment = {
+  segment_index: number;
+  id: string;
+  name: string;
+  category: "NODULE" | "LUNG_LOBE" | "ANATOMY";
+  color: [number, number, number];
+  default_visible?: boolean;
+  default_opacity?: number;
+};
+
+export type RadiologyCornerstoneSegmentationMetadata = {
+  schema_version: string;
+  scalar_type: "uint8" | "uint16";
+  dimensions: [number, number, number];
+  spacing: [number, number, number];
+  origin: [number, number, number];
+  direction: number[];
+  segments: RadiologyCornerstoneSegment[];
+  labelmap_url: string;
+};
+
+export function fetchRadiologyCornerstoneSegmentationMetadata(analysisId: string, signal?: AbortSignal) {
+  return radiologyRequest<RadiologyCornerstoneSegmentationMetadata>(
+    `/api/radiology/analyses/${analysisId}/cornerstone-segmentation/`,
+    { method: "GET", signal },
+  );
+}
+
+export async function fetchRadiologyCornerstoneLabelmap(analysisId: string, signal?: AbortSignal) {
+  const response = await staffAuthenticatedFetch(
+    `${getApiBaseUrl()}/api/radiology/analyses/${analysisId}/cornerstone-segmentation/labelmap/`,
+    { method: "GET", headers: { Accept: "application/octet-stream" }, signal },
+  );
+  if (!response.ok) {
+    throw new RadiologyApiError("CT labelmap을 불러오지 못했습니다.", response.status);
+  }
+  return response.arrayBuffer();
+}
+
+export function ctDicomWebMetadataUrl(orderId: string, assetId: string) {
+  return `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/dicom-web/metadata/`;
+}
+
+export function ctDicomWebInstancesUrl(orderId: string, assetId: string) {
+  return `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/dicom-web/instances/`;
+}
+
+export function ctDicomWebInstanceUrl(orderId: string, assetId: string, sopInstanceUid: string) {
+  return `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/${assetId}/dicom-web/instances/${sopInstanceUid}/`;
+}
+
+export async function fetchCtDicomWebJson<T>(url: string, signal?: AbortSignal): Promise<T> {
+  const response = await staffAuthenticatedFetch(url, {
+    method: "GET",
+    headers: { Accept: "application/dicom+json" },
+    signal,
+  });
+  if (!response.ok) {
+    throw new RadiologyApiError("CT DICOMweb 데이터를 불러오지 못했습니다.", response.status);
+  }
+  return response.json();
+}
+
+export async function fetchCtDicomWebInstance(
+  orderId: string,
+  assetId: string,
+  sopInstanceUid: string,
+  signal?: AbortSignal,
+) {
+  const response = await staffAuthenticatedFetch(ctDicomWebInstanceUrl(orderId, assetId, sopInstanceUid), {
+    method: "GET",
+    headers: { Accept: "application/dicom" },
+    signal,
+  });
+  if (!response.ok) {
+    throw new RadiologyApiError("CT instance를 불러오지 못했습니다.", response.status);
+  }
+  return response.arrayBuffer();
+}
+
 export function submitRadiologyAnalysisForReview(analysisId: string, signal?: AbortSignal) {
   return radiologyRequest<RadiologyReviewSubmission>(
     `/api/radiology/analyses/${analysisId}/submit-for-review/`,

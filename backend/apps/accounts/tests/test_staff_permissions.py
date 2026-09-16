@@ -9,7 +9,6 @@ from apps.accounts.permissions import (
     IsAdministrationStaff,
     IsDoctor,
     IsMedicalStaff,
-    IsNurse,
     IsPathologyStaff,
     IsPulmonologyStaff,
     IsRadiologyStaff,
@@ -59,7 +58,6 @@ class StaffPermissionTestCase(SimpleTestCase):
     def test_each_existing_role_permission_uses_token_role(self):
         permission_by_role = {
             DepartmentRole.Role.DOCTOR: IsDoctor,
-            DepartmentRole.Role.NURSE: IsNurse,
             DepartmentRole.Role.TECHNOLOGIST: IsTechnologist,
             DepartmentRole.Role.MEDICAL_STAFF: IsMedicalStaff,
         }
@@ -71,7 +69,7 @@ class StaffPermissionTestCase(SimpleTestCase):
                 )
 
     def test_role_permission_denies_different_role(self):
-        self.set_claims(role=DepartmentRole.Role.NURSE)
+        self.set_claims(role=DepartmentRole.Role.TECHNOLOGIST)
         self.assertFalse(IsDoctor().has_permission(self.request, None))
 
     def test_inactive_user_is_denied(self):

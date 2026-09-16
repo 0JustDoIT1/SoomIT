@@ -186,10 +186,6 @@ class IsDoctor(_RolePermission):
     role = DepartmentRole.Role.DOCTOR
 
 
-class IsNurse(_RolePermission):
-    role = DepartmentRole.Role.NURSE
-
-
 class IsTechnologist(_RolePermission):
     role = DepartmentRole.Role.TECHNOLOGIST
 

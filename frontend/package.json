@@ -12,6 +12,7 @@
   "dependencies": {
     "@cornerstonejs/core": "^5.10.4",
     "@cornerstonejs/dicom-image-loader": "^5.10.4",
+    "@cornerstonejs/tools": "^5.10.4",
     "dicom-parser": "^1.8.21",
     "next": "16.3.3",
     "openseadragon": "^5.0.1",

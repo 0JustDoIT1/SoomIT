@@ -654,9 +654,6 @@ class RadiologyOrderXrayImageContentAPIView(RadiologyPermissionMixin, APIView):
         return HttpResponse(image_bytes, content_type=content_type)
 
 
-_ALLOWED_INSTANCE_ACCEPT_HEADERS = {"application/dicom", 'multipart/related; type="application/dicom"'}
-
-
 class _PassthroughContentNegotiation(BaseContentNegotiation):
     """Skip Accept-header negotiation for views that hand back a raw proxied body.
 
@@ -732,13 +729,8 @@ class RadiologyOrderCtDicomWebInstanceAPIView(RadiologyOrderCtDicomWebMixin, API
         asset = self.get_ct_asset_or_404(order_id, asset_id)
         if asset is None:
             return Response({"detail": "CT 영상 자산을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
-        accept = request.headers.get("Accept")
-        if accept not in _ALLOWED_INSTANCE_ACCEPT_HEADERS:
-            accept = "application/dicom"
         try:
-            result = retrieve_instance(
-                asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid, accept=accept,
-            )
+            result = retrieve_instance(asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid)
         except OrthancDicomWebError:
             return Response({"detail": "CT instance를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
         response = HttpResponse(result.content, content_type=result.content_type)
