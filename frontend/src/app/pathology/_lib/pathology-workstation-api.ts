@@ -145,6 +145,17 @@ export async function fetchPathologyGeneAnalyses(caseId: string) {
   return readJson<PathologyAiAnalysis[]>(response);
 }
 
+export async function fetchPathologyWsiPreview(wsiId: string, signal?: AbortSignal) {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/wsis/${encodeURIComponent(wsiId)}/preview/`),
+    { signal, headers: { Accept: "image/jpeg,image/png" } },
+  );
+  if (!response.ok) {
+    await readJson<never>(response);
+  }
+  return response.blob();
+}
+
 export async function uploadPdl1Input(
   orderId: string,
   wsiFile: File,

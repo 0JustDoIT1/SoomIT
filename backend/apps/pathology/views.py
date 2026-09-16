@@ -42,7 +42,11 @@ from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
 from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
 from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
-from .services.pathology_storage import PathologyStorageError, upload_pathology_wsi
+from .services.pathology_storage import (
+    PathologyStorageError,
+    download_pathology_wsi_preview,
+    upload_pathology_wsi,
+)
 
 PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
 
@@ -967,5 +971,23 @@ class WholeSlideImageTileAPIView(PathologyStaffAPIViewMixin, APIView):
                 status=status.HTTP_502_BAD_GATEWAY,
             )
         response = HttpResponse(tile.content, content_type=tile.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class WholeSlideImagePreviewAPIView(PathologyStaffAPIViewMixin, APIView):
+    def get(self, request, wsi_id):
+        wsi = get_object_or_404(
+            WholeSlideImage.objects.select_related("image_asset"),
+            id=wsi_id,
+            specimen__case__patient__hospital_id=pathology_hospital_id(request),
+        )
+        try:
+            content, content_type = download_pathology_wsi_preview(
+                wsi.image_asset.storage_uri,
+            )
+        except PathologyStorageError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        response = HttpResponse(content, content_type=content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response

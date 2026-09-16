@@ -21,6 +21,7 @@ from .views import (
     PathologyDiagnosisDetailAPIView,
     SpecimenWholeSlideImageListAPIView,
     WholeSlideImagePyramidAPIView,
+    WholeSlideImagePreviewAPIView,
     WholeSlideImageTileAPIView,
 )
 
@@ -96,6 +97,11 @@ urlpatterns = [
         "orders/<uuid:order_id>/pathology-gene-input/",
         PathologyOrderPathologyGeneInputUploadAPIView.as_view(),
         name="order-pathology-gene-input-upload",
+    ),
+    path(
+        "wsis/<uuid:wsi_id>/preview/",
+        WholeSlideImagePreviewAPIView.as_view(),
+        name="wsi-preview",
     ),
     path(
         "cases/<uuid:case_id>/diagnoses/",

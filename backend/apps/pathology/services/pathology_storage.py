@@ -9,6 +9,23 @@ class PathologyStorageError(RuntimeError):
     pass
 
 
+def download_pathology_wsi_preview(wsi_uri):
+    if not wsi_uri.startswith("gs://"):
+        raise PathologyStorageError("Pathology WSI must be stored in GCS.")
+    bucket_name, separator, object_name = wsi_uri[5:].partition("/")
+    if not bucket_name or not separator or not object_name:
+        raise PathologyStorageError("Invalid pathology WSI storage URI.")
+    try:
+        blob = storage.Client().bucket(bucket_name).blob(f"{object_name}.preview.jpg")
+        if not blob.exists():
+            raise PathologyStorageError("WSI preview is not available yet.")
+        return blob.download_as_bytes(), "image/jpeg"
+    except PathologyStorageError:
+        raise
+    except Exception as exc:
+        raise PathologyStorageError("Failed to download pathology WSI preview.") from exc
+
+
 def upload_pathology_wsi(*, hospital_id, case_id, order_id, uploaded_file):
     bucket_name = settings.PATHOLOGY_GCS_BUCKET
     if not bucket_name:
