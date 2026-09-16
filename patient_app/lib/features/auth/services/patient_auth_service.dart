@@ -277,6 +277,12 @@ class PatientAuthService {
   }
 
   Future<void> logout() async {
-    await Future.wait([_deleteStoredTokens(), _googleAuthService.signOut()]);
+    await _deleteStoredTokens();
+
+    try {
+      await _googleAuthService.signOut();
+    } catch (_) {
+      // Google SDK 로그아웃에 실패해도 로컬 로그아웃은 완료된 것으로 처리한다.
+    }
   }
 }
