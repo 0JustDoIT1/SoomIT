@@ -5,6 +5,7 @@ import '../auth/services/patient_auth_service.dart';
 import '../home/models/patient_profile.dart';
 import '../home/services/profile_service.dart';
 import 'patient_info_screen.dart';
+import 'patient_qr_screen.dart';
 import 'notification_setting_screen.dart';
 import 'profile_edit_screen.dart';
 import 'questionnaire_history_screen.dart';
@@ -12,6 +13,7 @@ import 'language_setting_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'settings_screen.dart';
 import '../auth/existing_patient_link_screen.dart';
+
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -166,10 +168,25 @@ class _MyPageScreenState extends State<MyPageScreen> {
             ),
           ),
 
-          const Icon(
-            Icons.chevron_right_rounded,
-            color: Colors.white,
-            size: 28,
+          IconButton(
+            tooltip: '내 환자 QR 보기',
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) {
+                    return PatientQrScreen(
+                      patientName: profile.name,
+                      patientCode: profile.patientCode,
+                    );
+                  },
+                ),
+              );
+            },
+            icon: const Icon(
+              Icons.qr_code_2_rounded,
+              color: Colors.white,
+              size: 30,
+            ),
           ),
         ],
       ),
