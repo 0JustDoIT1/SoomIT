@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
+import 'package:kpostal/kpostal.dart';
 
 import 'models/patient_registration_data.dart';
 import 'patient_link_screen.dart';
@@ -28,6 +29,7 @@ class _ProfileRegistrationScreenState extends State<ProfileRegistrationScreen> {
   final _postalCodeController = TextEditingController();
   final _addressController = TextEditingController();
   final _addressDetailController = TextEditingController();
+  final _addressDetailFocusNode = FocusNode();
 
   DateTime? _birthDate;
   String? _sex;
@@ -47,6 +49,7 @@ class _ProfileRegistrationScreenState extends State<ProfileRegistrationScreen> {
     _postalCodeController.dispose();
     _addressController.dispose();
     _addressDetailController.dispose();
+    _addressDetailFocusNode.dispose();
     super.dispose();
   }
 
@@ -69,15 +72,34 @@ class _ProfileRegistrationScreenState extends State<ProfileRegistrationScreen> {
     });
   }
 
-  void _searchAddress() {
+  Future<void> _searchAddress() async {
+    final result = await Navigator.of(context).push<Kpostal>(
+      MaterialPageRoute<Kpostal>(
+        builder: (context) {
+          return KpostalView(
+            appBar: AppBar(
+              title: const Text(
+                '주소 검색',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              backgroundColor: const Color(0xFFF9F8FC),
+              foregroundColor: const Color(0xFF191F28),
+              surfaceTintColor: Colors.transparent,
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
     setState(() {
-      _postalCodeController.text = '35233';
-      _addressController.text = '대전광역시 서구 둔산로 100';
+      _postalCodeController.text = result.postCode;
+      _addressController.text = result.address;
+      _addressDetailController.clear();
     });
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('테스트 주소가 입력되었습니다.')));
+    _addressDetailFocusNode.requestFocus();
   }
 
   void _continue() {
@@ -303,6 +325,7 @@ class _ProfileRegistrationScreenState extends State<ProfileRegistrationScreen> {
               const SizedBox(height: 14),
               TextFormField(
                 controller: _addressDetailController,
+                focusNode: _addressDetailFocusNode,
                 textInputAction: TextInputAction.done,
                 decoration: _decoration(label: '상세주소', hint: '동, 호수 등 상세주소'),
                 validator: (value) {
