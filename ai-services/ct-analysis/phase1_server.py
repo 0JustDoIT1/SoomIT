@@ -4,6 +4,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import sys
 import tempfile
 import threading
@@ -160,6 +161,10 @@ def phase1_from_orthanc(body: OrthancPhase1Request) -> dict:
                 metadata_path=work_root / "source" / "dicom_to_nifti_metadata.json",
             )
             archive.unlink(missing_ok=True)
+            # Orthanc is the source of truth for original DICOM. The extracted
+            # files are temporary conversion input and must not be uploaded as
+            # derived CT artifacts.
+            shutil.rmtree(dicom_root)
             return run_phase1(
                 ct_path, case_id, work_root, output_uri(case_id, body.output_gcs_uri)
             )

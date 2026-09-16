@@ -16,6 +16,7 @@ from apps.ai_results.models import (
 from apps.cases.models import CaseImageAsset
 
 from .services.ct_analysis_inference import request_ct_phase1_analysis
+from .services.ct_analysis_storage import build_ct_analysis_output_uri
 from .services.xray_inference import request_xray_prediction
 from .services.xray_storage import download_xray_image_bytes
 
@@ -50,7 +51,11 @@ def _xray_values(prediction):
 def run_xray_analysis(analysis_id):
     """Run the X-ray workflow using the existing GCS and inference clients."""
     analysis = (
-        AiAnalysis.objects.select_related("source_image_asset")
+        AiAnalysis.objects.select_related(
+            "source_image_asset",
+            "source_image_asset__examination_order",
+            "case__patient",
+        )
         .filter(id=analysis_id)
         .first()
     )
@@ -162,9 +167,19 @@ def run_ct_analysis(analysis_id):
     analysis.save(update_fields=["status", "started_at", "error_message", "completed_at"])
 
     try:
+        order_id = analysis.examination_order_id or asset.examination_order_id
+        if not order_id:
+            raise ValueError("CT analysis has no examination order.")
+        output_gcs_uri = build_ct_analysis_output_uri(
+            hospital_id=analysis.case.patient.hospital_id,
+            case_id=analysis.case_id,
+            order_id=order_id,
+            analysis_id=analysis.id,
+        )
         payload = request_ct_phase1_analysis(
             orthanc_series_id=asset.orthanc_series_id,
             case_id=str(analysis.case_id),
+            output_gcs_uri=output_gcs_uri,
             series_instance_uid=asset.series_instance_uid,
         )
         nodules = payload["result"]["nodules"]

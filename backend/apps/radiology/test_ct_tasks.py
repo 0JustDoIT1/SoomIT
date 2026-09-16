@@ -128,6 +128,11 @@ class CtAnalysisTaskTestCase(TestCase):
         infer.assert_called_once_with(
             orthanc_series_id=self.asset.orthanc_series_id,
             case_id=str(self.analysis.case_id),
+            output_gcs_uri=(
+                "gs://soomit-bucket/ct-analysis/"
+                f"{self.case.patient.hospital_id}/{self.case.id}/"
+                f"{self.asset.examination_order_id}/{self.analysis.id}"
+            ),
             series_instance_uid=self.asset.series_instance_uid,
         )
         self.analysis.refresh_from_db()

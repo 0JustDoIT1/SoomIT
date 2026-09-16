@@ -23,7 +23,9 @@ def _fetch_id_token():
         raise CtAnalysisInferenceError("CT 분석 서비스 인증 토큰을 발급할 수 없습니다.") from exc
 
 
-def request_ct_phase1_analysis(*, orthanc_series_id, case_id, series_instance_uid=None):
+def request_ct_phase1_analysis(
+    *, orthanc_series_id, case_id, output_gcs_uri, series_instance_uid=None
+):
     """Call ct-analysis-phase1-serve's /v1/phase1/orthanc endpoint.
 
     Phase 1 downloads the Series directly from Orthanc, so this function has no DB
@@ -36,7 +38,11 @@ def request_ct_phase1_analysis(*, orthanc_series_id, case_id, series_instance_ui
     if not orthanc_series_id:
         raise CtAnalysisInferenceError("orthanc_series_id가 필요합니다.")
 
-    body = {"orthanc_series_id": orthanc_series_id, "case_id": case_id}
+    body = {
+        "orthanc_series_id": orthanc_series_id,
+        "case_id": case_id,
+        "output_gcs_uri": output_gcs_uri,
+    }
     if series_instance_uid:
         body["series_instance_uid"] = series_instance_uid
 

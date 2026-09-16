@@ -143,6 +143,28 @@ export type RadiologyAnalysisDetail = {
   created_at: string;
 };
 
+export type RadiologyVisualizationLayer = {
+  id: string;
+  name: string;
+  category: "NODULE" | "LUNG_LOBE" | "ANATOMY";
+  color: string;
+  default_visible: boolean;
+  default_opacity: number;
+  supported_render_modes: Array<"surface" | "wireframe">;
+  vertex_count: number;
+  face_count: number;
+  size_bytes: number;
+  mesh_url: string;
+};
+
+export type RadiologyVisualization = {
+  schema_version: string;
+  case_id: string;
+  coordinate_system: string;
+  source_geometry: string;
+  layers: RadiologyVisualizationLayer[];
+};
+
 export type RadiologyAnalysisResult = {
   analysis_id: string;
   analysis_type: "XRAY_ANALYSIS" | "CT_ANALYSIS" | "PET_CT_TNM_ANALYSIS";
@@ -174,6 +196,7 @@ export type RadiologyAnalysisResult = {
           malignancy_risk: string | null;
           finding_payload: unknown;
         }>;
+        visualization: RadiologyVisualization | null;
       }
     | {
         predicted_t: string | null;
@@ -397,6 +420,21 @@ export function fetchRadiologyAnalysisResult(analysisId: string, signal?: AbortS
     `/api/radiology/analyses/${analysisId}/result/`,
     { method: "GET", signal },
   );
+}
+
+export async function fetchRadiologyVisualizationLayer(
+  analysisId: string,
+  layerId: string,
+  signal?: AbortSignal,
+) {
+  const response = await staffAuthenticatedFetch(
+    `${getApiBaseUrl()}/api/radiology/analyses/${analysisId}/visualization/${layerId}/`,
+    { method: "GET", headers: { Accept: "model/gltf-binary" }, signal },
+  );
+  if (!response.ok) {
+    throw new RadiologyApiError("CT 3D 레이어를 불러오지 못했습니다.", response.status);
+  }
+  return response.arrayBuffer();
 }
 
 export function submitRadiologyAnalysisForReview(analysisId: string, signal?: AbortSignal) {

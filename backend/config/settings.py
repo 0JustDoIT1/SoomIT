@@ -175,6 +175,9 @@ CT_ANALYSIS_PHASE1_TIMEOUT_SECONDS = float(
 CT_ANALYSIS_PHASE1_SERVICE_USE_ID_TOKEN = (
     os.environ.get("CT_ANALYSIS_PHASE1_SERVICE_USE_ID_TOKEN", "0") == "1"
 )
+CT_ANALYSIS_OUTPUT_GCS_PREFIX = os.environ.get(
+    "CT_ANALYSIS_OUTPUT_GCS_PREFIX", "gs://soomit-bucket/ct-analysis"
+).rstrip("/")
 CT_ANALYSIS_PHASE2_SERVICE_URL = os.environ.get(
     "CT_ANALYSIS_PHASE2_SERVICE_URL", ""
 ).rstrip("/")

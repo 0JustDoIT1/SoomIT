@@ -696,6 +696,7 @@ class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
 
         analysis = AiAnalysis.objects.create(
             case=order.case,
+            examination_order=order,
             source_image_asset=asset,
             analysis_type=analysis_type,
             model_version=model_version,
