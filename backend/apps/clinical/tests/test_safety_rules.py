@@ -8,6 +8,7 @@ from apps.clinical.views import (
     DoctorPrescriptionSafetyCheckAPIView as Safety,
     _allergy_names,
     _dur_pair_matches,
+    _safety_input_snapshot,
 )
 
 
@@ -66,6 +67,7 @@ class SafetyRuleTests(SimpleTestCase):
 
     def prescription_item(self, *, drug_name="Drug A", ingredient="Ingredient A", item_seq=None, final_dose=1):
         return NS(
+            mfds_item_seq=item_seq,
             final_dose=final_dose,
             drug=NS(
                 drug_name=drug_name,
@@ -87,11 +89,21 @@ class SafetyRuleTests(SimpleTestCase):
         response = self.post()
         self.assertEqual(response.status_code, 400)
         self.safety_results.all.return_value.delete.assert_not_called()
-
         self.prescription.items.all.return_value = [self.prescription_item(final_dose=None)]
         response = self.post()
         self.assertEqual(response.status_code, 400)
         self.safety_results.all.return_value.delete.assert_not_called()
+
+    def test_safety_snapshot_detects_deleted_inputs(self):
+        item = self.prescription_item(item_seq="100")
+        item.id = "item-1"
+        medication = NS(id="med-1", medication_name="Medication", ingredient_name="Ingredient", mfds_item_seq="200")
+        lab = NS(id="lab-1", tested_at="2026-01-01", creatinine=1, egfr=90, ast=20, alt=20, total_bilirubin=1)
+        profile = NS(allergies=[], allergy_status=None)
+        snapshot = _safety_input_snapshot(items=[item], medications=[medication], patient_profile=profile, latest_lab=lab)
+        self.assertNotEqual(snapshot, _safety_input_snapshot(items=[], medications=[medication], patient_profile=profile, latest_lab=lab))
+        self.assertNotEqual(snapshot, _safety_input_snapshot(items=[item], medications=[], patient_profile=profile, latest_lab=lab))
+        self.assertNotEqual(snapshot, _safety_input_snapshot(items=[item], medications=[medication], patient_profile=profile, latest_lab=None))
 
     def test_allergy_exact_match_and_unconfirmed_states(self):
         item = self.prescription_item(drug_name="Pemetrexed", ingredient="Pemetrexed")
@@ -124,6 +136,7 @@ class SafetyRuleTests(SimpleTestCase):
     def test_dur_exact_pair_blocks_and_unmapped_medication_warns(self):
         item = self.prescription_item(item_seq="100")
         medication = NS(
+            mfds_item_seq="200",
             medication_name="Drug B",
             ingredient_name="Ingredient B",
             drug=NS(mfds_item_seq="200"),
@@ -152,6 +165,7 @@ class SafetyRuleTests(SimpleTestCase):
 
         self.results.create.reset_mock()
         medication.drug = None
+        medication.mfds_item_seq = None
         self.post()
         self.assertTrue(self.created(source_code="DUR_MAPPING_UNRESOLVED", result="WARNING"))
 

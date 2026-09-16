@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -12,7 +13,8 @@ from pydantic import BaseModel, Field
 
 from .artifacts import ensure_artifact
 from .pipeline import PathologyPipeline
-from .storage import download_wsi
+from .storage import download_wsi, upload_wsi_preview
+from .wsi import create_preview
 
 
 CASE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -26,6 +28,7 @@ GENE_SHA = os.environ["PATHOLOGY_GENE_MODEL_SHA256"].lower()
 MAX_WSI_BYTES = int(os.getenv("PATHOLOGY_MAX_WSI_BYTES", str(10 * 1024**3)))
 MAX_PATCHES = int(os.getenv("PATHOLOGY_MAX_PATCHES", "10000"))
 BATCH_SIZE = int(os.getenv("PATHOLOGY_UNI2H_BATCH_SIZE", "32"))
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -95,12 +98,21 @@ def predict(body: PredictRequest) -> dict:
                 thumbnail_size=2000,
                 seed=42,
             )
+            preview_uri = None
+            try:
+                preview_uri = upload_wsi_preview(
+                    wsi_uri=body.wsi_gcs_uri,
+                    content=create_preview(slide_path),
+                )
+            except Exception:
+                logger.exception("Failed to generate pathology WSI preview")
         return {
             "status": "ok",
             "model_revision": MODEL_REVISION,
             "case_id": body.case_id,
             "patient_id": body.patient_id,
             "wsi_id": body.wsi_id,
+            "preview": {"gcs_uri": preview_uri} if preview_uri else None,
             **result,
         }
     except (ValueError, OSError, RuntimeError) as exc:

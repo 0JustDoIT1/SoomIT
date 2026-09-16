@@ -8,6 +8,7 @@ import {
   cancelPathologyGeneAnalysis,
   fetchPathologyCaseWorkflow,
   fetchPathologyGeneAnalyses,
+  fetchPathologyWsiPreview,
   fetchPathologyWorkstation,
   fetchPdl1Analyses,
   runPathologyGeneAnalysis,
@@ -299,6 +300,29 @@ function SelectedCaseOverview({
       </dl>
     </section>
   );
+}
+
+function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    void fetchPathologyWsiPreview(wsiId, controller.signal)
+      .then((blob) => {
+        if (!controller.signal.aborted) {
+          objectUrl = URL.createObjectURL(blob);
+          setPreviewUrl(objectUrl);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [wsiId]);
+
+  return previewUrl ? <img src={previewUrl} alt="H&E 원본 조직영상 미리보기" className="absolute inset-0 h-full w-full object-contain" /> : null;
 }
 
 function WorkArea({
@@ -1103,9 +1127,10 @@ function WorkArea({
                     </dl>
 
                     <div className="mt-5 grid gap-4 md:grid-cols-2">
-                      <div className="flex min-h-64 flex-col items-center justify-center rounded-xl border border-slate-300 bg-slate-950 px-4 text-center text-slate-200 shadow-inner">
-                        <p className="font-semibold">원본 조직영상</p>
-                        <p className="mt-2 text-xs text-slate-400">
+                      <div className="relative flex min-h-64 flex-col items-center justify-center overflow-hidden rounded-xl border border-slate-300 bg-slate-950 px-4 text-center text-slate-200 shadow-inner">
+                        {item.latest_wsi ? <PathologyWsiPreview wsiId={item.latest_wsi.id} /> : null}
+                        <p className="relative z-10 rounded bg-slate-950/75 px-3 py-2 font-semibold">원본 조직영상</p>
+                        <p className="relative z-10 mt-2 rounded bg-slate-950/75 px-3 py-1 text-xs text-slate-300">
                           {item.latest_wsi
                             ? `${item.latest_wsi.slide_code} · ${item.latest_wsi.original_filename}`
                             : "연결된 WSI가 없습니다."}

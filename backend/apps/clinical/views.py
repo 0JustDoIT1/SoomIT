@@ -1,3 +1,5 @@
+import json
+
 from django.db import transaction
 from django.db.models import F
 from django.utils import timezone
@@ -202,13 +204,26 @@ def _valid_mfds_item_seq(drug):
 
 
 def _explicit_item_seq(obj):
-    if not hasattr(obj, "mfds_item_seq"):
-        return _valid_mfds_item_seq(getattr(obj, "drug", None))
     value = getattr(obj, "mfds_item_seq", None)
     if not isinstance(value, str):
         return None
     value = value.strip()
     return value if value.isdigit() else None
+
+
+def _safety_input_snapshot(*, items, medications, patient_profile, latest_lab):
+    return {
+        "prescription_items": sorted([
+            {"id": str(getattr(item, "id", "")), "final_dose": str(getattr(item, "final_dose", None)), "mfds_item_seq": _explicit_item_seq(item)}
+            for item in items
+        ], key=lambda row: row["id"]),
+        "current_medications": sorted([
+            {"id": str(getattr(medication, "id", "")), "medication_name": getattr(medication, "medication_name", None), "ingredient_name": getattr(medication, "ingredient_name", None), "mfds_item_seq": _explicit_item_seq(medication)}
+            for medication in medications
+        ], key=lambda row: row["id"]),
+        "profile": {"exists": patient_profile is not None, "allergies": getattr(patient_profile, "allergies", None) if patient_profile is not None else None, "allergy_status": getattr(patient_profile, "allergy_status", None) if patient_profile is not None else None},
+        "latest_lab": None if latest_lab is None else {"id": str(getattr(latest_lab, "id", "")), "tested_at": str(getattr(latest_lab, "tested_at", "")), "creatinine": str(getattr(latest_lab, "creatinine", None)), "egfr": str(getattr(latest_lab, "egfr", None)), "ast": str(getattr(latest_lab, "ast", None)), "alt": str(getattr(latest_lab, "alt", None)), "total_bilirubin": str(getattr(latest_lab, "total_bilirubin", None))},
+    }
 
 
 def _allergy_names(patient_profile):
@@ -832,6 +847,23 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                 status=400,
             )
 
+        snapshot_query = prescription.safety_check_results.filter(source_code="SAFETY_INPUT_SNAPSHOT")
+        snapshot_result = snapshot_query.order_by("-checked_at").first() if hasattr(snapshot_query, "order_by") else None
+        if snapshot_result is None and hasattr(snapshot_query, "order_by"):
+            return Response({"detail": "Safety re-run is required."}, status=400)
+        if snapshot_result is not None and isinstance(getattr(snapshot_result, "message", None), str):
+            patient = prescription.case.patient
+            current_profile = PatientHealthProfile.objects.filter(patient=patient).first()
+            current_medications = list(CurrentMedication.objects.filter(patient=patient, is_active=True).select_related("drug"))
+            current_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at").first()
+            current_snapshot = _safety_input_snapshot(items=list(items), medications=current_medications, patient_profile=current_profile, latest_lab=current_lab)
+            try:
+                saved_snapshot = json.loads(snapshot_result.message or "")
+            except (TypeError, ValueError):
+                saved_snapshot = None
+            if saved_snapshot != current_snapshot:
+                return Response({"detail": "Safety inputs changed; re-run is required."}, status=400)
+
         if safety_results.filter(result="BLOCK").exists():
             return Response(
                 {"detail": "BLOCK Safety 결과가 있어 처방을 확정할 수 없습니다."},
@@ -1165,6 +1197,26 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             .filter(patient=patient)
             .order_by("-tested_at")
             .first()
+        )
+
+        SafetyCheckResult.objects.create(
+            prescription=prescription,
+            prescription_item=None,
+            check_type="INPUT_SNAPSHOT",
+            result="PASS",
+            message=json.dumps(
+                _safety_input_snapshot(
+                    items=items,
+                    medications=active_medications,
+                    patient_profile=patient_profile,
+                    latest_lab=latest_lab,
+                ),
+                sort_keys=True,
+                default=str,
+            ),
+            source="INTERNAL_RULE_V1",
+            source_code="SAFETY_INPUT_SNAPSHOT",
+            checked_at=timezone.now(),
         )
 
         # 1. 현재 복용약과 처방약 성분 중복 및 직접 알레르기 확인

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+from io import BytesIO
 from pathlib import Path
 
 import numpy as np
@@ -32,6 +33,18 @@ def tissue_mask(slide: openslide.OpenSlide, thumbnail_size: int) -> tuple[np.nda
     gray = np.asarray(Image.fromarray(rgb).convert("L"), dtype=np.uint8)
     threshold = otsu_threshold(gray)
     return gray < threshold, thumbnail.size
+
+
+def create_preview(slide_path: Path, max_size: int = 1200) -> bytes:
+    """Render a bounded JPEG preview without exposing the original SVS."""
+    slide = openslide.OpenSlide(str(slide_path))
+    try:
+        thumbnail = slide.get_thumbnail((max_size, max_size)).convert("RGB")
+        output = BytesIO()
+        thumbnail.save(output, format="JPEG", quality=85, optimize=True)
+        return output.getvalue()
+    finally:
+        slide.close()
 
 
 def select_level(slide: openslide.OpenSlide, target_mpp: float) -> tuple[int, float]:
