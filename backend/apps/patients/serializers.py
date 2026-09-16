@@ -2,6 +2,7 @@ import hashlib
 from apps.notifications.models import NotificationLog
 from apps.notifications.models import PatientNotificationSetting
 from django.utils import timezone
+from apps.notifications.models import PatientDeviceToken
 
 from rest_framework import serializers
 
@@ -970,3 +971,37 @@ class MedicationIntakeLogSerializer(serializers.ModelSerializer):
             "created_at",
             "updated_at",
         ]
+
+# ─────────────────────────────────────────────
+# 환자앱 FCM 기기 토큰
+# ─────────────────────────────────────────────
+class PatientDeviceTokenSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientDeviceToken
+        fields = [
+            "id",
+            "token",
+            "platform",
+            "is_active",
+            "updated_at",
+        ]
+        read_only_fields = [
+            "id",
+            "is_active",
+            "updated_at",
+        ]
+        extra_kwargs = {
+            "token": {
+                "trim_whitespace": False,
+                "validators": [],
+            },
+        }
+
+
+class PatientDeviceTokenDeactivateSerializer(serializers.Serializer):
+    token = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        max_length=512,
+        trim_whitespace=False,
+    )

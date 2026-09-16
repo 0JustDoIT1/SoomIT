@@ -33,6 +33,7 @@ from .views import (
     PatientSymptomLogListCreateAPIView,
     PatientAppointmentCancelRequestAPIView,
     PatientAppointmentChangeRequestAPIView,
+    PatientDeviceTokenAPIView,
     )
 
 
@@ -132,6 +133,11 @@ urlpatterns = [
         "notification-settings/<str:notification_type>/",
         PatientNotificationSettingUpdateAPIView.as_view(),
         name="patient-notification-setting-update",
+    ),
+    path(
+        "device-tokens/",
+        PatientDeviceTokenAPIView.as_view(),
+        name="patient-device-token",
     ),
     
     # 문진표 작성 내역

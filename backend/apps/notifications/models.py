@@ -4,7 +4,7 @@ from django.db.models import Q
 from apps.accounts.models import User
 from apps.patients.models import PatientAccount
 from apps.cases.models import LungCancerCase
-from apps.common.models import UUIDModel, CreatedOnlyUUIDModel
+from apps.common.models import UUIDModel, CreatedOnlyUUIDModel, TimestampedUUIDModel
 
 
 # ── 9-1. patient_notification_settings ──────────────────────────
@@ -96,3 +96,42 @@ class NotificationLog(CreatedOnlyUUIDModel):
                 name="ck_notiflog_exactly_one_recipient",
             ),
         ]
+
+# ── 9-4. patient_device_tokens ──────────────────────────────────
+class PatientDeviceToken(TimestampedUUIDModel):
+    class Platform(models.TextChoices):
+        ANDROID = "ANDROID", "Android"
+        IOS = "IOS", "iOS"
+
+    patient_account = models.ForeignKey(
+        PatientAccount,
+        on_delete=models.CASCADE,
+        related_name="device_tokens",
+    )
+    token = models.CharField(
+        max_length=512,
+        unique=True,
+    )
+    platform = models.CharField(
+        max_length=10,
+        choices=Platform.choices,
+    )
+    is_active = models.BooleanField(
+        default=True,
+    )
+
+    class Meta:
+        db_table = "patient_device_tokens"
+        indexes = [
+            models.Index(
+                fields=["patient_account", "is_active"],
+                name="idx_patient_device_active",
+            ),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.patient_account_id} "
+            f"{self.platform} "
+            f"{'active' if self.is_active else 'inactive'}"
+        )

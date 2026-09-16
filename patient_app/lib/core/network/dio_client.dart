@@ -12,6 +12,12 @@ class DioClient {
 
   static final Dio instance = _createDio();
 
+  static Future<bool> hasAccessToken() async {
+    final accessToken = await _storage.read(key: _accessTokenKey);
+
+    return accessToken != null && accessToken.isNotEmpty;
+  }
+
   static Dio _createDio() {
     final dio = Dio(
       BaseOptions(

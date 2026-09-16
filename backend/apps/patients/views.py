@@ -16,6 +16,7 @@ from rest_framework.exceptions import (
 )
 
 from apps.notifications.models import NotificationLog
+from apps.notifications.models import PatientDeviceToken
 
 from rest_framework.generics import (
     ListAPIView,
@@ -67,6 +68,8 @@ from .serializers import (
     PatientAppointmentChangeRequestSerializer,
     PatientQuestionnaireUpdateSerializer,
     UnlinkedPatientAccountProfileSerializer,
+    PatientDeviceTokenSerializer,
+    PatientDeviceTokenDeactivateSerializer,
 )
 
 from .patient_authentication import (
@@ -1680,4 +1683,83 @@ class PatientAppointmentChangeRequestAPIView(APIView):
         return Response(
             AppointmentSerializer(old_appointment).data,
             status=status.HTTP_201_CREATED,
+        )
+
+# ─────────────────────────────────────────────
+# 환자앱 FCM 기기 토큰 등록 / 비활성화
+# ─────────────────────────────────────────────
+class PatientDeviceTokenAPIView(APIView):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
+    @transaction.atomic
+    def post(self, request):
+        serializer = PatientDeviceTokenSerializer(
+            data=request.data,
+        )
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        patient_account = request.user.patient_account
+
+        device_token, created = (
+            PatientDeviceToken.objects.update_or_create(
+                token=serializer.validated_data["token"],
+                defaults={
+                    "patient_account": patient_account,
+                    "platform": serializer.validated_data[
+                        "platform"
+                    ],
+                    "is_active": True,
+                },
+            )
+        )
+
+        response_data = dict(
+            PatientDeviceTokenSerializer(
+                device_token,
+            ).data
+        )
+        response_data["status"] = "REGISTERED"
+
+        return Response(
+            response_data,
+            status=(
+                status.HTTP_201_CREATED
+                if created
+                else status.HTTP_200_OK
+            ),
+        )
+
+    @transaction.atomic
+    def delete(self, request):
+        serializer = (
+            PatientDeviceTokenDeactivateSerializer(
+                data=request.data,
+            )
+        )
+        serializer.is_valid(
+            raise_exception=True,
+        )
+
+        PatientDeviceToken.objects.filter(
+            patient_account=(
+                request.user.patient_account
+            ),
+            token=serializer.validated_data["token"],
+            is_active=True,
+        ).update(
+            is_active=False,
+        )
+
+        return Response(
+            {
+                "status": "DEACTIVATED",
+            },
+            status=status.HTTP_200_OK,
         )

@@ -4,6 +4,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'device_token_service.dart';
 
 import '../../firebase_options.dart';
 
@@ -27,6 +28,8 @@ class FirebaseMessagingService {
   );
 
   final FirebaseMessaging _messaging = FirebaseMessaging.instance;
+
+  final DeviceTokenService _deviceTokenService = DeviceTokenService();
 
   final FlutterLocalNotificationsPlugin _localNotifications =
       FlutterLocalNotificationsPlugin();
@@ -57,14 +60,14 @@ class FirebaseMessagingService {
 
     if (!isAllowed) return;
 
-    final token = await _messaging.getToken();
+    await registerCurrentToken();
 
-    debugPrint('FCM 토큰 발급 여부: ${token != null}');
-
-    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((_) {
+    _tokenRefreshSubscription = _messaging.onTokenRefresh.listen((
+      newToken,
+    ) async {
       debugPrint('FCM 토큰이 갱신되었습니다.');
 
-      // TODO: Django 서버에 갱신된 토큰 등록
+      await _deviceTokenService.registerToken(newToken);
     });
 
     _foregroundMessageSubscription = FirebaseMessaging.onMessage.listen((
@@ -76,6 +79,24 @@ class FirebaseMessagingService {
 
       await _showForegroundNotification(message);
     });
+  }
+
+  Future<void> registerCurrentToken() async {
+    final token = await _messaging.getToken();
+
+    debugPrint('FCM 토큰 발급 여부: ${token != null}');
+
+    if (token == null || token.isEmpty) return;
+
+    await _deviceTokenService.registerToken(token);
+  }
+
+  Future<void> deactivateCurrentToken() async {
+    final token = await _messaging.getToken();
+
+    if (token == null || token.isEmpty) return;
+
+    await _deviceTokenService.deactivateToken(token);
   }
 
   Future<void> _initializeLocalNotifications() async {

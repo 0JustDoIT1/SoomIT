@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import '../../../core/network/dio_client.dart';
 import '../models/patient_registration_data.dart';
 import 'google_auth_service.dart';
+import '../../notification/firebase_messaging_service.dart';
 
 class PatientGoogleLoginResult {
   final bool registrationRequired;
@@ -154,6 +155,8 @@ class PatientAuthService {
       _storage.write(key: _accessTokenKey, value: accessToken),
       _storage.write(key: _refreshTokenKey, value: refreshToken),
     ]);
+
+    await FirebaseMessagingService.instance.registerCurrentToken();
   }
 
   String _extractErrorMessage(
@@ -277,6 +280,8 @@ class PatientAuthService {
   }
 
   Future<void> logout() async {
+    await FirebaseMessagingService.instance.deactivateCurrentToken();
+
     await _deleteStoredTokens();
 
     try {
