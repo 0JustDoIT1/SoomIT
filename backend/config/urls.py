@@ -19,4 +19,5 @@ urlpatterns = [
     path("api/doctor/cases/", include("apps.cases.doctor_urls")),
     path("api/knowledge/", include("apps.knowledge.urls")),
     path("api/ai/", include("apps.knowledge.ai_urls")),
+    path("api/chat/", include("apps.chat.urls")),
 ]

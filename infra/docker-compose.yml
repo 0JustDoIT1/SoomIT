@@ -81,9 +81,14 @@ services:
     restart: unless-stopped
     environment:
       REDIS_URL: redis://redis:6379/2
+      DJANGO_INTERNAL_BASE_URL: http://django:8000
+      DJANGO_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?Set AI_SERVICE_TOKEN}
+      REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-https://soomit.kro.kr,http://localhost:3000,http://127.0.0.1:3000}
     depends_on:
       redis:
         condition: service_healthy
+      django:
+        condition: service_started
 
   nginx:
     image: nginx:1.27-alpine
