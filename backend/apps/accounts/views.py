@@ -11,6 +11,7 @@ from .serializers import (
     StaffLoginResponseSerializer,
     StaffLoginSerializer,
     StaffProfileSerializer,
+    DoctorProfileUpdateSerializer,
 )
 
 
@@ -48,6 +49,16 @@ class StaffProfileAPIView(APIView):
             )
             .get(pk=request.user.pk)
         )
+        return Response(StaffProfileSerializer(user).data)
+
+    @extend_schema(tags=["직원 인증"], request=DoctorProfileUpdateSerializer, responses={200: StaffProfileSerializer})
+    def patch(self, request):
+        user = request.user.__class__.objects.select_related("doctor_profile", "department_role__department__hospital").get(pk=request.user.pk)
+        if not hasattr(user, "doctor_profile"):
+            return Response({"detail": "의사 프로필이 없는 계정입니다."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = DoctorProfileUpdateSerializer(user.doctor_profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
         return Response(StaffProfileSerializer(user).data)
 
 
