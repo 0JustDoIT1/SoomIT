@@ -1010,6 +1010,20 @@ class PatientQuestionnaireDetailAPIView(
             response_serializer.data,
             status=status.HTTP_200_OK,
         )
+
+
+class CoordinatorPatientQuestionnaireAPIView(APIView):
+    """원무과용 최신 제출 문진 조회 (읽기 전용)."""
+
+    def get(self, request, patient_id):
+        questionnaire = (
+            PatientQuestionnaire.objects.filter(patient_id=patient_id, is_completed=True)
+            .order_by("-completed_at", "-created_at")
+            .first()
+        )
+        if questionnaire is None:
+            return Response({"detail": "제출된 문진표가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(PatientQuestionnaireSerializer(questionnaire).data)
         
 # ─────────────────────────────────────────────
 # 복약 

@@ -281,6 +281,7 @@ class PrescriptionItemSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "drug",
+            "mfds_item_seq",
             "drug_name",
             "ingredient_name",
             "standard_dose",

@@ -24,6 +24,7 @@ from .views import (
     PatientNotificationSettingUpdateAPIView,
     PatientQuestionnaireListAPIView,
     PatientQuestionnaireDetailAPIView, 
+    CoordinatorPatientQuestionnaireAPIView,
     PatientMedicationScheduleListAPIView,
     PatientMedicationIntakeTakenAPIView,
     PatientMedicationIntakeLogListAPIView,
@@ -115,6 +116,7 @@ urlpatterns = [
     ),
 
     path("<uuid:id>/", PatientDetailAPIView.as_view(), name="patient-detail"),
+    path("<uuid:patient_id>/questionnaire/", CoordinatorPatientQuestionnaireAPIView.as_view(), name="coordinator-patient-questionnaire"),
 
     path(
     "notification-settings/",

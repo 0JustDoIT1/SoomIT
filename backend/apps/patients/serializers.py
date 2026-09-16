@@ -468,6 +468,9 @@ class SymptomLogSerializer(serializers.ModelSerializer):
 # 원무과(coordinator) - 환자 목록 조회용
 # ─────────────────────────────────────────────
 class PatientSerializer(serializers.ModelSerializer):
+    questionnaire_status = serializers.SerializerMethodField()
+    latest_questionnaire_id = serializers.SerializerMethodField()
+    latest_questionnaire_completed_at = serializers.SerializerMethodField()
     class Meta:
         model = Patient
         fields = [
@@ -482,7 +485,24 @@ class PatientSerializer(serializers.ModelSerializer):
             "postal_code",
             "created_at",
             "updated_at",
+            "questionnaire_status",
+            "latest_questionnaire_id",
+            "latest_questionnaire_completed_at",
         ]
+
+    def _latest_completed(self, obj):
+        return obj.questionnaires.filter(is_completed=True).order_by("-completed_at", "-created_at").first()
+
+    def get_questionnaire_status(self, obj):
+        return "SUBMITTED" if self._latest_completed(obj) else "NOT_SUBMITTED"
+
+    def get_latest_questionnaire_id(self, obj):
+        questionnaire = self._latest_completed(obj)
+        return str(questionnaire.id) if questionnaire else None
+
+    def get_latest_questionnaire_completed_at(self, obj):
+        questionnaire = self._latest_completed(obj)
+        return questionnaire.completed_at if questionnaire else None
 
 
 # ─────────────────────────────────────────────

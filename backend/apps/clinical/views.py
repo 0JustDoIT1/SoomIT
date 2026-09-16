@@ -44,6 +44,16 @@ def _valid_mfds_item_seq(drug):
     return value if value.isdigit() else None
 
 
+def _explicit_item_seq(obj):
+    if not hasattr(obj, "mfds_item_seq"):
+        return _valid_mfds_item_seq(getattr(obj, "drug", None))
+    value = getattr(obj, "mfds_item_seq", None)
+    if not isinstance(value, str):
+        return None
+    value = value.strip()
+    return value if value.isdigit() else None
+
+
 def _allergy_names(patient_profile):
     """Return exact normalized strings and whether the recorded state is reliable."""
     if patient_profile is None:
@@ -1075,7 +1085,7 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
 
         mapped_medications = []
         for medication in active_medications:
-            medication_item_seq = _valid_mfds_item_seq(getattr(medication, "drug", None))
+            medication_item_seq = _explicit_item_seq(medication)
             if medication_item_seq:
                 mapped_medications.append((medication, medication_item_seq))
             else:
@@ -1095,7 +1105,7 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
 
         dur_block_pairs = set()
         for item in items:
-            prescription_item_seq = _valid_mfds_item_seq(item.drug)
+            prescription_item_seq = _explicit_item_seq(item)
             if not prescription_item_seq:
                 SafetyCheckResult.objects.create(
                     prescription=prescription,
