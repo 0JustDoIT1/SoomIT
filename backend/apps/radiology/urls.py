@@ -1,6 +1,8 @@
 from django.urls import path
 
 from .views import (
+    RadiologyAnalysisCornerstoneLabelmapAPIView,
+    RadiologyAnalysisCornerstoneSegmentationAPIView,
     RadiologyAnalysisDetailAPIView,
     RadiologyAnalysisResultAPIView,
     RadiologyAnalysisVisualizationAPIView,
@@ -8,6 +10,9 @@ from .views import (
     RadiologyCaseWorkflowAPIView,
     RadiologyCaseWorklistAPIView,
     RadiologyOrderAnalysisCreateAPIView,
+    RadiologyOrderCtDicomWebInstanceAPIView,
+    RadiologyOrderCtDicomWebInstancesAPIView,
+    RadiologyOrderCtDicomWebMetadataAPIView,
     RadiologyOrderCtSeriesUploadAPIView,
     RadiologyOrderImageCreateAPIView,
     RadiologyOrderXrayImageContentAPIView,
@@ -47,6 +52,21 @@ urlpatterns = [
         name="order-xray-image-content",
     ),
     path(
+        "orders/<uuid:order_id>/images/<uuid:asset_id>/dicom-web/metadata/",
+        RadiologyOrderCtDicomWebMetadataAPIView.as_view(),
+        name="order-ct-dicom-web-metadata",
+    ),
+    path(
+        "orders/<uuid:order_id>/images/<uuid:asset_id>/dicom-web/instances/",
+        RadiologyOrderCtDicomWebInstancesAPIView.as_view(),
+        name="order-ct-dicom-web-instances",
+    ),
+    path(
+        "orders/<uuid:order_id>/images/<uuid:asset_id>/dicom-web/instances/<str:sop_instance_uid>/",
+        RadiologyOrderCtDicomWebInstanceAPIView.as_view(),
+        name="order-ct-dicom-web-instance",
+    ),
+    path(
         "orders/<uuid:order_id>/analyses/",
         RadiologyOrderAnalysisCreateAPIView.as_view(),
         name="order-analysis-create",
@@ -65,6 +85,16 @@ urlpatterns = [
         "analyses/<uuid:analysis_id>/visualization/<slug:layer_id>/",
         RadiologyAnalysisVisualizationAPIView.as_view(),
         name="analysis-visualization",
+    ),
+    path(
+        "analyses/<uuid:analysis_id>/cornerstone-segmentation/",
+        RadiologyAnalysisCornerstoneSegmentationAPIView.as_view(),
+        name="analysis-cornerstone-segmentation",
+    ),
+    path(
+        "analyses/<uuid:analysis_id>/cornerstone-segmentation/labelmap/",
+        RadiologyAnalysisCornerstoneLabelmapAPIView.as_view(),
+        name="analysis-cornerstone-labelmap",
     ),
     path(
         "analyses/<uuid:analysis_id>/submit-for-review/",

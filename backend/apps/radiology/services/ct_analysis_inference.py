@@ -5,6 +5,7 @@ from urllib.request import Request, urlopen
 
 from django.conf import settings
 
+from .ct_cornerstone_storage import parse_ct_cornerstone_uri
 from .ct_visualization_storage import parse_ct_visualization_uri
 
 
@@ -118,4 +119,96 @@ def validate_phase1_response(payload):
                     f"Phase 1 visualization layer {index} has an invalid mesh URI."
                 ) from exc
             seen_ids.add(layer_id)
+
+    validate_cornerstone_segmentation(
+        artifact_uri=payload["artifact_uri"],
+        cornerstone_segmentation=payload.get("cornerstone_segmentation"),
+        cornerstone_manifest_uri=payload.get("cornerstone_manifest_uri"),
+        required=False,
+    )
+    return payload
+
+
+def validate_cornerstone_segmentation(
+    *, artifact_uri, cornerstone_segmentation, cornerstone_manifest_uri, required
+):
+    """Shared by the Phase 1 response validator and the labelmap backfill command."""
+    if cornerstone_segmentation is None and cornerstone_manifest_uri is None:
+        if required:
+            raise CtAnalysisInferenceError("Cornerstone segmentation이 응답에 없습니다.")
+        return
+
+    cornerstone_prefix = f"{artifact_uri.rstrip('/')}/phase1/cornerstone/"
+    if cornerstone_manifest_uri != f"{cornerstone_prefix}cornerstone_manifest.json":
+        raise CtAnalysisInferenceError("Cornerstone manifest URI is invalid.")
+    if not isinstance(cornerstone_segmentation, dict) or not isinstance(
+        cornerstone_segmentation.get("segments"), list
+    ):
+        raise CtAnalysisInferenceError("Cornerstone segments are invalid.")
+    for uri_field in ("labelmap_uri", "metadata_uri", "geometry_uri"):
+        uri = cornerstone_segmentation.get(uri_field)
+        if not isinstance(uri, str) or not uri.startswith(cornerstone_prefix):
+            raise CtAnalysisInferenceError(f"Cornerstone {uri_field} is invalid.")
+        try:
+            parse_ct_cornerstone_uri(uri)
+        except Exception as exc:
+            raise CtAnalysisInferenceError(f"Cornerstone {uri_field} is invalid.") from exc
+    seen_segment_ids = set()
+    for index, segment in enumerate(cornerstone_segmentation["segments"]):
+        if not isinstance(segment, dict):
+            raise CtAnalysisInferenceError(f"Cornerstone segment {index} is invalid.")
+        segment_id = segment.get("id")
+        segment_index = segment.get("segment_index")
+        if (
+            not isinstance(segment_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", segment_id)
+            or segment_id in seen_segment_ids
+            or not isinstance(segment_index, int)
+            or isinstance(segment_index, bool)
+            or not 1 <= segment_index <= 65535
+        ):
+            raise CtAnalysisInferenceError(f"Cornerstone segment {index} is invalid.")
+        seen_segment_ids.add(segment_id)
+
+
+def request_ct_cornerstone_backfill(*, artifact_uri, case_id):
+    """Call ct-analysis-phase1-serve's /v1/phase1/backfill-cornerstone endpoint.
+
+    Converts the NIfTI masks a prior Phase 1 run already wrote to `artifact_uri`
+    into Cornerstone3D labelmap artifacts, without re-running any model inference.
+    """
+    if not settings.CT_ANALYSIS_PHASE1_SERVICE_URL:
+        raise CtAnalysisInferenceError("CT_ANALYSIS_PHASE1_SERVICE_URL 설정이 필요합니다.")
+
+    body = {"artifact_uri": artifact_uri, "case_id": case_id}
+    headers = {"Content-Type": "application/json"}
+    if settings.CT_ANALYSIS_PHASE1_SERVICE_USE_ID_TOKEN:
+        headers["Authorization"] = f"Bearer {_fetch_id_token()}"
+
+    request = Request(
+        f"{settings.CT_ANALYSIS_PHASE1_SERVICE_URL}/v1/phase1/backfill-cornerstone",
+        data=json.dumps(body).encode("utf-8"),
+        headers=headers,
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=settings.CT_ANALYSIS_PHASE1_TIMEOUT_SECONDS) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        if exc.code in (401, 403):
+            raise CtAnalysisInferenceError("CT 분석 서비스 인증이 거부되었습니다.") from exc
+        raise CtAnalysisInferenceError(f"CT 분석 서비스가 HTTP {exc.code} 오류를 반환했습니다.") from exc
+    except (URLError, TimeoutError, OSError) as exc:
+        raise CtAnalysisInferenceError("CT 분석 서비스(Phase 1)에 연결할 수 없습니다.") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise CtAnalysisInferenceError("CT 분석 서비스 응답이 올바른 JSON이 아닙니다.") from exc
+
+    if not isinstance(payload, dict) or payload.get("artifact_uri") != artifact_uri:
+        raise CtAnalysisInferenceError("Backfill 응답의 artifact_uri가 요청과 일치하지 않습니다.")
+    validate_cornerstone_segmentation(
+        artifact_uri=artifact_uri,
+        cornerstone_segmentation=payload.get("cornerstone_segmentation"),
+        cornerstone_manifest_uri=payload.get("cornerstone_manifest_uri"),
+        required=True,
+    )
     return payload

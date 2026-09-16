@@ -80,21 +80,30 @@ def _layer(layer_id: str, name: str, category: str, path: Path, color: str, stat
     }
 
 
-def generate_visualization(*, segmentation_path: Path, lobe_dir: Path, canonical_dir: Path, output_dir: Path, case_id: str) -> dict:
-    output_dir.mkdir(parents=True, exist_ok=True)
-    layers: list[dict] = []
+def label_nodule_components(nodule_image) -> list[np.ndarray]:
+    """Split a binary nodule mask into ordered, size-filtered connected components.
 
-    nodule_image = nib.load(str(segmentation_path))
+    Shared by the GLB and Cornerstone labelmap exporters so a nodule's numeric
+    order (N001, N002, ...) is identical in both. Ordered by descending voxel
+    count; components smaller than a 3 mm-diameter sphere are dropped as noise.
+    """
     nodule_mask = np.asarray(nodule_image.dataobj) > 0
     labels, count = ndimage.label(nodule_mask, structure=np.ones((3, 3, 3), dtype=np.uint8))
     components = [labels == label_id for label_id in range(1, count + 1)]
     components = sorted((item for item in components if item.any()), key=lambda item: int(item.sum()), reverse=True)
     voxel_volume = float(np.prod(nodule_image.header.get_zooms()[:3]))
-    components = [
+    return [
         item for item in components
         if (6.0 * float(item.sum()) * voxel_volume / np.pi) ** (1.0 / 3.0) >= 3.0
     ]
-    for index, component in enumerate(components, start=1):
+
+
+def generate_visualization(*, segmentation_path: Path, lobe_dir: Path, canonical_dir: Path, output_dir: Path, case_id: str) -> dict:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    layers: list[dict] = []
+
+    nodule_image = nib.load(str(segmentation_path))
+    for index, component in enumerate(label_nodule_components(nodule_image), start=1):
         layer_id = f"N{index:03d}"
         relative_path = Path("nodules") / f"{layer_id}.glb"
         stats = _write_mesh(component, nodule_image.affine, output_dir / relative_path, "#FF3B30", step_size=1)

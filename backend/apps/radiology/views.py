@@ -1,10 +1,14 @@
+import json
+
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Exists, OuterRef, Prefetch, Q
 from django.http import HttpResponse
+from django.urls import reverse
 from django.utils import timezone
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.generics import ListAPIView
+from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -34,9 +38,19 @@ from .services.xray_storage import (
 from .services.workflow import is_pet_ct_tnm_order
 from .services.dicom_validation import CtSeriesValidationError, parse_ct_headers, validate_ct_series
 from .services.orthanc_storage import OrthancError, delete_orthanc_series, upload_ct_series
+from .services.orthanc_dicomweb import (
+    OrthancDicomWebError,
+    get_series_metadata,
+    list_series_instances,
+    retrieve_instance,
+)
 from .services.ct_visualization_storage import (
     CtVisualizationStorageError,
     download_ct_visualization,
+)
+from .services.ct_cornerstone_storage import (
+    CtCornerstoneStorageError,
+    download_ct_cornerstone_object,
 )
 from .serializers import (
     CtSeriesUploadSerializer,
@@ -640,6 +654,98 @@ class RadiologyOrderXrayImageContentAPIView(RadiologyPermissionMixin, APIView):
         return HttpResponse(image_bytes, content_type=content_type)
 
 
+_ALLOWED_INSTANCE_ACCEPT_HEADERS = {"application/dicom", 'multipart/related; type="application/dicom"'}
+
+
+class _PassthroughContentNegotiation(BaseContentNegotiation):
+    """Skip Accept-header negotiation for views that hand back a raw proxied body.
+
+    DRF's default negotiation 406s any Accept value that doesn't match a
+    configured Renderer (JSON/browsable API), but these views forward a
+    DICOMweb client's own Accept header (application/dicom, dicom+json, ...)
+    straight through to Orthanc and return whatever it sends back.
+    """
+
+    def select_parser(self, request, parsers):
+        return parsers[0] if parsers else None
+
+    def select_renderer(self, request, renderers, format_suffix):
+        return renderers[0], renderers[0].media_type
+
+
+class RadiologyOrderCtDicomWebMixin(RadiologyPermissionMixin):
+    content_negotiation_class = _PassthroughContentNegotiation
+
+    """Scope every DICOMweb call to one authorized, already-uploaded CT Series."""
+
+    def get_ct_asset(self, order_id, asset_id):
+        order = self.get_order(order_id)
+        if order is None:
+            return None
+        return CaseImageAsset.objects.filter(
+            id=asset_id,
+            examination_order=order,
+            image_type=CaseImageAsset.ImageType.CT,
+            storage_type=CaseImageAsset.StorageType.ORTHANC,
+            status=CaseImageAsset.Status.READY,
+        ).first()
+
+    def get_ct_asset_or_404(self, order_id, asset_id):
+        asset = self.get_ct_asset(order_id, asset_id)
+        if asset is None or not asset.study_instance_uid or not asset.series_instance_uid:
+            return None
+        return asset
+
+
+class RadiologyOrderCtDicomWebMetadataAPIView(RadiologyOrderCtDicomWebMixin, APIView):
+    """WADO-RS Series metadata for an already-uploaded CT Series, proxied without Orthanc credentials."""
+
+    def get(self, request, order_id, asset_id):
+        asset = self.get_ct_asset_or_404(order_id, asset_id)
+        if asset is None:
+            return Response({"detail": "CT 영상 자산을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            result = get_series_metadata(asset.study_instance_uid, asset.series_instance_uid)
+        except OrthancDicomWebError:
+            return Response({"detail": "CT Series metadata를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        return HttpResponse(result.content, content_type=result.content_type)
+
+
+class RadiologyOrderCtDicomWebInstancesAPIView(RadiologyOrderCtDicomWebMixin, APIView):
+    """QIDO-RS Instance list for an already-uploaded CT Series."""
+
+    def get(self, request, order_id, asset_id):
+        asset = self.get_ct_asset_or_404(order_id, asset_id)
+        if asset is None:
+            return Response({"detail": "CT 영상 자산을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            result = list_series_instances(asset.study_instance_uid, asset.series_instance_uid)
+        except OrthancDicomWebError:
+            return Response({"detail": "CT Series instance 목록을 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        return HttpResponse(result.content, content_type=result.content_type)
+
+
+class RadiologyOrderCtDicomWebInstanceAPIView(RadiologyOrderCtDicomWebMixin, APIView):
+    """WADO-RS single Instance retrieval, scoped to its own Study/Series."""
+
+    def get(self, request, order_id, asset_id, sop_instance_uid):
+        asset = self.get_ct_asset_or_404(order_id, asset_id)
+        if asset is None:
+            return Response({"detail": "CT 영상 자산을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        accept = request.headers.get("Accept")
+        if accept not in _ALLOWED_INSTANCE_ACCEPT_HEADERS:
+            accept = "application/dicom"
+        try:
+            result = retrieve_instance(
+                asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid, accept=accept,
+            )
+        except OrthancDicomWebError:
+            return Response({"detail": "CT instance를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(result.content, content_type=result.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
 class RadiologyOrderAnalysisCreateAPIView(RadiologyPermissionMixin, APIView):
     @transaction.atomic
     def post(self, request, order_id):
@@ -770,6 +876,67 @@ class RadiologyAnalysisVisualizationAPIView(RadiologyPermissionMixin, APIView):
         except CtVisualizationStorageError:
             return Response({"detail": "CT visualization could not be loaded."}, status=status.HTTP_502_BAD_GATEWAY)
         response = HttpResponse(content, content_type="model/gltf-binary")
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+def _get_cornerstone_segmentation(analysis):
+    if (
+        analysis is None
+        or analysis.analysis_type != AnalysisType.CT_ANALYSIS
+        or analysis.status != AiAnalysis.Status.SUCCEEDED
+        or not hasattr(analysis, "ai_result")
+    ):
+        return None
+    payload = analysis.ai_result.result_payload
+    cornerstone = payload.get("cornerstone_segmentation") if isinstance(payload, dict) else None
+    return cornerstone if isinstance(cornerstone, dict) else None
+
+
+class RadiologyAnalysisCornerstoneSegmentationAPIView(RadiologyPermissionMixin, APIView):
+    """Return Cornerstone3D labelmap metadata without exposing its private GCS URIs."""
+
+    def get(self, request, analysis_id):
+        analysis = self.get_analysis(analysis_id)
+        cornerstone = _get_cornerstone_segmentation(analysis)
+        if cornerstone is None or not cornerstone.get("geometry_uri"):
+            return Response({"detail": "CT Cornerstone segmentation was not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            geometry = json.loads(download_ct_cornerstone_object(cornerstone["geometry_uri"]).decode("utf-8"))
+        except (CtCornerstoneStorageError, ValueError, UnicodeDecodeError):
+            return Response({"detail": "CT Cornerstone segmentation could not be loaded."}, status=status.HTTP_502_BAD_GATEWAY)
+
+        labelmap_path = reverse(
+            "radiology:analysis-cornerstone-labelmap",
+            kwargs={"analysis_id": analysis.id},
+        )
+        return Response({
+            "schema_version": cornerstone.get("schema_version"),
+            "scalar_type": cornerstone.get("scalar_type"),
+            "dimensions": cornerstone.get("dimensions"),
+            "spacing": geometry.get("spacing"),
+            "origin": geometry.get("origin"),
+            "direction": geometry.get("direction"),
+            "segments": cornerstone.get("segments", []),
+            "labelmap_url": request.build_absolute_uri(labelmap_path),
+        })
+
+
+class RadiologyAnalysisCornerstoneLabelmapAPIView(RadiologyPermissionMixin, APIView):
+    """Proxy an authorized private Cornerstone3D labelmap without exposing its GCS URI."""
+
+    def get(self, request, analysis_id):
+        analysis = self.get_analysis(analysis_id)
+        cornerstone = _get_cornerstone_segmentation(analysis)
+        if cornerstone is None or not cornerstone.get("labelmap_uri"):
+            return Response({"detail": "CT Cornerstone segmentation was not found."}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            content = download_ct_cornerstone_object(cornerstone["labelmap_uri"])
+        except CtCornerstoneStorageError:
+            return Response({"detail": "CT Cornerstone segmentation could not be loaded."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(content, content_type="application/octet-stream")
         response["Cache-Control"] = "private, max-age=3600"
         return response
 

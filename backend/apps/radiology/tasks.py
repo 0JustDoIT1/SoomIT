@@ -113,6 +113,21 @@ def run_xray_analysis(analysis_id):
     return "succeeded"
 
 
+def _cornerstone_result_files(cornerstone_segmentation):
+    if not isinstance(cornerstone_segmentation, dict):
+        return []
+    files = []
+    for file_type, uri_field in (
+        ("cornerstone_labelmap", "labelmap_uri"),
+        ("cornerstone_labelmap_metadata", "metadata_uri"),
+        ("cornerstone_geometry", "geometry_uri"),
+    ):
+        uri = cornerstone_segmentation.get(uri_field)
+        if uri:
+            files.append({"type": file_type, "uri": uri})
+    return files
+
+
 def _ct_nodule_no(nodule_id, fallback_index):
     match = re.search(r"(\d+)$", str(nodule_id or ""))
     return int(match.group(1)) if match else fallback_index
@@ -208,7 +223,7 @@ def run_ct_analysis(analysis_id):
                 [{"type": "visualization_manifest", "uri": payload["visualization_manifest_uri"]}]
                 if payload.get("visualization_manifest_uri")
                 else []
-            ),
+            ) + _cornerstone_result_files(payload.get("cornerstone_segmentation")),
         )
         ct_result = CtAiResult.objects.create(
             ai_result=ai_result,

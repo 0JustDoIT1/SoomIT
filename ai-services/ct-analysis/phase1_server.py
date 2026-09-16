@@ -15,10 +15,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from artifact import ensure_artifact
+from cornerstone_labelmap import generate_cornerstone_segmentation
 from input_io import InvalidCtInput, dicom_directory_to_nifti, extract_dicom_zip
 from model_artifacts import phase1_artifacts
 from orthanc_client import OrthancDownloadError, download_orthanc_series
 from storage_io import download_file, upload_tree
+from visualization import ANATOMY_LAYERS, LOBE_LAYERS
 
 
 ROOT = Path(__file__).resolve().parent
@@ -79,6 +81,18 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
         relative_path = layer.get("mesh_relative_path")
         if relative_path:
             layer["mesh_uri"] = f"{visualization_prefix}{relative_path}"
+
+    cornerstone_segmentation = result.get("cornerstone_segmentation", {})
+    cornerstone_prefix = f"{artifact_uri}phase1/cornerstone/"
+    for uri_key, relative_key in (
+        ("labelmap_uri", "labelmap_relative_path"),
+        ("metadata_uri", "metadata_relative_path"),
+        ("geometry_uri", "geometry_relative_path"),
+    ):
+        relative_path = cornerstone_segmentation.get(relative_key)
+        if relative_path:
+            cornerstone_segmentation[uri_key] = f"{cornerstone_prefix}{relative_path}"
+
     return {
         "status": "READY_FOR_T_MODEL",
         "model_revision": MODEL_REVISION,
@@ -88,6 +102,8 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
         "t_input_uri": f"{artifact_uri}phase1/t_input/{case_id}_0000.nii.gz",
         "visualization_manifest_uri": f"{visualization_prefix}visualization_manifest.json",
         "visualization": visualization,
+        "cornerstone_manifest_uri": f"{cornerstone_prefix}cornerstone_manifest.json",
+        "cornerstone_segmentation": cornerstone_segmentation,
         "result": result,
     }
 
@@ -115,6 +131,11 @@ class GcsPhase1Request(BaseModel):
     ct_gcs_uri: str
     case_id: str = Field(min_length=1, max_length=128)
     output_gcs_uri: str | None = None
+
+
+class BackfillCornerstoneRequest(BaseModel):
+    artifact_uri: str
+    case_id: str = Field(min_length=1, max_length=128)
 
 
 @app.get("/health")
@@ -186,5 +207,60 @@ def phase1_from_gcs(body: GcsPhase1Request) -> dict:
             return run_phase1(
                 ct_path, case_id, work_root, output_uri(case_id, body.output_gcs_uri)
             )
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@app.post("/v1/phase1/backfill-cornerstone")
+def backfill_cornerstone(body: BackfillCornerstoneRequest) -> dict:
+    """Add a Cornerstone3D labelmap to an already-completed Phase 1 result.
+
+    Reads the NIfTI masks a prior Phase 1 run already wrote under
+    ``artifact_uri`` and converts them into the same labelmap artifacts a
+    fresh run would produce. No model inference runs here.
+    """
+    try:
+        case_id = validate_case_id(body.case_id)
+        artifact_uri = body.artifact_uri.rstrip("/") + "/"
+        with tempfile.TemporaryDirectory(prefix="ct-analysis-backfill-") as temporary:
+            work_root = Path(temporary)
+            ct_path = download_file(
+                f"{artifact_uri}source/{case_id}_0000.nii.gz", work_root / "ct.nii.gz"
+            )
+            seg_path = download_file(
+                f"{artifact_uri}phase1/segmentation/{case_id}_seg.nii.gz", work_root / "seg.nii.gz"
+            )
+            lobe_dir = work_root / "lobes"
+            for _, _, filename, _ in LOBE_LAYERS:
+                download_file(f"{artifact_uri}phase1/anatomy/thoracic_total/{filename}", lobe_dir / filename)
+            canonical_dir = work_root / "canonical"
+            for _, _, filename, _ in ANATOMY_LAYERS:
+                download_file(f"{artifact_uri}phase1/canonical_anatomy/{filename}", canonical_dir / filename)
+
+            output_dir = work_root / "cornerstone"
+            generate_cornerstone_segmentation(
+                segmentation_path=seg_path,
+                lobe_dir=lobe_dir,
+                canonical_dir=canonical_dir,
+                ct_path=ct_path,
+                output_dir=output_dir,
+                case_id=case_id,
+            )
+
+            cornerstone_prefix = f"{artifact_uri}phase1/cornerstone/"
+            upload_tree(output_dir, cornerstone_prefix)
+            manifest = json.loads((output_dir / "cornerstone_manifest.json").read_text(encoding="utf-8"))
+            for uri_key, relative_key in (
+                ("labelmap_uri", "labelmap_relative_path"),
+                ("metadata_uri", "metadata_relative_path"),
+                ("geometry_uri", "geometry_relative_path"),
+            ):
+                manifest[uri_key] = f"{cornerstone_prefix}{manifest[relative_key]}"
+
+            return {
+                "artifact_uri": artifact_uri,
+                "cornerstone_manifest_uri": f"{cornerstone_prefix}cornerstone_manifest.json",
+                "cornerstone_segmentation": manifest,
+            }
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

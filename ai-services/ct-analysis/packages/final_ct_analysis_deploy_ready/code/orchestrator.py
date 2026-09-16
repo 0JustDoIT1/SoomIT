@@ -230,6 +230,11 @@ def phase1(
         / "visualization"
     )
 
+    cornerstone_dir = (
+        output_dir
+        / "cornerstone"
+    )
+
     for d in [
         seg_dir,
         quant_dir,
@@ -238,6 +243,7 @@ def phase1(
         canonical_dir,
         t_input_dir,
         visualization_dir,
+        cornerstone_dir,
     ]:
         d.mkdir(
             parents=True,
@@ -545,6 +551,35 @@ def phase1(
     )
 
     # ==================================================
+    # 6.7 Cornerstone3D labelmap
+    #
+    # Same segmentation masks, converted into a single voxel labelmap that
+    # Cornerstone3D can overlay on the original CT series. Also inference
+    # post-processing; does not alter any model input or analytical result.
+    # ==================================================
+
+    run([
+        python_executable,
+        BUNDLE_ROOT / "cornerstone_labelmap.py",
+        "--segmentation",
+        seg_mask,
+        "--lobe-dir",
+        lung_mask_dir,
+        "--canonical-dir",
+        canonical_dir,
+        "--ct",
+        ct_path,
+        "--output-dir",
+        cornerstone_dir,
+        "--case-id",
+        case_id,
+    ])
+
+    cornerstone_manifest = load_json(
+        cornerstone_dir / "cornerstone_manifest.json"
+    )
+
+    # ==================================================
     # 7. Phase 1 result
     # ==================================================
 
@@ -592,6 +627,7 @@ def phase1(
                 str(canonical_metadata),
         },
         "visualization": visualization_manifest,
+        "cornerstone_segmentation": cornerstone_manifest,
         "t_input": {
             "nifti":
                 str(t_input_path),

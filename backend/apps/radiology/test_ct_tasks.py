@@ -30,6 +30,18 @@ PHASE1_PAYLOAD = {
             }
         ],
     },
+    "cornerstone_manifest_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/cornerstone/cornerstone_manifest.json",
+    "cornerstone_segmentation": {
+        "schema_version": "ct-cornerstone-labelmap-v1",
+        "scalar_type": "uint8",
+        "dimensions": [512, 512, 133],
+        "labelmap_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/cornerstone/labelmap.bin",
+        "metadata_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/cornerstone/labelmap_metadata.json",
+        "geometry_uri": "gs://soomit-bucket/ct-analysis/case-001/phase1/cornerstone/geometry.json",
+        "segments": [
+            {"segment_index": 1, "id": "N001", "name": "Nodule 1", "category": "NODULE", "color": [255, 59, 48]},
+        ],
+    },
     "result": {
         "case_id": "case-001",
         "phase": "CT_ANALYSIS_PHASE_1",
@@ -146,8 +158,20 @@ class CtAnalysisTaskTestCase(TestCase):
         self.assertIsNone(self.analysis.error_message)
         self.assertEqual(result.schema_version, "ct-phase1-v1")
         self.assertEqual(result.result_payload, PHASE1_PAYLOAD)
-        self.assertEqual(len(result.result_files), 4)
-        self.assertEqual(result.result_files[-1]["type"], "visualization_manifest")
+        self.assertEqual(len(result.result_files), 7)
+        file_types = [item["type"] for item in result.result_files]
+        self.assertEqual(
+            file_types,
+            [
+                "artifact_root",
+                "phase1_result",
+                "t_input",
+                "visualization_manifest",
+                "cornerstone_labelmap",
+                "cornerstone_labelmap_metadata",
+                "cornerstone_geometry",
+            ],
+        )
         self.assertEqual(detail.overall_malignancy_risk, Decimal("82"))
         self.assertEqual(len(nodules), 2)
         self.assertEqual(nodules[0].nodule_no, 1)
