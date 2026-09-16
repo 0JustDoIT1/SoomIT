@@ -24,8 +24,8 @@ export function CaseSummaryHeader({ caseData }: { caseData: CaseHeaderData }) {
     <section className="flex h-[72px] shrink-0 items-center overflow-x-auto border-b border-slate-200 bg-white px-5">
       <div className="grid min-w-[900px] flex-1 grid-cols-6 gap-5">
         <Summary label="환자명" value={caseData.patient_name} />
-        <Summary label="환자번호" value={caseData.patient_code} />
-        <Summary label="Case" value={caseData.case_code} />
+        <Summary label="환자 ID" value={caseData.patient_code} />
+        <Summary label="진료 Case ID" value={caseData.case_code} />
         <Summary label="담당의" value={caseData.primary_doctor_name} />
         <Summary label="현재 단계" value={getStageLabel(caseData.current_stage)} accent />
         <Summary label="Case 상태" value={getCaseStatusLabel(caseData.case_status)} />

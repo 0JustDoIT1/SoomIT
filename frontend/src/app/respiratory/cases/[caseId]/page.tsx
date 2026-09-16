@@ -826,6 +826,17 @@ export default function RespiratoryCaseDetailPage() {
     if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
   };
 
+  useEffect(() => {
+    if (!selectedCase) return;
+    const stage = selectedCase.current_stage as CaseInfoKey;
+    if (!(["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"] as CaseInfoKey[]).includes(stage)) return;
+    setSelectedInfoMenu(stage);
+    const navigation = getCaseMenuNavigation(stage);
+    if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
+    if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
+    if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
+  }, [caseId, selectedCase]);
+
   const latestPdl1Result =
     pdl1Results.length > 0
         ? pdl1Results[0]
@@ -1521,7 +1532,18 @@ export default function RespiratoryCaseDetailPage() {
           currentStage={selectedCase.current_stage}
           hasPdl1Result={Boolean(latestPdl1Result || resolvedPdl1ClinicalResult?.result_detail?.pdl1)}
         />
-        <CurrentActionQueue actions={currentActions} onNavigate={(href) => router.push(href)} onOpen={(action) => handleInfoMenuSelect(action.target)} />
+        <CurrentActionQueue
+          actions={currentActions}
+          onNavigate={(href) => router.push(href)}
+          onOpen={() => undefined}
+          renderExpanded={(action) => {
+            if (!(["XRAY", "CT", "PET_CT_TNM"] as string[]).includes(action.target)) {
+              return <div className="rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600"><p className="font-semibold text-slate-800">{action.title}</p><p className="mt-1">현재 상태: {action.status}</p><p className="mt-2 text-slate-500">이 항목은 영상 검토 대상이 아니므로 상세 화면에서 이어서 처리할 수 있습니다.</p></div>;
+            }
+            const analysisType = action.target === "XRAY" ? "XRAY_ANALYSIS" : action.target === "CT" ? "CT_ANALYSIS" : "PET_CT_TNM_ANALYSIS";
+            return <div className="max-h-[620px] overflow-y-auto rounded-lg border border-slate-200 bg-white"><ResultReviewPanel stage={action.target} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} clinicalResult={tnmClinicalResults.find((result) => result.workflow_stage === action.target)} aiResult={selectPreferredAiResult(tnmAnalysisResults, analysisType) as TnmAnalysisResult | undefined} /></div>;
+          }}
+        />
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}

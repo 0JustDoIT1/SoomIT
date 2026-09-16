@@ -39,10 +39,12 @@ export function EvidenceViewerPanel({
   detectionImageSize,
 }: EvidenceViewerPanelProps) {
   const [activeAssetId, setActiveAssetId] = useState(selectedAssetId ?? assets[0]?.id ?? "");
+  const [minimumDetectionScore, setMinimumDetectionScore] = useState(0.5);
   const viewerRef = useRef<HTMLDivElement>(null);
   const unavailableId = "tnm-reference-api-unavailable";
   const activeAsset = assets.find((asset) => asset.id === (selectedAssetId ?? activeAssetId)) ?? assets[0];
   const imageUrl = getBrowserImageUrl(activeAsset);
+  const visibleDetections = detections.filter((detection) => detection.score >= minimumDetectionScore);
 
   const openFullscreen = async () => {
     if (!imageUrl || !viewerRef.current?.requestFullscreen) return;
@@ -74,7 +76,7 @@ export function EvidenceViewerPanel({
             <div className="relative inline-block h-full max-w-full">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageUrl} alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`} className="block h-full max-w-full object-contain" />
-              {activeAsset?.image_type === "XRAY" && detectionImageSize && detections.map((detection, index) => <DetectionBox key={`${detection.class_name}-${index}`} detection={detection} width={detectionImageSize.width} height={detectionImageSize.height} />)}
+              {activeAsset?.image_type === "XRAY" && detectionImageSize && visibleDetections.map((detection, index) => <DetectionBox key={`${detection.class_name}-${index}`} detection={detection} width={detectionImageSize.width} height={detectionImageSize.height} />)}
             </div>
           ) : (
             <div className="px-6 text-center">
@@ -107,11 +109,13 @@ export function EvidenceViewerPanel({
         </aside>
       </div>
 
-      <footer className="flex items-center gap-1.5 px-3">
+      <footer className={`relative flex items-center gap-1.5 px-3 ${activeAsset?.image_type === "XRAY" ? "[&>button:nth-of-type(n+2)]:hidden" : ""}`}>
         <button type="button" disabled={!imageUrl} onClick={openFullscreen} aria-describedby={!imageUrl ? unavailableId : undefined} className="whitespace-nowrap rounded border border-blue-300 px-2 py-1 text-[9px] font-semibold text-blue-700 disabled:border-slate-200 disabled:text-slate-400">크게 보기</button>
+        {activeAsset?.image_type === "XRAY" && detections.length > 0 && <span className="flex items-center gap-1"><span className="text-[9px] text-slate-500">AI 병변 {visibleDetections.length}/{detections.length}</span>{([0, 0.5, 0.7] as const).map((score) => <button key={score} type="button" onClick={() => setMinimumDetectionScore(score)} className={`rounded px-1.5 py-1 text-[9px] ${minimumDetectionScore === score ? "bg-rose-600 font-semibold text-white" : "bg-rose-50 text-rose-700"}`}>{score === 0 ? "전체" : `${Math.round(score * 100)}%+`}</button>)}</span>}
         <button type="button" disabled aria-describedby={unavailableId} className="whitespace-nowrap rounded border border-slate-200 px-2 py-1 text-[9px] font-semibold text-slate-400">관심 위치 표시</button>
         {["T 소견에 참조", "N 소견에 참조", "M 소견에 참조"].map((label) => <button key={label} type="button" disabled aria-describedby={unavailableId} className="whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-[9px] text-slate-400">{label}</button>)}
         <span id={unavailableId} className="ml-auto truncate text-[8px] text-slate-500">영상·Annotation API가 연결된 기능만 활성화됩니다.</span>
+        {activeAsset?.image_type === "XRAY" && <span className="absolute inset-y-0 right-0 flex items-center bg-white px-3 text-[9px] text-slate-500">X-ray는 AI 병변 박스와 판독 소견을 참고합니다.</span>}
       </footer>
     </section>
   );

@@ -50,7 +50,8 @@ class StaffProfileSerializer(serializers.Serializer):
 class DoctorProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DoctorProfile
-        fields = ["birth_date", "gender", "profile_image_uri", "tags"]
+        fields = ["license_number", "birth_date", "gender", "profile_image_uri", "tags"]
+        extra_kwargs = {"license_number": {"required": False}}
 
     def validate_tags(self, value):
         if not isinstance(value, list) or any(not isinstance(item, str) or not item.strip() for item in value):

@@ -7,6 +7,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenRefreshView
 
+from .models import DoctorProfile
+
 from .serializers import (
     StaffLoginResponseSerializer,
     StaffLoginSerializer,
@@ -54,11 +56,16 @@ class StaffProfileAPIView(APIView):
     @extend_schema(tags=["직원 인증"], request=DoctorProfileUpdateSerializer, responses={200: StaffProfileSerializer})
     def patch(self, request):
         user = request.user.__class__.objects.select_related("doctor_profile", "department_role__department__hospital").get(pk=request.user.pk)
-        if not hasattr(user, "doctor_profile"):
-            return Response({"detail": "의사 프로필이 없는 계정입니다."}, status=status.HTTP_403_FORBIDDEN)
-        serializer = DoctorProfileUpdateSerializer(user.doctor_profile, data=request.data, partial=True)
+        profile = getattr(user, "doctor_profile", None)
+        serializer = DoctorProfileUpdateSerializer(profile, data=request.data, partial=profile is not None)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
+        if profile is None:
+            license_number = serializer.validated_data.get("license_number")
+            if not license_number:
+                return Response({"detail": "최초 프로필 생성에는 의사 면허번호가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+            DoctorProfile.objects.create(user=user, **serializer.validated_data)
+        else:
+            serializer.save()
         return Response(StaffProfileSerializer(user).data)
 
 
