@@ -1,3 +1,7 @@
+"use client";
+
+import { useMemo, useState } from "react";
+
 type AiSummaryResult = {
   id?: string;
   analysis_type: string;
@@ -31,11 +35,13 @@ const ANALYSIS_CONFIG = [
 ] as const;
 
 export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = false, onRetry }: { aiResults: AiSummaryResult[]; clinicalResults: ClinicalSummaryResult[]; error?: string; retrying?: boolean; onRetry?: () => void }) {
-  const rows = ANALYSIS_CONFIG.map((config) => ({
+  const rows = useMemo(() => ANALYSIS_CONFIG.map((config) => ({
     ...config,
     ai: selectPreferredAiResult(aiResults, config.type),
     clinical: findClinicalResult(config.type, config.clinical, clinicalResults),
-  }));
+  })), [aiResults, clinicalResults]);
+  const [selectedType, setSelectedType] = useState<string>(() => rows.find((row) => row.ai || row.clinical)?.type ?? ANALYSIS_CONFIG[0].type);
+  const selected = rows.find((row) => row.type === selectedType) ?? rows[0];
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -55,23 +61,31 @@ export function AiSummaryPanel({ aiResults, clinicalResults, error, retrying = f
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-3 p-3 xl:grid-cols-3">
-        {rows.map(({ type, label, ai, clinical }) => (
-          <article key={type} className="min-w-0 overflow-hidden rounded-lg border border-slate-200">
-            <div className="flex items-center justify-between gap-2 border-b border-slate-200 bg-slate-50/70 px-3 py-2.5">
-              <h2 className="truncate text-xs font-bold text-slate-800">{label}</h2>
-              <StatusBadge status={ai?.status} label={ai?.status_label} />
-            </div>
-            <div className="grid min-h-28 grid-cols-2 divide-x divide-slate-200">
-              <SummaryColumn source="AI 분석 후보" tone="blue" primary={getAiDisplaySummary(type, ai)} secondary={getModelLabel(ai)} />
-              <SummaryColumn source="의료진 확정 결과" tone="emerald" primary={getClinicalSummary(type, clinical)} secondary={formatDate(clinical?.result_date)} />
-            </div>
-            {type === "PATHOLOGY_GENE_ANALYSIS" && <GeneResultDetails aiDetail={ai?.status === "SUCCEEDED" ? ai.result_detail : null} clinicalDetail={clinical?.result_detail} />}
-            <ComparisonBadge comparison={compareResults(type, ai, clinical)} />
-            {ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{ai.error_message}</p>}
-          </article>
-        ))}
+      <div className="border-b border-slate-200 bg-slate-50/70 px-4 py-3">
+        <div className="flex min-w-max gap-2" role="tablist" aria-label="AI 분석 항목 선택">
+          {rows.map((row) => {
+            const active = row.type === selected.type;
+            return <button key={row.type} type="button" role="tab" aria-selected={active} onClick={() => setSelectedType(row.type)} className={`rounded-md border px-3 py-2 text-xs font-semibold whitespace-nowrap transition-colors ${active ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"}`}>{row.label}</button>;
+          })}
+        </div>
       </div>
+
+      <article className="p-4" role="tabpanel" aria-label={`${selected.label} 분석 결과`}>
+        <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-3">
+          <div>
+            <p className="text-[10px] font-semibold text-blue-600">선택한 분석 항목</p>
+            <h2 className="mt-0.5 text-sm font-bold text-slate-900">{selected.label}</h2>
+          </div>
+          <StatusBadge status={selected.ai?.status} label={selected.ai?.status_label} />
+        </div>
+        <div className="mt-4 grid min-h-64 grid-cols-1 overflow-hidden rounded-lg border border-slate-200 md:grid-cols-2 md:divide-x md:divide-slate-200">
+          <SummaryColumn source="AI 소견" tone="blue" primary={getAiDisplaySummary(selected.type, selected.ai)} secondary={getModelLabel(selected.ai)} />
+          <SummaryColumn source="전문과 의료진 확정 소견" tone="emerald" primary={getClinicalSummary(selected.type, selected.clinical)} secondary={formatDate(selected.clinical?.result_date)} />
+        </div>
+        {selected.type === "PATHOLOGY_GENE_ANALYSIS" && <GeneResultDetails aiDetail={selected.ai?.status === "SUCCEEDED" ? selected.ai.result_detail : null} clinicalDetail={selected.clinical?.result_detail} />}
+        <ComparisonBadge comparison={compareResults(selected.type, selected.ai, selected.clinical)} />
+        {selected.ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{selected.ai.error_message}</p>}
+      </article>
       <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] leading-4 text-slate-500">이 화면에서는 AI 분석을 실행하거나 결과를 확정하지 않습니다. 최종 진단과 치료 결정은 의료진 확정 결과를 기준으로 합니다.</p>
     </section>
   );

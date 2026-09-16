@@ -18,7 +18,7 @@ describe("MedicalOpinionPanel", () => {
     const user = userEvent.setup();
     const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       opinion: "확정 결과를 바탕으로 작성한 소견 초안입니다.",
-      source_results: [{ id: "result-1", stage: "CT", confirmed_at: null }],
+      source_results: [{ id: "result-1", workflow_stage: "CT", confirmed_at: null }],
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
 
     render(<MedicalOpinionPanel caseId="case-1" confirmedResultCount={1} apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
@@ -26,6 +26,7 @@ describe("MedicalOpinionPanel", () => {
 
     expect(await screen.findByText("확정 결과를 바탕으로 작성한 소견 초안입니다.")).toBeTruthy();
     expect(screen.getByText("근거로 사용된 확정 결과 1건 · 의료진 검토 전 초안")).toBeTruthy();
+    expect(screen.getByLabelText("소견 근거 단계")).toHaveTextContent("흉부 CT");
     expect(authorizedFetch).toHaveBeenCalledWith(
       "http://api.test/api/doctor/cases/case-1/medical-opinion/",
       expect.objectContaining({ method: "POST" }),

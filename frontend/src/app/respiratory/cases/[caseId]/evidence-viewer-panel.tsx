@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 
-type ImageAsset = {
+export type ImageAsset = {
   id: string;
   image_type?: string;
   file_format?: string;
@@ -12,6 +12,7 @@ type ImageAsset = {
   storage_uri?: string;
   preview_url?: string | null;
   viewer_url?: string | null;
+  browser_url?: string | null;
 };
 
 type EvidenceViewerPanelProps = {
@@ -108,6 +109,7 @@ export function EvidenceViewerPanel({
 }
 
 export function getBrowserImageUrl(asset?: ImageAsset) {
+  if (asset?.browser_url) return asset.browser_url;
   if (asset?.preview_url && /^https?:\/\//i.test(asset.preview_url)) return asset.preview_url;
   if (!asset?.storage_uri || !/^https?:\/\//i.test(asset.storage_uri)) return null;
   if (!asset.file_format) return asset.storage_uri;

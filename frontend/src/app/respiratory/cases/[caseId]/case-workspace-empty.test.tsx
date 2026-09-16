@@ -26,6 +26,8 @@ describe("CaseWorkspaceEmpty preview", () => {
     await user.click(screen.getByRole("button", { name: "PD-L1" }));
     expect(screen.getByRole("heading", { name: "PD-L1 검사·결과" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "PD-L1 결과 비교" })).toBeTruthy();
+    expect(screen.getByText("현재 Case에 연결된 전문과 확정 TPS와 PD-L1 AI 분석 후보가 없습니다.")).toBeTruthy();
+    expect(document.body).not.toHaveTextContent("인증 연결 전까지");
 
     await user.click(screen.getByRole("button", { name: "치료 결정" }));
     expect(screen.getByRole("heading", { name: "치료·처방 현황" })).toBeTruthy();

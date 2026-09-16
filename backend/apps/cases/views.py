@@ -8,6 +8,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff, get_token_hospital_id
+from apps.pathology.models import PathologySpecimen, WholeSlideImage
+from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
 
@@ -145,6 +147,147 @@ class DoctorCaseImageAssetPreviewAPIView(APIView):
             )
         content_type = "image/png" if asset.file_format.upper() == "PNG" else "image/jpeg"
         return HttpResponse(image_bytes, content_type=content_type)
+
+
+def _doctor_case_or_404(request, case_id):
+    return get_object_or_404(
+        LungCancerCase,
+        id=case_id,
+        primary_doctor=request.user,
+        case_status=LungCancerCase.CaseStatus.ACTIVE,
+        patient__hospital_id=get_token_hospital_id(request),
+        patient__hospital=request.user.department_role.department,
+    )
+
+
+def _doctor_slide_or_404(request, slide_id):
+    return get_object_or_404(
+        WholeSlideImage.objects.select_related("image_asset", "specimen", "specimen__case", "specimen__case__patient"),
+        id=slide_id,
+        is_current=True,
+        specimen__case__primary_doctor=request.user,
+        specimen__case__case_status=LungCancerCase.CaseStatus.ACTIVE,
+        specimen__case__patient__hospital_id=get_token_hospital_id(request),
+        specimen__case__patient__hospital=request.user.department_role.department,
+    )
+
+
+def _doctor_slide_summary(slide):
+    return {
+        "id": slide.id,
+        "specimen_id": slide.specimen_id,
+        "image_asset_id": slide.image_asset_id,
+        "slide_code": slide.slide_code,
+        "block_code": slide.block_code,
+        "stain": slide.stain,
+        "mpp": slide.mpp,
+        "status": slide.image_asset.status,
+        "viewer_url": f"/api/doctor/slides/{slide.id}/viewer/",
+    }
+
+
+class DoctorCasePathologySpecimenListAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, case_id):
+        case = _doctor_case_or_404(request, case_id)
+        specimens = PathologySpecimen.objects.filter(case=case).prefetch_related("wsis").order_by("-received_at", "-created_at")
+        return Response([
+            {
+                "id": specimen.id,
+                "case_id": specimen.case_id,
+                "examination_order_id": specimen.examination_order_id,
+                "specimen_code": specimen.specimen_code,
+                "specimen_type": specimen.specimen_type,
+                "body_site": specimen.body_site,
+                "collected_at": specimen.collected_at,
+                "received_at": specimen.received_at,
+                "status": specimen.status,
+                "slide_count": sum(1 for slide in specimen.wsis.all() if slide.is_current),
+            }
+            for specimen in specimens
+        ])
+
+
+class DoctorSpecimenSlideListAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, specimen_id):
+        specimen = get_object_or_404(
+            PathologySpecimen.objects.select_related("case", "case__patient"),
+            id=specimen_id,
+            case__primary_doctor=request.user,
+            case__case_status=LungCancerCase.CaseStatus.ACTIVE,
+            case__patient__hospital_id=get_token_hospital_id(request),
+            case__patient__hospital=request.user.department_role.department,
+        )
+        slides = WholeSlideImage.objects.filter(specimen=specimen, is_current=True).select_related("image_asset").order_by("slide_code")
+        return Response([_doctor_slide_summary(slide) for slide in slides])
+
+
+class DoctorSlideViewerAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, slide_id):
+        slide = _doctor_slide_or_404(request, slide_id)
+        if not slide.orthanc_series_id:
+            return Response({"detail": "WSI viewer is not ready for this slide."}, status=status.HTTP_409_CONFLICT)
+        try:
+            pyramid = get_wsi_pyramid(slide.orthanc_series_id)
+        except OrthancError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        base = f"/api/doctor/slides/{slide.id}"
+        return Response({
+            "slide_id": slide.id,
+            "viewer_type": "WSI",
+            "width": pyramid["TotalWidth"],
+            "height": pyramid["TotalHeight"],
+            "tile_size": pyramid["TileWidth"],
+            "tile_width": pyramid["TileWidth"],
+            "tile_height": pyramid["TileHeight"],
+            "max_level": max(len(pyramid["Resolutions"]) - 1, 0),
+            "mpp": slide.mpp,
+            "thumbnail_url": f"{base}/thumbnail/",
+            "tile_url_template": f"{base}/tiles/{{level}}/{{x}}/{{y}}.jpg",
+        })
+
+
+class DoctorSlideThumbnailAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, slide_id):
+        slide = _doctor_slide_or_404(request, slide_id)
+        if not slide.orthanc_series_id:
+            return Response({"detail": "WSI viewer is not ready for this slide."}, status=status.HTTP_409_CONFLICT)
+        try:
+            pyramid = get_wsi_pyramid(slide.orthanc_series_id)
+            tile = get_wsi_tile(slide.orthanc_series_id, max(len(pyramid["Resolutions"]) - 1, 0), 0, 0)
+        except OrthancError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(tile.content, content_type=tile.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class DoctorSlideTileAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, slide_id, level, x, y):
+        slide = _doctor_slide_or_404(request, slide_id)
+        if not slide.orthanc_series_id:
+            return Response({"detail": "WSI viewer is not ready for this slide."}, status=status.HTTP_409_CONFLICT)
+        try:
+            tile = get_wsi_tile(slide.orthanc_series_id, level, x, y)
+        except OrthancError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(tile.content, content_type=tile.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
 
 
 class DoctorMedicalOpinionAPIView(APIView):

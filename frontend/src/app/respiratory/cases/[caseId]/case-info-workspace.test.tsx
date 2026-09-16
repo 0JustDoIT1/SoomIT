@@ -21,4 +21,10 @@ describe("CaseInfoWorkspace", () => {
     render(<CaseInfoWorkspace menu="PRESCRIPTION" />);
     for (const button of screen.getAllByRole("button")) expect(button).toBeDisabled();
   });
+
+  it("does not describe the connected PD-L1 AI API as pending authentication", () => {
+    render(<CaseInfoWorkspace menu="PDL1" />);
+    expect(screen.getByText("현재 Case에 연결된 PD-L1 AI 분석 후보가 없습니다.")).toBeTruthy();
+    expect(document.body).not.toHaveTextContent("인증 연동 대기");
+  });
 });

@@ -9,9 +9,14 @@ export function CurrentActionQueue({ actions, onNavigate, onOpen }: { actions: C
         <div className="mt-1 space-y-1">
           {visible.map((action) => (
             <article key={action.id} className="flex h-9 items-center justify-between gap-3 rounded-md bg-white px-3">
-              <p className="min-w-0 truncate text-xs font-semibold text-slate-700">
-                {action.title} <span className="font-normal text-slate-400">· {action.status}</span>
-              </p>
+              <div className="flex min-w-0 items-center gap-2">
+                <span className={`shrink-0 whitespace-nowrap rounded-full px-2 py-0.5 text-[9px] font-semibold ${getSourceStyle(action.source)}`}>
+                  {action.sourceLabel}
+                </span>
+                <p className="min-w-0 truncate text-xs font-semibold text-slate-700">
+                  {action.title} <span className="font-normal text-slate-400">· {action.status}</span>
+                </p>
+              </div>
               <button type="button" onClick={() => onOpen ? onOpen(action) : onNavigate(action.href)} className="whitespace-nowrap rounded border border-blue-400 px-3 py-1 text-[11px] font-semibold text-blue-700">
                 검토 열기
               </button>
@@ -26,4 +31,11 @@ export function CurrentActionQueue({ actions, onNavigate, onOpen }: { actions: C
       )}
     </section>
   );
+}
+
+function getSourceStyle(source: CurrentAction["source"]) {
+  if (source === "SPECIALIST") return "bg-emerald-50 text-emerald-700";
+  if (source === "AI") return "bg-blue-50 text-blue-700";
+  if (source === "PRESCRIPTION") return "bg-violet-50 text-violet-700";
+  return "bg-amber-50 text-amber-700";
 }

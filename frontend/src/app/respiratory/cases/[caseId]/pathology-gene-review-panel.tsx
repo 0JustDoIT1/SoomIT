@@ -1,5 +1,6 @@
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 import { ResultReviewPanel } from "./result-review-panel";
+import { CaseWsiEvidence } from "./case-wsi-evidence";
 
 type ClinicalResult = {
   workflow_stage: string;
@@ -32,6 +33,9 @@ type Props = {
   aiRetrying?: boolean;
   onRetryClinical?: () => void;
   onRetryAi?: () => void;
+  caseId?: string;
+  apiBaseUrl?: string;
+  authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
 export function PathologyGeneReviewPanel({
@@ -45,6 +49,9 @@ export function PathologyGeneReviewPanel({
   aiRetrying,
   onRetryClinical,
   onRetryAi,
+  caseId,
+  apiBaseUrl,
+  authorizedFetch,
 }: Props) {
   const sharedProps = {
     clinicalError,
@@ -76,7 +83,7 @@ export function PathologyGeneReviewPanel({
             연결된 원본 근거만 표시하며, 필요할 때 전체 화면으로 확인합니다.
           </p>
         </div>
-        <div className="overflow-x-auto"><EvidenceViewerPanel /></div>
+        <div className="overflow-x-auto">{caseId && apiBaseUrl && authorizedFetch ? <CaseWsiEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stain="HE" /> : <EvidenceViewerPanel />}</div>
       </div>
 
       <div className="bg-slate-50 p-3">
