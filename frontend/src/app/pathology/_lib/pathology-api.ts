@@ -193,12 +193,6 @@ export type PathologyReport = {
   updated_at: string;
 };
 
-const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
-
-export const API_BASE_URL = (
-  process.env.NEXT_PUBLIC_API_BASE_URL?.trim() || DEFAULT_API_BASE_URL
-).replace(/\/+$/, "");
-
 export const WORK_ITEMS_API_URL = `${API_BASE_URL}/api/pathology/work-items/`;
 export const CASES_API_URL = `${API_BASE_URL}/api/cases/`;
 
@@ -388,3 +382,4 @@ export async function readPathologyDiagnosis(response: Response) {
 export function readPathologyReports(response: Response) {
   return readCollection<PathologyReport>(response);
 }
+import { API_BASE_URL } from "@/lib/api";

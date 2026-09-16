@@ -176,3 +176,16 @@ export function validateCtSeries(headers: DicomHeaderInfo[]): { valid: boolean; 
 
   return { valid: errors.length === 0, errors };
 }
+
+export function validatePetSeries(headers: DicomHeaderInfo[]): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  if (headers.length === 0) return { valid: false, errors: ["선택된 DICOM 파일이 없습니다."] };
+  if (!headers.every((header) => header.modality === "PT")) errors.push("Modality가 PT가 아닌 파일이 포함되어 있습니다.");
+  const studyUids = new Set(headers.map((header) => header.studyInstanceUid));
+  if (studyUids.size !== 1 || studyUids.has(null)) errors.push("StudyInstanceUID가 서로 다르거나 누락된 파일이 있습니다.");
+  const seriesUids = new Set(headers.map((header) => header.seriesInstanceUid));
+  if (seriesUids.size !== 1 || seriesUids.has(null)) errors.push("SeriesInstanceUID가 서로 다르거나 누락된 파일이 있습니다.");
+  const sopUids = headers.map((header) => header.sopInstanceUid);
+  if (new Set(sopUids).size !== sopUids.length || new Set(sopUids).has(null)) errors.push("SOPInstanceUID가 중복되거나 누락된 파일이 있습니다.");
+  return { valid: errors.length === 0, errors };
+}

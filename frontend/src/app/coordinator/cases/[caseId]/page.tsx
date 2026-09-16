@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 "use client";
 
 import { useEffect, useState } from "react";
@@ -51,7 +52,7 @@ export default function CaseDetailPage() {
     const fetchCaseDetail = async () => {
       try {
         const response = await fetch(
-          `http://127.0.0.1:8000/api/cases/${caseId}/`
+          `${API_BASE_URL}/api/cases/${caseId}/`
         );
 
         if (!response.ok) {

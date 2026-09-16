@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 "use client";
 import Script from "next/script";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -38,7 +39,19 @@ type PatientQuestionnaire = {
   responses: Record<string, string | null>;
 };
 
+type Doctor = {
+  id: string;
+  name: string;
+};
+
+type Hospital = {
+  id: string;
+  code: string;
+  name: string;
+};
+
 type PatientCreateForm = {
+  hospital_id: string;
   patient_code: string;
   name: string;
   birth_date: string;
@@ -47,6 +60,7 @@ type PatientCreateForm = {
   address: string;
   address_detail: string;
   postal_code: string;
+  primary_doctor_id: string;
 };
 
 type PatientUpdateForm = {
@@ -58,6 +72,7 @@ type PatientUpdateForm = {
 };
 
 const initialCreateForm: PatientCreateForm = {
+  hospital_id: "",
   patient_code: "",
   name: "",
   birth_date: "",
@@ -66,6 +81,7 @@ const initialCreateForm: PatientCreateForm = {
   address: "",
   address_detail: "",
   postal_code: "",
+  primary_doctor_id: "",
 };
 
 const initialUpdateForm: PatientUpdateForm = {
@@ -107,6 +123,12 @@ export default function PatientsPage() {
     useState<PatientCreateForm>(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
+  const [hospitals, setHospitals] = useState<Hospital[]>([]);
+  const [hospitalsLoading, setHospitalsLoading] = useState(false);
+  const [hospitalsError, setHospitalsError] = useState("");
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
+  const [doctorsLoading, setDoctorsLoading] = useState(false);
+  const [doctorsError, setDoctorsError] = useState("");
   const [patientAccountId, setPatientAccountId] = useState<string | null>(null);
   const [appLookupStatus, setAppLookupStatus] = useState<"IDLE" | "NOT_FOUND" | "UNLINKED" | "LINKED">("IDLE");
   const [appLookupLoading, setAppLookupLoading] = useState(false);
@@ -152,7 +174,7 @@ export default function PatientsPage() {
     try {
       setError("");
       const response = await fetch(
-        "http://127.0.0.1:8000/api/patients/"
+        `${API_BASE_URL}/api/patients/`
       );
       if (!response.ok) {
         throw new Error("환자 목록을 불러오지 못했습니다.");
@@ -169,6 +191,57 @@ export default function PatientsPage() {
       setLoading(false);
     }
   };
+
+  const fetchHospitals = async () => {
+    try {
+      setHospitalsLoading(true);
+      setHospitalsError("");
+      const response = await fetch(
+        `${API_BASE_URL}/api/patients/hospitals/`
+      );
+      if (!response.ok) {
+        throw new Error("Unable to load hospitals.");
+      }
+      const data: Hospital[] = await response.json();
+      setHospitals(data);
+    } catch (err) {
+      setHospitalsError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while loading hospitals."
+      );
+    } finally {
+      setHospitalsLoading(false);
+    }
+  };
+
+  const fetchDoctors = async (hospitalId: string) => {
+    if (!hospitalId) {
+      setDoctors([]);
+      return;
+    }
+    try {
+      setDoctorsLoading(true);
+      setDoctorsError("");
+      const response = await fetch(
+        `${API_BASE_URL}/api/patients/doctors/?hospital_id=${encodeURIComponent(hospitalId)}`
+      );
+      if (!response.ok) {
+        throw new Error("Unable to load doctors.");
+      }
+      const data: Doctor[] = await response.json();
+      setDoctors(data);
+    } catch (err) {
+      setDoctorsError(
+        err instanceof Error
+          ? err.message
+          : "An error occurred while loading doctors."
+      );
+    } finally {
+      setDoctorsLoading(false);
+    }
+  };
+
   useEffect(() => {
     // Initial data synchronization with the existing patients API.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -178,7 +251,7 @@ export default function PatientsPage() {
   // 환자 상세 조회
   const fetchPatientDetail = async (patientId: string) => {
     const response = await fetch(
-      `http://127.0.0.1:8000/api/patients/${patientId}/`
+      `${API_BASE_URL}/api/patients/${patientId}/`
     );
     if (!response.ok) {
       throw new Error("환자 상세 정보를 불러오지 못했습니다.");
@@ -210,6 +283,7 @@ export default function PatientsPage() {
     setPatientAccountId(null);
     setAppLookupStatus("IDLE");
     setAppLookupMessage("");
+    void fetchHospitals();
     setIsCreateOpen(true);
   };
 
@@ -217,7 +291,7 @@ export default function PatientsPage() {
     if (!patient.latest_questionnaire_id) return;
     setQuestionnaireLoading(true);
     try {
-      const response = await fetch(`http://127.0.0.1:8000/api/patients/${patient.id}/questionnaire/`);
+      const response = await fetch(`${API_BASE_URL}/api/patients/${patient.id}/questionnaire/`);
       if (!response.ok) throw new Error("문진 내용을 불러오지 못했습니다.");
       setQuestionnaire(await response.json());
       setQuestionnairePatientName(patient.name);
@@ -230,7 +304,7 @@ export default function PatientsPage() {
     if (!phone) { setAppLookupMessage("연락처를 먼저 입력해주세요."); return; }
     setAppLookupLoading(true); setAppLookupMessage("");
     try {
-      const response = await fetch("http://127.0.0.1:8000/api/patients/app-accounts/lookup/", {
+      const response = await fetch(`${API_BASE_URL}/api/patients/app-accounts/lookup/`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_number: phone }),
       });
@@ -266,13 +340,15 @@ export default function PatientsPage() {
       return;
     }
     if (
+      !createForm.hospital_id ||
       !createForm.patient_code.trim() ||
       !createForm.name.trim() ||
       !createForm.birth_date ||
       !createForm.sex ||
       !createForm.phone_number.trim() ||
       !createForm.address.trim() ||
-      !createForm.postal_code.trim()
+      !createForm.postal_code.trim() ||
+      !createForm.primary_doctor_id
     ) {
       setCreateError("모든 필수 정보를 입력해주세요.");
       return;
@@ -281,13 +357,14 @@ export default function PatientsPage() {
       setCreateLoading(true);
       setCreateError("");
       const response = await fetch(
-        "http://127.0.0.1:8000/api/patients/",
+        `${API_BASE_URL}/api/patients/`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
+            hospital_id: createForm.hospital_id,
             patient_code: createForm.patient_code.trim(),
             name: createForm.name.trim(),
             birth_date: createForm.birth_date,
@@ -296,6 +373,7 @@ export default function PatientsPage() {
             address: createForm.address.trim(),
             address_detail: createForm.address_detail.trim() || null,
             postal_code: createForm.postal_code.trim(),
+            primary_doctor_id: createForm.primary_doctor_id,
             ...(patientAccountId ? { patient_account_id: patientAccountId } : {}),
           }),
         }
@@ -360,7 +438,7 @@ export default function PatientsPage() {
       setUpdateLoading(true);
       setUpdateError("");
       const response = await fetch(
-        `http://127.0.0.1:8000/api/patients/${selectedPatient.id}/`,
+        `${API_BASE_URL}/api/patients/${selectedPatient.id}/`,
         {
           method: "PATCH",
           headers: {
@@ -684,6 +762,59 @@ export default function PatientsPage() {
                 <ErrorMessage message={createError} />
               )}
               <div className="space-y-5">
+                <FormField label="Hospital" required>
+                  <select
+                    value={createForm.hospital_id}
+                    onChange={(e) => {
+                      const hospitalId = e.target.value;
+                      setCreateForm({
+                        ...createForm,
+                        hospital_id: hospitalId,
+                        primary_doctor_id: "",
+                      });
+                      void fetchDoctors(hospitalId);
+                    }}
+                    disabled={hospitalsLoading || Boolean(hospitalsError)}
+                    className={inputClassName}
+                  >
+                    <option value="">
+                      {hospitalsLoading ? "Loading hospitals" : "Select a hospital"}
+                    </option>
+                    {hospitals.map((hospital) => (
+                      <option key={hospital.id} value={hospital.id}>
+                        {hospital.code} — {hospital.name}
+                      </option>
+                    ))}
+                  </select>
+                  {hospitalsError ? (
+                    <p className="mt-1.5 text-xs text-red-600">{hospitalsError}</p>
+                  ) : null}
+                </FormField>
+                <FormField label="Primary doctor" required>
+                  <select
+                    value={createForm.primary_doctor_id}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        primary_doctor_id: e.target.value,
+                      })
+                    }
+                    disabled={doctorsLoading || Boolean(doctorsError)}
+                    className={inputClassName}
+                  >
+                    <option value="">
+                      {doctorsLoading ? "Loading doctors" : "Select a doctor"}
+                    </option>
+                    {doctors.map((doctor) => (
+                      <option key={doctor.id} value={doctor.id}>
+                        {doctor.name}
+                      </option>
+                    ))}
+                  </select>
+                  {doctorsError ? (
+                    <p className="mt-1.5 text-xs text-red-600">{doctorsError}</p>
+                  ) : null}
+                </FormField>
                 <FormField label="환자번호" required>
                   <input
                     type="text"

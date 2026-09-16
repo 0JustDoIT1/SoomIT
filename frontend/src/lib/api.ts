@@ -3,7 +3,7 @@ import type {
   LoginResponse,
 } from "@/types/auth";
 
-const API_BASE_URL =
+export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL;
 
 let staffRefreshPromise: Promise<string> | null = null;

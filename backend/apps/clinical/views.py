@@ -10,16 +10,18 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.cases.models import ClinicianDecision, LungCancerCase
+from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase
 from apps.patients.models import CurrentMedication, LabResult, Patient, PatientHealthProfile
 
 from .dur_client import DurClient, OPERATIONS
-from .models import ClinicalResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TreatmentDecision, TreatmentRule
+from apps.radiology.services.tnm_stage_inference import TnmStageInferenceError, request_tnm_stage
+from .models import ClinicalResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TnmResult, TreatmentDecision, TreatmentRule
 from .serializers import (
     DoctorClinicalResultSerializer,
     DoctorPrescriptionSerializer,
     PrescriptionItemUpdateSerializer,
     DoctorTreatmentDecisionSerializer,
+    DoctorTnmDraftSerializer,
     PatientClinicalResultSerializer,
     TreatmentRuleCandidateSerializer,
 )
@@ -33,6 +35,161 @@ UNRESOLVED_SAFETY_SOURCE_CODES = {
     "ALLERGY_UNCONFIRMED",
     "LAB_MISSING",
 }
+
+
+class DoctorTnmDraftAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _case_and_order(self, request, case_id):
+        case = LungCancerCase.objects.filter(
+            id=case_id, primary_doctor=request.user, case_status="ACTIVE",
+        ).first()
+        if case is None:
+            return None, None
+        order = ExaminationOrder.objects.filter(
+            case=case, order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).order_by("-created_at").first()
+        return case, order
+
+    @transaction.atomic
+    def post(self, request, case_id):
+        case, order = self._case_and_order(request, case_id)
+        if case is None or order is None:
+            return Response({"detail": "PET-CT TNM order was not found."}, status=404)
+        serializer = DoctorTnmDraftSerializer(
+            data=request.data, context={"case": case, "order": order},
+        )
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        ai_result_id = values["reviewed_ai_result_id"]
+        draft = (
+            ClinicalResult.objects.select_for_update()
+            .filter(
+                case=case, examination_order=order, workflow_stage="PET_CT_TNM",
+                reviewed_ai_result_id=ai_result_id,
+            )
+            .select_related("tnm_detail")
+            .first()
+        )
+        if draft is not None and draft.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "A confirmed TNM result cannot be modified."}, status=409)
+        created = draft is None
+        if created:
+            from apps.ai_results.models import AiResult
+
+            draft = ClinicalResult.objects.create(
+                case=case, examination_order=order, workflow_stage="PET_CT_TNM",
+                reviewed_ai_result=AiResult.objects.get(id=ai_result_id),
+                result_status=ClinicalResult.ResultStatus.DRAFT,
+            )
+            TnmResult.objects.create(
+                clinical_result=draft, t_category=values["t_category"],
+                n_category=values["n_category"], m_category=values["m_category"],
+                stage_group="", evidence=values.get("evidence"), note=values.get("note"),
+            )
+        else:
+            detail = draft.tnm_detail
+            detail.t_category = values["t_category"]
+            detail.n_category = values["n_category"]
+            detail.m_category = values["m_category"]
+            detail.evidence = values.get("evidence")
+            detail.note = values.get("note")
+            detail.save(update_fields=["t_category", "n_category", "m_category", "evidence", "note"])
+        return Response(DoctorTnmDraftSerializer(draft).data, status=201 if created else 200)
+
+    def patch(self, request, case_id):
+        return self.post(request, case_id)
+
+
+class DoctorTnmConfirmAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, case_id, result_id):
+        diagnosis = (
+            ClinicalResult.objects.select_for_update()
+            .filter(
+                id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
+                case__primary_doctor=request.user,
+            )
+            .select_related("tnm_detail")
+            .first()
+        )
+        if diagnosis is None:
+            return Response({"detail": "TNM draft was not found."}, status=404)
+        if diagnosis.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "TNM result is already confirmed."}, status=409)
+        detail = diagnosis.tnm_detail
+        if not detail.t_category or not detail.n_category or not detail.m_category:
+            return Response({"detail": "T, N, and M values are required before confirmation."}, status=400)
+        diagnosis.result_status = ClinicalResult.ResultStatus.CONFIRMED
+        diagnosis.confirmed_by_user = request.user
+        diagnosis.confirmed_at = timezone.now()
+        diagnosis.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+        return Response(DoctorTnmDraftSerializer(diagnosis).data)
+
+
+class DoctorTnmStageAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, case_id, result_id):
+        diagnosis = (
+            ClinicalResult.objects.select_for_update()
+            .filter(id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
+                    result_status=ClinicalResult.ResultStatus.CONFIRMED,
+                    case__primary_doctor=request.user)
+            .select_related("tnm_detail", "case__patient")
+            .first()
+        )
+        if diagnosis is None:
+            return Response({"detail": "A confirmed TNM result was not found."}, status=404)
+        detail = diagnosis.tnm_detail
+        try:
+            stage = request_tnm_stage(
+                t_category=detail.t_category,
+                n_category=detail.n_category,
+                m_category=detail.m_category,
+                patient_id=diagnosis.case.patient_id,
+            )
+        except TnmStageInferenceError as exc:
+            return Response({"detail": str(exc)}, status=502)
+        evidence = detail.evidence if isinstance(detail.evidence, dict) else {}
+        evidence = {**evidence, "stage": stage}
+        detail.evidence = evidence
+        detail.save(update_fields=["evidence"])
+        return Response(DoctorTnmDraftSerializer(diagnosis).data)
+
+
+class DoctorTnmStageConfirmAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, case_id, result_id):
+        diagnosis = (
+            ClinicalResult.objects.select_for_update()
+            .filter(id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
+                    result_status=ClinicalResult.ResultStatus.CONFIRMED,
+                    case__primary_doctor=request.user)
+            .select_related("tnm_detail")
+            .first()
+        )
+        if diagnosis is None:
+            return Response({"detail": "A confirmed TNM result was not found."}, status=404)
+        detail = diagnosis.tnm_detail
+        stage = detail.evidence.get("stage") if isinstance(detail.evidence, dict) else None
+        candidate = stage.get("stage_group_candidate") if isinstance(stage, dict) else None
+        if not isinstance(stage, dict) or stage.get("stage_group_status") != "candidate_ready" or not candidate:
+            return Response({"detail": "A ready Stage candidate is required."}, status=400)
+        if detail.stage_group:
+            return Response({"detail": "Stage Group is already confirmed."}, status=409)
+        detail.stage_group = candidate
+        detail.save(update_fields=["stage_group"])
+        return Response(DoctorTnmDraftSerializer(diagnosis).data)
 
 
 def _valid_mfds_item_seq(drug):

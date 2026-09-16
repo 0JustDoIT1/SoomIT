@@ -184,6 +184,10 @@ class CtSeriesUploadSerializer(serializers.Serializer):
         return uploaded_files
 
 
+class PetSeriesUploadSerializer(CtSeriesUploadSerializer):
+    """PET uses the common multipart size/count guard, with PET checks in the view."""
+
+
 class RadiologyAiAnalysisSummarySerializer(serializers.Serializer):
     id = serializers.UUIDField(read_only=True)
     analysis_type = serializers.CharField(read_only=True)
@@ -310,12 +314,14 @@ class RadiologyAiResultSerializer(serializers.Serializer):
             }
         if obj.analysis_type == "PET_CT_TNM_ANALYSIS" and hasattr(ai_result, "tnm_detail"):
             detail = ai_result.tnm_detail
+            payload = ai_result.result_payload if isinstance(ai_result.result_payload, dict) else {}
             return {
                 "predicted_t": detail.predicted_t,
                 "predicted_n": detail.predicted_n,
                 "predicted_m": detail.predicted_m,
                 "predicted_stage_group": detail.predicted_stage_group,
                 "confidence": detail.confidence,
+                "result_payload": payload,
             }
         return None
 

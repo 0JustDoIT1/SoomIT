@@ -22,6 +22,9 @@ from .services.xray_inference import request_xray_prediction
 from .services.xray_storage import download_xray_image_bytes
 from .services.pet_dicom_export import cleanup_pet_dicom_gcs_prefix, export_pet_series_for_analysis
 from .services.tnm_m_inference import request_tnm_m_analysis
+from .services.tnm_t_inference import request_tnm_t_analysis
+from .services.ct_phase2_inference import request_ct_phase2_analysis
+from .services.tnm_n_inference import load_n_input, request_tnm_n_analysis
 from apps.clinical.models import ClinicalResult
 
 
@@ -252,8 +255,148 @@ def run_ct_analysis(analysis_id):
     return "succeeded"
 
 
-@shared_task
-def run_tnm_m_analysis(analysis_id):
+def _single_confirmed_ct(analysis):
+    confirmed = list(
+        ClinicalResult.objects.select_related("reviewed_ai_result__ai_analysis").filter(
+            case_id=analysis.case_id,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            workflow_stage="CT",
+            reviewed_ai_result__ai_analysis__analysis_type=AnalysisType.CT_ANALYSIS,
+            reviewed_ai_result__ai_analysis__status=AiAnalysis.Status.SUCCEEDED,
+        )
+    )
+    if len(confirmed) != 1:
+        raise ValueError("Exactly one confirmed CT analysis is required.")
+    result = confirmed[0].reviewed_ai_result
+    payload = result.result_payload or {}
+    t_input_uri, artifact_uri = payload.get("t_input_uri"), payload.get("artifact_uri")
+    if (
+        result.ai_analysis.case_id != analysis.case_id
+        or not isinstance(t_input_uri, str) or not t_input_uri.startswith("gs://") or t_input_uri.endswith("/")
+        or not isinstance(artifact_uri, str) or not artifact_uri.startswith("gs://")
+    ):
+        raise ValueError("Confirmed CT analysis has invalid Phase1 output URIs.")
+    return t_input_uri, artifact_uri
+
+
+def _patient_phase2_inputs(analysis):
+    patient = analysis.case.patient
+    if patient.birth_date is None:
+        raise ValueError("Patient birth date is required for CT Phase2.")
+    today = timezone.localdate()
+    age = today.year - patient.birth_date.year - ((today.month, today.day) < (patient.birth_date.month, patient.birth_date.day))
+    gender = {patient.Sex.MALE: "male", patient.Sex.FEMALE: "female"}.get(patient.sex)
+    if age < 0 or gender is None:
+        raise ValueError("Patient age or sex is not valid for CT Phase2.")
+    return float(age), gender
+
+
+def _confirmed_histology(analysis):
+    confirmed = list(
+        ClinicalResult.objects.select_related("pathology_detail").filter(
+            case_id=analysis.case_id,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            workflow_stage="PATHOLOGY_GENE",
+            pathology_detail__isnull=False,
+        )
+    )
+    if len(confirmed) != 1:
+        raise ValueError("Exactly one confirmed pathology result is required.")
+    value = confirmed[0].pathology_detail.histologic_type
+    aliases = {
+        "adenocarcinoma": "adenocarcinoma", "luad": "adenocarcinoma",
+        "squamous cell carcinoma": "squamous cell carcinoma", "squamous": "squamous cell carcinoma",
+        "lusc": "squamous cell carcinoma", "large cell": "large cell",
+        "nos": "nos", "other-not-specified": "nos", "unknown": "unknown",
+    }
+    canonical = aliases.get(value.strip().casefold()) if isinstance(value, str) else None
+    if canonical is None:
+        raise ValueError("Confirmed pathology histologic type is not supported by the N model.")
+    return canonical
+
+
+def _tnm_result_files(t_payload, phase2_payload, m_payload):
+    files = []
+    for file_type, uri in (
+        ("t_tumor_mask", t_payload.get("tumor_mask_uri")),
+        ("phase2_artifact", phase2_payload.get("artifact_uri")),
+    ):
+        if isinstance(uri, str) and uri.startswith("gs://"):
+            files.append({"type": file_type, "uri": uri})
+    files.extend(
+        {"type": key, "uri": value}
+        for key, value in (m_payload.get("artifacts") or {}).items()
+        if isinstance(value, str) and value.startswith("gs://")
+    )
+    return files
+
+
+@shared_task(name="apps.radiology.tasks.run_tnm_m_analysis")
+def run_tnm_analysis(analysis_id):
+    analysis = (
+        AiAnalysis.objects.select_related("case__patient", "examination_order", "source_image_asset")
+        .filter(id=analysis_id, analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS)
+        .first()
+    )
+    if analysis is None:
+        return "invalid_analysis"
+    if analysis.status not in [AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING] or AiResult.objects.filter(ai_analysis=analysis).exists():
+        return "already_completed"
+    analysis.status = AiAnalysis.Status.RUNNING
+    analysis.started_at = timezone.now()
+    analysis.completed_at = None
+    analysis.error_message = None
+    analysis.save(update_fields=["status", "started_at", "completed_at", "error_message"])
+
+    prefix = None
+    try:
+        t_input_uri, phase1_artifact_uri = _single_confirmed_ct(analysis)
+        age, gender = _patient_phase2_inputs(analysis)
+        histology = _confirmed_histology(analysis)
+        t_payload = request_tnm_t_analysis(case_id=analysis.case_id, t_input_uri=t_input_uri)
+        phase2_payload = request_ct_phase2_analysis(
+            case_id=str(analysis.case_id), patient_id=str(analysis.case.patient_id), age=age,
+            gender=gender, histology=histology, phase1_artifact_uri=phase1_artifact_uri,
+            t_tumor_mask_uri=t_payload["tumor_mask_uri"],
+        )
+        n_input = load_n_input(phase2_payload["n_input_uri"])
+        n_payload = request_tnm_n_analysis(patient_id=analysis.case.patient_id, features=n_input["features"])
+        prefix = export_pet_series_for_analysis(analysis)
+        m_payload = request_tnm_m_analysis(
+            case_id=analysis.case_id, ct_gcs_uri=t_input_uri, pet_dicom_gcs_prefix=prefix,
+            pet_series_instance_uid=analysis.source_image_asset.series_instance_uid,
+        )
+        probability = (m_payload.get("model_support") or {}).get("m_positive_probability")
+        confidence = Decimal(str(probability)) if probability is not None else None
+        if confidence is not None and not Decimal("0") <= confidence <= Decimal("1"):
+            raise ValueError("M probability is outside the valid range.")
+        with transaction.atomic():
+            locked = AiAnalysis.objects.select_for_update().get(id=analysis.id)
+            if AiResult.objects.filter(ai_analysis=locked).exists():
+                return "already_completed"
+            result = AiResult.objects.create(
+                ai_analysis=locked, schema_version="tnm-v1",
+                result_payload={"t": t_payload, "phase2": phase2_payload, "n": n_payload, "m": m_payload},
+                result_files=_tnm_result_files(t_payload, phase2_payload, m_payload),
+            )
+            TnmAiResult.objects.create(ai_result=result, predicted_m=m_payload.get("m_candidate"), confidence=confidence)
+            locked.status = AiAnalysis.Status.SUCCEEDED
+            locked.completed_at = timezone.now()
+            locked.error_message = None
+            locked.save(update_fields=["status", "completed_at", "error_message"])
+        return "succeeded"
+    except Exception:
+        _mark_failed(analysis.id, error_message="PET-CT TNM analysis failed.")
+        return "failed"
+    finally:
+        if prefix:
+            try:
+                cleanup_pet_dicom_gcs_prefix(prefix)
+            except Exception:
+                pass
+
+
+def _legacy_run_tnm_m_analysis(analysis_id):
     analysis = (
         AiAnalysis.objects.select_related("case__patient", "examination_order", "source_image_asset")
         .filter(id=analysis_id, analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS)

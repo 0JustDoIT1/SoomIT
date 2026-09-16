@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -31,7 +32,7 @@ export default function CasesPage() {
         setError("");
 
         const response = await fetch(
-          "http://127.0.0.1:8000/api/cases/"
+          `${API_BASE_URL}/api/cases/`
         );
 
         if (!response.ok) {

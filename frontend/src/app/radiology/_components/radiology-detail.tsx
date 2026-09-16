@@ -12,7 +12,7 @@ import {
   parseDicomHeaders,
   pickDefaultSeriesUid,
   summarizeSeries,
-  validateCtSeries,
+  validateCtSeries, validatePetSeries,
   type DicomHeaderInfo,
 } from "../_lib/dicom-header";
 import {
@@ -22,7 +22,7 @@ import {
   RadiologyApiError,
   startRadiologyAnalysis,
   submitRadiologyAnalysisForReview,
-  uploadRadiologyCtSeries,
+  uploadRadiologyCtSeries, uploadRadiologyPetSeries,
   uploadRadiologyXrayImage,
   type RadiologyAnalysisDetail,
   type RadiologyAnalysisResult,
@@ -287,7 +287,63 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
       ) : <p className="text-slate-500">\ud0d0\uc9c0\ub41c \uacb0\uc808\uc774 \uc5c6\uc2b5\ub2c8\ub2e4.</p>}
     </div>;
   }
-  return <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-5">{[["T", data.result.predicted_t], ["N", data.result.predicted_n], ["M", data.result.predicted_m], ["Stage", data.result.predicted_stage_group], ["Confidence", formatPercent(data.result.confidence)]].map(([label, value]) => <div key={label} className="rounded-xl border border-violet-100 bg-gradient-to-br from-violet-50/70 to-blue-50/50 p-4"><dt className="text-violet-600">{label}</dt><dd className="mt-2 text-xl font-bold text-slate-900">{value ?? "-"}</dd></div>)}</dl>;
+  const result = data.result;
+  const payload = result.result_payload;
+  const t = payload?.t;
+  const n = payload?.n;
+  const m = payload?.m;
+  const mRule = m?.m_rule_result;
+  const mEvidence = m?.imaging_evidence;
+  const mModelSupport = m?.model_support;
+  const value = (item: unknown) => item === null || item === undefined || item === "" ? "-" : String(item);
+  const yesNo = (item: boolean | null | undefined) => item === null || item === undefined ? "-" : item ? "예" : "아니오";
+  return <div className="space-y-4">
+    <div className="grid gap-4 xl:grid-cols-3">
+      <section className="rounded-xl border border-violet-100 bg-violet-50/40 p-4">
+        <h4 className="text-sm font-bold text-violet-800">T 분석 결과</h4>
+        <dl className="mt-3 space-y-2 text-xs">
+          <div><dt className="text-slate-500">T 후보</dt><dd className="font-semibold">{value(t?.t_candidate)}</dd></div>
+          <div><dt className="text-slate-500">크기 기반 후보</dt><dd className="font-semibold">{value(t?.size_only_t_candidate)}</dd></div>
+          <div><dt className="text-slate-500">종양 부피 (ml)</dt><dd>{value(t?.tumor_volume_ml)}</dd></div>
+          <div><dt className="text-slate-500">Mask 대각선 (mm)</dt><dd>{value(t?.mask_bbox_diagonal_mm)}</dd></div>
+          <div><dt className="text-slate-500">Component 수</dt><dd>{value(t?.component_count)}</dd></div>
+          <div><dt className="text-slate-500">후보 상태</dt><dd>{value(t?.t_candidate_status)}</dd></div>
+          <div><dt className="text-slate-500">의료진 검토 필요</dt><dd>{yesNo(t?.physician_review_required)}</dd></div>
+        </dl>
+        <p className="mt-3 border-t border-violet-100 pt-3 text-[11px] text-violet-700">T 후보는 의료진 확정 전 참고값입니다.</p>
+      </section>
+      <section className="rounded-xl border border-blue-100 bg-blue-50/40 p-4">
+        <h4 className="text-sm font-bold text-blue-800">N 분석 결과</h4>
+        <dl className="mt-3 space-y-2 text-xs">
+          <div><dt className="text-slate-500">N+ probability</dt><dd className="font-semibold">{formatPercent(n?.nplus_probability)}</dd></div>
+          <div><dt className="text-slate-500">Risk tier</dt><dd>{value(n?.risk_tier)}</dd></div>
+          <div><dt className="text-slate-500">Review threshold</dt><dd>{value(n?.review_threshold)}</dd></div>
+          <div><dt className="text-slate-500">Elevated threshold</dt><dd>{value(n?.elevated_threshold)}</dd></div>
+          <div><dt className="text-slate-500">cN 배정 가능</dt><dd>{yesNo(n?.may_assign_cn)}</dd></div>
+          <div><dt className="text-slate-500">Categorical OOD 경고</dt><dd>{yesNo(n?.categorical_ood_warning)}</dd></div>
+          <div><dt className="text-slate-500">의료진 검토 필요</dt><dd>{yesNo(n?.physician_review_required)}</dd></div>
+        </dl>
+        <p className="mt-3 border-t border-blue-100 pt-3 text-[11px] text-blue-700">확률은 cN0/cN1/cN2/cN3으로 변환하지 않습니다.</p>
+      </section>
+      <section className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
+        <h4 className="text-sm font-bold text-emerald-800">M 분석 결과</h4>
+        <dl className="mt-3 space-y-2 text-xs">
+          <div><dt className="text-slate-500">M 후보</dt><dd className="font-semibold">{value(m?.m_candidate)}</dd></div>
+          <div><dt className="text-slate-500">M+ probability</dt><dd>{formatPercent(mModelSupport?.m_positive_probability)}</dd></div>
+          <div><dt className="text-slate-500">Review threshold</dt><dd>{value(mModelSupport?.review_threshold)}</dd></div>
+          <div><dt className="text-slate-500">Model review positive</dt><dd>{yesNo(mModelSupport?.model_review_positive)}</dd></div>
+          <div><dt className="text-slate-500">Rule candidate</dt><dd>{value(mRule?.m_candidate)}</dd></div>
+          <div><dt className="text-slate-500">Rule positive</dt><dd>{yesNo(mRule?.rule_positive as boolean | null | undefined)}</dd></div>
+          <div><dt className="text-slate-500">영상 근거 완료</dt><dd>{yesNo(mEvidence?.distant_metastasis_assessment_complete as boolean | null | undefined)}</dd></div>
+          <div><dt className="text-slate-500">검토 필요</dt><dd>{yesNo(mRule?.review_required as boolean | null | undefined)}</dd></div>
+        </dl>
+        <p className="mt-3 border-t border-emerald-100 pt-3 text-[11px] text-emerald-700">M 후보는 의료진 확정 전 참고값입니다.</p>
+      </section>
+    </div>
+    <dl className="grid grid-cols-2 gap-3 text-xs sm:grid-cols-3">
+      {[["기존 T 값", result.predicted_t], ["기존 N 값", result.predicted_n], ["기존 M 값", result.predicted_m], ["기존 Stage", result.predicted_stage_group], ["기존 Confidence", formatPercent(result.confidence)]].map(([label, item]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><dt className="text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{item ?? "-"}</dd></div>)}
+    </dl>
+  </div>;
 }
 
 export function RadiologyPatientSummary({ item, onClear }: {
@@ -345,6 +401,8 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [parsingDicom, setParsingDicom] = useState(false);
   const [selectedSeriesUid, setSelectedSeriesUid] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [uploadingCtSeries, setUploadingCtSeries] = useState(false);
+  const [ctSeriesUploaded, setCtSeriesUploaded] = useState(false);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
   const order = item.examination_order;
   const image = item.latest_image_asset;
@@ -367,11 +425,13 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     [seriesGroups, selectedSeriesUid],
   );
   const ctSeriesValidation = useMemo(
-    () => (selectedSeriesFiles.length > 0 ? validateCtSeries(selectedSeriesFiles) : null),
-    [selectedSeriesFiles],
+    () => (selectedSeriesFiles.length > 0 ? (order.order_type === "PET_CT_TNM" ? validatePetSeries(selectedSeriesFiles) : validateCtSeries(selectedSeriesFiles)) : null),
+    [selectedSeriesFiles, order.order_type],
   );
   const ctReadyToUpload = !isXray && selectedSeriesFiles.length > 0 && ctSeriesValidation?.valid === true;
-  const canStartAnalysis = trackedAnalysis === null && (image?.status === "READY" || ctReadyToUpload);
+  const isCt = order.order_type === "CT";
+  const serverImageReady = image?.status === "READY" || (isCt && ctSeriesUploaded);
+  const canStartAnalysis = trackedAnalysis === null && (serverImageReady || (!isXray && !isCt && ctReadyToUpload));
 
   useEffect(() => {
     return () => {
@@ -467,13 +527,14 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     setActionError("");
     setActionMessage("");
     try {
-      if (!isXray && image?.status !== "READY") {
+      if (!isXray && order.order_type === "PET_CT_TNM" && image?.status !== "READY") {
         if (!selectedSeriesUid) throw new RadiologyApiError("분석할 CT Series를 선택해 주세요.");
-        await uploadRadiologyCtSeries(
-          order.id,
-          selectedSeriesFiles.map((header) => header.file),
-          selectedSeriesUid,
-        );
+        const selectedFilesForUpload = selectedSeriesFiles.map((header) => header.file);
+        if (order.order_type === "PET_CT_TNM") {
+          await uploadRadiologyPetSeries(order.id, selectedFilesForUpload, selectedSeriesUid);
+        } else {
+          await uploadRadiologyCtSeries(order.id, selectedFilesForUpload, selectedSeriesUid);
+        }
         setSelectedFiles([]);
         setDicomHeaders([]);
         setSelectedSeriesUid(null);
@@ -488,6 +549,26 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       setActionError(error instanceof Error ? error.message : "AI 분석을 등록하지 못했습니다.");
     } finally {
       setStartingAnalysis(false);
+    }
+  }
+
+  async function handleUploadCtSeries() {
+    if (!isCt || !ctReadyToUpload || uploadingCtSeries || !selectedSeriesUid) return;
+    setUploadingCtSeries(true);
+    setActionError("");
+    setActionMessage("");
+    try {
+      await uploadRadiologyCtSeries(order.id, selectedSeriesFiles.map((header) => header.file), selectedSeriesUid);
+      setCtSeriesUploaded(true);
+      setSelectedFiles([]);
+      setDicomHeaders([]);
+      setSelectedSeriesUid(null);
+      setActionMessage("CT 영상이 서버에 등록되었습니다. 이제 AI 분석을 실행할 수 있습니다.");
+      onImageUploaded?.();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "CT 영상 업로드에 실패했습니다.");
+    } finally {
+      setUploadingCtSeries(false);
     }
   }
 
@@ -671,6 +752,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
               {isXray ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{"\uc120\ud0dd\ud55c PNG \ub610\ub294 JPEG\ub294 \uc5c5\ub85c\ub4dc \ud6c4 \uc601\uc0c1 \uc790\uc0b0\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4."}</p><button type="button" onClick={handleUploadImage} disabled={!previewFile || uploadingImage} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingImage ? "\uc5c5\ub85c\ub4dc \uc911" : "\uc11c\ubc84\uc5d0 \uc5c5\ub85c\ub4dc"}</button></div> : <p className="mt-3 text-slate-500">{ctReadyToUpload ? "아래 \"AI 분석 실행\"을 누르면 선택한 Series가 업로드된 뒤 분석이 시작됩니다." : "선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다."}</p>}
             </div>
           ) : null}
+          {isCt ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{ctSeriesUploaded || image?.status === "READY" ? "CT 영상이 서버에 등록되었습니다." : "선택한 Series를 먼저 서버에 등록하세요."}</p><button type="button" onClick={handleUploadCtSeries} disabled={!ctReadyToUpload || uploadingCtSeries || ctSeriesUploaded || image?.status === "READY"} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingCtSeries ? "업로드 중" : ctSeriesUploaded || image?.status === "READY" ? "서버 등록 완료" : "서버에 올리기"}</button></div> : null}
           <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p>
         </section>
 

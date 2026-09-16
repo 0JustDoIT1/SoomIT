@@ -586,12 +586,15 @@ class PatientDetailSerializer(serializers.ModelSerializer):
 # 원무과(coordinator) - 신규 환자 등록용
 # ─────────────────────────────────────────────
 class PatientCreateSerializer(serializers.ModelSerializer):
+    hospital_id = serializers.UUIDField(write_only=True)
     postal_code = serializers.CharField(max_length=10, required=True)
     patient_account_id = serializers.UUIDField(required=False, write_only=True)
+    primary_doctor_id = serializers.UUIDField(write_only=True)
 
     class Meta:
         model = Patient
         fields = [
+            "hospital_id",
             "patient_code",
             "name",
             "birth_date",
@@ -601,6 +604,7 @@ class PatientCreateSerializer(serializers.ModelSerializer):
             "address_detail",
             "postal_code",
             "patient_account_id",
+            "primary_doctor_id",
         ]
 
 
