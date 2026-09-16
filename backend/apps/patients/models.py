@@ -48,6 +48,11 @@ class PatientHealthProfile(models.Model):
         CURRENT = "CURRENT", "현재흡연"
         UNKNOWN = "UNKNOWN", "미상"
 
+    class AllergyStatus(models.TextChoices):
+        UNCONFIRMED = "UNCONFIRMED", "Unconfirmed"
+        NONE = "NONE", "No known allergies"
+        PRESENT = "PRESENT", "Allergies present"
+
     patient = models.OneToOneField(Patient, on_delete=models.CASCADE, primary_key=True, related_name="health_profile")
     smoking_status = models.CharField(max_length=10, choices=SmokingStatus.choices, null=True, blank=True)
     smoking_start_age = models.SmallIntegerField(null=True, blank=True)
@@ -55,6 +60,11 @@ class PatientHealthProfile(models.Model):
     cigarettes_per_day = models.SmallIntegerField(null=True, blank=True)
     height_cm = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     weight_kg = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    allergy_status = models.CharField(
+        max_length=12,
+        choices=AllergyStatus.choices,
+        default=AllergyStatus.UNCONFIRMED,
+    )
     allergies = models.JSONField(default=list, blank=True)
     comorbidities = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -387,6 +397,7 @@ class CurrentMedication(TimestampedUUIDModel):
         blank=True,
         related_name="patient_current_medications",
     )
+    mfds_item_seq = models.CharField(max_length=50, null=True, blank=True)
     medication_name = models.CharField(max_length=200)
     ingredient_name = models.CharField(max_length=200, null=True, blank=True)
     dose = models.DecimalField(max_digits=10, decimal_places=3, null=True, blank=True)

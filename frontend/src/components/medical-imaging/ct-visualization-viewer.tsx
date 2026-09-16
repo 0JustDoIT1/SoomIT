@@ -52,7 +52,7 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
   useEffect(() => {
     let disposed = false;
     let renderer: import("three").WebGLRenderer | null = null;
-    let controls: { dispose: () => void; update: () => void } | null = null;
+    let controls: import("three/addons/controls/OrbitControls.js").OrbitControls | null = null;
     let frameHandle = 0;
     let resizeObserver: ResizeObserver | null = null;
 

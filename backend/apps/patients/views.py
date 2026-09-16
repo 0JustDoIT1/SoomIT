@@ -3,7 +3,7 @@ from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from django.utils import timezone
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Prefetch
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
@@ -25,8 +25,8 @@ from rest_framework.generics import (
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.accounts.models import Hospital, User
-from apps.cases.models import LungCancerCase
+from apps.accounts.models import DepartmentRole, Hospital, User
+from apps.cases.models import LungCancerCase, WorkflowStage
 from apps.notifications.models import PatientNotificationSetting
 
 from .models import (
@@ -111,7 +111,8 @@ class PatientListAPIView(ListCreateAPIView):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
-        hospital = Hospital.objects.first()
+        hospital_id = serializer.validated_data.pop("hospital_id")
+        hospital = Hospital.objects.filter(id=hospital_id).first()
         if hospital is None:
             raise ValidationError({"hospital": "등록된 병원 정보가 없습니다."})
 
@@ -119,6 +120,16 @@ class PatientListAPIView(ListCreateAPIView):
         normalized_phone = "".join(char for char in phone_number if char.isdigit())
         phone_number_hash = hashlib.sha256(normalized_phone.encode("utf-8")).hexdigest()
         patient_account_id = serializer.validated_data.pop("patient_account_id", None)
+        primary_doctor_id = serializer.validated_data.pop("primary_doctor_id")
+
+        primary_doctor = User.objects.filter(
+            id=primary_doctor_id,
+            account_status=User.AccountStatus.ACTIVE,
+            department_role__role=DepartmentRole.Role.DOCTOR,
+            department_role__department__hospital=hospital,
+        ).first()
+        if primary_doctor is None:
+            raise ValidationError({"primary_doctor_id": "선택한 담당의를 사용할 수 없습니다."})
 
         patient_account = None
         if patient_account_id is not None:
@@ -143,6 +154,21 @@ class PatientListAPIView(ListCreateAPIView):
                 )
 
         patient = serializer.save(hospital=hospital, phone_number_hash=phone_number_hash)
+        for sequence in range(1, 10001):
+            case_code = f"RADPT{sequence:04d}"
+            try:
+                with transaction.atomic():
+                    LungCancerCase.objects.create(
+                        patient=patient,
+                        case_code=case_code,
+                        primary_doctor=primary_doctor,
+                        current_stage=WorkflowStage.XRAY,
+                    )
+                break
+            except IntegrityError:
+                continue
+        else:
+            raise ValidationError({"case_code": "새 Case 번호를 생성할 수 없습니다."})
 
         if patient_account is not None:
             patient_account.patient = patient
@@ -186,6 +212,33 @@ class PatientListAPIView(ListCreateAPIView):
             hospital=hospital,
             phone_number_hash=phone_number_hash,
         )
+
+
+class PatientHospitalListAPIView(APIView):
+    def get(self, request):
+        hospitals = Hospital.objects.order_by("code", "id")
+        return Response(
+            [
+                {"id": str(hospital.id), "code": hospital.code, "name": hospital.name}
+                for hospital in hospitals
+            ]
+        )
+
+
+class PatientDoctorListAPIView(APIView):
+    def get(self, request):
+        hospital_id = request.query_params.get("hospital_id")
+        if not hospital_id:
+            raise ValidationError({"hospital_id": "A hospital must be selected."})
+        hospital = Hospital.objects.filter(id=hospital_id).first()
+        if hospital is None:
+            raise ValidationError({"hospital_id": "Selected hospital does not exist."})
+        doctors = User.objects.filter(
+            account_status=User.AccountStatus.ACTIVE,
+            department_role__role=DepartmentRole.Role.DOCTOR,
+            department_role__department__hospital=hospital,
+        ).order_by("name", "id")
+        return Response([{"id": str(doctor.id), "name": doctor.name} for doctor in doctors])
 
 
 class PatientAccountRegistrationAPIView(APIView):

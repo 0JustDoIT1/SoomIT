@@ -11,6 +11,10 @@ from apps.clinical.views import (
     DoctorTreatmentDecisionConfirmAPIView,
     DoctorPrescriptionSafetyCheckAPIView,
     DoctorRegimenCandidateListAPIView,
+    DoctorTnmDraftAPIView,
+    DoctorTnmConfirmAPIView,
+    DoctorTnmStageAPIView,
+    DoctorTnmStageConfirmAPIView,
 )
 
 from .views import (
@@ -86,6 +90,10 @@ urlpatterns = [
         DoctorClinicalResultListAPIView.as_view(),
         name="doctor-clinical-result-list",
     ),
+    path("<uuid:case_id>/clinical-results/tnm/", DoctorTnmDraftAPIView.as_view(), name="doctor-tnm-draft"),
+    path("<uuid:case_id>/clinical-results/tnm/<uuid:result_id>/confirm/", DoctorTnmConfirmAPIView.as_view(), name="doctor-tnm-confirm"),
+    path("<uuid:case_id>/clinical-results/tnm/<uuid:result_id>/stage/", DoctorTnmStageAPIView.as_view(), name="doctor-tnm-stage"),
+    path("<uuid:case_id>/clinical-results/tnm/<uuid:result_id>/stage/confirm/", DoctorTnmStageConfirmAPIView.as_view(), name="doctor-tnm-stage-confirm"),
     path(
         "<uuid:case_id>/ai-results/",
         DoctorAiAnalysisListAPIView.as_view(),

@@ -95,3 +95,24 @@ def validate_ct_series(headers: list[CtSliceHeader], *, expected_series_instance
 
     if errors:
         raise CtSeriesValidationError(errors)
+
+
+def validate_pet_series(headers: list[CtSliceHeader], *, expected_series_instance_uid: str):
+    errors = []
+    if not headers:
+        raise CtSeriesValidationError(["업로드된 DICOM 파일이 없습니다."])
+    if not all(header.modality == "PT" for header in headers):
+        errors.append("Modality가 PT가 아닌 파일이 포함되어 있습니다.")
+    study_uids = {header.study_instance_uid for header in headers}
+    if len(study_uids) != 1 or None in study_uids:
+        errors.append("StudyInstanceUID가 서로 다르거나 누락된 파일이 있습니다.")
+    series_uids = {header.series_instance_uid for header in headers}
+    if len(series_uids) != 1 or None in series_uids:
+        errors.append("SeriesInstanceUID가 서로 다르거나 누락된 파일이 있습니다.")
+    elif series_uids != {expected_series_instance_uid}:
+        errors.append("요청한 Series와 파일의 SeriesInstanceUID가 일치하지 않습니다.")
+    sop_uids = [header.sop_instance_uid for header in headers]
+    if len(set(sop_uids)) != len(sop_uids) or None in set(sop_uids):
+        errors.append("SOPInstanceUID가 중복되거나 누락된 파일이 있습니다.")
+    if errors:
+        raise CtSeriesValidationError(errors)

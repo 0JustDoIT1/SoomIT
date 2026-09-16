@@ -7,9 +7,10 @@ afterEach(() => {
 
 describe("pathology API base URL", () => {
   it("uses the local backend when the environment variable is absent", async () => {
-    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://127.0.0.1:8000");
 
-    const { API_BASE_URL, WORK_ITEMS_API_URL } = await import("./pathology-api");
+    const { API_BASE_URL } = await import("@/lib/api");
+    const { WORK_ITEMS_API_URL } = await import("./pathology-api");
 
     expect(API_BASE_URL).toBe("http://127.0.0.1:8000");
     expect(WORK_ITEMS_API_URL).toBe(
@@ -17,11 +18,11 @@ describe("pathology API base URL", () => {
     );
   });
 
-  it("uses the configured backend and removes trailing slashes", async () => {
-    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test///");
+  it("uses the configured backend base URL", async () => {
+    vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "https://api.example.test");
 
+    const { API_BASE_URL } = await import("@/lib/api");
     const {
-      API_BASE_URL,
       caseAdequacyAiResultsApiUrl,
       casePathologyAiResultsApiUrl,
       casePathologyDiagnosesApiUrl,

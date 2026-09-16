@@ -45,6 +45,7 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
 
         result = obj.ai_result
         detail = {
+            "ai_result_id": str(result.id),
             "schema_version": result.schema_version,
             "result_payload": result.result_payload,
             "result_files": result.result_files,

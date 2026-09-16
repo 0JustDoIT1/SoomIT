@@ -51,6 +51,7 @@ class FollowUpPathologyOrderCreateSerializer(serializers.Serializer):
 class ExaminationOrderCreateSerializer(serializers.Serializer):
     order_type = serializers.ChoiceField(
         choices=[
+            ExaminationOrder.OrderType.XRAY,
             ExaminationOrder.OrderType.CT,
             ExaminationOrder.OrderType.PET_CT_TNM,
             ExaminationOrder.OrderType.PATHOLOGY_GENE,

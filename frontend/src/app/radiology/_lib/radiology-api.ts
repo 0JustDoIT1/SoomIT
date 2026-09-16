@@ -165,6 +165,47 @@ export type RadiologyVisualization = {
   layers: RadiologyVisualizationLayer[];
 };
 
+export type RadiologyTnmPayload = {
+  t?: {
+    t_candidate?: string | null;
+    size_only_t_candidate?: string | null;
+    tumor_volume_ml?: number | string | null;
+    mask_bbox_diagonal_mm?: number | string | null;
+    component_count?: number | null;
+    t_candidate_status?: string | null;
+    physician_review_required?: boolean | null;
+    [key: string]: unknown;
+  };
+  phase2?: Record<string, unknown>;
+  n?: {
+    nplus_probability?: number | string | null;
+    risk_tier?: string | null;
+    review_threshold?: number | string | null;
+    elevated_threshold?: number | string | null;
+    may_assign_cn?: boolean | null;
+    categorical_ood_warning?: boolean | null;
+    physician_review_required?: boolean | null;
+    [key: string]: unknown;
+  };
+  m?: {
+    m_candidate?: string | null;
+    model_support?: {
+      m_positive_probability?: number | string | null;
+      review_threshold?: number | string | null;
+      model_review_positive?: boolean | null;
+      [key: string]: unknown;
+    } | null;
+    m_rule_result?: {
+      m_candidate?: string | null;
+      stage_group_if_m_positive?: string | null;
+      evidence?: Record<string, unknown> | null;
+      [key: string]: unknown;
+    } | null;
+    imaging_evidence?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  };
+};
+
 export type RadiologyAnalysisResult = {
   analysis_id: string;
   analysis_type: "XRAY_ANALYSIS" | "CT_ANALYSIS" | "PET_CT_TNM_ANALYSIS";
@@ -198,12 +239,13 @@ export type RadiologyAnalysisResult = {
         }>;
         visualization: RadiologyVisualization | null;
       }
-    | {
+      | {
         predicted_t: string | null;
         predicted_n: string | null;
         predicted_m: string | null;
         predicted_stage_group: string | null;
         confidence: string | null;
+        result_payload?: RadiologyTnmPayload;
       };
 };
 
@@ -375,6 +417,25 @@ export async function uploadRadiologyCtSeries(
       getErrorMessage(errorData) ?? "CT Series를 업로드하지 못했습니다.",
       response.status,
     );
+  }
+  return response.json() as Promise<RadiologyRegisteredImage>;
+}
+
+export async function uploadRadiologyPetSeries(
+  orderId: string,
+  files: File[],
+  seriesInstanceUid: string,
+) {
+  const formData = new FormData();
+  files.forEach((file) => formData.append("files", file));
+  formData.set("series_instance_uid", seriesInstanceUid);
+  const response = await staffAuthenticatedFetch(
+    `${getApiBaseUrl()}/api/radiology/orders/${orderId}/images/pet-series/upload/`,
+    { method: "POST", headers: { Accept: "application/json" }, body: formData },
+  );
+  if (!response.ok) {
+    const errorData: unknown = await response.json().catch(() => null);
+    throw new RadiologyApiError(getErrorMessage(errorData) ?? "PET Series 업로드에 실패했습니다.", response.status);
   }
   return response.json() as Promise<RadiologyRegisteredImage>;
 }

@@ -10,6 +10,7 @@ class ExaminationOrderCreationError(ValueError):
 
 
 PREREQUISITE_STAGE = {
+    ExaminationOrder.OrderType.XRAY: None,
     ExaminationOrder.OrderType.CT: WorkflowStage.XRAY,
     ExaminationOrder.OrderType.PET_CT_TNM: WorkflowStage.CT,
     ExaminationOrder.OrderType.PATHOLOGY_GENE: WorkflowStage.PET_CT_TNM,
@@ -23,14 +24,15 @@ def create_examination_order(*, case, requesting_doctor, order_type, priority, p
 
     locked_case = type(case).objects.select_for_update().get(pk=case.pk)
     prerequisite = PREREQUISITE_STAGE.get(order_type)
-    if prerequisite is None:
+    if order_type not in PREREQUISITE_STAGE:
         raise ExaminationOrderCreationError("지원하지 않는 검사 오더 유형입니다.")
-    if not ClinicalResult.objects.filter(
-        case=locked_case,
-        workflow_stage=prerequisite,
-        result_status=ClinicalResult.ResultStatus.CONFIRMED,
-    ).exists():
-        raise ExaminationOrderCreationError("선행 검사의 전문의 확정 결과가 필요합니다.")
+    if prerequisite is not None:
+        if not ClinicalResult.objects.filter(
+            case=locked_case,
+            workflow_stage=prerequisite,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).exists():
+            raise ExaminationOrderCreationError("선행 검사의 전문의 확정 결과가 필요합니다.")
     if ExaminationOrder.objects.filter(
         case=locked_case,
         order_type=order_type,

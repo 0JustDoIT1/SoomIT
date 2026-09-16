@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -110,9 +111,9 @@ export default function CoordinatorDashboardPage() {
           examinationsResponse,
           appointmentsResponse,
         ] = await Promise.all([
-          fetch("http://127.0.0.1:8000/api/patients/"),
-          fetch("http://127.0.0.1:8000/api/cases/"),
-          fetch("http://127.0.0.1:8000/api/appointments/"),
+          fetch(`${API_BASE_URL}/api/patients/`),
+          fetch(`${API_BASE_URL}/api/cases/`),
+          fetch(`${API_BASE_URL}/api/appointments/`),
         ]);
 
         if (

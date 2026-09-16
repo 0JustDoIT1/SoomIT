@@ -857,8 +857,9 @@ export default function RespiratoryCaseDetailPage() {
     "PET_CT_TNM_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
-  const tnmAnalysis =
-    tnmAnalysisResult?.result_detail?.tnm;
+  const tnmAnalysis = tnmAnalysisResult?.result_detail?.tnm
+    ? { ...tnmAnalysisResult.result_detail.tnm, ai_result_id: tnmAnalysisResult.result_detail.ai_result_id }
+    : undefined;
 
   const tnmClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PET_CT_TNM"
@@ -2295,6 +2296,10 @@ export default function RespiratoryCaseDetailPage() {
             clinicalTnm={tnmClinical}
             modelName={tnmAnalysisResult?.model_name}
             modelVersion={tnmAnalysisResult?.model_version_name}
+            caseId={caseId}
+            apiBaseUrl={API_BASE_URL}
+            authorizedFetch={authorizedFetch}
+            onConfirmed={retryClinicalResults}
             onDirtyChange={setTnmDirty}
           />
           <div className="hidden">

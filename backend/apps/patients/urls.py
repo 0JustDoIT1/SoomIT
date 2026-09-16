@@ -14,6 +14,8 @@ from .views import (
     PatientAppointmentRequestAPIView,
     ExaminationScheduleListAPIView,
     PatientDetailAPIView,
+    PatientDoctorListAPIView,
+    PatientHospitalListAPIView,
     PatientListAPIView,
     PatientAccountLookupAPIView,
     PatientAccountRegistrationAPIView,
@@ -49,6 +51,8 @@ urlpatterns = [
     ),
     
     path("", PatientListAPIView.as_view(), name="patient-list"),
+    path("hospitals/", PatientHospitalListAPIView.as_view(), name="patient-hospital-list"),
+    path("doctors/", PatientDoctorListAPIView.as_view(), name="patient-doctor-list"),
     path("app-accounts/register/", PatientAccountRegistrationAPIView.as_view(), name="patient-account-register"),
     path("app-accounts/lookup/", PatientAccountLookupAPIView.as_view(), name="patient-account-lookup"),
     

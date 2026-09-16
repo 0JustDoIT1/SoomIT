@@ -1,3 +1,4 @@
+import { API_BASE_URL } from "@/lib/api";
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -92,7 +93,7 @@ export default function AppointmentsPage() {
       setError("");
 
       const response = await fetch(
-        "http://127.0.0.1:8000/api/appointments/"
+        `${API_BASE_URL}/api/appointments/"
       );
 
       if (!response.ok) {
@@ -118,7 +119,7 @@ export default function AppointmentsPage() {
       setRequestError("");
 
       const response = await fetch(
-        "http://127.0.0.1:8000/api/appointments/requests/?status=PENDING"
+        `${API_BASE_URL}/api/appointments/requests/?status=PENDING"
       );
 
       if (!response.ok) {
@@ -150,7 +151,7 @@ export default function AppointmentsPage() {
     appointmentId: string
   ) => {
     const response = await fetch(
-      `http://127.0.0.1:8000/api/appointments/${appointmentId}/`
+      `${API_BASE_URL}/api/appointments/${appointmentId}/`
     );
 
     if (!response.ok) {
@@ -205,7 +206,7 @@ export default function AppointmentsPage() {
       setRejectionReason("");
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/appointments/requests/${appointmentRequestId}/`
+        `${API_BASE_URL}/api/appointments/requests/${appointmentRequestId}/`
       );
 
       if (!response.ok) {
@@ -241,7 +242,7 @@ export default function AppointmentsPage() {
       setRequestActionError("");
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/appointments/requests/${selectedAppointmentRequest.id}/approve/`,
+        `${API_BASE_URL}/api/appointments/requests/${selectedAppointmentRequest.id}/approve/`,
         { method: "POST" }
       );
 
@@ -291,7 +292,7 @@ export default function AppointmentsPage() {
       setRequestActionError("");
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/appointments/requests/${selectedAppointmentRequest.id}/reject/`,
+        `${API_BASE_URL}/api/appointments/requests/${selectedAppointmentRequest.id}/reject/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -333,7 +334,7 @@ export default function AppointmentsPage() {
       setActionError("");
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/appointments/${selectedAppointment.id}/confirm/`,
+        `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/confirm/`,
         {
           method: "POST",
         }
@@ -397,7 +398,7 @@ export default function AppointmentsPage() {
       setActionError("");
 
       const response = await fetch(
-        `http://127.0.0.1:8000/api/appointments/${selectedAppointment.id}/cancel/`,
+        `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/cancel/`,
         {
           method: "POST",
           headers: {

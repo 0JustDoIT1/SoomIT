@@ -2,8 +2,62 @@ from decimal import Decimal
 
 from rest_framework import serializers
 
-from .models import ClinicalResult
+from apps.ai_results.models import AiAnalysis, AnalysisType
+
+from .models import ClinicalResult, TnmResult
 from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
+
+
+TNM_T_VALUES = {
+    "TX", "T0", "Tis", "T1mi", "T1a", "T1b", "T1c", "T1", "T2a", "T2b", "T2", "T3", "T4",
+}
+TNM_N_VALUES = {"NX", "N0", "N1", "N2", "N2a", "N2b", "N3"}
+TNM_M_VALUES = {"M0", "M1", "M1a", "M1b", "M1c", "M1c1", "M1c2", "M_indeterminate"}
+
+
+class DoctorTnmDraftSerializer(serializers.Serializer):
+    reviewed_ai_result_id = serializers.UUIDField()
+    t_category = serializers.ChoiceField(choices=sorted(TNM_T_VALUES))
+    n_category = serializers.ChoiceField(choices=sorted(TNM_N_VALUES))
+    m_category = serializers.ChoiceField(choices=sorted(TNM_M_VALUES))
+    evidence = serializers.JSONField(required=False, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate_reviewed_ai_result_id(self, value):
+        case = self.context["case"]
+        order = self.context["order"]
+        result = (
+            AiAnalysis.objects.filter(
+                ai_result__id=value,
+                case=case,
+                examination_order=order,
+                analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+                status=AiAnalysis.Status.SUCCEEDED,
+            )
+            .values_list("ai_result_id", flat=True)
+            .first()
+        )
+        if result is None:
+            raise serializers.ValidationError("A succeeded PET-CT TNM AI result for this order is required.")
+        return value
+
+    def to_representation(self, instance):
+        detail = instance.tnm_detail
+        return {
+            "id": str(instance.id),
+            "workflow_stage": instance.workflow_stage,
+            "result_status": instance.result_status,
+            "result_status_label": instance.get_result_status_display(),
+            "reviewed_ai_result_id": str(instance.reviewed_ai_result_id) if instance.reviewed_ai_result_id else None,
+            "t_category": detail.t_category,
+            "n_category": detail.n_category,
+            "m_category": detail.m_category,
+            "stage_group": detail.stage_group or None,
+            "evidence": detail.evidence,
+            "note": detail.note,
+            "confirmed_by_user_id": str(instance.confirmed_by_user_id) if instance.confirmed_by_user_id else None,
+            "confirmed_at": instance.confirmed_at,
+        }
 
 class PatientClinicalResultSerializer(serializers.ModelSerializer):
     workflow_stage = serializers.CharField()
