@@ -34,6 +34,7 @@ INSTALLED_APPS = [
     "apps.notifications",
     "apps.audit",
     "apps.knowledge",
+    "apps.chat",
     "rest_framework",
     "corsheaders",
 ]
