@@ -2,7 +2,7 @@ import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
-  reactCompiler: true,
+  // reactCompiler: true,
   output: 'standalone',
   // Cornerstone3D's DICOM image loader pulls in Emscripten-generated wasm codec
   // glue (openjpeg/openjph/charls/libjpeg-turbo) that references Node's fs/path
