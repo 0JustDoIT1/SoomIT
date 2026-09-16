@@ -49,64 +49,53 @@ type CaseOverviewPanelProps = {
 
 export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescriptions = [], orders = [], ordersLoaded = false }: CaseOverviewPanelProps) {
   const decision = caseData.latest_clinician_decision;
-  const confirmedClinicalResults = clinicalResults.filter((result) => result.result_status === "CONFIRMED");
+  const confirmedClinicalResults = clinicalResults
+    .filter((result) => result.result_status === "CONFIRMED")
+    .sort((left, right) => toTimestamp(right.result_date) - toTimestamp(left.result_date));
   const flowItems = buildFlowItems(caseData.current_stage, clinicalResults, aiResults, prescriptions, orders);
+  const activeOrderCount = orders.filter((order) => ["ORDERED", "SCHEDULED"].includes(order.status)).length;
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
       <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-5 py-3">
         <div className="min-w-0">
-          <p className="text-[10px] font-semibold text-blue-600">진료 현황</p>
-          <h1 className="mt-0.5 text-base font-bold text-slate-900">전체 요약</h1>
-          <p className="mt-1 text-xs text-slate-600">현재 Case의 확정 결과, AI 후보, 미확정 사항과 다음 행동을 확인합니다.</p>
+          <p className="text-[10px] font-semibold text-blue-600">Case 진료 현황</p>
+          <h1 className="mt-0.5 text-base font-bold text-slate-900">진료 요약</h1>
+          <p className="mt-1 text-xs text-slate-600">현재 단계와 전문과 확정 결과를 확인한 뒤 다음 진료 판단을 이어갑니다.</p>
         </div>
         <span className="shrink-0 whitespace-nowrap rounded-full bg-blue-50 px-3 py-1.5 text-[11px] font-bold text-blue-700">
           {getStageLabel(caseData.current_stage)}
         </span>
       </header>
 
-      <div className="grid grid-cols-5 border-b border-slate-200 bg-slate-50/70">
+      <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50/70 md:grid-cols-4">
         <Metric label="현재 단계" value={getStageLabel(caseData.current_stage)} accent />
+        <Metric label="Case 상태" value={getCaseStatusLabel(caseData.case_status)} />
         <Metric label="전문과 확정 결과" value={`${confirmedClinicalResults.length}건`} />
-        <Metric label="AI 분석 후보" value={`${aiResults.length}건`} />
-        <Metric label="검사 오더" value={ordersLoaded ? `${orders.length}건` : "조회 불가"} />
-        <Metric label="최근 업데이트" value={formatDate(caseData.updated_at)} />
+        <Metric label="진행 중 오더" value={ordersLoaded ? `${activeOrderCount}건` : "조회 불가"} />
       </div>
 
       <div className="border-b border-slate-200 px-4 py-3">
         <div className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-xs font-bold text-slate-800">검사·진료 흐름 요약</h2>
-          <p className="text-[10px] text-slate-400">오더 상태와 결과 상태를 분리해 표시합니다.</p>
+          <p className="text-[10px] text-slate-400">초록은 전문과 확정, 파랑은 현재 단계·AI 후보, 주황은 진행 중 오더입니다.</p>
         </div>
         <div className="grid min-w-[760px] grid-cols-7 gap-2 overflow-x-auto">
           {flowItems.map((item) => <FlowItem key={item.label} {...item} />)}
         </div>
       </div>
 
-      <div className="grid min-h-[260px] grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)_minmax(260px,0.9fr)] divide-x divide-slate-200">
+      <div className="grid min-h-[260px] grid-cols-1 divide-y divide-slate-200 lg:grid-cols-[minmax(0,1.35fr)_minmax(300px,0.8fr)] lg:divide-x lg:divide-y-0">
         <ResultColumn
           eyebrow="전문과 결과"
-          title="전문과 확정 결과"
+          title="최근 전문과 확정 결과"
           tone="emerald"
           empty="확인 가능한 전문과 확정 결과가 없습니다."
-          items={confirmedClinicalResults.map((result) => ({
+          items={confirmedClinicalResults.slice(0, 4).map((result) => ({
             id: result.id ?? `${result.workflow_stage}-${result.result_date ?? "none"}`,
             title: result.exam_name || getClinicalResultLabel(result.workflow_stage),
             status: result.result_status_label || result.result_status || "-",
             date: formatDate(result.result_date),
-          }))}
-        />
-
-        <ResultColumn
-          eyebrow="AI 분석"
-          title="AI 분석 후보"
-          tone="blue"
-          empty="현재 Case에 연결된 AI 분석 후보가 없습니다."
-          items={aiResults.map((result) => ({
-            id: result.id ?? `${result.analysis_type}-${result.completed_at ?? "none"}`,
-            title: getAiResultLabel(result.analysis_type, result.analysis_type_label),
-            status: result.status_label || result.status || "-",
-            date: formatDate(result.completed_at),
           }))}
         />
 
@@ -123,7 +112,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
               {decision.reason && <p className="mt-3 border-t border-violet-100 pt-3 text-[11px] leading-5 text-slate-600">{decision.reason}</p>}
             </div>
           ) : (
-            <EmptyState message="현재 기록된 다음 행동이 없습니다." />
+            <EmptyState message="현재 기록된 호흡기내과 판단이 없습니다." />
           )}
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
             <p className="text-[10px] text-slate-400">Case 상태</p>
@@ -153,29 +142,35 @@ function Detail({ label, value }: { label: string; value: string }) {
   return <div className="flex items-start justify-between gap-3 border-b border-violet-100 py-1.5 last:border-0"><span className="shrink-0 text-[10px] text-slate-400">{label}</span><span className="min-w-0 text-right text-[11px] font-semibold text-slate-700">{value || "-"}</span></div>;
 }
 
-type FlowState = "current" | "available" | "ordered" | "empty";
+type FlowState = "current" | "confirmed" | "ai" | "ordered" | "recorded" | "empty";
 
 function FlowItem({ label, state }: { label: string; state: FlowState }) {
-  const style = state === "current" ? "border-blue-200 bg-blue-50 text-blue-700" : state === "available" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "ordered" ? "border-amber-200 bg-amber-50 text-amber-700" : "border-slate-200 bg-slate-50 text-slate-400";
-  const status = state === "current" ? "현재 단계" : state === "available" ? "결과 조회됨" : state === "ordered" ? "오더 진행 중" : "정보 없음";
+  const style = state === "current" ? "border-blue-200 bg-blue-50 text-blue-700" : state === "confirmed" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : state === "ai" ? "border-sky-200 bg-sky-50 text-sky-700" : state === "ordered" ? "border-amber-200 bg-amber-50 text-amber-700" : state === "recorded" ? "border-violet-200 bg-violet-50 text-violet-700" : "border-slate-200 bg-slate-50 text-slate-400";
+  const status = state === "current" ? "현재 단계" : state === "confirmed" ? "전문과 확정" : state === "ai" ? "AI 후보 있음" : state === "ordered" ? "오더 진행 중" : state === "recorded" ? "처방 있음" : "정보 없음";
   return <div className={`min-w-0 rounded-md border px-2 py-2 text-center ${style}`}><p className="truncate text-[10px] font-bold">{label}</p><p className="mt-1 whitespace-nowrap text-[9px]">{status}</p></div>;
 }
 
 function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalResult[], aiResults: OverviewAiResult[], prescriptions: { id: string; prescription_status?: string }[], orders: { order_type: string; status: string }[]) {
-  const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.workflow_stage) && Boolean(result.result_status));
-  const hasAi = (types: string[]) => aiResults.some((result) => types.includes(result.analysis_type) && Boolean(result.status));
-  const hasPdl1Clinical = clinicalResults.some((result) => (result.workflow_stage === "PDL1" || hasPdl1Detail(result.result_detail)) && Boolean(result.result_status));
+  const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.workflow_stage) && result.result_status === "CONFIRMED");
+  const hasAi = (types: string[]) => aiResults.some((result) => types.includes(result.analysis_type) && result.status === "SUCCEEDED");
+  const hasPdl1Clinical = clinicalResults.some((result) => (result.workflow_stage === "PDL1" || hasPdl1Detail(result.result_detail)) && result.result_status === "CONFIRMED");
   const hasActiveOrder = (type: string) => orders.some((order) => order.order_type === type && ["ORDERED", "SCHEDULED"].includes(order.status));
   const configs = [
-    { label: "흉부 X선", stages: ["XRAY"], available: hasClinical(["XRAY"]) || hasAi(["XRAY_ANALYSIS"]) },
-    { label: "흉부 CT", stages: ["CT"], available: hasClinical(["CT"]) || hasAi(["CT_ANALYSIS"]) },
-    { label: "PET-CT", stages: ["PET_CT_TNM"], available: hasClinical(["PET_CT_TNM"]) || hasAi(["PET_CT_TNM_ANALYSIS"]) },
-    { label: "조직/유전자", stages: ["PATHOLOGY_GENE"], available: hasClinical(["PATHOLOGY_GENE"]) || hasAi(["PATHOLOGY_GENE_ANALYSIS"]) },
-    { label: "PD-L1", stages: ["PDL1"], available: hasPdl1Clinical || hasAi(["PDL1_ANALYSIS"]) },
-    { label: "치료 결정", stages: ["TREATMENT"], available: hasAi(["TREATMENT_RECOMMENDATION"]) },
-    { label: "처방", stages: ["PRESCRIPTION"], available: prescriptions.some((item) => Boolean(item.prescription_status)) },
+    { label: "흉부 X선", stages: ["XRAY"], aiTypes: ["XRAY_ANALYSIS"] },
+    { label: "흉부 CT", stages: ["CT"], aiTypes: ["CT_ANALYSIS"] },
+    { label: "PET-CT", stages: ["PET_CT_TNM"], aiTypes: ["PET_CT_TNM_ANALYSIS"] },
+    { label: "조직/유전자", stages: ["PATHOLOGY_GENE"], aiTypes: ["PATHOLOGY_GENE_ANALYSIS"] },
+    { label: "PD-L1", stages: ["PDL1"], aiTypes: ["PDL1_ANALYSIS"] },
+    { label: "치료 결정", stages: ["TREATMENT"], aiTypes: ["TREATMENT_RECOMMENDATION"] },
+    { label: "처방", stages: ["PRESCRIPTION"], aiTypes: [] },
   ];
-  return configs.map(({ label, stages, available }) => ({ label, state: (stages.includes(currentStage) ? "current" : available ? "available" : hasActiveOrder(stages[0]) ? "ordered" : "empty") as FlowState }));
+  return configs.map(({ label, stages, aiTypes }) => {
+    const clinicalConfirmed = hasClinical(stages) || (stages[0] === "PDL1" && hasPdl1Clinical);
+    const aiCompleted = hasAi(aiTypes);
+    const prescriptionRecorded = stages[0] === "PRESCRIPTION" && prescriptions.some((item) => Boolean(item.prescription_status));
+    const state = stages.includes(currentStage) ? "current" : clinicalConfirmed ? "confirmed" : aiCompleted ? "ai" : hasActiveOrder(stages[0]) ? "ordered" : prescriptionRecorded ? "recorded" : "empty";
+    return { label, state: state as FlowState };
+  });
 }
 
 function hasPdl1Detail(detail: unknown) {
@@ -187,13 +182,14 @@ function getClinicalResultLabel(examType: string) {
   return labels[examType] ?? getStageLabel(examType);
 }
 
-function getAiResultLabel(analysisType: string, apiLabel?: string) {
-  const labels: Record<string, string> = { XRAY_ANALYSIS: "흉부 X선 AI 후보", CT_ANALYSIS: "흉부 CT AI 후보", PET_CT_TNM_ANALYSIS: "PET-CT 기반 TNM AI 후보", PATHOLOGY_GENE_ANALYSIS: "조직·유전자 AI 후보", PDL1_ANALYSIS: "PD-L1 AI 후보", TREATMENT_RECOMMENDATION: "치료 AI 후보" };
-  return labels[analysisType] ?? apiLabel ?? analysisType;
-}
-
 function formatDate(value?: string | null) {
   if (!value) return "-";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR");
+}
+
+function toTimestamp(value?: string | null) {
+  if (!value) return 0;
+  const timestamp = Date.parse(value);
+  return Number.isNaN(timestamp) ? 0 : timestamp;
 }

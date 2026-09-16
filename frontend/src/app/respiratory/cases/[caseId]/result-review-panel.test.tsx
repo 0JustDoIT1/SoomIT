@@ -4,7 +4,7 @@ import { ResultReviewPanel } from "./result-review-panel";
 
 describe("ResultReviewPanel", () => {
   it("shows the specialist-confirmed result before the AI candidate", () => {
-    render(<ResultReviewPanel stage="PET_CT_TNM" clinicalResult={{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { tnm: { t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" } } }} aiResult={{ analysis_type: "PET_CT_TNM_ANALYSIS", status: "COMPLETED", status_label: "완료", result_detail: { tnm: { predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM0", confidence: 0.82 } } }} />);
+    render(<ResultReviewPanel stage="PET_CT_TNM" clinicalResult={{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { tnm: { t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" } } }} aiResult={{ analysis_type: "PET_CT_TNM_ANALYSIS", status: "SUCCEEDED", status_label: "성공", result_detail: { tnm: { predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM0", confidence: 0.82 } } }} />);
     const specialist = screen.getByText("전문과 확정 결과");
     const ai = screen.getByText("AI 분석 후보");
     expect(specialist.compareDocumentPosition(ai) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
@@ -22,7 +22,7 @@ describe("ResultReviewPanel", () => {
 
   it("keeps the successful AI panel when the clinical result request fails", () => {
     const onRetryClinical = vi.fn();
-    render(<ResultReviewPanel stage="CT" clinicalError="전문과 결과를 불러오지 못했습니다." onRetryClinical={onRetryClinical} aiResult={{ analysis_type: "CT", status: "COMPLETED", result_detail: { ct: { overall_malignancy_risk: "HIGH" } } }} />);
+    render(<ResultReviewPanel stage="CT" clinicalError="전문과 결과를 불러오지 못했습니다." onRetryClinical={onRetryClinical} aiResult={{ analysis_type: "CT", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: "HIGH" } } }} />);
     expect(screen.getByRole("alert")).toHaveTextContent("전문과 결과를 불러오지 못했습니다.");
     expect(screen.getByText("HIGH")).toBeTruthy();
     screen.getByRole("button", { name: "이 결과 다시 시도" }).click();
@@ -60,7 +60,7 @@ describe("ResultReviewPanel", () => {
         }}
         aiResult={{
           analysis_type: "PATHOLOGY_GENE_ANALYSIS",
-          status: "COMPLETED",
+          status: "SUCCEEDED",
           result_detail: { genes: [{ gene_symbol: "ALK", predicted_status_label: "음성 예측", predicted_probability: "0.9321" }] },
         }}
       />,
@@ -70,5 +70,10 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText("양성 · L858R")).toBeTruthy();
     expect(screen.getByText("ALK")).toBeTruthy();
     expect(screen.getByText("음성 예측 · 93.21%")).toBeTruthy();
+  });
+
+  it("renders repeated result labels without relying on duplicate React keys", () => {
+    render(<ResultReviewPanel stage="PATHOLOGY_GENE" showEvidence={false} clinicalResult={{ workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pathology: { malignancy_status_label: "악성", histologic_type: "NSCLC", subtype: "LUSC", diagnosis_summary: "악성" } } }} />);
+    expect(screen.getAllByText("악성")).toHaveLength(2);
   });
 });

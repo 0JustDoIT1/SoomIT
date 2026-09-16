@@ -43,7 +43,7 @@ function EvidenceSummary({ label, specialist, ai }: { label: string; specialist:
 
 function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: AiEvidence[]) {
   const confirmed = (type: string) => clinicalResults.find((result) => result.workflow_stage === type && result.result_status === "CONFIRMED");
-  const completedAi = (type: string) => aiResults.find((result) => result.analysis_type === type && Boolean(result.status));
+  const completedAi = (type: string) => aiResults.find((result) => result.analysis_type === type && result.status === "SUCCEEDED");
   const tnmClinical = confirmed("PET_CT_TNM");
   const pathology = confirmed("PATHOLOGY_GENE");
   const gene = confirmed("PATHOLOGY_GENE");

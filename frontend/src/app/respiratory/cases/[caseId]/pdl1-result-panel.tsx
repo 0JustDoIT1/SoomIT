@@ -1,4 +1,5 @@
 import { BiomarkerSourceHeader } from "./biomarker-source-header";
+import { CaseWsiEvidence } from "./case-wsi-evidence";
 
 type Pdl1AiResult = {
   status_label?: string;
@@ -31,12 +32,18 @@ export function Pdl1ResultPanel({
   aiError = "",
   retrying = false,
   onRetry,
+  caseId,
+  apiBaseUrl,
+  authorizedFetch,
 }: {
   aiResult: Pdl1AiResult | null;
   clinicalResult?: Pdl1ClinicalResult;
   aiError?: string;
   retrying?: boolean;
   onRetry?: () => void;
+  caseId?: string;
+  apiBaseUrl?: string;
+  authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 }) {
   const ai = aiResult?.result_detail.pdl1;
   const clinical = clinicalResult?.result_detail.pdl1;
@@ -49,6 +56,7 @@ export function Pdl1ResultPanel({
   return (
     <div className="space-y-4">
       <BiomarkerSourceHeader />
+      {caseId && apiBaseUrl && authorizedFetch && <CaseWsiEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stain="PDL1" />}
       <section className="rounded-2xl border border-sky-100 bg-white p-5 shadow-sm">
         <header className="flex items-start justify-between gap-3">
           <div>

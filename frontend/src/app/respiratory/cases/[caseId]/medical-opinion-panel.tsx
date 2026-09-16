@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 type MedicalOpinionResponse = {
   opinion: string;
-  source_results: { id: string; stage: string; confirmed_at: string | null }[];
+  source_results: { id: string; workflow_stage: string; confirmed_at: string | null }[];
 };
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -76,8 +76,30 @@ export function MedicalOpinionPanel({
         <div className="mt-3 rounded-md border border-violet-100 bg-violet-50/30 p-4">
           <p className="whitespace-pre-wrap text-sm leading-6 text-slate-800">{result.opinion}</p>
           <p className="mt-3 text-[10px] text-slate-500">근거로 사용된 확정 결과 {result.source_results.length}건 · 의료진 검토 전 초안</p>
+          {result.source_results.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1.5" aria-label="소견 근거 단계">
+              {result.source_results.map((source) => (
+                <span key={source.id} className="rounded-full border border-violet-100 bg-white px-2 py-1 text-[10px] font-semibold text-violet-700">
+                  {getWorkflowStageLabel(source.workflow_stage)}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </section>
   );
+}
+
+function getWorkflowStageLabel(stage: string) {
+  const labels: Record<string, string> = {
+    XRAY: "흉부 X선",
+    CT: "흉부 CT",
+    PET_CT_TNM: "PET-CT / TNM 병기",
+    PATHOLOGY_GENE: "조직·유전자",
+    PDL1: "PD-L1",
+    TREATMENT: "치료 결정",
+    PRESCRIPTION: "처방",
+  };
+  return labels[stage] ?? stage;
 }
