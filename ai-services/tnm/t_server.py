@@ -138,6 +138,7 @@ def predict(body: TRequest) -> dict:
                 "nnUNetv2_predict", "-i", str(input_dir), "-o", str(output_dir),
                 "-d", "504", "-c", CONFIGURATION, "-f", "0", "-tr", TRAINER,
                 "-chk", "checkpoint_best.pth", "--disable_tta",
+                "-npp", "1", "-nps", "1",
             ]
             with inference_lock:
                 completed = subprocess.run(command, text=True, capture_output=True, timeout=3300)
