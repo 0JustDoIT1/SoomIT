@@ -1,17 +1,72 @@
 import 'package:flutter/material.dart';
-import 'profile_registration_screen.dart';
 
-class LoginScreen extends StatelessWidget {
+import '../../shared/app_shell.dart';
+import 'profile_registration_screen.dart';
+import 'services/patient_auth_service.dart';
+
+class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
 
-  void _openRegistration(BuildContext context) {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) {
-          return const ProfileRegistrationScreen();
-        },
-      ),
-    );
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final PatientAuthService _authService = PatientAuthService();
+
+  bool _isGoogleSigningIn = false;
+
+  Future<void> _loginWithGoogle() async {
+    if (_isGoogleSigningIn) return;
+
+    setState(() {
+      _isGoogleSigningIn = true;
+    });
+
+    try {
+      final result = await _authService.loginWithGoogle();
+
+      if (!mounted) return;
+
+      if (result.registrationRequired) {
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) {
+              return ProfileRegistrationScreen(
+                registrationToken: result.registrationToken!,
+                initialName: result.prefilledName,
+              );
+            },
+          ),
+        );
+        return;
+      }
+
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (context) => const AppShell()),
+        (route) => false,
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      final message = error.toString().replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isGoogleSigningIn = false;
+        });
+      }
+    }
+  }
+
+  void _showPreparingMessage(String provider) {
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$provider 로그인은 준비 중입니다.')));
   }
 
   @override
@@ -21,14 +76,9 @@ class LoginScreen extends StatelessWidget {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 24,
-              vertical: 32,
-            ),
+            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(
-                maxWidth: 420,
-              ),
+              constraints: const BoxConstraints(maxWidth: 420),
               child: Column(
                 children: [
                   Container(
@@ -77,14 +127,14 @@ class LoginScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 16),
                   SocialLoginButton(
-                    label: 'Google로 계속하기',
+                    label: _isGoogleSigningIn
+                        ? 'Google 로그인 중...'
+                        : 'Google로 계속하기',
                     symbol: 'G',
                     backgroundColor: Colors.white,
                     foregroundColor: const Color(0xFF191F28),
                     borderColor: const Color(0xFFD1D5DB),
-                    onPressed: () {
-                      _openRegistration(context);
-                    },
+                    onPressed: _loginWithGoogle,
                   ),
                   const SizedBox(height: 12),
                   SocialLoginButton(
@@ -93,7 +143,7 @@ class LoginScreen extends StatelessWidget {
                     backgroundColor: const Color(0xFFFEE500),
                     foregroundColor: const Color(0xFF191919),
                     onPressed: () {
-                      _openRegistration(context);
+                      _showPreparingMessage('카카오');
                     },
                   ),
                   const SizedBox(height: 12),
@@ -103,8 +153,8 @@ class LoginScreen extends StatelessWidget {
                     backgroundColor: const Color(0xFF03C75A),
                     foregroundColor: Colors.white,
                     onPressed: () {
-                    _openRegistration(context);
-                  },
+                      _showPreparingMessage('네이버');
+                    },
                   ),
                   const SizedBox(height: 32),
                   const Text(
@@ -155,9 +205,7 @@ class SocialLoginButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: foregroundColor,
           backgroundColor: backgroundColor,
-          side: BorderSide(
-            color: borderColor ?? backgroundColor,
-          ),
+          side: BorderSide(color: borderColor ?? backgroundColor),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),

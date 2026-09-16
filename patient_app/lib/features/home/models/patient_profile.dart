@@ -26,12 +26,10 @@ class PatientProfile {
     required this.appLinkStatus,
   });
 
-  factory PatientProfile.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory PatientProfile.fromJson(Map<String, dynamic> json) {
     return PatientProfile(
       id: json['id'] as String,
-      patientCode: json['patient_code'] as String,
+      patientCode: json['patient_code'] as String? ?? '미연결',
       name: json['name'] as String,
 
       birthDate: json['birth_date'] != null

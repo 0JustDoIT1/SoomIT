@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'models/patient_registration_data.dart';
-import 'registration_complete_screen.dart';
+import '../../shared/app_shell.dart';
 import 'services/patient_auth_service.dart';
 
-class PatientLinkScreen extends StatefulWidget {
-  final PatientRegistrationData registrationData;
-
-  const PatientLinkScreen({super.key, required this.registrationData});
+class ExistingPatientLinkScreen extends StatefulWidget {
+  const ExistingPatientLinkScreen({super.key});
 
   @override
-  State<PatientLinkScreen> createState() => _PatientLinkScreenState();
+  State<ExistingPatientLinkScreen> createState() =>
+      _ExistingPatientLinkScreenState();
 }
 
-class _PatientLinkScreenState extends State<PatientLinkScreen> {
+class _ExistingPatientLinkScreenState extends State<ExistingPatientLinkScreen> {
   final _patientCodeController = TextEditingController();
 
   final PatientAuthService _authService = PatientAuthService();
@@ -26,38 +24,33 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
     super.dispose();
   }
 
-  Future<void> _register({String? patientCode}) async {
+  Future<void> _linkPatient() async {
     if (_isSubmitting) return;
+
+    final patientCode = _patientCodeController.text.trim();
+
+    if (patientCode.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('환자코드를 입력해주세요.')));
+      return;
+    }
 
     setState(() {
       _isSubmitting = true;
     });
 
-    final source = widget.registrationData;
-
-    final registrationData = PatientRegistrationData(
-      registrationToken: source.registrationToken,
-      name: source.name,
-      birthDate: source.birthDate,
-      sex: source.sex,
-      phoneNumber: source.phoneNumber,
-      postalCode: source.postalCode,
-      address: source.address,
-      addressDetail: source.addressDetail,
-      patientCode: patientCode,
-    );
-
     try {
-      await _authService.registerPatient(registrationData);
+      await _authService.linkPatient(patientCode: patientCode);
 
       if (!mounted) return;
 
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('환자정보가 연결되었습니다.')));
+
       await Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (context) {
-            return RegistrationCompleteScreen(isLinked: patientCode != null);
-          },
-        ),
+        MaterialPageRoute<void>(builder: (context) => const AppShell()),
         (route) => false,
       );
     } catch (error) {
@@ -77,23 +70,6 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
     }
   }
 
-  Future<void> _checkPatientCode() async {
-    final patientCode = _patientCodeController.text.trim();
-
-    if (patientCode.isEmpty) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('환자코드를 입력해주세요.')));
-      return;
-    }
-
-    await _register(patientCode: patientCode);
-  }
-
-  Future<void> _skipPatientLink() async {
-    await _register();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -108,7 +84,7 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+          padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
           children: [
             Center(
               child: Container(
@@ -127,7 +103,7 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
             ),
             const SizedBox(height: 28),
             const Text(
-              '병원에서 받은\n환자코드가 있나요?',
+              '병원에서 받은\n환자코드를 입력해주세요.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Color(0xFF191F28),
@@ -138,8 +114,9 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
             ),
             const SizedBox(height: 12),
             const Text(
-              '환자코드를 연결하면 예약, 검사결과, 복약관리 등 '
-              '모든 기능을 사용할 수 있어요.',
+              '가입할 때 입력한 이름, 생년월일, 성별, '
+              '휴대전화번호와 병원 환자정보가 모두 '
+              '일치해야 연결할 수 있어요.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: Color(0xFF6B7280),
@@ -155,7 +132,7 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
               textInputAction: TextInputAction.done,
               onSubmitted: (_) {
                 if (!_isSubmitting) {
-                  _checkPatientCode();
+                  _linkPatient();
                 }
               },
               decoration: InputDecoration(
@@ -183,7 +160,7 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
             SizedBox(
               height: 54,
               child: FilledButton(
-                onPressed: _isSubmitting ? null : _checkPatientCode,
+                onPressed: _isSubmitting ? null : _linkPatient,
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFF6D4FB3),
                   disabledBackgroundColor: const Color(0xFFB8A8DA),
@@ -201,38 +178,12 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                         ),
                       )
                     : const Text(
-                        '환자코드 확인',
+                        '환자정보 연결하기',
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            SizedBox(
-              height: 52,
-              child: TextButton(
-                onPressed: _isSubmitting ? null : _skipPatientLink,
-                child: const Text(
-                  '나중에 입력하기',
-                  style: TextStyle(
-                    color: Color(0xFF6D4FB3),
-                    fontSize: 15,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              '환자코드가 없어도 가입할 수 있으며, '
-              '마이페이지에서 나중에 연결할 수 있습니다.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF8B95A1),
-                fontSize: 12,
-                height: 1.5,
               ),
             ),
           ],

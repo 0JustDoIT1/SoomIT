@@ -326,7 +326,41 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 
         return patient_account.link_status
 
+class UnlinkedPatientAccountProfileSerializer(
+    serializers.ModelSerializer
+):
+    patient_code = serializers.SerializerMethodField()
+    hospital_name = serializers.SerializerMethodField()
+    sex_label = serializers.CharField(
+        source="get_sex_display",
+        read_only=True,
+    )
+    app_link_status = serializers.CharField(
+        source="link_status",
+        read_only=True,
+    )
 
+    class Meta:
+        model = PatientAccount
+        fields = [
+            "id",
+            "patient_code",
+            "name",
+            "birth_date",
+            "sex",
+            "sex_label",
+            "phone_number",
+            "address",
+            "hospital_name",
+            "app_link_status",
+        ]
+        read_only_fields = fields
+
+    def get_patient_code(self, obj):
+        return None
+
+    def get_hospital_name(self, obj):
+        return None
 # ─────────────────────────────────────────────
 # 환자 앱 알림 조회
 # ─────────────────────────────────────────────

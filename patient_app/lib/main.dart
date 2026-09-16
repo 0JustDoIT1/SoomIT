@@ -4,9 +4,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'l10n/app_localizations.dart';
 // import 'shared/app_shell.dart';
-import 'features/auth/login_screen.dart'; 
+import 'features/auth/auth_gate.dart';
 
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const MedicalApp());
 }
 
@@ -45,10 +46,7 @@ class MedicalAppState extends State<MedicalApp> {
   Future<void> changeLanguage(String languageCode) async {
     final prefs = await SharedPreferences.getInstance();
 
-    await prefs.setString(
-      'language_code',
-      languageCode,
-    );
+    await prefs.setString('language_code', languageCode);
 
     setState(() {
       _locale = Locale(languageCode);
@@ -63,10 +61,7 @@ class MedicalAppState extends State<MedicalApp> {
 
       locale: _locale,
 
-      supportedLocales: const [
-        Locale('ko'),
-        Locale('en'),
-      ],
+      supportedLocales: const [Locale('ko'), Locale('en')],
 
       localizationsDelegates: const [
         AppLocalizations.delegate,
@@ -75,7 +70,7 @@ class MedicalAppState extends State<MedicalApp> {
         GlobalCupertinoLocalizations.delegate,
       ],
 
-      home: const LoginScreen(),
+      home: const AuthGate(),
     );
   }
 }

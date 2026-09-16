@@ -1,7 +1,13 @@
 # 원무과
 from django.urls import path
 
-
+from .auth_views import PatientGoogleLoginAPIView
+from .auth_views import (
+    PatientGoogleLoginAPIView,
+    PatientLinkAPIView,
+    PatientRegistrationAPIView,
+    PatientTokenRefreshAPIView,
+)
 
 from .views import (
     AppointmentListAPIView,
@@ -28,9 +34,34 @@ from .views import (
 
 
 urlpatterns = [
+        # 환자앱 Google 소셜 로그인
+    path(
+        "auth/google/",
+        PatientGoogleLoginAPIView.as_view(),
+        name="patient-google-login",
+    ),
+    
+    path(
+        "auth/register/",
+        PatientRegistrationAPIView.as_view(),
+        name="patient-register",
+    ),
+    
     path("", PatientListAPIView.as_view(), name="patient-list"),
     path("app-accounts/register/", PatientAccountRegistrationAPIView.as_view(), name="patient-account-register"),
     path("app-accounts/lookup/", PatientAccountLookupAPIView.as_view(), name="patient-account-lookup"),
+    
+    path(
+        "auth/token/refresh/",
+        PatientTokenRefreshAPIView.as_view(),
+        name="patient-token-refresh",
+    ),
+    
+    path(
+        "auth/patient-link/",
+        PatientLinkAPIView.as_view(),
+        name="patient-link",
+    ),
     
     # Flutter 환자 앱 - 예약 목록
     path(

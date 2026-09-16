@@ -1,21 +1,28 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import '../../core/network/dio_client.dart';
+
+import 'models/patient_registration_data.dart';
 import 'patient_link_screen.dart';
 
 class ProfileRegistrationScreen extends StatefulWidget {
-  const ProfileRegistrationScreen({super.key});
+  final String registrationToken;
+  final String? initialName;
+
+  const ProfileRegistrationScreen({
+    super.key,
+    required this.registrationToken,
+    this.initialName,
+  });
 
   @override
   State<ProfileRegistrationScreen> createState() =>
       _ProfileRegistrationScreenState();
 }
 
-class _ProfileRegistrationScreenState
-    extends State<ProfileRegistrationScreen> {
+class _ProfileRegistrationScreenState extends State<ProfileRegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
 
-  final _nameController = TextEditingController();
+  late final TextEditingController _nameController;
   final _birthDateController = TextEditingController();
   final _phoneController = TextEditingController();
   final _postalCodeController = TextEditingController();
@@ -24,7 +31,13 @@ class _ProfileRegistrationScreenState
 
   DateTime? _birthDate;
   String? _sex;
-  bool _saving = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _nameController = TextEditingController(text: widget.initialName ?? '');
+  }
 
   @override
   void dispose() {
@@ -52,9 +65,7 @@ class _ProfileRegistrationScreenState
 
     setState(() {
       _birthDate = selectedDate;
-      _birthDateController.text = DateFormat(
-        'yyyy.MM.dd',
-      ).format(selectedDate);
+      _birthDateController.text = DateFormat('yyyy.MM.dd').format(selectedDate);
     });
   }
 
@@ -63,73 +74,50 @@ class _ProfileRegistrationScreenState
       _postalCodeController.text = '35233';
       _addressController.text = '대전광역시 서구 둔산로 100';
     });
-  
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('테스트 주소가 입력되었습니다.'),
-      ),
-    );
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('테스트 주소가 입력되었습니다.')));
   }
 
-  Future<void> _continue() async {
+  void _continue() {
     if (!_formKey.currentState!.validate()) return;
 
     if (_birthDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('생년월일을 선택해주세요.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('생년월일을 선택해주세요.')));
       return;
     }
 
     if (_sex == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('성별을 선택해주세요.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('성별을 선택해주세요.')));
       return;
     }
 
-    setState(() => _saving = true);
-    try {
-      final response = await DioClient.instance.post(
-        '/patients/app-accounts/register/',
-        data: {
-          'name': _nameController.text.trim(),
-          'birth_date': DateFormat('yyyy-MM-dd').format(_birthDate!),
-          'sex': _sex,
-          'phone_number': _phoneController.text.replaceAll(RegExp(r'[^0-9]'), ''),
-          'postal_code': _postalCodeController.text.trim(),
-          'address': _addressController.text.trim(),
-          'address_detail': _addressDetailController.text.trim(),
-        },
-      );
-      final accountId = response.data['id'] as String;
-      if (!mounted) return;
-      Navigator.of(context).push(
+    final registrationData = PatientRegistrationData(
+      registrationToken: widget.registrationToken,
+      name: _nameController.text.trim(),
+      birthDate: _birthDate!,
+      sex: _sex!,
+      phoneNumber: _phoneController.text.replaceAll(RegExp(r'[^0-9]'), ''),
+      postalCode: _postalCodeController.text.trim(),
+      address: _addressController.text.trim(),
+      addressDetail: _addressDetailController.text.trim(),
+    );
+
+    Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) {
-          return PatientLinkScreen(patientAccountId: accountId);
+          return PatientLinkScreen(registrationData: registrationData);
         },
       ),
-      );
-    } catch (_) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('회원가입 저장에 실패했습니다. 다시 시도해주세요.')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _saving = false);
-    }
+    );
   }
 
-  String? _requiredValidator(
-    String? value,
-    String fieldName,
-  ) {
+  String? _requiredValidator(String? value, String fieldName) {
     if (value == null || value.trim().isEmpty) {
       return '$fieldName을 입력해주세요.';
     }
@@ -150,22 +138,15 @@ class _ProfileRegistrationScreenState
       fillColor: Colors.white,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: Color(0xFFD1D5DB),
-        ),
+        borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: Color(0xFFD1D5DB),
-        ),
+        borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(
-          color: Color(0xFF6D4FB3),
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: Color(0xFF6D4FB3), width: 1.5),
       ),
     );
   }
@@ -177,9 +158,7 @@ class _ProfileRegistrationScreenState
       appBar: AppBar(
         title: const Text(
           '기본정보 입력',
-          style: TextStyle(
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontWeight: FontWeight.w700),
         ),
         backgroundColor: const Color(0xFFF9F8FC),
         surfaceTintColor: Colors.transparent,
@@ -188,12 +167,7 @@ class _ProfileRegistrationScreenState
         child: Form(
           key: _formKey,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(
-              24,
-              16,
-              24,
-              32,
-            ),
+            padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
             children: [
               const Text(
                 '서비스 이용을 위해\n기본정보를 입력해주세요.',
@@ -207,19 +181,13 @@ class _ProfileRegistrationScreenState
               const SizedBox(height: 8),
               const Text(
                 '입력한 정보는 환자정보 연결에 사용됩니다.',
-                style: TextStyle(
-                  color: Color(0xFF6B7280),
-                  fontSize: 14,
-                ),
+                style: TextStyle(color: Color(0xFF6B7280), fontSize: 14),
               ),
               const SizedBox(height: 28),
               TextFormField(
                 controller: _nameController,
                 textInputAction: TextInputAction.next,
-                decoration: _decoration(
-                  label: '이름',
-                  hint: '이름을 입력해주세요.',
-                ),
+                decoration: _decoration(label: '이름', hint: '이름을 입력해주세요.'),
                 validator: (value) {
                   return _requiredValidator(value, '이름');
                 },
@@ -232,34 +200,18 @@ class _ProfileRegistrationScreenState
                 decoration: _decoration(
                   label: '생년월일',
                   hint: '생년월일을 선택해주세요.',
-                  suffixIcon: const Icon(
-                    Icons.calendar_month_outlined,
-                  ),
+                  suffixIcon: const Icon(Icons.calendar_month_outlined),
                 ),
               ),
               const SizedBox(height: 14),
               DropdownButtonFormField<String>(
                 initialValue: _sex,
-                decoration: _decoration(
-                  label: '성별',
-                ),
+                decoration: _decoration(label: '성별'),
                 items: const [
-                  DropdownMenuItem(
-                    value: 'MALE',
-                    child: Text('남성'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'FEMALE',
-                    child: Text('여성'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'OTHER',
-                    child: Text('기타'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'UNKNOWN',
-                    child: Text('선택하지 않음'),
-                  ),
+                  DropdownMenuItem(value: 'MALE', child: Text('남성')),
+                  DropdownMenuItem(value: 'FEMALE', child: Text('여성')),
+                  DropdownMenuItem(value: 'OTHER', child: Text('기타')),
+                  DropdownMenuItem(value: 'UNKNOWN', child: Text('선택하지 않음')),
                 ],
                 onChanged: (value) {
                   setState(() {
@@ -279,28 +231,18 @@ class _ProfileRegistrationScreenState
                 controller: _phoneController,
                 keyboardType: TextInputType.phone,
                 textInputAction: TextInputAction.next,
-                decoration: _decoration(
-                  label: '휴대전화번호',
-                  hint: '01012345678',
-                ),
+                decoration: _decoration(label: '휴대전화번호', hint: '01012345678'),
                 validator: (value) {
-                  final requiredError = _requiredValidator(
-                    value,
-                    '휴대전화번호',
-                  );
+                  final requiredError = _requiredValidator(value, '휴대전화번호');
 
                   if (requiredError != null) {
                     return requiredError;
                   }
 
-                  final digits = value!.replaceAll(
-                    RegExp(r'[^0-9]'),
-                    '',
-                  );
+                  final digits = value!.replaceAll(RegExp(r'[^0-9]'), '');
 
-                  if (digits.length < 10 ||
-                      digits.length > 11) {
-                    return '휴대전화번호를 확인해주세요.';
+                  if (digits.length != 11 || !digits.startsWith('010')) {
+                    return '010으로 시작하는 휴대전화번호 11자리를 입력해주세요.';
                   }
 
                   return null;
@@ -323,14 +265,9 @@ class _ProfileRegistrationScreenState
                     child: TextFormField(
                       controller: _postalCodeController,
                       readOnly: true,
-                      decoration: _decoration(
-                        label: '우편번호',
-                      ),
+                      decoration: _decoration(label: '우편번호'),
                       validator: (value) {
-                        return _requiredValidator(
-                          value,
-                          '우편번호',
-                        );
+                        return _requiredValidator(value, '우편번호');
                       },
                     ),
                   ),
@@ -340,21 +277,15 @@ class _ProfileRegistrationScreenState
                     child: OutlinedButton(
                       onPressed: _searchAddress,
                       style: OutlinedButton.styleFrom(
-                        foregroundColor:
-                            const Color(0xFF6D4FB3),
-                        side: const BorderSide(
-                          color: Color(0xFF6D4FB3),
-                        ),
+                        foregroundColor: const Color(0xFF6D4FB3),
+                        side: const BorderSide(color: Color(0xFF6D4FB3)),
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(12),
+                          borderRadius: BorderRadius.circular(12),
                         ),
                       ),
                       child: const Text(
                         '주소 검색',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w700,
-                        ),
+                        style: TextStyle(fontWeight: FontWeight.w700),
                       ),
                     ),
                   ),
@@ -364,50 +295,34 @@ class _ProfileRegistrationScreenState
               TextFormField(
                 controller: _addressController,
                 readOnly: true,
-                decoration: _decoration(
-                  label: '기본주소',
-                ),
+                decoration: _decoration(label: '기본주소'),
                 validator: (value) {
-                  return _requiredValidator(
-                    value,
-                    '기본주소',
-                  );
+                  return _requiredValidator(value, '기본주소');
                 },
               ),
               const SizedBox(height: 14),
               TextFormField(
                 controller: _addressDetailController,
                 textInputAction: TextInputAction.done,
-                decoration: _decoration(
-                  label: '상세주소',
-                  hint: '동, 호수 등 상세주소',
-                ),
+                decoration: _decoration(label: '상세주소', hint: '동, 호수 등 상세주소'),
                 validator: (value) {
-                  return _requiredValidator(
-                    value,
-                    '상세주소',
-                  );
+                  return _requiredValidator(value, '상세주소');
                 },
               ),
               const SizedBox(height: 32),
               SizedBox(
                 height: 54,
                 child: FilledButton(
-                  onPressed: _saving ? null : _continue,
+                  onPressed: _continue,
                   style: FilledButton.styleFrom(
-                    backgroundColor:
-                        const Color(0xFF6D4FB3),
+                    backgroundColor: const Color(0xFF6D4FB3),
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
-                  child: Text(
-                    _saving ? '저장 중...' : '다음',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                    ),
+                  child: const Text(
+                    '다음',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
                 ),
               ),

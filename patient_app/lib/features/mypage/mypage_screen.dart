@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../auth/login_screen.dart';
+import '../auth/services/patient_auth_service.dart';
 import '../home/models/patient_profile.dart';
 import '../home/services/profile_service.dart';
 import 'patient_info_screen.dart';
@@ -9,6 +11,7 @@ import 'questionnaire_history_screen.dart';
 import 'language_setting_screen.dart';
 import '../../l10n/app_localizations.dart';
 import 'settings_screen.dart';
+import '../auth/existing_patient_link_screen.dart';
 
 class MyPageScreen extends StatefulWidget {
   const MyPageScreen({super.key});
@@ -18,6 +21,10 @@ class MyPageScreen extends StatefulWidget {
 }
 
 class _MyPageScreenState extends State<MyPageScreen> {
+  final PatientAuthService _authService = PatientAuthService();
+
+  bool _isLoggingOut = false;
+
   final ProfileService _profileService = ProfileService();
 
   late Future<PatientProfile> _profileFuture;
@@ -35,9 +42,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         future: _profileFuture,
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
@@ -56,6 +61,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
             child: Column(
               children: [
                 _buildProfileCard(profile),
+
+                if (profile.appLinkStatus != 'LINKED') ...[
+                  const SizedBox(height: 14),
+                  _buildPatientLinkCard(),
+                ],
 
                 const SizedBox(height: 14),
 
@@ -87,16 +97,12 @@ class _MyPageScreenState extends State<MyPageScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFF3B82F6),
-            Color(0xFF2563EB),
-          ],
+          colors: [Color(0xFF3B82F6), Color(0xFF2563EB)],
         ),
         borderRadius: BorderRadius.circular(20),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF2563EB)
-                .withValues(alpha: 0.18),
+            color: const Color(0xFF2563EB).withValues(alpha: 0.18),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -170,6 +176,80 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
+  Widget _buildPatientLinkCard() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F0FF),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: const Color(0xFFDCCEF7)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.info_outline_rounded,
+                color: Color(0xFF6D4FB3),
+                size: 22,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '환자코드 연결이 필요해요',
+                  style: TextStyle(
+                    color: Color(0xFF191F28),
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            '병원에서 받은 환자코드를 연결하면 '
+            '예약, 검사결과, 복약관리, 증상 기록을 '
+            '사용할 수 있어요.',
+            style: TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 13,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: FilledButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (context) {
+                      return const ExistingPatientLinkScreen();
+                    },
+                  ),
+                );
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFF6D4FB3),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              child: const Text(
+                '환자코드 연결하기',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─────────────────────────────────────────────
   // QR / 프로필 / 알림
   // ─────────────────────────────────────────────
@@ -177,16 +257,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
     final l10n = AppLocalizations.of(context);
 
     return Container(
-      padding: const EdgeInsets.symmetric(
-        vertical: 16,
-        horizontal: 8,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 8),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFE5EAF0),
-        ),
+        border: Border.all(color: const Color(0xFFE5EAF0)),
       ),
       child: Row(
         children: [
@@ -210,8 +285,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        const ProfileEditScreen(),
+                    builder: (context) => const ProfileEditScreen(),
                   ),
                 );
               },
@@ -228,8 +302,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) =>
-                        const NotificationSettingScreen(),
+                    builder: (context) => const NotificationSettingScreen(),
                   ),
                 );
               },
@@ -252,11 +325,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
         padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
           children: [
-            Icon(
-              icon,
-              size: 26,
-              color: const Color(0xFF334155),
-            ),
+            Icon(icon, size: 26, color: const Color(0xFF334155)),
             const SizedBox(height: 7),
             Text(
               title,
@@ -273,11 +342,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
   }
 
   Widget _buildDivider() {
-    return Container(
-      width: 1,
-      height: 38,
-      color: const Color(0xFFE8ECF2),
-    );
+    return Container(width: 1, height: 38, color: const Color(0xFFE8ECF2));
   }
 
   // ─────────────────────────────────────────────
@@ -286,18 +351,15 @@ class _MyPageScreenState extends State<MyPageScreen> {
   Widget _buildMenuList() {
     final l10n = AppLocalizations.of(context);
 
-    final currentLanguage =
-        Localizations.localeOf(context).languageCode == 'en'
-            ? 'English'
-            : '한국어';
+    final currentLanguage = Localizations.localeOf(context).languageCode == 'en'
+        ? 'English'
+        : '한국어';
 
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFE5EAF0),
-        ),
+        border: Border.all(color: const Color(0xFFE5EAF0)),
       ),
       child: Column(
         children: [
@@ -308,8 +370,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (context) =>
-                      const PatientInfoScreen(),
+                  builder: (context) => const PatientInfoScreen(),
                 ),
               );
             },
@@ -353,9 +414,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(
-                  builder: (context) => const SettingsScreen(),
-                ),
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
               );
             },
           ),
@@ -373,17 +432,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 15,
-        ),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
         child: Row(
           children: [
-            Icon(
-              icon,
-              size: 21,
-              color: const Color(0xFF475569),
-            ),
+            Icon(icon, size: 21, color: const Color(0xFF475569)),
 
             const SizedBox(width: 12),
 
@@ -401,10 +453,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
             if (trailingText != null) ...[
               Text(
                 trailingText,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF8B95A1),
-                ),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A1)),
               ),
               const SizedBox(width: 4),
             ],
@@ -432,6 +481,64 @@ class _MyPageScreenState extends State<MyPageScreen> {
   // ─────────────────────────────────────────────
   // 로그아웃
   // ─────────────────────────────────────────────
+  Future<void> _logout() async {
+    if (_isLoggingOut) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('로그아웃'),
+          content: const Text('숨-잇에서 로그아웃하시겠어요?'),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(false);
+              },
+              child: const Text('취소'),
+            ),
+            FilledButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop(true);
+              },
+              style: FilledButton.styleFrom(
+                backgroundColor: const Color(0xFFFF4D5A),
+              ),
+              child: const Text('로그아웃'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (confirmed != true || !mounted) return;
+
+    setState(() {
+      _isLoggingOut = true;
+    });
+
+    try {
+      await _authService.logout();
+
+      if (!mounted) return;
+
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (context) => const LoginScreen()),
+        (route) => false,
+      );
+    } catch (error) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
+
+      setState(() {
+        _isLoggingOut = false;
+      });
+    }
+  }
+
   Widget _buildLogoutButton() {
     final l10n = AppLocalizations.of(context);
 
@@ -439,24 +546,27 @@ class _MyPageScreenState extends State<MyPageScreen> {
       width: double.infinity,
       height: 48,
       child: OutlinedButton(
-        onPressed: () {
-          // TODO: 로그인 구현 후 로그아웃 연결
-        },
+        onPressed: _isLoggingOut ? null : _logout,
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFFF4D5A),
-          side: const BorderSide(
-            color: Color(0xFFFFCDD1),
-          ),
+          side: const BorderSide(color: Color(0xFFFFCDD1)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
           ),
         ),
-        child: Text(
-          l10n.logout,
-          style: const TextStyle(
-            fontWeight: FontWeight.w600,
-          ),
-        ),
+        child: _isLoggingOut
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFFF4D5A),
+                ),
+              )
+            : Text(
+                l10n.logout,
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              ),
       ),
     );
   }
@@ -465,9 +575,7 @@ class _MyPageScreenState extends State<MyPageScreen> {
     return const Center(
       child: Text(
         '환자 정보를 불러오지 못했습니다.',
-        style: TextStyle(
-          color: Color(0xFF8B95A1),
-        ),
+        style: TextStyle(color: Color(0xFF8B95A1)),
       ),
     );
   }
