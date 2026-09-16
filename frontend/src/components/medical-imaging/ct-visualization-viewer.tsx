@@ -90,6 +90,11 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
         const keyLight = new THREE.DirectionalLight(0xffffff, 0.8);
         keyLight.position.set(200, -200, 300);
         activeScene.add(keyLight);
+        // Fill light from the opposite side so faces facing away from keyLight
+        // aren't left fully unlit.
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+        fillLight.position.set(-200, 200, 100);
+        activeScene.add(fillLight);
 
         controls = new OrbitControls(camera, renderer.domElement);
         controls.target.set(0, 0, 0);
@@ -126,6 +131,12 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
             material.transparent = true;
             material.side = THREE.DoubleSide;
             material.wireframe = false;
+            // The GLB's mesh primitives carry no material (only vertex colors),
+            // so glTF's implicit default material applies: metalness 1 / roughness 1.
+            // A fully metallic surface has no diffuse response and renders almost
+            // black without an environment map, which is why layers looked dark.
+            material.metalness = 0;
+            material.roughness = 0.7;
             const wireframeOverlay = new THREE.LineSegments(
               new THREE.WireframeGeometry(mesh.geometry),
               new THREE.LineBasicMaterial({

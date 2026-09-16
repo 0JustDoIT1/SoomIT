@@ -5,11 +5,8 @@ import { useEffect, useRef, useState } from "react";
 import { ensureCornerstoneInitialized } from "@/app/radiology/_lib/cornerstone-init";
 import { loadCtDicomWebSeries } from "@/app/radiology/_lib/cornerstone-dicomweb-loader";
 import { fetchRadiologyAnalysisResult } from "@/app/radiology/_lib/radiology-api";
-import {
-  applyCtCornerstoneSegmentationToViewport,
-  loadCtCornerstoneSegmentation,
-  type CtCornerstoneSegmentation,
-} from "@/app/radiology/_lib/cornerstone-labelmap";
+import { loadCtCornerstoneSegmentation, type CtCornerstoneSegmentation } from "@/app/radiology/_lib/cornerstone-labelmap";
+import { attachCtCornerstoneLabelmapOverlay } from "@/app/radiology/_lib/cornerstone-labelmap-overlay";
 
 type CtDicomViewerProps = {
   orderId: string;
@@ -17,18 +14,22 @@ type CtDicomViewerProps = {
   analysisId?: string;
 };
 
-type ViewMode = "2D" | "3D";
+type ViewKey = "axial" | "coronal" | "sagittal" | "volume3d";
 
-const TOOL_GROUP_ID = "ct-dicom-viewer-tools";
-const STACK_VIEWPORT_ID = "ct-dicom-viewer-stack";
+const TOOL_GROUP_ID = "ct-dicom-viewer-mpr-tools";
+const VOLUME3D_TOOL_GROUP_ID = "ct-dicom-viewer-volume3d-tools";
 const AXIAL_VIEWPORT_ID = "ct-dicom-viewer-axial";
 const CORONAL_VIEWPORT_ID = "ct-dicom-viewer-coronal";
 const SAGITTAL_VIEWPORT_ID = "ct-dicom-viewer-sagittal";
+const VOLUME3D_VIEWPORT_ID = "ct-dicom-viewer-volume3d";
+const MPR_VIEWPORT_IDS = [AXIAL_VIEWPORT_ID, CORONAL_VIEWPORT_ID, SAGITTAL_VIEWPORT_ID];
+const VOLUME3D_PRESET = "CT-Lung";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  NODULE: "병변",
-  LUNG_LOBE: "폐엽",
-  ANATOMY: "해부 구조",
+const VIEW_LABELS: Record<ViewKey, string> = {
+  axial: "Axial",
+  coronal: "Coronal",
+  sagittal: "Sagittal",
+  volume3d: "3D Volume",
 };
 
 function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
@@ -49,23 +50,34 @@ function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
 }
 
 export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerProps) {
-  const stackRef = useRef<HTMLDivElement>(null);
   const axialRef = useRef<HTMLDivElement>(null);
   const coronalRef = useRef<HTMLDivElement>(null);
   const sagittalRef = useRef<HTMLDivElement>(null);
+  const volume3dRef = useRef<HTMLDivElement>(null);
+  // Hand-drawn labelmap overlay canvases, layered on top of each MPR
+  // viewport's own Cornerstone canvas - see cornerstone-labelmap-overlay.ts.
+  const axialOverlayRef = useRef<HTMLCanvasElement>(null);
+  const coronalOverlayRef = useRef<HTMLCanvasElement>(null);
+  const sagittalOverlayRef = useRef<HTMLCanvasElement>(null);
 
-  const [mode, setMode] = useState<ViewMode>("2D");
   const [loading, setLoading] = useState(true);
+  const [building, setBuilding] = useState(false);
   const [error, setError] = useState("");
   const [viewerError, setViewerError] = useState("");
   const [seriesProgress, setSeriesProgress] = useState({ loaded: 0, total: 0 });
-  const [segmentation, setSegmentation] = useState<CtCornerstoneSegmentation | null>(null);
-  const [visibility, setVisibility] = useState<Record<number, boolean>>({});
-  const [opacity, setOpacity] = useState<Record<number, number>>({});
+  // null = 2x2 grid; otherwise the single view shown full-size. Purely a layout
+  // switch - the underlying viewports/volume are never rebuilt by this.
+  const [focusedView, setFocusedView] = useState<ViewKey | null>(null);
 
   const imageIdsRef = useRef<string[] | null>(null);
   const noduleFocusWorldRef = useRef<[number, number, number] | null>(null);
-  const viewportIdsRef = useRef<string[]>([]);
+  // All 4 viewports are built once per series and kept alive for the component's
+  // lifetime; this ref lets the maximize/restore effect resize them without
+  // rebuilding anything.
+  const renderingEngineRef = useRef<import("@cornerstonejs/core").RenderingEngine | null>(null);
+  // Caches the loaded labelmap data across re-renders, keyed by analysis+
+  // volume, so it is only downloaded once per series.
+  const segmentationCacheRef = useRef<{ key: string; segmentation: CtCornerstoneSegmentation } | null>(null);
 
   useEffect(() => {
     let disposed = false;
@@ -95,263 +107,243 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
     };
   }, [orderId, assetId, analysisId]);
 
+  // Builds all 4 fixed views (Axial/Coronal/Sagittal MPR + voxel 3D volume
+  // rendering) once per series. Clicking a view to maximize it never re-enters
+  // this effect - see the focusedView-resize effect below, which only resizes
+  // the already-built viewports.
   useEffect(() => {
     if (loading || error || !imageIdsRef.current) return;
     let disposed = false;
     let renderingEngine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let resizeObserver: ResizeObserver | null = null;
-    let removeProgressListeners: (() => void) | null = null;
-    let disableStackPrefetch: (() => void) | null = null;
+    let removeProgressListener: (() => void) | null = null;
     let cleanupCornerstoneState: (() => void) | null = null;
+    let removeDevListeners: (() => void) | null = null;
+    const overlayCleanups: Array<() => void> = [];
 
     void (async () => {
       const { core, tools } = await ensureCornerstoneInitialized();
       if (disposed) return;
+      if (!axialRef.current || !coronalRef.current || !sagittalRef.current || !volume3dRef.current) return;
+      setBuilding(true);
       setViewerError("");
       const imageIds = imageIdsRef.current;
       if (!imageIds) return;
-      const imageIdSet = new Set(imageIds);
-      const loadedImageIds = new Set<string>();
-      const handleImageLoaded = (event: Event) => {
-        const imageId = (event as CustomEvent<{ image?: { imageId?: string } }>).detail?.image?.imageId;
-        if (!imageId || !imageIdSet.has(imageId)) return;
-        loadedImageIds.add(imageId);
-        setSeriesProgress({ loaded: loadedImageIds.size, total: imageIds.length });
-      };
-      core.eventTarget.addEventListener(core.Enums.Events.IMAGE_LOADED, handleImageLoaded);
-      removeProgressListeners = () => {
-        core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_LOADED, handleImageLoaded);
-      };
 
-      renderingEngine = new core.RenderingEngine(`ct-dicom-viewer-engine-${assetId}-${mode}`);
-
-      const toolGroupId = `${TOOL_GROUP_ID}-${assetId}-${mode}`;
-      if (tools.ToolGroupManager.getToolGroup(toolGroupId)) {
-        tools.ToolGroupManager.destroyToolGroup(toolGroupId);
+      if (process.env.NODE_ENV !== "production") {
+        // These dev-only listeners were never removed on effect cleanup, so
+        // every hot-reload/re-run of this effect added another copy - each
+        // subsequent render event then fired N accumulated listeners,
+        // compounding console/CPU overhead over a long dev session.
+        const handleCornerstoneErrorEvent = (event: Event) => {
+          console.error("[ct-dicom-viewer] Cornerstone ERROR_EVENT", (event as CustomEvent).detail);
+        };
+        core.eventTarget.addEventListener(core.Enums.Events.ERROR_EVENT, handleCornerstoneErrorEvent);
+        removeDevListeners = () => {
+          core.eventTarget.removeEventListener(core.Enums.Events.ERROR_EVENT, handleCornerstoneErrorEvent);
+        };
       }
+
+      renderingEngine = new core.RenderingEngine(`ct-dicom-viewer-engine-${assetId}`);
+      renderingEngineRef.current = renderingEngine;
+
+      const toolGroupId = `${TOOL_GROUP_ID}-${assetId}`;
+      if (tools.ToolGroupManager.getToolGroup(toolGroupId)) tools.ToolGroupManager.destroyToolGroup(toolGroupId);
       const toolGroup = tools.ToolGroupManager.createToolGroup(toolGroupId);
-      if (!toolGroup) return;
-      cleanupCornerstoneState = () => tools.ToolGroupManager.destroyToolGroup(toolGroupId);
-      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool].forEach((ToolClass) => {
-        tools.addTool(ToolClass);
-        toolGroup?.addTool(ToolClass.toolName);
-      });
-      toolGroup.setToolActive(tools.WindowLevelTool.toolName, {
+      const volume3dToolGroupId = `${VOLUME3D_TOOL_GROUP_ID}-${assetId}`;
+      if (tools.ToolGroupManager.getToolGroup(volume3dToolGroupId)) tools.ToolGroupManager.destroyToolGroup(volume3dToolGroupId);
+      const volume3dToolGroup = tools.ToolGroupManager.createToolGroup(volume3dToolGroupId);
+      if (!toolGroup || !volume3dToolGroup) return;
+      cleanupCornerstoneState = () => {
+        tools.ToolGroupManager.destroyToolGroup(toolGroupId);
+        tools.ToolGroupManager.destroyToolGroup(volume3dToolGroupId);
+      };
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.TrackballRotateTool].forEach(
+        (ToolClass) => tools.addTool(ToolClass),
+      );
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool].forEach((ToolClass) =>
+        toolGroup.addTool(ToolClass.toolName),
+      );
+      toolGroup.setToolActive(tools.WindowLevelTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Primary }] });
+      toolGroup.setToolActive(tools.PanTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Auxiliary }] });
+      toolGroup.setToolActive(tools.ZoomTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Secondary }] });
+      toolGroup.setToolActive(tools.StackScrollTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Wheel }] });
+      // The 3D volume-rendering view rotates/pans/zooms instead of windowing by drag.
+      [tools.TrackballRotateTool, tools.PanTool, tools.ZoomTool].forEach((ToolClass) =>
+        volume3dToolGroup.addTool(ToolClass.toolName),
+      );
+      volume3dToolGroup.setToolActive(tools.TrackballRotateTool.toolName, {
         bindings: [{ mouseButton: tools.Enums.MouseBindings.Primary }],
       });
-      toolGroup.setToolActive(tools.PanTool.toolName, {
-        bindings: [{ mouseButton: tools.Enums.MouseBindings.Auxiliary }],
-      });
-      toolGroup.setToolActive(tools.ZoomTool.toolName, {
-        bindings: [{ mouseButton: tools.Enums.MouseBindings.Secondary }],
-      });
-      toolGroup.setToolActive(tools.StackScrollTool.toolName, {
-        bindings: [{ mouseButton: tools.Enums.MouseBindings.Wheel }],
-      });
+      volume3dToolGroup.setToolActive(tools.PanTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Auxiliary }] });
+      volume3dToolGroup.setToolActive(tools.ZoomTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Secondary }] });
 
-      if (mode === "2D") {
-        if (!stackRef.current) return;
-        renderingEngine.enableElement({
-          viewportId: STACK_VIEWPORT_ID,
-          type: core.Enums.ViewportType.STACK,
-          element: stackRef.current,
-        });
-        const viewport = renderingEngine.getViewport(STACK_VIEWPORT_ID) as InstanceType<typeof core.StackViewport>;
-        await viewport.setStack(imageIds, Math.floor(imageIds.length / 2));
-        const noduleFocusWorld = noduleFocusWorldRef.current;
-        if (noduleFocusWorld) viewport.jumpToWorld(noduleFocusWorld);
-        viewport.render();
-        tools.utilities.stackPrefetch.setConfiguration({
-          maxImagesToPrefetch: imageIds.length,
-          preserveExistingPool: true,
-        });
-        tools.utilities.stackPrefetch.enable(stackRef.current);
-        disableStackPrefetch = () => {
-          if (stackRef.current) tools.utilities.stackPrefetch.disable(stackRef.current);
-        };
-        toolGroup.addViewport(STACK_VIEWPORT_ID, renderingEngine.id);
-        viewportIdsRef.current = [STACK_VIEWPORT_ID];
-      } else {
-        if (!axialRef.current || !coronalRef.current || !sagittalRef.current) return;
-        const viewportInputs = [
-          { viewportId: AXIAL_VIEWPORT_ID, element: axialRef.current, orientation: core.Enums.OrientationAxis.AXIAL },
-          { viewportId: CORONAL_VIEWPORT_ID, element: coronalRef.current, orientation: core.Enums.OrientationAxis.CORONAL },
-          { viewportId: SAGITTAL_VIEWPORT_ID, element: sagittalRef.current, orientation: core.Enums.OrientationAxis.SAGITTAL },
-        ];
-        renderingEngine.setViewports(
-          viewportInputs.map(({ viewportId, element, orientation }) => ({
-            viewportId,
-            element,
-            type: core.Enums.ViewportType.ORTHOGRAPHIC,
-            defaultOptions: { orientation },
-          })),
-        );
-        const viewportIds = viewportInputs.map((item) => item.viewportId);
-        viewportIdsRef.current = viewportIds;
+      renderingEngine.setViewports([
+        {
+          viewportId: AXIAL_VIEWPORT_ID,
+          element: axialRef.current,
+          type: core.Enums.ViewportType.ORTHOGRAPHIC,
+          defaultOptions: { orientation: core.Enums.OrientationAxis.AXIAL },
+        },
+        {
+          viewportId: CORONAL_VIEWPORT_ID,
+          element: coronalRef.current,
+          type: core.Enums.ViewportType.ORTHOGRAPHIC,
+          defaultOptions: { orientation: core.Enums.OrientationAxis.CORONAL },
+        },
+        {
+          viewportId: SAGITTAL_VIEWPORT_ID,
+          element: sagittalRef.current,
+          type: core.Enums.ViewportType.ORTHOGRAPHIC,
+          defaultOptions: { orientation: core.Enums.OrientationAxis.SAGITTAL },
+        },
+        {
+          viewportId: VOLUME3D_VIEWPORT_ID,
+          element: volume3dRef.current,
+          type: core.Enums.ViewportType.VOLUME_3D,
+        },
+      ]);
+      MPR_VIEWPORT_IDS.forEach((viewportId) => toolGroup.addViewport(viewportId, renderingEngine!.id));
+      volume3dToolGroup.addViewport(VOLUME3D_VIEWPORT_ID, renderingEngine.id);
 
-        const volumeId = `cornerstoneStreamingImageVolume:${orderId}:${assetId}`;
-        const handleVolumeProgress = (event: Event) => {
-          const detail = (event as CustomEvent<{
-            volumeId?: string;
-            framesProcessed?: number;
-            numberOfFrames?: number;
-          }>).detail;
-          if (detail?.volumeId !== volumeId) return;
-          setSeriesProgress({
-            loaded: detail.framesProcessed ?? 0,
-            total: detail.numberOfFrames ?? imageIds.length,
-          });
-        };
-        core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
-        const removeImageProgressListener = removeProgressListeners;
-        removeProgressListeners = () => {
-          removeImageProgressListener?.();
-          core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
-        };
-        const volume = await core.volumeLoader.createAndCacheVolume(volumeId, {
-          imageIds,
-          progressiveRendering: true,
-        });
-        await core.setVolumesForViewports(renderingEngine, [{ volumeId }], viewportIds);
-        viewportIds.forEach((viewportId) => toolGroup?.addViewport(viewportId, renderingEngine!.id));
-        const noduleFocusWorld = noduleFocusWorldRef.current;
-        if (noduleFocusWorld) {
-          viewportIds.forEach((viewportId) => {
-            const viewport = renderingEngine?.getViewport(viewportId) as InstanceType<typeof core.VolumeViewport>;
-            viewport.jumpToWorld(noduleFocusWorld);
-          });
+      const volumeId = `cornerstoneStreamingImageVolume:${orderId}:${assetId}`;
+      const handleVolumeProgress = (event: Event) => {
+        const detail = (event as CustomEvent<{ volumeId?: string; framesProcessed?: number; numberOfFrames?: number }>).detail;
+        if (detail?.volumeId !== volumeId) return;
+        setSeriesProgress({ loaded: detail.framesProcessed ?? 0, total: detail.numberOfFrames ?? imageIds.length });
+      };
+      core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
+      removeProgressListener = () => core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
+
+      const volume = await core.volumeLoader.createAndCacheVolume(volumeId, { imageIds, progressiveRendering: true });
+      if (disposed) return;
+      const allViewportIds = [...MPR_VIEWPORT_IDS, VOLUME3D_VIEWPORT_ID];
+      await core.setVolumesForViewports(renderingEngine, [{ volumeId }], allViewportIds);
+
+      const volume3dViewport = renderingEngine.getViewport(VOLUME3D_VIEWPORT_ID) as InstanceType<typeof core.VolumeViewport3D>;
+      const preset = core.CONSTANTS.VIEWPORT_PRESETS.find((item) => item.name === VOLUME3D_PRESET);
+      if (preset) {
+        const actorEntry = volume3dViewport.getDefaultActor();
+        if (actorEntry?.actor) {
+          core.utilities.applyPreset(actorEntry.actor as import("@cornerstonejs/core").Types.VolumeActor, preset);
         }
-        renderingEngine.render();
-        if ("load" in volume && typeof volume.load === "function") {
-          volume.load((event) => {
+      }
+
+      const noduleFocusWorld = noduleFocusWorldRef.current;
+      if (noduleFocusWorld) {
+        MPR_VIEWPORT_IDS.forEach((viewportId) => {
+          const viewport = renderingEngine?.getViewport(viewportId) as InstanceType<typeof core.VolumeViewport>;
+          viewport.jumpToWorld(noduleFocusWorld);
+        });
+      }
+      renderingEngine.render();
+      if ("load" in volume && typeof volume.load === "function") {
+        volume.load((event) => {
+          if (disposed) return;
+          const progress = event as { framesProcessed?: number; totalNumFrames?: number };
+          setSeriesProgress({ loaded: progress.framesProcessed ?? imageIds.length, total: progress.totalNumFrames ?? imageIds.length });
+          renderingEngine?.render();
+        });
+      }
+
+      if (analysisId) {
+        try {
+          const segmentationKey = `${analysisId}:${volumeId}`;
+          let segmentation = segmentationCacheRef.current?.key === segmentationKey
+            ? segmentationCacheRef.current.segmentation
+            : null;
+          if (!segmentation) {
+            segmentation = await loadCtCornerstoneSegmentation(analysisId);
             if (disposed) return;
-            const progress = event as { framesProcessed?: number; totalNumFrames?: number };
-            setSeriesProgress({
-              loaded: progress.framesProcessed ?? imageIds.length,
-              total: progress.totalNumFrames ?? imageIds.length,
-            });
-            renderingEngine?.render();
-          });
-        }
+            segmentationCacheRef.current = { key: segmentationKey, segmentation };
+          }
+          const overlayTargets: Array<[string, "axial" | "coronal" | "sagittal", HTMLDivElement | null, HTMLCanvasElement | null]> = [
+            [AXIAL_VIEWPORT_ID, "axial", axialRef.current, axialOverlayRef.current],
+            [CORONAL_VIEWPORT_ID, "coronal", coronalRef.current, coronalOverlayRef.current],
+            [SAGITTAL_VIEWPORT_ID, "sagittal", sagittalRef.current, sagittalOverlayRef.current],
+          ];
+          for (const [viewportId, orientation, container, overlayCanvas] of overlayTargets) {
+            if (!container || !overlayCanvas || !renderingEngine) continue;
+            overlayCleanups.push(
+              attachCtCornerstoneLabelmapOverlay(core, viewportId, orientation, container, overlayCanvas, renderingEngine, segmentation),
+            );
+          }
+          // The labelmap overlay is only drawn on the 2D MPR canvases; the 3D
+          // volume-rendering view stays CT-only.
+        } catch (reason) {
+          if (!disposed) {
 
-        if (analysisId) {
-          try {
-            const loaded = await loadCtCornerstoneSegmentation(analysisId, volumeId);
-            if (disposed) {
-              tools.segmentation.removeSegmentation(loaded.segmentationId);
-              core.cache.removeVolumeLoadObject(loaded.segmentationId);
-              return;
-            }
-            const previousCleanup = cleanupCornerstoneState;
-            cleanupCornerstoneState = () => {
-              previousCleanup?.();
-              tools.segmentation.removeSegmentation(loaded.segmentationId);
-              core.cache.removeVolumeLoadObject(loaded.segmentationId);
-            };
-            for (const viewportId of viewportIds) {
-              await applyCtCornerstoneSegmentationToViewport(viewportId, loaded);
-            }
-            setSegmentation(loaded);
-            setVisibility(
-              Object.fromEntries(loaded.metadata.segments.map((segment) => [segment.segment_index, segment.default_visible ?? true])),
-            );
-            setOpacity(
-              Object.fromEntries(loaded.metadata.segments.map((segment) => [segment.segment_index, segment.default_opacity ?? 0.5])),
-            );
-            renderingEngine?.render();
-          } catch {
-            if (!disposed) setViewerError("Segmentation을 불러오지 못했습니다.");
+            console.error("[ct-dicom-viewer] segmentation setup failed", reason);
+            setViewerError(reason instanceof Error ? `Segmentation을 불러오지 못했습니다: ${reason.message}` : "Segmentation을 불러오지 못했습니다.");
           }
         }
       }
+
       resizeObserver = new ResizeObserver(() => renderingEngine?.resize());
-      [stackRef.current, axialRef.current, coronalRef.current, sagittalRef.current]
+      [axialRef.current, coronalRef.current, sagittalRef.current, volume3dRef.current]
         .filter((element): element is HTMLDivElement => Boolean(element))
         .forEach((element) => resizeObserver?.observe(element));
+      if (!disposed) setBuilding(false);
     })().catch((reason: unknown) => {
       if (!disposed) {
         setViewerError(reason instanceof Error ? reason.message : "CT 뷰어를 초기화하지 못했습니다.");
+        setBuilding(false);
       }
     });
 
     return () => {
       disposed = true;
       resizeObserver?.disconnect();
-      disableStackPrefetch?.();
-      removeProgressListeners?.();
+      removeProgressListener?.();
+      removeDevListeners?.();
+      overlayCleanups.forEach((cleanup) => cleanup());
       cleanupCornerstoneState?.();
       renderingEngine?.destroy();
+      renderingEngineRef.current = null;
     };
-  }, [loading, error, mode, analysisId, orderId, assetId]);
+  }, [loading, error, analysisId, orderId, assetId]);
 
-  // Synchronizes React state (visibility/opacity) to Cornerstone's own segmentation
-  // state, an external system, whenever either changes - never read directly from
-  // an event handler so a ref-in-render lint check can't flag it.
+  // Pure layout switch: maximizing/restoring a view never re-fetches or rebuilds
+  // anything - the already-built viewports just need a resize once their
+  // container's on-screen size changes (they had zero size while hidden).
   useEffect(() => {
-    if (!segmentation) return;
-    let disposed = false;
-    void (async () => {
-      const { tools, core } = await ensureCornerstoneInitialized();
-      if (disposed) return;
-      for (const viewportId of viewportIdsRef.current) {
-        for (const segment of segmentation.metadata.segments) {
-          const visible = visibility[segment.segment_index] ?? segment.default_visible ?? true;
-          tools.segmentation.config.visibility.setSegmentIndexVisibility(
-            viewportId,
-            { segmentationId: segmentation.segmentationId },
-            segment.segment_index,
-            visible,
-          );
-          const fillAlpha = opacity[segment.segment_index] ?? segment.default_opacity ?? 0.5;
-          tools.segmentation.segmentationStyle.setStyle(
-            {
-              type: tools.Enums.SegmentationRepresentations.Labelmap,
-              viewportId,
-              segmentationId: segmentation.segmentationId,
-              segmentIndex: segment.segment_index,
-            },
-            {
-              fillAlpha,
-              renderFill: true,
-              renderOutline: segment.category === "NODULE",
-              outlineWidth: segment.category === "NODULE" ? 2 : 1,
-            },
-          );
-        }
-      }
-      core.getRenderingEngines()?.forEach((engine) => engine.render());
-    })();
-    return () => {
-      disposed = true;
-    };
-  }, [segmentation, visibility, opacity]);
+    renderingEngineRef.current?.resize(true, true);
+  }, [focusedView]);
 
-  const groupedSegments = new Map<string, CtCornerstoneSegmentation["metadata"]["segments"]>();
-  for (const segment of segmentation?.metadata.segments ?? []) {
-    const bucket = groupedSegments.get(segment.category) ?? [];
-    bucket.push(segment);
-    groupedSegments.set(segment.category, bucket);
-  }
+  // Segmentation cache is only cleared when the series/analysis actually
+  // changes or the viewer unmounts - it's a plain JS object (metadata + a
+  // typed array), so there's no Cornerstone-side state to tear down.
+  useEffect(() => {
+    return () => {
+      segmentationCacheRef.current = null;
+    };
+  }, [analysisId, orderId, assetId]);
+
+  const views: Array<{ key: ViewKey; ref: React.RefObject<HTMLDivElement | null> }> = [
+    { key: "axial", ref: axialRef },
+    { key: "coronal", ref: coronalRef },
+    { key: "sagittal", ref: sagittalRef },
+    { key: "volume3d", ref: volume3dRef },
+  ];
+
+  const overlayRefs: Partial<Record<ViewKey, React.RefObject<HTMLCanvasElement | null>>> = {
+    axial: axialOverlayRef,
+    coronal: coronalOverlayRef,
+    sagittal: sagittalOverlayRef,
+  };
 
   return (
-    <div className="grid min-h-[420px] grid-cols-[1fr_190px] overflow-hidden bg-slate-950">
-      <div className="relative min-h-0">
-        <div className="absolute right-2 top-2 z-20 flex gap-1">
+    <div className="grid min-h-[420px] overflow-hidden bg-slate-950">
+      <div className="relative min-h-[420px]">
+        {focusedView && (
           <button
             type="button"
-            onClick={() => setMode("2D")}
-            className={`rounded px-2 py-1 text-[9px] font-semibold ${mode === "2D" ? "bg-blue-600 text-white" : "bg-black/60 text-white"}`}
+            onClick={() => setFocusedView(null)}
+            className="absolute right-2 top-2 z-20 rounded bg-black/60 px-2 py-1 text-[9px] font-semibold text-white"
           >
-            2D
+            전체보기
           </button>
-          <button
-            type="button"
-            onClick={() => setMode("3D")}
-            className={`rounded px-2 py-1 text-[9px] font-semibold ${mode === "3D" ? "bg-blue-600 text-white" : "bg-black/60 text-white"}`}
-          >
-            3D (MPR)
-          </button>
-        </div>
+        )}
 
         {seriesProgress.total > 0 && seriesProgress.loaded < seriesProgress.total && (
           <div className="absolute left-1/2 top-3 z-20 w-56 -translate-x-1/2 rounded bg-black/80 px-3 py-2 text-[10px] font-semibold text-white shadow-lg">
@@ -365,15 +357,29 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
           </div>
         )}
 
-        {mode === "2D" ? (
-          <div ref={stackRef} className="absolute inset-0" aria-label="CT Axial viewer" />
-        ) : (
-          <div className="absolute inset-0 grid grid-cols-3">
-            <div ref={axialRef} aria-label="CT Axial viewer" />
-            <div ref={coronalRef} aria-label="CT Coronal viewer" />
-            <div ref={sagittalRef} aria-label="CT Sagittal viewer" />
-          </div>
-        )}
+        <div className={`absolute inset-0 ${focusedView ? "" : "grid grid-cols-2 grid-rows-2 gap-px bg-slate-800"}`}>
+          {views.map(({ key, ref }) => (
+            <div
+              key={key}
+              className={`bg-slate-950 ${
+                focusedView ? (focusedView === key ? "absolute inset-0" : "hidden") : "relative"
+              }`}
+            >
+              <div ref={ref} className="absolute inset-0" aria-label={`CT ${VIEW_LABELS[key]} viewer`} />
+              {overlayRefs[key] && (
+                <canvas ref={overlayRefs[key]} className="pointer-events-none absolute inset-0" />
+              )}
+              <button
+                type="button"
+                onClick={() => setFocusedView((current) => (current === key ? null : key))}
+                className="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-semibold text-white"
+              >
+                {VIEW_LABELS[key]} {focusedView === key ? "· 축소" : "· 확대"}
+              </button>
+            </div>
+          ))}
+        </div>
+
         {loading && (
           <div className="absolute inset-0 grid place-items-center text-xs font-semibold text-slate-300">
             CT Series를 불러오는 중입니다.
@@ -384,52 +390,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
             {error || viewerError}
           </div>
         )}
-      </div>
-
-      <aside className="min-h-0 overflow-y-auto border-l border-slate-800 bg-slate-900 p-2" aria-label="Segmentation 목록">
-        {mode === "2D" ? (
-          <p className="text-[9px] text-slate-500">Segmentation overlay는 3D(MPR) 모드에서 표시됩니다.</p>
-        ) : segmentation ? (
-          [...groupedSegments.entries()].map(([category, segments]) => (
-            <div key={category} className="mb-3">
-              <p className="mb-1 text-[9px] font-semibold text-slate-400">{CATEGORY_LABELS[category] ?? category}</p>
-              <div className="space-y-1.5">
-                {segments.map((segment) => (
-                  <div key={segment.id} className="rounded bg-slate-800/60 px-1.5 py-1">
-                    <label className="flex items-center gap-1.5 text-[9px] text-slate-200">
-                      <input
-                        type="checkbox"
-                        checked={visibility[segment.segment_index] ?? segment.default_visible ?? true}
-                        onChange={(event) =>
-                          setVisibility((current) => ({ ...current, [segment.segment_index]: event.target.checked }))
-                        }
-                      />
-                      <span
-                        className="h-2 w-2 shrink-0 rounded-full"
-                        style={{ backgroundColor: `rgb(${segment.color.join(",")})` }}
-                      />
-                      <span className="truncate">{segment.name}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={0}
-                      max={1}
-                      step={0.05}
-                      value={opacity[segment.segment_index] ?? segment.default_opacity ?? 0.5}
-                      onChange={(event) =>
-                        setOpacity((current) => ({ ...current, [segment.segment_index]: Number(event.target.value) }))
-                      }
-                      className="mt-1 w-full"
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))
-        ) : (
-          <p className="text-[9px] text-slate-500">Segmentation을 불러오는 중입니다.</p>
+        {building && !loading && (
+          <div className="absolute bottom-2 left-2 z-20 rounded bg-black/70 px-2 py-1 text-[9px] text-slate-300">뷰어 구성 중…</div>
         )}
-      </aside>
+      </div>
     </div>
   );
 }

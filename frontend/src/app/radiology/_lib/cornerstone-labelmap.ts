@@ -1,4 +1,3 @@
-import { ensureCornerstoneInitialized } from "./cornerstone-init";
 import {
   fetchRadiologyCornerstoneLabelmap,
   fetchRadiologyCornerstoneSegmentationMetadata,
@@ -6,96 +5,40 @@ import {
 } from "./radiology-api";
 
 export type CtCornerstoneSegmentation = {
-  segmentationId: string;
   metadata: RadiologyCornerstoneSegmentationMetadata;
+  voxels: Uint8Array | Uint16Array;
 };
 
 /**
- * Loads the Cornerstone3D labelmap for one CT analysis and registers it as a
- * segmentation derived from the already-loaded CT volume, so it inherits that
- * volume's dimensions/spacing/origin/direction instead of trusting a second,
- * independently-computed geometry for alignment.
+ * Loads the Cornerstone3D labelmap for one CT analysis as raw voxel data plus
+ * its geometry/segment manifest.
+ *
+ * This is intentionally rendered as a hand-drawn 2D canvas overlay
+ * (cornerstone-labelmap-overlay.ts) rather than through Cornerstone's own
+ * segmentation representation system: every one of Cornerstone's three
+ * built-in labelmap rendering strategies (a separate volume actor, a merged
+ * independent-components actor, and a 2D slice image mapper actor) reported
+ * fully correct internal state in this app - visible actor, populated
+ * transfer function, matching bounds, correct blend mode - yet none of them
+ * ever produced a single visible pixel, confirmed by directly reading back
+ * the onscreen canvas pixels. Matching the library's documented usage exactly
+ * didn't change that either, so the overlay here bypasses that system
+ * entirely instead of depending on it.
  */
-export async function loadCtCornerstoneSegmentation(
-  analysisId: string,
-  referencedVolumeId: string,
-): Promise<CtCornerstoneSegmentation> {
-  const { core, tools } = await ensureCornerstoneInitialized();
+export async function loadCtCornerstoneSegmentation(analysisId: string): Promise<CtCornerstoneSegmentation> {
   const [metadata, labelmapBytes] = await Promise.all([
     fetchRadiologyCornerstoneSegmentationMetadata(analysisId),
     fetchRadiologyCornerstoneLabelmap(analysisId),
   ]);
 
-  const segmentationId = `ct-cornerstone-${analysisId}`;
   const ScalarArray = metadata.scalar_type === "uint16" ? Uint16Array : Uint8Array;
   const voxels = new ScalarArray(labelmapBytes);
-
-  const derivedVolume = core.volumeLoader.createAndCacheDerivedLabelmapVolume(referencedVolumeId, {
-    volumeId: segmentationId,
-    targetBuffer: { type: metadata.scalar_type === "uint16" ? "Uint16Array" : "Uint8Array" },
-  });
-  const voxelManager = derivedVolume.voxelManager;
-  if (!voxelManager) {
-    throw new Error("Cornerstone labelmap voxel manager를 생성하지 못했습니다.");
-  }
-  if (voxelManager.getScalarDataLength() !== voxels.length) {
-    throw new Error("CT labelmap 크기가 CT 볼륨과 일치하지 않습니다.");
-  }
-  voxelManager.setScalarData(voxels);
-
-  tools.segmentation.addSegmentations([
-    {
-      segmentationId,
-      representation: {
-        type: tools.Enums.SegmentationRepresentations.Labelmap,
-        data: { volumeId: segmentationId },
-      },
-    },
-  ]);
-
-  return { segmentationId, metadata };
-}
-
-/**
- * Adds a loaded segmentation to one viewport and applies each segment's default
- * color/opacity/visibility from the manifest. Call once per viewport that should
- * show the overlay (a viewport-scoped call, unlike loadCtCornerstoneSegmentation).
- */
-export async function applyCtCornerstoneSegmentationToViewport(
-  viewportId: string,
-  segmentation: CtCornerstoneSegmentation,
-) {
-  const { tools } = await ensureCornerstoneInitialized();
-  const { segmentationId, metadata } = segmentation;
-
-  tools.segmentation.addLabelmapRepresentationToViewport(viewportId, [{ segmentationId }]);
-
-  for (const segment of metadata.segments) {
-    tools.segmentation.config.color.setSegmentIndexColor(viewportId, segmentationId, segment.segment_index, [
-      ...segment.color,
-      255,
-    ]);
-    tools.segmentation.segmentationStyle.setStyle(
-      {
-        type: tools.Enums.SegmentationRepresentations.Labelmap,
-        viewportId,
-        segmentationId,
-        segmentIndex: segment.segment_index,
-      },
-      {
-        fillAlpha: segment.default_opacity ?? 0.5,
-        renderFill: true,
-        renderOutline: segment.category === "NODULE",
-        outlineWidth: segment.category === "NODULE" ? 2 : 1,
-      },
+  const [nx, ny, nz] = metadata.dimensions;
+  if (voxels.length !== nx * ny * nz) {
+    throw new Error(
+      `CT labelmap 크기가 예상과 다릅니다. (voxels=${voxels.length}, expected=${nx * ny * nz})`,
     );
-    if (segment.default_visible === false) {
-      tools.segmentation.config.visibility.setSegmentIndexVisibility(
-        viewportId,
-        { segmentationId },
-        segment.segment_index,
-        false,
-      );
-    }
   }
+
+  return { metadata, voxels };
 }
