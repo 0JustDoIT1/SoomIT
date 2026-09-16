@@ -9,6 +9,9 @@ import '../features/home/home_screen.dart';
 import '../features/medication/medication_screen.dart';
 import '../features/mypage/mypage_screen.dart';
 import '../features/notification/notification_list_screen.dart';
+import '../features/home/models/patient_profile.dart';
+import '../features/home/services/profile_service.dart';
+import 'patient_link_required_screen.dart';
 
 import 'app_header.dart';
 import 'bottom_nav.dart';
@@ -22,6 +25,9 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell>
     with SingleTickerProviderStateMixin {
+  final ProfileService _profileService = ProfileService();
+
+  late final Future<PatientProfile> _profileFuture;
   int _selectedIndex = 0;
 
   bool _isChatbotOpen = false;
@@ -35,20 +41,15 @@ class _AppShellState extends State<AppShell>
   void initState() {
     super.initState();
 
+    _profileFuture = _profileService.getProfile();
+
     _chatbotController = AnimationController(
       vsync: this,
-      duration: const Duration(
-        milliseconds: 340,
-      ),
-      reverseDuration: const Duration(
-        milliseconds: 250,
-      ),
+      duration: const Duration(milliseconds: 340),
+      reverseDuration: const Duration(milliseconds: 250),
     );
 
-    _chatbotScale = Tween<double>(
-      begin: 0.05,
-      end: 1.0,
-    ).animate(
+    _chatbotScale = Tween<double>(begin: 0.05, end: 1.0).animate(
       CurvedAnimation(
         parent: _chatbotController,
         curve: Curves.easeOutCubic,
@@ -56,17 +57,10 @@ class _AppShellState extends State<AppShell>
       ),
     );
 
-    _chatbotOpacity = Tween<double>(
-      begin: 0,
-      end: 1,
-    ).animate(
+    _chatbotOpacity = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(
         parent: _chatbotController,
-        curve: const Interval(
-          0.05,
-          1,
-          curve: Curves.easeOut,
-        ),
+        curve: const Interval(0.05, 1, curve: Curves.easeOut),
         reverseCurve: Curves.easeIn,
       ),
     );
@@ -122,18 +116,8 @@ class _AppShellState extends State<AppShell>
 
   @override
   Widget build(BuildContext context) {
-    final screens = [
-      const HomeScreen(),
-      const AppointmentScreen(),
-      const ExamResultScreen(),
-      const MedicationScreen(),
-      const MyPageScreen(),
-    ];
-
     return Scaffold(
-      backgroundColor: const Color(
-        0xFFF4F6F9,
-      ),
+      backgroundColor: const Color(0xFFF4F6F9),
 
       appBar: AppHeader(
         onMenuPressed: () {
@@ -143,8 +127,7 @@ class _AppShellState extends State<AppShell>
           Navigator.push(
             context,
             MaterialPageRoute(
-              builder: (context) =>
-                  const NotificationListScreen(),
+              builder: (context) => const NotificationListScreen(),
             ),
           );
         },
@@ -153,9 +136,33 @@ class _AppShellState extends State<AppShell>
       body: Stack(
         children: [
           Positioned.fill(
-            child: IndexedStack(
-              index: _selectedIndex,
-              children: screens,
+            child: FutureBuilder<PatientProfile>(
+              future: _profileFuture,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState != ConnectionState.done) {
+                  return const Center(
+                    child: CircularProgressIndicator(color: Color(0xFF6D4FB3)),
+                  );
+                }
+
+                final isLinked = snapshot.data?.appLinkStatus == 'LINKED';
+
+                final screens = <Widget>[
+                  const HomeScreen(),
+                  isLinked
+                      ? const AppointmentScreen()
+                      : const PatientLinkRequiredScreen(featureName: '예약'),
+                  isLinked
+                      ? const ExamResultScreen()
+                      : const PatientLinkRequiredScreen(featureName: '검사결과'),
+                  isLinked
+                      ? const MedicationScreen()
+                      : const PatientLinkRequiredScreen(featureName: '복약관리'),
+                  const MyPageScreen(),
+                ];
+
+                return IndexedStack(index: _selectedIndex, children: screens);
+              },
             ),
           ),
 
@@ -168,16 +175,11 @@ class _AppShellState extends State<AppShell>
             Positioned.fill(
               child: AnimatedBuilder(
                 animation: _chatbotController,
-                builder: (
-                  context,
-                  child,
-                ) {
-                  final value =
-                      _chatbotController.value;
+                builder: (context, child) {
+                  final value = _chatbotController.value;
 
                   return GestureDetector(
-                    behavior:
-                        HitTestBehavior.opaque,
+                    behavior: HitTestBehavior.opaque,
                     onTap: _closeChatbot,
                     child: BackdropFilter(
                       filter: ImageFilter.blur(
@@ -185,10 +187,7 @@ class _AppShellState extends State<AppShell>
                         sigmaY: 5 * value,
                       ),
                       child: Container(
-                        color: Colors.black.withValues(
-                          alpha:
-                              0.10 * value,
-                        ),
+                        color: Colors.black.withValues(alpha: 0.10 * value),
                       ),
                     ),
                   );
@@ -217,31 +216,18 @@ class _AppShellState extends State<AppShell>
                   scale: _chatbotScale,
 
                   // 오른쪽 아래에서 시작
-                  alignment:
-                      Alignment.bottomRight,
+                  alignment: Alignment.bottomRight,
 
                   child: Material(
                     elevation: 20,
-                    borderRadius:
-                        BorderRadius.circular(
-                      26,
-                    ),
-                    clipBehavior:
-                        Clip.antiAlias,
+                    borderRadius: BorderRadius.circular(26),
+                    clipBehavior: Clip.antiAlias,
                     child: DecoratedBox(
-                      decoration:
-                          BoxDecoration(
-                        color:
-                            Theme.of(context)
-                                .colorScheme
-                                .surface,
-                        borderRadius:
-                            BorderRadius.circular(
-                          26,
-                        ),
+                      decoration: BoxDecoration(
+                        color: Theme.of(context).colorScheme.surface,
+                        borderRadius: BorderRadius.circular(26),
                       ),
-                      child:
-                          const ChatbotScreen(),
+                      child: const ChatbotScreen(),
                     ),
                   ),
                 ),
@@ -257,56 +243,31 @@ class _AppShellState extends State<AppShell>
        * 챗봇 아이콘 → X
        * 아이콘 자체도 살짝 회전하며 전환
        */
-      floatingActionButton:
-          FloatingActionButton(
+      floatingActionButton: FloatingActionButton(
         onPressed: _toggleChatbot,
         child: AnimatedSwitcher(
-          duration: const Duration(
-            milliseconds: 220,
-          ),
-          transitionBuilder: (
-            child,
-            animation,
-          ) {
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, animation) {
             return RotationTransition(
-              turns: Tween<double>(
-                begin: 0.75,
-                end: 1,
-              ).animate(
-                animation,
-              ),
-              child: ScaleTransition(
-                scale: animation,
-                child: child,
-              ),
+              turns: Tween<double>(begin: 0.75, end: 1).animate(animation),
+              child: ScaleTransition(scale: animation, child: child),
             );
           },
           child: Icon(
-            _isChatbotOpen
-                ? Icons.close_rounded
-                : Icons.smart_toy_outlined,
-            key: ValueKey(
-              _isChatbotOpen,
-            ),
+            _isChatbotOpen ? Icons.close_rounded : Icons.smart_toy_outlined,
+            key: ValueKey(_isChatbotOpen),
           ),
         ),
       ),
 
-      floatingActionButtonLocation:
-          FloatingActionButtonLocation.endFloat,
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
       /*
        * 챗봇 열리면 하단 탭 숨김
        */
-      bottomNavigationBar:
-          _isChatbotOpen
-              ? null
-              : BottomNav(
-                  currentIndex:
-                      _selectedIndex,
-                  onTap:
-                      _onTabChanged,
-                ),
+      bottomNavigationBar: _isChatbotOpen
+          ? null
+          : BottomNav(currentIndex: _selectedIndex, onTap: _onTabChanged),
     );
   }
 }

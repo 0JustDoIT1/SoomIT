@@ -435,6 +435,7 @@ class Prescription(TimestampedUUIDModel):
 class PrescriptionItem(TimestampedUUIDModel):
     prescription = models.ForeignKey(Prescription, on_delete=models.PROTECT, related_name="items")
     drug = models.ForeignKey(Drug, on_delete=models.PROTECT, related_name="prescription_items")
+    mfds_item_seq = models.CharField(max_length=50, null=True, blank=True)
     standard_dose = models.DecimalField(max_digits=12, decimal_places=3)
     dose_basis = models.CharField(max_length=10, choices=DoseBasis.choices)
     patient_bsa = models.DecimalField(max_digits=8, decimal_places=3, null=True, blank=True)

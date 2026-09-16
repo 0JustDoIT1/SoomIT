@@ -6,7 +6,7 @@ from rest_framework.test import APITestCase
 
 from apps.accounts.models import Hospital, User
 from apps.patients.models import Appointment, AppointmentRequest, Patient, PatientAccount
-
+from apps.patients.patient_tokens import issue_patient_tokens
 
 class AppointmentRequestAPITests(APITestCase):
     def setUp(self):
@@ -26,6 +26,14 @@ class AppointmentRequestAPITests(APITestCase):
             phone_number_hash="appointment-request-account-phone",
             phone_verified_at=timezone.now(),
             link_status=PatientAccount.LinkStatus.LINKED,
+        )
+        
+        self.access_token = issue_patient_tokens(
+            self.patient_account
+        )["access"]
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {self.access_token}",
         )
         self.coordinator = User.objects.create_user(
             login_id="appointment-request-coordinator",
@@ -162,4 +170,12 @@ class AppointmentRequestAPITests(APITestCase):
         self.assertEqual(appointment_request.rejection_reason, "원무과 확인 필요")
 
         self.client.force_authenticate(user=None)
-        self.assertEqual(self._change_request().status_code, status.HTTP_201_CREATED)
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {self.access_token}",
+        )
+        
+        self.assertEqual(
+            self._change_request().status_code,
+            status.HTTP_201_CREATED,
+        )

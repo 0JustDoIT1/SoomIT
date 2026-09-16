@@ -25,6 +25,17 @@ type Patient = {
     appointment_status: string;
     created_by_type: string;
   } | null;
+  questionnaire_status?: "SUBMITTED" | "NOT_SUBMITTED";
+  latest_questionnaire_id?: string | null;
+  latest_questionnaire_completed_at?: string | null;
+};
+
+type PatientQuestionnaire = {
+  id: string;
+  questionnaire_type: string;
+  questionnaire_version: string;
+  completed_at: string;
+  responses: Record<string, string | null>;
 };
 
 type PatientCreateForm = {
@@ -86,6 +97,9 @@ export default function PatientsPage() {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [sexFilter, setSexFilter] = useState("ALL");
+  const [questionnaire, setQuestionnaire] = useState<PatientQuestionnaire | null>(null);
+  const [questionnairePatientName, setQuestionnairePatientName] = useState("");
+  const [questionnaireLoading, setQuestionnaireLoading] = useState(false);
 
   // 신규 등록
   const [isCreateOpen, setIsCreateOpen] = useState(false);
@@ -197,6 +211,18 @@ export default function PatientsPage() {
     setAppLookupStatus("IDLE");
     setAppLookupMessage("");
     setIsCreateOpen(true);
+  };
+
+  const openQuestionnaire = async (patient: Patient) => {
+    if (!patient.latest_questionnaire_id) return;
+    setQuestionnaireLoading(true);
+    try {
+      const response = await fetch(`http://127.0.0.1:8000/api/patients/${patient.id}/questionnaire/`);
+      if (!response.ok) throw new Error("문진 내용을 불러오지 못했습니다.");
+      setQuestionnaire(await response.json());
+      setQuestionnairePatientName(patient.name);
+    } catch (err) { alert(err instanceof Error ? err.message : "문진 내용을 불러오지 못했습니다."); }
+    finally { setQuestionnaireLoading(false); }
   };
 
   const lookupAppMember = async () => {
@@ -545,6 +571,7 @@ export default function PatientsPage() {
                   <th className="px-5 py-4 font-semibold">성별</th>
                   <th className="px-5 py-4 font-semibold">연락처</th>
                   <th className="px-5 py-4 font-semibold">주소</th>
+                  <th className="px-5 py-4 font-semibold">문진</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -574,12 +601,17 @@ export default function PatientsPage() {
                     <td className="max-w-[260px] truncate px-5 py-4">
                       {patient.address ?? "-"}
                     </td>
+                    <td className="px-5 py-4" onClick={(event) => event.stopPropagation()}>
+                      {patient.questionnaire_status === "SUBMITTED" ? (
+                        <button type="button" onClick={() => openQuestionnaire(patient)} className="text-sm font-semibold text-pink-600 hover:underline">제출완료 · 보기</button>
+                      ) : <span className="text-sm text-slate-400">미제출</span>}
+                    </td>
                   </tr>
                 ))}
                 {filteredPatients.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={7}
                       className="px-5 py-12 text-center text-sm text-slate-400"
                     >
                       검색 조건에 해당하는 환자가 없습니다.
@@ -600,6 +632,17 @@ export default function PatientsPage() {
           </div>
         </div>
       )}
+
+      {questionnaire && (
+        <div className="fixed inset-0 z-[80] flex justify-end bg-black/20">
+          <div className="h-full w-[440px] overflow-y-auto bg-white p-6 shadow-2xl">
+            <div className="mb-6 flex items-start justify-between"><div><p className="text-xs font-semibold text-pink-500">QUESTIONNAIRE</p><h2 className="mt-1 text-xl font-bold text-slate-800">{questionnairePatientName} 문진표</h2></div><button type="button" onClick={() => setQuestionnaire(null)} className="text-2xl text-slate-400">×</button></div>
+            <p className="mb-5 text-xs text-slate-500">제출일시: {formatDateTime(questionnaire.completed_at)}</p>
+            <div className="space-y-4">{[["현재 불편한 증상은 무엇인가요?", "current_symptoms"], ["증상은 언제부터 발생했나요?", "symptom_onset"], ["흡연 경험이 있나요?", "smoking_history"], ["호흡곤란이 있나요?", "dyspnea"], ["기침이 있나요?", "cough"], ["객혈(피가 섞인 가래)이 있나요?", "hemoptysis"], ["기존 질환이나 수술 이력이 있나요?", "past_history"], ["현재 복용 중인 약이 있나요?", "current_medications"], ["약물 또는 음식 알레르기가 있나요?", "allergies"]].map(([label, key], index) => <div key={key}><p className="text-sm font-semibold text-slate-700">{index + 1}. {label}</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{questionnaire.responses[key] || "-"}</p></div>)}</div>
+          </div>
+        </div>
+      )}
+      {questionnaireLoading && <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/10"><div className="rounded-xl bg-white px-5 py-3 text-sm shadow">문진 내용을 불러오는 중입니다.</div></div>}
 
       {/* 공통 배경 */}
       {(selectedPatient || isCreateOpen || isUpdateOpen) && (

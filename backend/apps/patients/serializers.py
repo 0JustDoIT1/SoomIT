@@ -326,7 +326,41 @@ class PatientProfileSerializer(serializers.ModelSerializer):
 
         return patient_account.link_status
 
+class UnlinkedPatientAccountProfileSerializer(
+    serializers.ModelSerializer
+):
+    patient_code = serializers.SerializerMethodField()
+    hospital_name = serializers.SerializerMethodField()
+    sex_label = serializers.CharField(
+        source="get_sex_display",
+        read_only=True,
+    )
+    app_link_status = serializers.CharField(
+        source="link_status",
+        read_only=True,
+    )
 
+    class Meta:
+        model = PatientAccount
+        fields = [
+            "id",
+            "patient_code",
+            "name",
+            "birth_date",
+            "sex",
+            "sex_label",
+            "phone_number",
+            "address",
+            "hospital_name",
+            "app_link_status",
+        ]
+        read_only_fields = fields
+
+    def get_patient_code(self, obj):
+        return None
+
+    def get_hospital_name(self, obj):
+        return None
 # ─────────────────────────────────────────────
 # 환자 앱 알림 조회
 # ─────────────────────────────────────────────
@@ -434,6 +468,9 @@ class SymptomLogSerializer(serializers.ModelSerializer):
 # 원무과(coordinator) - 환자 목록 조회용
 # ─────────────────────────────────────────────
 class PatientSerializer(serializers.ModelSerializer):
+    questionnaire_status = serializers.SerializerMethodField()
+    latest_questionnaire_id = serializers.SerializerMethodField()
+    latest_questionnaire_completed_at = serializers.SerializerMethodField()
     class Meta:
         model = Patient
         fields = [
@@ -448,7 +485,24 @@ class PatientSerializer(serializers.ModelSerializer):
             "postal_code",
             "created_at",
             "updated_at",
+            "questionnaire_status",
+            "latest_questionnaire_id",
+            "latest_questionnaire_completed_at",
         ]
+
+    def _latest_completed(self, obj):
+        return obj.questionnaires.filter(is_completed=True).order_by("-completed_at", "-created_at").first()
+
+    def get_questionnaire_status(self, obj):
+        return "SUBMITTED" if self._latest_completed(obj) else "NOT_SUBMITTED"
+
+    def get_latest_questionnaire_id(self, obj):
+        questionnaire = self._latest_completed(obj)
+        return str(questionnaire.id) if questionnaire else None
+
+    def get_latest_questionnaire_completed_at(self, obj):
+        questionnaire = self._latest_completed(obj)
+        return questionnaire.completed_at if questionnaire else None
 
 
 # ─────────────────────────────────────────────

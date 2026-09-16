@@ -1,11 +1,17 @@
 from datetime import datetime, timezone as datetime_timezone
 from unittest.mock import patch
 
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Hospital
-from apps.patients.models import Patient, SymptomLog
+from apps.patients.models import (
+    Patient,
+    PatientAccount,
+    SymptomLog,
+)
+from apps.patients.patient_tokens import issue_patient_tokens
 
 
 class PatientSymptomLogAPITests(APITestCase):
@@ -24,6 +30,22 @@ class PatientSymptomLogAPITests(APITestCase):
             sex=Patient.Sex.UNKNOWN,
             phone_number="010-0000-0000",
             phone_number_hash="test-phone-hash",
+        )
+        
+        self.patient_account = PatientAccount.objects.create(
+            patient=self.patient,
+            phone_number="01000000000",
+            phone_number_hash="symptom-test-account-phone",
+            phone_verified_at=timezone.now(),
+            link_status=PatientAccount.LinkStatus.LINKED,
+        )
+
+        access_token = issue_patient_tokens(
+            self.patient_account
+        )["access"]
+
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {access_token}",
         )
 
     def _post(self, symptom_type, severity, server_now, **extra):

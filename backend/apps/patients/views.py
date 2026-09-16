@@ -9,7 +9,11 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.exceptions import APIException, ValidationError
+from rest_framework.exceptions import (
+    APIException,
+    PermissionDenied,
+    ValidationError,
+)
 
 from apps.notifications.models import NotificationLog
 
@@ -62,8 +66,33 @@ from .serializers import (
     PatientAppointmentCancelRequestSerializer,
     PatientAppointmentChangeRequestSerializer,
     PatientQuestionnaireUpdateSerializer,
-    
+    UnlinkedPatientAccountProfileSerializer,
 )
+
+from .patient_authentication import (
+    PatientJWTAuthentication,
+)
+
+def get_linked_patient_account(request):
+    patient_account = (
+        request.user.patient_account
+    )
+
+    if (
+        patient_account.link_status
+        != PatientAccount.LinkStatus.LINKED
+        or patient_account.patient_id is None
+    ):
+        raise PermissionDenied(
+            {
+                "code": "patient_link_required",
+                "detail": (
+                    "환자코드 연결이 필요한 기능입니다."
+                ),
+            }
+        )
+
+    return patient_account
 
 # 원무과 - 환자 목록 조회 / 신규 환자 등록
 class PatientListAPIView(ListCreateAPIView):
@@ -341,13 +370,20 @@ class DoctorLabResultListCreateAPIView(ListCreateAPIView):
 @extend_schema(tags=["환자앱-예약"])
 class AppointmentListAPIView(ListAPIView):
     serializer_class = AppointmentSerializer
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_queryset(self):
-        # 로그인 연동 전 개발용 테스트 환자
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return Appointment.objects.none()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
+        patient = patient_account.patient
 
         return (
             Appointment.objects
@@ -361,10 +397,20 @@ class AppointmentListAPIView(ListAPIView):
             .prefetch_related(
                 Prefetch(
                     "appointment_requests",
-                    queryset=AppointmentRequest.objects.filter(
-                        status=AppointmentRequest.Status.PENDING,
-                    ).order_by("-requested_at"),
-                    to_attr="pending_appointment_requests",
+                    queryset=(
+                        AppointmentRequest.objects
+                        .filter(
+                            status=(
+                                AppointmentRequest
+                                .Status
+                                .PENDING
+                            ),
+                        )
+                        .order_by("-requested_at")
+                    ),
+                    to_attr=(
+                        "pending_appointment_requests"
+                    ),
                 )
             )
             .order_by("-scheduled_at")
@@ -379,65 +425,87 @@ class AppointmentListAPIView(ListAPIView):
     responses=AppointmentSerializer,
 )
 class PatientAppointmentRequestAPIView(APIView):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     @transaction.atomic
     def post(self, request):
-        serializer = PatientAppointmentRequestSerializer(
-            data=request.data
-        )
-        serializer.is_valid(raise_exception=True)
-
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return Response(
-                {"detail": "환자 정보를 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
+        serializer = (
+            PatientAppointmentRequestSerializer(
+                data=request.data
             )
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
 
         patient_account = (
-            PatientAccount.objects
-            .filter(
-                patient=patient,
-                link_status="LINKED",
-            )
-            .first()
+            get_linked_patient_account(request)
         )
-
-        if patient_account is None:
-            return Response(
-                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        patient = patient_account.patient
 
         doctor = None
-        doctor_id = serializer.validated_data.get("doctor_id")
+        doctor_id = (
+            serializer.validated_data.get(
+                "doctor_id"
+            )
+        )
 
         if doctor_id is not None:
             try:
-                doctor = User.objects.get(id=doctor_id)
+                doctor = User.objects.get(
+                    id=doctor_id
+                )
             except User.DoesNotExist:
                 return Response(
-                    {"doctor_id": "해당 의료진을 찾을 수 없습니다."},
-                    status=status.HTTP_400_BAD_REQUEST,
+                    {
+                        "doctor_id": (
+                            "해당 의료진을 찾을 수 없습니다."
+                        ),
+                    },
+                    status=(
+                        status.HTTP_400_BAD_REQUEST
+                    ),
                 )
 
-        scheduled_at = serializer.validated_data["scheduled_at"]
+        scheduled_at = (
+            serializer.validated_data[
+                "scheduled_at"
+            ]
+        )
 
-        # 동일 환자의 동일 시간 중복 예약 방지
-        duplicate_exists = Appointment.objects.filter(
-            patient=patient,
-            scheduled_at=scheduled_at,
-            appointment_status__in=[
-                Appointment.AppointmentStatus.REQUESTED,
-                Appointment.AppointmentStatus.CONFIRMED,
-            ],
-        ).exists()
+        duplicate_exists = (
+            Appointment.objects
+            .filter(
+                patient=patient,
+                scheduled_at=scheduled_at,
+                appointment_status__in=[
+                    (
+                        Appointment
+                        .AppointmentStatus
+                        .REQUESTED
+                    ),
+                    (
+                        Appointment
+                        .AppointmentStatus
+                        .CONFIRMED
+                    ),
+                ],
+            )
+            .exists()
+        )
 
         if duplicate_exists:
             return Response(
-                {"detail": "같은 시간에 이미 예약이 존재합니다."},
+                {
+                    "detail": (
+                        "같은 시간에 이미 예약이 존재합니다."
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -445,14 +513,26 @@ class PatientAppointmentRequestAPIView(APIView):
             patient=patient,
             doctor=doctor,
             scheduled_at=scheduled_at,
-            appointment_status=Appointment.AppointmentStatus.REQUESTED,
-            visit_status=Appointment.VisitStatus.SCHEDULED,
-            created_by_type=Appointment.CreatedByType.PATIENT,
-            created_by_patient_account=patient_account,
+            appointment_status=(
+                Appointment
+                .AppointmentStatus
+                .REQUESTED
+            ),
+            visit_status=(
+                Appointment.VisitStatus.SCHEDULED
+            ),
+            created_by_type=(
+                Appointment.CreatedByType.PATIENT
+            ),
+            created_by_patient_account=(
+                patient_account
+            ),
         )
 
         return Response(
-            AppointmentSerializer(appointment).data,
+            AppointmentSerializer(
+                appointment
+            ).data,
             status=status.HTTP_201_CREATED,
         )
         
@@ -461,15 +541,26 @@ class PatientAppointmentRequestAPIView(APIView):
 # - 로그인 구현 전 개발용
 # ─────────────────────────────────────────────
 @extend_schema(tags=["환자앱-검사일정"])
-class ExaminationScheduleListAPIView(ListAPIView):
-    serializer_class = ExaminationScheduleSerializer
+class ExaminationScheduleListAPIView(
+    ListAPIView
+):
+    serializer_class = (
+        ExaminationScheduleSerializer
+    )
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_queryset(self):
-        # 로그인 연동 전 개발용 테스트 환자
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return Appointment.objects.none()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
+        patient = patient_account.patient
 
         return (
             Appointment.objects
@@ -487,7 +578,6 @@ class ExaminationScheduleListAPIView(ListAPIView):
             )
             .order_by("scheduled_at")
         )
-        
 
 # ─────────────────────────────────────────────
 # - 환자 프로필 조회
@@ -495,45 +585,61 @@ class ExaminationScheduleListAPIView(ListAPIView):
 # 로그인 구현 전 개발용
 # ─────────────────────────────────────────────
 @extend_schema(tags=["환자앱-마이페이지"])
-class PatientProfileAPIView(RetrieveUpdateAPIView):
-    serializer_class = PatientProfileSerializer
+class PatientProfileAPIView(
+    RetrieveUpdateAPIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
-    def get_object(self):
-        # 로그인 연동 전 개발용 테스트 환자
-        patient = Patient.objects.first()
+    def get_serializer_class(self):
+        patient_account = (
+            self.request.user.patient_account
+        )
 
-        if patient is None:
-            raise ValidationError(
-                {"patient": "등록된 환자 정보가 없습니다."}
+        if patient_account.patient_id is None:
+            return (
+                UnlinkedPatientAccountProfileSerializer
             )
 
-        return patient
+        return PatientProfileSerializer
+
+    def get_object(self):
+        patient_account = (
+            self.request.user.patient_account
+        )
+
+        if patient_account.patient_id is None:
+            return patient_account
+
+        return patient_account.patient
     
 # ─────────────────────────────────────────────
-# - 환자 앱 알림 목록 조회
+# 환자 앱 알림 목록 조회
 # ─────────────────────────────────────────────
 @extend_schema(tags=["환자앱-알림"])
 class PatientNotificationListAPIView(APIView):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get(self, request):
-        # TODO: 로그인 구현 후 request.user 기반으로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            raise ValidationError({
-                "patient": "등록된 환자 정보가 없습니다."
-            })
-
-        patient_account = patient.accounts.first()
-
-        # 아직 앱 계정이 연결되지 않은 환자
-        if patient_account is None:
-            return Response([], status=status.HTTP_200_OK)
+        patient_account = (
+            request.user.patient_account
+        )
 
         notifications = (
             NotificationLog.objects
             .filter(
-                recipient_patient_account=patient_account,
+                recipient_patient_account=(
+                    patient_account
+                ),
                 channel="IN_APP",
             )
             .order_by("-created_at")
@@ -544,52 +650,61 @@ class PatientNotificationListAPIView(APIView):
             many=True,
         )
 
-        return Response(serializer.data)
-    
-    
+        return Response(
+            serializer.data,
+            status=status.HTTP_200_OK,
+        )
+
+
 # ─────────────────────────────────────────────
 # 환자 앱 알림 읽음 처리
 # ─────────────────────────────────────────────
 @extend_schema(
     tags=["환자앱-알림"],
     request=None,
-    responses={200: PatientNotificationSerializer},
+    responses={
+        200: PatientNotificationSerializer,
+    },
 )
 class PatientNotificationReadAPIView(APIView):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def patch(self, request, id):
-        # TODO: 로그인 구현 후 request.user 기반으로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            raise ValidationError({
-                "patient": "등록된 환자 정보가 없습니다."
-            })
-
-        patient_account = patient.accounts.first()
-
-        if patient_account is None:
-            raise ValidationError({
-                "patient_account": "연결된 환자 앱 계정이 없습니다."
-            })
+        patient_account = (
+            request.user.patient_account
+        )
 
         try:
             notification = NotificationLog.objects.get(
                 id=id,
-                recipient_patient_account=patient_account,
+                recipient_patient_account=(
+                    patient_account
+                ),
             )
         except NotificationLog.DoesNotExist:
             return Response(
-                {"detail": "알림을 찾을 수 없습니다."},
+                {
+                    "detail": (
+                        "알림을 찾을 수 없습니다."
+                    ),
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        # 이미 읽은 알림이면 기존 read_at 유지
         if notification.read_at is None:
             notification.read_at = timezone.now()
-            notification.save(update_fields=["read_at"])
+            notification.save(
+                update_fields=["read_at"]
+            )
 
-        serializer = PatientNotificationSerializer(notification)
+        serializer = PatientNotificationSerializer(
+            notification
+        )
 
         return Response(
             serializer.data,
@@ -598,41 +713,60 @@ class PatientNotificationReadAPIView(APIView):
 
 @extend_schema(
     tags=["환자앱-알림설정"],
-    responses={200: PatientNotificationSettingSerializer(many=True)},
+    responses={
+        200: PatientNotificationSettingSerializer(
+            many=True
+        ),
+    },
 )
-class PatientNotificationSettingListAPIView(APIView):
+class PatientNotificationSettingListAPIView(
+    APIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
     def get(self, request):
-        patient = Patient.objects.first()
+        patient_account = (
+            request.user.patient_account
+        )
 
-        if patient is None:
-            raise ValidationError({
-                "patient": "등록된 환자 정보가 없습니다."
-            })
-
-        patient_account = patient.accounts.first()
-
-        if patient_account is None:
-            raise ValidationError({
-                "patient_account": "연결된 환자 계정이 없습니다."
-            })
-
-        # 알림 종류가 아직 DB에 없으면 기본 ON 상태로 생성
-        for notification_type, _ in PatientNotificationSetting.NotificationType.choices:
-            PatientNotificationSetting.objects.get_or_create(
-                patient_account=patient_account,
-                notification_type=notification_type,
-                defaults={
-                    "enabled": True,
-                },
+        # 해당 계정에 설정이 없으면 기본 ON으로 생성
+        for (
+            notification_type,
+            _,
+        ) in (
+            PatientNotificationSetting
+            .NotificationType
+            .choices
+        ):
+            (
+                PatientNotificationSetting.objects
+                .get_or_create(
+                    patient_account=patient_account,
+                    notification_type=notification_type,
+                    defaults={
+                        "enabled": True,
+                    },
+                )
             )
 
-        settings = PatientNotificationSetting.objects.filter(
-            patient_account=patient_account,
-        ).order_by("notification_type")
+        notification_settings = (
+            PatientNotificationSetting.objects
+            .filter(
+                patient_account=patient_account,
+            )
+            .order_by("notification_type")
+        )
 
-        serializer = PatientNotificationSettingSerializer(
-            settings,
-            many=True,
+        serializer = (
+            PatientNotificationSettingSerializer(
+                notification_settings,
+                many=True,
+            )
         )
 
         return Response(
@@ -644,68 +778,84 @@ class PatientNotificationSettingListAPIView(APIView):
 @extend_schema(
     tags=["환자앱-알림설정"],
     request=PatientNotificationSettingSerializer,
-    responses={200: PatientNotificationSettingSerializer},
+    responses={
+        200: PatientNotificationSettingSerializer,
+    },
 )
-class PatientNotificationSettingUpdateAPIView(APIView):
-    def patch(self, request, notification_type):
-        patient = Patient.objects.first()
+class PatientNotificationSettingUpdateAPIView(
+    APIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
-        if patient is None:
-            raise ValidationError({
-                "patient": "등록된 환자 정보가 없습니다."
-            })
-
-        patient_account = patient.accounts.first()
-
-        if patient_account is None:
-            raise ValidationError({
-                "patient_account": "연결된 환자 계정이 없습니다."
-            })
+    def patch(
+        self,
+        request,
+        notification_type,
+    ):
+        patient_account = (
+            request.user.patient_account
+        )
 
         valid_types = [
             value
-            for value, _ in
-            PatientNotificationSetting.NotificationType.choices
+            for value, _ in (
+                PatientNotificationSetting
+                .NotificationType
+                .choices
+            )
         ]
 
         if notification_type not in valid_types:
             return Response(
                 {
-                    "notification_type":
+                    "notification_type": (
                         "올바르지 않은 알림 종류입니다."
+                    ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        setting, _ = PatientNotificationSetting.objects.get_or_create(
-            patient_account=patient_account,
-            notification_type=notification_type,
-            defaults={
-                "enabled": True,
-            },
-        )
 
         if "enabled" not in request.data:
             return Response(
                 {
-                    "enabled":
+                    "enabled": (
                         "enabled 값이 필요합니다."
+                    ),
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        serializer = PatientNotificationSettingSerializer(
-            setting,
-            data={
-                "enabled": request.data.get("enabled"),
-            },
-            partial=True,
+        setting, _ = (
+            PatientNotificationSetting.objects
+            .get_or_create(
+                patient_account=patient_account,
+                notification_type=notification_type,
+                defaults={
+                    "enabled": True,
+                },
+            )
+        )
+
+        serializer = (
+            PatientNotificationSettingSerializer(
+                setting,
+                data={
+                    "enabled": request.data.get(
+                        "enabled"
+                    ),
+                },
+                partial=True,
+            )
         )
 
         serializer.is_valid(
-            raise_exception=True,
+            raise_exception=True
         )
-
         serializer.save()
 
         return Response(
@@ -715,16 +865,25 @@ class PatientNotificationSettingUpdateAPIView(APIView):
         
 # ─────────────────────────────────────────────
 # 문진표 목록 조회 / 작성 제출
-# 로그인 구현 전 개발용
 # ─────────────────────────────────────────────
 @extend_schema(tags=["환자앱-문진표"])
-class PatientQuestionnaireListAPIView(ListCreateAPIView):
+class PatientQuestionnaireListAPIView(
+    ListCreateAPIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_queryset(self):
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return PatientQuestionnaire.objects.none()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
+        patient = patient_account.patient
 
         return (
             PatientQuestionnaire.objects
@@ -734,21 +893,26 @@ class PatientQuestionnaireListAPIView(ListCreateAPIView):
 
     def get_serializer_class(self):
         if self.request.method == "POST":
-            return PatientQuestionnaireCreateSerializer
+            return (
+                PatientQuestionnaireCreateSerializer
+            )
 
         return PatientQuestionnaireSerializer
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
+        context = (
+            super().get_serializer_context()
+        )
 
-        patient = Patient.objects.first()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
 
-        if patient is None:
-            raise ValidationError({
-                "patient": "등록된 환자 정보가 없습니다."
-            })
-
-        context["patient"] = patient
+        context["patient"] = (
+            patient_account.patient
+        )
 
         return context
 
@@ -756,96 +920,141 @@ class PatientQuestionnaireListAPIView(ListCreateAPIView):
         serializer = self.get_serializer(
             data=request.data
         )
-    
         serializer.is_valid(
             raise_exception=True
         )
-    
+
         questionnaire = serializer.save()
-    
+
         response_serializer = (
             PatientQuestionnaireSerializer(
                 questionnaire
             )
         )
-    
+
         return Response(
             response_serializer.data,
             status=status.HTTP_201_CREATED,
         )
 
+
 @extend_schema(tags=["환자앱-문진표"])
 class PatientQuestionnaireDetailAPIView(
     RetrieveUpdateAPIView
 ):
-    queryset = PatientQuestionnaire.objects.all()
     lookup_field = "id"
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_serializer_class(self):
-        if self.request.method in ["PATCH", "PUT"]:
-            return PatientQuestionnaireUpdateSerializer
+        if self.request.method in [
+            "PATCH",
+            "PUT",
+        ]:
+            return (
+                PatientQuestionnaireUpdateSerializer
+            )
 
         return PatientQuestionnaireSerializer
 
     def get_queryset(self):
-        patient = Patient.objects.first()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
+        patient = patient_account.patient
 
-        if patient is None:
-            return PatientQuestionnaire.objects.none()
-
-        return PatientQuestionnaire.objects.filter(
-            patient=patient,
+        return (
+            PatientQuestionnaire.objects
+            .filter(patient=patient)
         )
 
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
+    def update(
+        self,
+        request,
+        *args,
+        **kwargs,
+    ):
+        partial = kwargs.pop(
+            "partial",
+            False,
+        )
 
         instance = self.get_object()
 
-        serializer = PatientQuestionnaireUpdateSerializer(
-            instance,
-            data=request.data,
-            partial=partial,
+        serializer = (
+            PatientQuestionnaireUpdateSerializer(
+                instance,
+                data=request.data,
+                partial=partial,
+            )
+        )
+        serializer.is_valid(
+            raise_exception=True
         )
 
-        serializer.is_valid(raise_exception=True)
         questionnaire = serializer.save()
 
-        response_serializer = PatientQuestionnaireSerializer(
-            questionnaire
+        response_serializer = (
+            PatientQuestionnaireSerializer(
+                questionnaire
+            )
         )
 
         return Response(
             response_serializer.data,
             status=status.HTTP_200_OK,
         )
+
+
+class CoordinatorPatientQuestionnaireAPIView(APIView):
+    """원무과용 최신 제출 문진 조회 (읽기 전용)."""
+
+    def get(self, request, patient_id):
+        questionnaire = (
+            PatientQuestionnaire.objects.filter(patient_id=patient_id, is_completed=True)
+            .order_by("-completed_at", "-created_at")
+            .first()
+        )
+        if questionnaire is None:
+            return Response({"detail": "제출된 문진표가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(PatientQuestionnaireSerializer(questionnaire).data)
+        
+# ─────────────────────────────────────────────
+# 복약 
+# ─────────────────────────────────────────────        
+
     
 @extend_schema(
     tags=["환자앱-복약"],
     summary="환자 복약 일정 조회",
-    description="현재 환자의 복약 일정과 처방 약물 정보를 조회합니다.",
+    description=(
+        "현재 환자의 복약 일정과 "
+        "처방 약물 정보를 조회합니다."
+    ),
 )
-class PatientMedicationScheduleListAPIView(ListAPIView):
+class PatientMedicationScheduleListAPIView(
+    ListAPIView
+):
     serializer_class = MedicationScheduleSerializer
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_queryset(self):
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return MedicationSchedule.objects.none()
-
         patient_account = (
-            PatientAccount.objects
-            .filter(
-                patient=patient,
-                link_status="LINKED",
+            get_linked_patient_account(
+                self.request
             )
-            .first()
         )
-
-        if patient_account is None:
-            return MedicationSchedule.objects.none()
 
         return (
             MedicationSchedule.objects
@@ -859,59 +1068,57 @@ class PatientMedicationScheduleListAPIView(ListAPIView):
             )
             .order_by("reminder_time")
         )
-        
-@extend_schema(
-    tags=["환자앱-복약"],
-    summary="복약 완료 처리",
-    description="환자가 복용 완료 버튼을 누르면 해당 복약 일정을 TAKEN 상태로 기록합니다.",
-    request=MedicationIntakeTakenSerializer,
-)
+
 
 @extend_schema(
     tags=["환자앱-복약"],
     summary="환자 복약 기록 조회",
     description=(
         "현재 환자의 복약 기록을 최신순으로 조회합니다. "
-        "date=YYYY-MM-DD를 전달하면 한국 날짜 기준으로 필터링합니다."
+        "date=YYYY-MM-DD를 전달하면 "
+        "한국 날짜 기준으로 필터링합니다."
     ),
 )
-class PatientMedicationIntakeLogListAPIView(ListAPIView):
+class PatientMedicationIntakeLogListAPIView(
+    ListAPIView
+):
     serializer_class = MedicationIntakeLogSerializer
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_queryset(self):
-        # TODO: 환자 로그인 구현 후 request.user 기반 환자로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return MedicationIntakeLog.objects.none()
-
         patient_account = (
-            PatientAccount.objects
-            .filter(
-                patient=patient,
-                link_status="LINKED",
+            get_linked_patient_account(
+                self.request
             )
-            .first()
         )
-
-        if patient_account is None:
-            return MedicationIntakeLog.objects.none()
 
         queryset = (
             MedicationIntakeLog.objects
             .filter(
-                medication_schedule__patient_account=patient_account,
+                medication_schedule__patient_account=(
+                    patient_account
+                ),
             )
             .select_related(
                 "medication_schedule",
             )
             .prefetch_related(
-                "medication_schedule__items__prescription_item__drug",
+                "medication_schedule"
+                "__items"
+                "__prescription_item"
+                "__drug",
             )
             .order_by("-scheduled_at")
         )
 
-        date_value = self.request.query_params.get("date")
+        date_value = (
+            self.request.query_params.get("date")
+        )
 
         if date_value:
             try:
@@ -923,19 +1130,21 @@ class PatientMedicationIntakeLogListAPIView(ListAPIView):
                 raise ValidationError(
                     {
                         "date": (
-                            "날짜 형식은 YYYY-MM-DD여야 합니다."
+                            "날짜 형식은 "
+                            "YYYY-MM-DD여야 합니다."
                         ),
                     }
                 ) from error
 
-            korea_timezone = ZoneInfo("Asia/Seoul")
+            korea_timezone = ZoneInfo(
+                "Asia/Seoul"
+            )
 
             start_at = datetime.combine(
                 selected_date,
                 time.min,
                 tzinfo=korea_timezone,
             )
-
             end_at = start_at + timedelta(days=1)
 
             queryset = queryset.filter(
@@ -944,68 +1153,92 @@ class PatientMedicationIntakeLogListAPIView(ListAPIView):
             )
 
         return queryset
-    
-class PatientMedicationIntakeTakenAPIView(APIView):
+
+
+@extend_schema(
+    tags=["환자앱-복약"],
+    summary="복약 완료 처리",
+    description=(
+        "환자가 복용 완료 버튼을 누르면 "
+        "해당 복약 일정을 TAKEN 상태로 기록합니다."
+    ),
+    request=MedicationIntakeTakenSerializer,
+)
+class PatientMedicationIntakeTakenAPIView(
+    APIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
     def post(self, request):
         serializer = MedicationIntakeTakenSerializer(
             data=request.data
         )
-        serializer.is_valid(raise_exception=True)
-
-        medication_schedule_id = serializer.validated_data[
-            "medication_schedule_id"
-        ]
-        scheduled_at = serializer.validated_data[
-            "scheduled_at"
-        ]
-
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return Response(
-                {"detail": "환자 정보를 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        patient_account = (
-            PatientAccount.objects
-            .filter(
-                patient=patient,
-                link_status="LINKED",
-            )
-            .first()
+        serializer.is_valid(
+            raise_exception=True
         )
 
-        if patient_account is None:
-            return Response(
-                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        medication_schedule_id = (
+            serializer.validated_data[
+                "medication_schedule_id"
+            ]
+        )
+        scheduled_at = (
+            serializer.validated_data[
+                "scheduled_at"
+            ]
+        )
+
+        patient_account = (
+            get_linked_patient_account(request)
+        )
 
         try:
-            medication_schedule = MedicationSchedule.objects.get(
-                id=medication_schedule_id,
-                patient_account=patient_account,
-                enabled=True,
+            medication_schedule = (
+                MedicationSchedule.objects.get(
+                    id=medication_schedule_id,
+                    patient_account=(
+                        patient_account
+                    ),
+                    enabled=True,
+                )
             )
         except MedicationSchedule.DoesNotExist:
             return Response(
-                {"detail": "복약 일정을 찾을 수 없습니다."},
+                {
+                    "detail": (
+                        "복약 일정을 찾을 수 없습니다."
+                    ),
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        intake_log, created = MedicationIntakeLog.objects.get_or_create(
-            medication_schedule=medication_schedule,
-            scheduled_at=scheduled_at,
-            defaults={
-                "status": MedicationIntakeLog.Status.TAKEN,
-                "taken_at": timezone.now(),
-            },
+        intake_log, created = (
+            MedicationIntakeLog.objects
+            .get_or_create(
+                medication_schedule=(
+                    medication_schedule
+                ),
+                scheduled_at=scheduled_at,
+                defaults={
+                    "status": (
+                        MedicationIntakeLog
+                        .Status
+                        .TAKEN
+                    ),
+                    "taken_at": timezone.now(),
+                },
+            )
         )
 
         if not created:
-            intake_log.status = MedicationIntakeLog.Status.TAKEN
+            intake_log.status = (
+                MedicationIntakeLog.Status.TAKEN
+            )
             intake_log.taken_at = timezone.now()
             intake_log.save(
                 update_fields=[
@@ -1019,9 +1252,12 @@ class PatientMedicationIntakeTakenAPIView(APIView):
             {
                 "id": str(intake_log.id),
                 "medication_schedule_id": str(
-                    intake_log.medication_schedule_id
+                    intake_log
+                    .medication_schedule_id
                 ),
-                "scheduled_at": intake_log.scheduled_at,
+                "scheduled_at": (
+                    intake_log.scheduled_at
+                ),
                 "taken_at": intake_log.taken_at,
                 "status": intake_log.status,
             },
@@ -1097,17 +1333,24 @@ class DailySymptomDuplicate(APIException):
         super().__init__(detail=detail, code=self.default_code)
 
 
-class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
+class PatientSymptomLogListCreateAPIView(
+    ListCreateAPIView
+):
     serializer_class = SymptomLogSerializer
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get_queryset(self):
-        # 로컬 개발용 임시 연결.
-        # TODO(patient-auth): 환자 로그인 구현 후 request.user의 PatientAccount로
-        # 환자를 식별하고, 비로그인 401/의료진 403/타 환자 접근 차단을 적용해야 한다.
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return SymptomLog.objects.none()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
+        patient = patient_account.patient
 
         return (
             SymptomLog.objects
@@ -1116,16 +1359,27 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
         )
 
     def perform_create(self, serializer):
-        # TODO(patient-auth): 환자 로그인 구현 후 request.user의 PatientAccount로
-        # 환자를 식별하고, 비로그인 401/의료진 403/타 환자 접근 차단을 적용해야 한다.
-        patient = Patient.objects.first()
+        patient_account = (
+            get_linked_patient_account(
+                self.request
+            )
+        )
+        patient = patient_account.patient
 
         recorded_at = timezone.now()
-        record_date, day_start, day_end = _korea_day_window(
-            recorded_at,
+
+        (
+            record_date,
+            day_start,
+            day_end,
+        ) = _korea_day_window(recorded_at)
+
+        symptom_type = (
+            serializer.validated_data[
+                "symptom_type"
+            ]
         )
 
-        symptom_type = serializer.validated_data["symptom_type"]
         existing_record = (
             SymptomLog.objects
             .filter(
@@ -1134,7 +1388,10 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
                 logged_at__gte=day_start,
                 logged_at__lt=day_end,
             )
-            .order_by("-logged_at", "-created_at")
+            .order_by(
+                "-logged_at",
+                "-created_at",
+            )
             .first()
         )
 
@@ -1142,20 +1399,23 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
             raise DailySymptomDuplicate(
                 symptom_type=symptom_type,
                 record_date=record_date,
-                existing_record_id=existing_record.id,
+                existing_record_id=(
+                    existing_record.id
+                ),
             )
 
-        case = None
+        case = (
+            patient.cases
+            .filter(case_status="ACTIVE")
+            .order_by("-created_at")
+            .first()
+        )
 
-        if patient is not None:
-            case = (
-                patient.cases
-                .filter(case_status="ACTIVE")
-                .order_by("-created_at")
-                .first()
-            )
-
-        severity = serializer.validated_data["severity"]
+        severity = (
+            serializer.validated_data[
+                "severity"
+            ]
+        )
 
         risk_level = calculate_symptom_risk(
             symptom_type=symptom_type,
@@ -1178,6 +1438,13 @@ class PatientSymptomLogListCreateAPIView(ListCreateAPIView):
 )
 class PatientAppointmentCancelRequestAPIView(APIView):
 
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
     @transaction.atomic
     def post(self, request, appointment_id):
         serializer = PatientAppointmentCancelRequestSerializer(
@@ -1185,29 +1452,10 @@ class PatientAppointmentCancelRequestAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
 
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return Response(
-                {"detail": "환자 정보를 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
         patient_account = (
-            PatientAccount.objects
-            .filter(
-                patient=patient,
-                link_status="LINKED",
-            )
-            .first()
+            get_linked_patient_account(request)
         )
-
-        if patient_account is None:
-            return Response(
-                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        patient = patient_account.patient
 
         try:
             appointment = Appointment.objects.select_for_update().get(
@@ -1262,7 +1510,15 @@ class PatientAppointmentCancelRequestAPIView(APIView):
     request=PatientAppointmentChangeRequestSerializer,
     responses=AppointmentSerializer,
 )
+
 class PatientAppointmentChangeRequestAPIView(APIView):
+
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     @transaction.atomic
     def post(self, request, appointment_id):
@@ -1271,29 +1527,10 @@ class PatientAppointmentChangeRequestAPIView(APIView):
         )
         serializer.is_valid(raise_exception=True)
 
-        # TODO: 로그인 구현 후 request.user 기반 환자로 변경
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return Response(
-                {"detail": "환자 정보를 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
         patient_account = (
-            PatientAccount.objects
-            .filter(
-                patient=patient,
-                link_status="LINKED",
-            )
-            .first()
+            get_linked_patient_account(request)
         )
-
-        if patient_account is None:
-            return Response(
-                {"detail": "연결된 환자 계정을 찾을 수 없습니다."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+        patient = patient_account.patient
 
         try:
             old_appointment = (
