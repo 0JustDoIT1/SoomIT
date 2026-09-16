@@ -7,7 +7,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.serializers import TokenRefreshSerializer
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .models import DoctorProfile
+from .models import DepartmentRole, DoctorProfile
 
 from .serializers import (
     StaffLoginResponseSerializer,
@@ -56,6 +56,14 @@ class StaffProfileAPIView(APIView):
     @extend_schema(tags=["직원 인증"], request=DoctorProfileUpdateSerializer, responses={200: StaffProfileSerializer})
     def patch(self, request):
         user = request.user.__class__.objects.select_related("doctor_profile", "department_role__department__hospital").get(pk=request.user.pk)
+        if (
+            user.department_role is None
+            or user.department_role.role != DepartmentRole.Role.DOCTOR
+        ):
+            return Response(
+                {"detail": "의사 프로필은 의사 역할 계정만 수정할 수 있습니다."},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         profile = getattr(user, "doctor_profile", None)
         serializer = DoctorProfileUpdateSerializer(profile, data=request.data, partial=profile is not None)
         serializer.is_valid(raise_exception=True)

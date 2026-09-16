@@ -3,7 +3,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 from rest_framework_simplejwt.tokens import AccessToken, RefreshToken
 
-from apps.accounts.models import Department, DepartmentRole, Hospital, User
+from apps.accounts.models import Department, DepartmentRole, DoctorProfile, Hospital, User
 
 
 class StaffAuthenticationAPITestCase(APITestCase):
@@ -126,6 +126,60 @@ class StaffAuthenticationAPITestCase(APITestCase):
     def test_profile_fails_without_token(self):
         response = self.client.get(self.profile_url)
         self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_doctor_profile_is_created_on_first_update(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.patch(
+            self.profile_url,
+            {
+                "license_number": "LICENSE-001",
+                "tags": ["호흡기내과", "폐암"],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        profile = DoctorProfile.objects.get(user=self.user)
+        self.assertEqual(profile.license_number, "LICENSE-001")
+        self.assertEqual(profile.tags, ["호흡기내과", "폐암"])
+        self.assertEqual(response.data["doctor_profile"]["license_number"], "LICENSE-001")
+
+    def test_doctor_profile_update_requires_license_number_on_first_save(self):
+        self.client.force_authenticate(user=self.user)
+
+        response = self.client.patch(
+            self.profile_url,
+            {"tags": ["호흡기내과"]},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertFalse(DoctorProfile.objects.filter(user=self.user).exists())
+
+    def test_doctor_profile_update_is_denied_for_non_doctor(self):
+        technologist_role = DepartmentRole.objects.create(
+            department=self.department,
+            role=DepartmentRole.Role.TECHNOLOGIST,
+            display_name="방사선사",
+        )
+        technologist = User.objects.create_user(
+            login_id="technologist01",
+            password=self.password,
+            name="방사선사",
+            department_role=technologist_role,
+            account_status=User.AccountStatus.ACTIVE,
+        )
+        self.client.force_authenticate(user=technologist)
+
+        response = self.client.patch(
+            self.profile_url,
+            {"license_number": "LICENSE-002"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertFalse(DoctorProfile.objects.filter(user=technologist).exists())
 
     def test_refresh_token_issues_new_access_token(self):
         login_response = self.client.post(self.login_url, self.login_payload())
