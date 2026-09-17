@@ -34,3 +34,6 @@ gcs-key.json
 .knowledge-deps/
 .pytest_cache/
 **/.pytest_cache/
+
+# Firebase Admin service account credentials
+/backend/soomit-patient-firebase-admin.json

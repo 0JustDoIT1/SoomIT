@@ -10,10 +10,15 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
-FIREBASE_CREDENTIALS_PATH = os.environ.get(
-    "FIREBASE_CREDENTIALS_PATH",
-    "",
-)
+# Firebase 인증 파일 경로
+# 상대경로는 Backend 폴더(BASE_DIR)를 기준으로 해석합니다.
+FIREBASE_CREDENTIALS_PATH = (
+    BASE_DIR
+    / os.environ.get(
+        "FIREBASE_CREDENTIALS_PATH",
+        "soomit-patient-firebase-admin.json",
+    )
+).resolve()
 
 INSTALLED_APPS = [
     "django.contrib.admin",
