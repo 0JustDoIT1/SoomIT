@@ -93,14 +93,14 @@ def build_input(
     return x.unsqueeze(0)
 
 
-def load_model() -> torch.nn.Module:
+def load_model(device: torch.device = DEVICE) -> torch.nn.Module:
     model = TextureCTMaskResNet18(
         pretrained=False,
-    ).to(DEVICE)
+    ).to(device)
 
     checkpoint = torch.load(
         CHECKPOINT,
-        map_location=DEVICE,
+        map_location=device,
         weights_only=False,
     )
 
@@ -129,12 +129,13 @@ def predict(
     model: torch.nn.Module,
     ct_path: str | Path,
     mask_path: str | Path,
+    device: torch.device = DEVICE,
 ) -> dict:
     x = build_input(
         ct_path,
         mask_path,
     ).to(
-        DEVICE,
+        device,
         non_blocking=True,
     )
 
@@ -162,7 +163,7 @@ def predict(
             "SOLID": float(probs[2]),
         },
         "input_shape": list(x.shape),
-        "device": str(DEVICE),
+        "device": str(device),
         "model": "texture_med3d_resnet18_ctmask",
         "model_version": "1.0.0",
     }

@@ -7,7 +7,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends build-essential && rm -rf /var/lib/apt/lists/*
 COPY requirements-gpu.txt .
 RUN pip install --no-cache-dir -r requirements-gpu.txt
-COPY storage_io.py model_io.py t_server.py ./
+COPY storage_io.py model_io.py nnunet_runtime.py t_server.py ./
 COPY runtime/nnUNetTrainer_250epochs.py /tmp/nnUNetTrainer_250epochs.py
 RUN cp /tmp/nnUNetTrainer_250epochs.py "$(python -c 'import pathlib,nnunetv2; print(pathlib.Path(nnunetv2.__file__).parent / "training/nnUNetTrainer/variants/training_length/nnUNetTrainer_250epochs.py")')" \
     && mkdir -p /models && useradd --create-home --uid 10001 app && chown -R app:app /app /models

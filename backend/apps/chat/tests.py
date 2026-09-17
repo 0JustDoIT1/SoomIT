@@ -188,7 +188,7 @@ class CaseChatMessageModelTestCase(TestCase):
         self.assertEqual(len(response.data["results"]), 50)
         self.assertIsNotNone(response.data["next_cursor"])
         first = response.data["results"][0]
-        self.assertEqual(first["case_id"], str(self.case.id))
+        self.assertEqual(first["case_id"], self.case.id)
         self.assertEqual(first["sender"]["department"], "PULMONOLOGY")
         self.assertEqual(first["sender"]["role"], "DOCTOR")
 

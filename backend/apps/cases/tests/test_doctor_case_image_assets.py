@@ -117,8 +117,13 @@ class DoctorCaseImageAssetAPITests(TestCase):
             kwargs={"case_id": self.case.id, "asset_id": self.ct.id},
         ))
         self.assertEqual(wrong_asset.status_code, 404)
+        other_patient = Patient.objects.create(
+            hospital=self.hospital, patient_code="IMAGEPATIENT2", name="Other Patient",
+            birth_date=date(1971, 1, 1), sex=Patient.Sex.MALE,
+            phone_number="01000000001", phone_number_hash="image-patient-2",
+        )
         other_case = LungCancerCase.objects.create(
-            patient=self.case.patient, case_code="SECONDIMAGECASE",
+            patient=other_patient, case_code="SECONDIMAGECASE",
             primary_doctor=self.doctor, current_stage=WorkflowStage.XRAY,
         )
         other_asset = CaseImageAsset.objects.create(

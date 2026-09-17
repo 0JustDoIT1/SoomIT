@@ -40,6 +40,7 @@ class DoseRuleTests(SimpleTestCase):
             "dose_basis", "dose_basis_label", "patient_bsa", "target_auc",
             "renal_value", "calculated_dose", "final_dose", "unit", "route",
             "route_label", "administration_day", "frequency", "instructions",
+            "mfds_item_seq",
         }
         self.assertEqual(set(output), existing_fields | {"renal_value_type"})
         self.assertEqual(output["renal_value_type"], "BSA_ADJUSTED_EGFR")

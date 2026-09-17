@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
-import subprocess
 import tempfile
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -16,6 +17,7 @@ from pydantic import BaseModel, Field
 from scipy import ndimage
 
 from model_io import ensure_file
+from nnunet_runtime import ResidentNnUNetPredictor
 from storage_io import download_file, upload_file
 
 
@@ -35,7 +37,17 @@ MODEL_FILES = {
     "dataset.json": (MODEL_DIR / "dataset.json", os.environ.get("T_DATASET_SHA256")),
 }
 model_hashes: dict[str, str] = {}
+nnunet_predictor: ResidentNnUNetPredictor | None = None
 inference_lock = threading.Lock()
+logger = logging.getLogger(__name__)
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=tnm_t stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 def size_category(size_mm: float | None) -> str:
@@ -141,9 +153,14 @@ def restore_to_original_geometry(crop_mask_path: Path, metadata_path: Path, outp
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global nnunet_predictor
+    started = time.perf_counter()
     for name, (path, expected) in MODEL_FILES.items():
         model_hashes[name] = ensure_file(f"{MODEL_GCS_PREFIX}/{name}", path, expected)
+    nnunet_predictor = ResidentNnUNetPredictor(MODEL_DIR, "checkpoint_best.pth")
+    log_latency("model_initialization", started)
     yield
+    nnunet_predictor = None
 
 
 app = FastAPI(title="SoomIT TNM T", version="1.0.0", lifespan=lifespan)
@@ -159,13 +176,14 @@ class TRequest(BaseModel):
 
 @app.get("/health")
 def health() -> dict:
-    if len(model_hashes) != len(MODEL_FILES):
+    if len(model_hashes) != len(MODEL_FILES) or nnunet_predictor is None:
         raise HTTPException(status_code=503, detail="T model is not loaded")
     return {"status": "ok", "component": "T", "model_revision": MODEL_REVISION, "models": model_hashes, "device": "cuda"}
 
 
 @app.post("/v1/predict")
 def predict(body: TRequest) -> dict:
+    total_started = time.perf_counter()
     if not CASE_PATTERN.fullmatch(body.case_id):
         raise HTTPException(status_code=422, detail="invalid case_id")
     destination = body.output_gcs_uri or f"{OUTPUT_PREFIX}/{body.case_id}/t/tumor_mask.nii.gz"
@@ -173,23 +191,22 @@ def predict(body: TRequest) -> dict:
         with tempfile.TemporaryDirectory(prefix="tnm-t-") as temporary:
             root = Path(temporary)
             input_dir, output_dir = root / "input", root / "output"
+            stage_started = time.perf_counter()
             input_path = download_file(body.t_input_uri, input_dir / f"{body.case_id}_0000.nii.gz")
             metadata_uri = body.crop_metadata_uri or body.t_input_uri.rsplit("/", 1)[0] + "/crop_metadata.json"
             metadata_path = download_file(metadata_uri, input_dir / "crop_metadata.json")
+            log_latency("download", stage_started)
             output_dir.mkdir(parents=True)
-            command = [
-                "nnUNetv2_predict", "-i", str(input_dir), "-o", str(output_dir),
-                "-d", "504", "-c", CONFIGURATION, "-f", "0", "-tr", TRAINER,
-                "-chk", "checkpoint_best.pth", "--disable_tta",
-                "-npp", "1", "-nps", "1",
-            ]
+            if nnunet_predictor is None:
+                raise RuntimeError("T predictor is not initialized")
+            stage_started = time.perf_counter()
             with inference_lock:
-                completed = subprocess.run(command, text=True, capture_output=True, timeout=3300)
-            if completed.returncode:
-                raise RuntimeError(completed.stderr[-4000:] or completed.stdout[-4000:])
+                nnunet_predictor.predict(input_dir, output_dir)
+            log_latency("inference", stage_started)
             mask_path = output_dir / f"{body.case_id}.nii.gz"
             if not mask_path.is_file():
                 raise FileNotFoundError("nnU-Net did not create the expected tumor mask")
+            stage_started = time.perf_counter()
             restored_mask_path = restore_to_original_geometry(mask_path, metadata_path, root / "restored" / "tumor_mask.nii.gz")
             _, prediction_component_count, components = component_candidates(restored_mask_path)
             if prediction_component_count > 1 and body.primary_component_id is None:
@@ -206,8 +223,11 @@ def predict(body: TRequest) -> dict:
                 select_component(restored_mask_path, body.primary_component_id)
             metrics = quantify(restored_mask_path)
             metrics["prediction_component_count"] = prediction_component_count
+            log_latency("postprocessing", stage_started)
+            stage_started = time.perf_counter()
             upload_file(restored_mask_path, destination)
-            return {
+            log_latency("upload", stage_started)
+            response = {
                 "status": "completed", "case_id": body.case_id, "model_revision": MODEL_REVISION,
                 "model_sha256": model_hashes["checkpoint_best.pth"], "tumor_mask_uri": destination,
                 "mask_geometry": "original_ct",
@@ -217,5 +237,7 @@ def predict(body: TRequest) -> dict:
                 "t_candidate_status": "REQUIRES_VERIFIED_MAXIMUM_DIAMETER_AND_INVASION_EVIDENCE",
                 "candidate_only": True, "physician_review_required": True,
             }
-    except (FileNotFoundError, ValueError, RuntimeError, subprocess.TimeoutExpired) as exc:
+            log_latency("total", total_started)
+            return response
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

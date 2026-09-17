@@ -1,8 +1,10 @@
 import argparse
 import json
+import logging
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 
@@ -46,6 +48,16 @@ N_ROOT = (
     PACKAGES_ROOT
     / "final_n_input_deploy_ready"
 )
+
+logger = logging.getLogger(__name__)
+
+
+def log_latency(stage, started):
+    logger.info(
+        "latency service=ct_phase1 stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 def run(cmd, env=None):
@@ -130,7 +142,9 @@ def phase1(
     output_dir,
     python_executable,
     totalseg_env,
+    nodule_models=None,
 ):
+    total_started = time.perf_counter()
     ct_path = Path(ct_path).resolve()
     output_dir = Path(output_dir).resolve()
 
@@ -264,6 +278,7 @@ def phase1(
         / "metadata.json"
     )
 
+    stage_started = time.perf_counter()
     run([
         python_executable,
         SEG_ROOT / "code/inference.py",
@@ -274,6 +289,7 @@ def phase1(
         "--metadata",
         seg_metadata,
     ])
+    log_latency("segmentation", stage_started)
 
     segmentation = load_json(
         seg_metadata
@@ -283,6 +299,7 @@ def phase1(
     # 2. Quantification
     # ==================================================
 
+    stage_started = time.perf_counter()
     run([
         python_executable,
         QUANT_ROOT / "code/quantify_nodules.py",
@@ -293,6 +310,7 @@ def phase1(
         "--output-dir",
         quant_dir,
     ])
+    log_latency("quantification", stage_started)
 
     quant_json = (
         quant_dir
@@ -332,9 +350,8 @@ def phase1(
             f"quant={sorted(quant_by_id)}"
         )
 
-    for nodule_id in sorted(
-        segmentation_patches
-    ):
+    nodule_jobs = []
+    for nodule_id in sorted(segmentation_patches):
         patch = segmentation_patches[
             nodule_id
         ]
@@ -364,40 +381,52 @@ def phase1(
             / "malignancy.json"
         )
 
-        # Morphology
-        run([
-            python_executable,
-            MORPH_ROOT / "code/inference.py",
-            "--ct",
-            patch["morphology_ct"],
-            "--mask",
-            patch["morphology_mask"],
-            "--output",
-            morphology_json,
-        ])
+        nodule_jobs.append({
+            "nodule_id": nodule_id,
+            "patch": patch,
+            "morphology_json": morphology_json,
+            "texture_json": texture_json,
+            "malignancy_json": malignancy_json,
+        })
 
-        # Texture
-        run([
-            python_executable,
-            TEXTURE_ROOT / "code/inference.py",
-            "--ct",
-            patch["morphology_ct"],
-            "--mask",
-            patch["morphology_mask"],
-            "--output",
-            texture_json,
+    stage_started = time.perf_counter()
+    if nodule_models is not None:
+        model_started = time.perf_counter()
+        nodule_models.run_morphology([
+            {"ct": job["patch"]["morphology_ct"], "mask": job["patch"]["morphology_mask"],
+             "output": job["morphology_json"]}
+            for job in nodule_jobs
         ])
-
-        # Malignancy
-        run([
-            python_executable,
-            MALIGNANCY_ROOT / "inference.py",
-            "--input",
-            patch["malignancy_ct"],
-            "--output",
-            malignancy_json,
+        log_latency("morphology", model_started)
+        model_started = time.perf_counter()
+        nodule_models.run_texture([
+            {"ct": job["patch"]["morphology_ct"], "mask": job["patch"]["morphology_mask"],
+             "output": job["texture_json"]}
+            for job in nodule_jobs
         ])
+        log_latency("texture", model_started)
+        model_started = time.perf_counter()
+        nodule_models.run_malignancy([
+            {"input": job["patch"]["malignancy_ct"], "output": job["malignancy_json"]}
+            for job in nodule_jobs
+        ])
+        log_latency("malignancy", model_started)
+    else:
+        for job in nodule_jobs:
+            patch = job["patch"]
+            run([python_executable, MORPH_ROOT / "code/inference.py", "--ct",
+                 patch["morphology_ct"], "--mask", patch["morphology_mask"],
+                 "--output", job["morphology_json"]])
+            run([python_executable, TEXTURE_ROOT / "code/inference.py", "--ct",
+                 patch["morphology_ct"], "--mask", patch["morphology_mask"],
+                 "--output", job["texture_json"]])
+            run([python_executable, MALIGNANCY_ROOT / "inference.py", "--input",
+                 patch["malignancy_ct"], "--output", job["malignancy_json"]])
+    log_latency("nodule_models", stage_started)
 
+    for job in nodule_jobs:
+        nodule_id = job["nodule_id"]
+        patch = job["patch"]
         nodule_results.append({
             "nodule_id":
                 nodule_id,
@@ -405,15 +434,15 @@ def phase1(
                 quant_by_id[nodule_id],
             "morphology":
                 load_json(
-                    morphology_json
+                    job["morphology_json"]
                 ),
             "texture":
                 load_json(
-                    texture_json
+                    job["texture_json"]
                 ),
             "malignancy":
                 load_json(
-                    malignancy_json
+                    job["malignancy_json"]
                 ),
             "patch_metadata":
                 patch,
@@ -432,6 +461,7 @@ def phase1(
         if totalseg_python
         else ["conda", "run", "-n", totalseg_env, "python"]
     )
+    stage_started = time.perf_counter()
     run([
         *anatomy_prefix,
         N_ROOT / "code/run_anatomy_segmentation.py",
@@ -444,6 +474,7 @@ def phase1(
         "--device",
         "gpu",
     ])
+    log_latency("anatomy_segmentation", stage_started)
 
     anatomy_metadata = (
         anatomy_dir
@@ -454,6 +485,7 @@ def phase1(
     # 5. Canonical anatomy
     # ==================================================
 
+    stage_started = time.perf_counter()
     run([
         python_executable,
         N_ROOT / "code/build_canonical_anatomy.py",
@@ -464,6 +496,7 @@ def phase1(
         "--case-id",
         case_id,
     ])
+    log_latency("canonical_anatomy", stage_started)
 
     canonical_metadata = (
         canonical_dir
@@ -482,6 +515,7 @@ def phase1(
         / "thoracic_total"
     )
 
+    stage_started = time.perf_counter()
     run([
         python_executable,
         T_ROOT / "code/build_t_input.py",
@@ -496,6 +530,7 @@ def phase1(
         "--margin-mm",
         "50",
     ])
+    log_latency("t_input", stage_started)
 
     t_input_path = (
         t_input_dir
@@ -531,6 +566,7 @@ def phase1(
     # model input or analytical result.
     # ==================================================
 
+    stage_started = time.perf_counter()
     run([
         python_executable,
         BUNDLE_ROOT / "visualization.py",
@@ -545,6 +581,7 @@ def phase1(
         "--case-id",
         case_id,
     ])
+    log_latency("visualization", stage_started)
 
     visualization_manifest = load_json(
         visualization_dir / "visualization_manifest.json"
@@ -558,6 +595,7 @@ def phase1(
     # post-processing; does not alter any model input or analytical result.
     # ==================================================
 
+    stage_started = time.perf_counter()
     run([
         python_executable,
         BUNDLE_ROOT / "cornerstone_labelmap.py",
@@ -574,6 +612,7 @@ def phase1(
         "--case-id",
         case_id,
     ])
+    log_latency("cornerstone", stage_started)
 
     cornerstone_manifest = load_json(
         cornerstone_dir / "cornerstone_manifest.json"
@@ -654,6 +693,7 @@ def phase1(
         result,
         result_path,
     )
+    log_latency("total", total_started)
 
     print()
     print("=" * 80)

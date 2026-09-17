@@ -104,7 +104,7 @@ class PathologyReadAPITestCase(APITestCase):
             workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             image_type=CaseImageAsset.ImageType.WSI,
             storage_type=CaseImageAsset.StorageType.GCS,
-            storage_uri="gcs://test-bucket/test-slide.svs",
+            storage_uri="gs://test-bucket/test-slide.svs",
             file_format="SVS",
             status=CaseImageAsset.Status.READY,
         )
@@ -499,25 +499,25 @@ class PathologyReadAPITestCase(APITestCase):
         )
         self.assertEqual(detail_response.status_code, status.HTTP_200_OK)
         self.assertEqual(
-            [item["pathology_test_type"] for item in detail_response.data["orders"]],
-            ["SUBTYPE", "PDL1", "GENE"],
+            [item["order_type"] for item in detail_response.data["orders"]],
+            ["PATHOLOGY_GENE", "PATHOLOGY_GENE", "PDL1"],
         )
         results = {
-            item["pathology_test_type"]: item for item in detail_response.data["orders"]
+            str(item["examination_order"]["id"]): item
+            for item in detail_response.data["orders"]
         }
-        pdl1_row = results["PDL1"]
-        gene_row = results["GENE"]
-        self.assertEqual(pdl1_row["pathology_test_type"], "PDL1")
-        self.assertEqual(pdl1_row["pathology_test_type_label"], "PD-L1 검사")
-        self.assertEqual(pdl1_row["current_exam_or_task"], "PD-L1 검사")
+        pdl1_row = results[str(pdl1_order.id)]
+        gene_row = results[str(gene_order.id)]
+        self.assertEqual(pdl1_row["order_type"], "PDL1")
+        self.assertEqual(pdl1_row["order_type_label"], "PD-L1 검사")
+        self.assertEqual(pdl1_row["current_exam_or_task"], pdl1_row["order_type_label"])
         self.assertEqual(pdl1_row["requesting_doctor"]["id"], self.user.id)
         self.assertIsNone(pdl1_row["specimen"])
         self.assertIsNone(pdl1_row["latest_wsi"])
         self.assertIsNone(pdl1_row["latest_ai_analysis"])
         self.assertEqual(pdl1_row["workflow_status"], "SCHEDULED")
-        self.assertEqual(gene_row["pathology_test_type"], "GENE")
-        self.assertEqual(gene_row["pathology_test_type_label"], "유전자 검사")
-        self.assertEqual(gene_row["current_exam_or_task"], "유전자 검사")
+        self.assertEqual(gene_row["order_type"], "PATHOLOGY_GENE")
+        self.assertEqual(gene_row["current_exam_or_task"], gene_row["order_type_label"])
         self.assertIsNone(gene_row["specimen"])
         self.assertIsNone(gene_row["latest_wsi"])
         self.assertIsNone(gene_row["latest_ai_analysis"])
@@ -774,7 +774,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(response.data["slide_code"], self.wsi.slide_code)
 
     def test_authenticated_user_can_read_case_specimens(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
 
         url = reverse(
             "pathology:case-specimen-list",
@@ -790,7 +790,7 @@ class PathologyReadAPITestCase(APITestCase):
         )
 
     def test_authenticated_user_can_read_specimen_wsis(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
 
         url = reverse(
             "pathology:specimen-wsi-list",
@@ -817,7 +817,7 @@ class PathologyReadAPITestCase(APITestCase):
             "TotalWidth": 2048,
             "TotalHeight": 1024,
         }
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
 
         response = self.client.get(
             reverse("pathology:wsi-pyramid", kwargs={"wsi_id": self.wsi.id}),
@@ -835,7 +835,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.wsi.orthanc_series_id = "orthanc-series-1"
         self.wsi.save(update_fields=["orthanc_series_id", "updated_at"])
         mock_tile.return_value = OrthancBinaryResponse(b"jpeg-tile", "image/jpeg")
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
 
         response = self.client.get(
             reverse(
@@ -850,7 +850,7 @@ class PathologyReadAPITestCase(APITestCase):
         mock_tile.assert_called_once_with("orthanc-series-1", 0, 1, 2)
 
     def test_wsi_pyramid_requires_orthanc_series(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
 
         response = self.client.get(
             reverse("pathology:wsi-pyramid", kwargs={"wsi_id": self.wsi.id}),
@@ -1028,7 +1028,7 @@ class PathologyReadAPITestCase(APITestCase):
 
 
     def test_authenticated_user_can_read_case_pdl1_ai_results(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:case-pdl1-result-list",
             kwargs={"case_id": self.case.id},

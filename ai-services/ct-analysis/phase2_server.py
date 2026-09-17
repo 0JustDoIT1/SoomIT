@@ -1,17 +1,19 @@
 from __future__ import annotations
 
 import importlib.util
+import logging
 import os
 import re
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from storage_io import download_file, download_prefix, upload_tree
+from storage_io import download_file, upload_tree
 
 
 ROOT = Path(__file__).resolve().parent
@@ -22,6 +24,51 @@ OUTPUT_GCS_PREFIX = os.environ.get(
 MODEL_REVISION = os.environ.get("MODEL_REVISION", "ct-analysis-v1.0.0")
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 inference_lock = threading.Lock()
+logger = logging.getLogger(__name__)
+
+LOBE_MASKS = (
+    "lung_upper_lobe_left.nii.gz",
+    "lung_lower_lobe_left.nii.gz",
+    "lung_upper_lobe_right.nii.gz",
+    "lung_middle_lobe_right.nii.gz",
+    "lung_lower_lobe_right.nii.gz",
+)
+CANONICAL_MASKS = (
+    "airway.nii.gz",
+    "heart.nii.gz",
+    "great_vessels.nii.gz",
+    "esophagus.nii.gz",
+    "vertebral_body_proxy.nii.gz",
+    "chest_wall_proxy.nii.gz",
+)
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=ct_phase2 stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
+
+
+def download_phase1_inputs(artifact_uri: str, case_id: str, case_root: Path) -> tuple[Path, Path]:
+    prefix = artifact_uri.rstrip("/")
+    ct_path = download_file(
+        f"{prefix}/source/{case_id}_0000.nii.gz",
+        case_root / "source" / f"{case_id}_0000.nii.gz",
+    )
+    phase1_dir = case_root / "phase1"
+    for filename in LOBE_MASKS:
+        download_file(
+            f"{prefix}/phase1/anatomy/thoracic_total/{filename}",
+            phase1_dir / "anatomy" / "thoracic_total" / filename,
+        )
+    for filename in CANONICAL_MASKS:
+        download_file(
+            f"{prefix}/phase1/canonical_anatomy/{filename}",
+            phase1_dir / "canonical_anatomy" / filename,
+        )
+    return ct_path, phase1_dir
 
 
 def load_orchestrator():
@@ -59,6 +106,7 @@ def health() -> dict:
 
 @app.post("/v1/phase2")
 def phase2(body: Phase2Request) -> dict:
+    total_started = time.perf_counter()
     if not CASE_ID_PATTERN.fullmatch(body.case_id):
         raise HTTPException(status_code=422, detail="invalid case_id")
     destination = (
@@ -68,18 +116,17 @@ def phase2(body: Phase2Request) -> dict:
     try:
         with tempfile.TemporaryDirectory(prefix="ct-analysis-phase2-") as temporary:
             work_root = Path(temporary)
-            case_root = download_prefix(body.phase1_artifact_uri, work_root / "case")
-            ct_path = case_root / "source" / f"{body.case_id}_0000.nii.gz"
-            phase1_dir = case_root / "phase1"
-            if not ct_path.is_file() or not phase1_dir.is_dir():
-                raise FileNotFoundError(
-                    "phase1 artifact must contain source CT and the phase1 directory"
-                )
+            stage_started = time.perf_counter()
+            ct_path, phase1_dir = download_phase1_inputs(
+                body.phase1_artifact_uri, body.case_id, work_root / "case"
+            )
             tumor_mask = download_file(
                 body.t_tumor_mask_uri, work_root / "t" / "tumor_mask.nii.gz"
             )
+            log_latency("download", stage_started)
             output_dir = work_root / "phase2"
             orchestrator = load_orchestrator()
+            stage_started = time.perf_counter()
             with inference_lock:
                 result = orchestrator.phase2(
                     ct_path=ct_path,
@@ -93,8 +140,11 @@ def phase2(body: Phase2Request) -> dict:
                     output_dir=output_dir,
                     python_executable=sys.executable,
                 )
+            log_latency("feature_extraction", stage_started)
+            stage_started = time.perf_counter()
             artifact_uri = upload_tree(output_dir, destination)
-            return {
+            log_latency("upload", stage_started)
+            response = {
                 "status": "READY_FOR_N_MODEL",
                 "model_revision": MODEL_REVISION,
                 "case_id": body.case_id,
@@ -104,5 +154,7 @@ def phase2(body: Phase2Request) -> dict:
                 "n_input_uri": f"{artifact_uri}n_input.json",
                 "result": result,
             }
+            log_latency("total", total_started)
+            return response
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

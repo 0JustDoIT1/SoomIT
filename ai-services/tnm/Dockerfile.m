@@ -18,7 +18,7 @@ RUN mkdir -p /opt/totalseg-home \
          if [ "$attempt" = 5 ]; then exit 1; fi; \
          sleep 10; \
        done
-COPY storage_io.py model_io.py pet_dicom.py m_pipeline.py m_server.py ./
+COPY storage_io.py model_io.py nnunet_runtime.py pet_dicom.py m_pipeline.py m_server.py ./
 COPY runtime ./runtime
 COPY resources ./resources
 RUN cp runtime/nnUNetTrainer_100epochs_Save10.py "$(python -c 'import pathlib,nnunetv2; print(pathlib.Path(nnunetv2.__file__).parent / "training/nnUNetTrainer/variants/training_length/nnUNetTrainer_100epochs_Save10.py")')" \

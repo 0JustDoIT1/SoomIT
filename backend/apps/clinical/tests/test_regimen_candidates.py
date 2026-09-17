@@ -235,4 +235,7 @@ class RegimenCandidateTests(SimpleTestCase):
         clinical.filter.assert_called_once_with(case=case, result_status="CONFIRMED")
         for call in confirmed.filter.call_args_list:
             self.assertNotIn("pdl1_detail", str(call))
-        self.assertTrue(any(call.kwargs.get("stage") == "GENE" for call in confirmed.filter.call_args_list))
+        self.assertTrue(any(
+            call.kwargs.get("workflow_stage") == "PATHOLOGY_GENE"
+            for call in confirmed.filter.call_args_list
+        ))

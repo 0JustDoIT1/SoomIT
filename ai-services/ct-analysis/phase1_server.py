@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
 import re
 import shutil
 import sys
 import tempfile
 import threading
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -18,6 +20,7 @@ from artifact import ensure_artifact
 from cornerstone_labelmap import generate_cornerstone_segmentation
 from input_io import InvalidCtInput, dicom_directory_to_nifti, extract_dicom_zip
 from model_artifacts import phase1_artifacts
+from phase1_models import ResidentNoduleModels
 from orthanc_client import OrthancDownloadError, download_orthanc_series
 from storage_io import download_file, upload_tree
 from visualization import ANATOMY_LAYERS, LOBE_LAYERS
@@ -41,7 +44,17 @@ MODEL_REVISION = os.environ.get("MODEL_REVISION", "ct-analysis-v1.0.0")
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 model_hashes: dict[str, str] = {}
+nodule_models: ResidentNoduleModels | None = None
 inference_lock = threading.Lock()
+logger = logging.getLogger(__name__)
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=ct_phase1 stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 def load_orchestrator():
@@ -64,8 +77,10 @@ def output_uri(case_id: str, requested: str | None) -> str:
 
 
 def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -> dict:
+    total_started = time.perf_counter()
     phase1_dir = work_root / "phase1"
     orchestrator = load_orchestrator()
+    stage_started = time.perf_counter()
     with inference_lock:
         result = orchestrator.phase1(
             ct_path=ct_path,
@@ -73,8 +88,12 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
             output_dir=phase1_dir,
             python_executable=sys.executable,
             totalseg_env=os.environ.get("TOTALSEG_ENV", "totalseg"),
+            nodule_models=nodule_models,
         )
+    log_latency("pipeline", stage_started)
+    stage_started = time.perf_counter()
     artifact_uri = upload_tree(work_root, destination)
+    log_latency("upload", stage_started)
     visualization = result.get("visualization", {})
     visualization_prefix = f"{artifact_uri}phase1/visualization/"
     for layer in visualization.get("layers", []):
@@ -93,7 +112,7 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
         if relative_path:
             cornerstone_segmentation[uri_key] = f"{cornerstone_prefix}{relative_path}"
 
-    return {
+    response = {
         "status": "READY_FOR_T_MODEL",
         "model_revision": MODEL_REVISION,
         "case_id": case_id,
@@ -106,13 +125,20 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
         "cornerstone_segmentation": cornerstone_segmentation,
         "result": result,
     }
+    log_latency("request_total", total_started)
+    return response
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    global nodule_models
+    started = time.perf_counter()
     for artifact in phase1_artifacts():
         model_hashes[artifact.name] = ensure_artifact(artifact)
+    nodule_models = ResidentNoduleModels()
+    log_latency("model_initialization", started)
     yield
+    nodule_models = None
     model_hashes.clear()
 
 
@@ -160,6 +186,7 @@ def phase1_from_orthanc(body: OrthancPhase1Request) -> dict:
         with tempfile.TemporaryDirectory(prefix="ct-analysis-phase1-") as temporary:
             work_root = Path(temporary)
             archive = work_root / "source" / "dicom.zip"
+            stage_started = time.perf_counter()
             download_orthanc_series(
                 base_url=ORTHANC_BASE_URL,
                 username=ORTHANC_USERNAME,
@@ -170,6 +197,8 @@ def phase1_from_orthanc(body: OrthancPhase1Request) -> dict:
                 max_bytes=MAX_CT_BYTES,
                 expected_series_uid=body.series_instance_uid,
             )
+            log_latency("orthanc_download", stage_started)
+            stage_started = time.perf_counter()
             dicom_root = extract_dicom_zip(
                 archive,
                 work_root / "source" / "dicom",
@@ -181,6 +210,7 @@ def phase1_from_orthanc(body: OrthancPhase1Request) -> dict:
                 work_root / "source" / f"{case_id}_0000.nii.gz",
                 metadata_path=work_root / "source" / "dicom_to_nifti_metadata.json",
             )
+            log_latency("dicom_preprocessing", stage_started)
             archive.unlink(missing_ok=True)
             # Orthanc is the source of truth for original DICOM. The extracted
             # files are temporary conversion input and must not be uploaded as
@@ -201,9 +231,11 @@ def phase1_from_gcs(body: GcsPhase1Request) -> dict:
         case_id = validate_case_id(body.case_id)
         with tempfile.TemporaryDirectory(prefix="ct-analysis-phase1-") as temporary:
             work_root = Path(temporary)
+            stage_started = time.perf_counter()
             ct_path = download_file(
                 body.ct_gcs_uri, work_root / "source" / f"{case_id}_0000.nii.gz"
             )
+            log_latency("gcs_download", stage_started)
             return run_phase1(
                 ct_path, case_id, work_root, output_uri(case_id, body.output_gcs_uri)
             )

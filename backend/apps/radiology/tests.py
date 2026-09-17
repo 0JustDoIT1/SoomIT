@@ -217,7 +217,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(reversed_dates.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_staging_asset_is_displayed_and_filtered_as_pet_ct_tnm(self):
-        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.order_type = ExaminationOrder.OrderType.PET_CT_TNM
         self.order.save(update_fields=["order_type", "updated_at"])
         self._create_asset(
             self.order,
@@ -230,11 +230,11 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(len(staging_response.data), 1)
         self.assertEqual(
             staging_response.data[0]["examination_order"]["order_type"],
-            ExaminationOrder.OrderType.CT,
+            ExaminationOrder.OrderType.PET_CT_TNM,
         )
         self.assertEqual(
             staging_response.data[0]["examination_order"]["order_type_label"],
-            "PET-CT",
+            self.order.get_order_type_display(),
         )
 
         ct_response = self.client.get(self.url, {"order_type": "CT"})
@@ -292,14 +292,18 @@ class RadiologyWorklistAPITestCase(APITestCase):
             "X-ray",
         )
 
-        self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
+        ct_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
         ct_response = self.client.get(url)
         self.assertEqual(
             ct_response.data[0]["current_exam"]["examination_order"]["order_type_label"],
             "CT",
         )
 
-        pet_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
+        ct_order.status = ExaminationOrder.Status.COMPLETED
+        ct_order.save(update_fields=["status", "updated_at"])
+        pet_order = self._create_order(
+            self.case, order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
         pet_asset = self._create_asset(
             pet_order,
             workflow_stage=WorkflowStage.PET_CT_TNM,
@@ -319,7 +323,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(case_rows[0]["exam_count"], 3)
         self.assertEqual(
             case_rows[0]["current_exam"]["examination_order"]["order_type_label"],
-            "PET-CT",
+            pet_order.get_order_type_display(),
         )
 
     def test_case_workflow_returns_only_actual_order_scoped_exams(self):
@@ -656,13 +660,17 @@ class RadiologyWorklistAPITestCase(APITestCase):
         self.assertEqual(ct_response.data["analysis_type"], "CT_ANALYSIS")
         self.assertEqual(str(ct_model.id), str(ct_response.data["model_version"]["id"]))
 
-        tnm_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
+        self.order.status = ExaminationOrder.Status.COMPLETED
+        self.order.save(update_fields=["status", "updated_at"])
+        tnm_order = self._create_order(
+            self.case, order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
         ModelVersion.objects.create(
             model_name="tnm-model", version="1.0", analysis_type="PET_CT_TNM_ANALYSIS",
         )
         self._create_asset(
             tnm_order,
-            image_type=CaseImageAsset.ImageType.CT,
+            image_type=CaseImageAsset.ImageType.PET,
             workflow_stage=WorkflowStage.PET_CT_TNM,
             storage_uri="test://radiology/tnm",
         )

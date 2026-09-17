@@ -55,12 +55,18 @@ class ImportRegimensSourceTests(TestCase):
         return regimen_path, regimen_drug_path
 
     def _call(self, *extra, **kwargs):
-        regimen_path, regimen_drug_path = self._copy_csvs(**kwargs)
+        copy_kwargs = {
+            key: kwargs.pop(key)
+            for key in ("mutate_regimens", "mutate_regimen_drugs")
+            if key in kwargs
+        }
+        regimen_path, regimen_drug_path = self._copy_csvs(**copy_kwargs)
         return call_command(
             "import_regimens_source",
             *extra,
             regimens_csv=regimen_path,
             regimen_drugs_csv=regimen_drug_path,
+            **kwargs,
         )
 
     def test_valid_dry_run_does_not_write(self):

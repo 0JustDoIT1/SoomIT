@@ -29,7 +29,7 @@ RUN mkdir -p /opt/totalseg-home \
     && /opt/totalseg/bin/totalseg_download_weights -t total \
     && /opt/totalseg/bin/totalseg_download_weights -t lung_vessels
 
-COPY artifact.py storage_io.py input_io.py orthanc_client.py model_artifacts.py phase1_server.py visualization.py cornerstone_labelmap.py ./
+COPY artifact.py storage_io.py input_io.py orthanc_client.py model_artifacts.py phase1_models.py phase1_server.py visualization.py cornerstone_labelmap.py ./
 COPY packages/final_ct_analysis_deploy_ready ./packages/final_ct_analysis_deploy_ready
 COPY packages/final_segmentation_deploy_ready ./packages/final_segmentation_deploy_ready
 COPY packages/final_quantification_deploy_ready ./packages/final_quantification_deploy_ready

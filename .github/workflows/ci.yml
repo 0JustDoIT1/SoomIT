@@ -74,7 +74,7 @@ jobs:
                   rel = path.removeprefix('ai-services/ct-analysis/')
                   phase1 = (
                       rel in {'artifact.py', 'input_io.py', 'orthanc_client.py', 'model_artifacts.py',
-                              'phase1_server.py', 'visualization.py', 'cornerstone_labelmap.py',
+                              'phase1_models.py', 'phase1_server.py', 'visualization.py', 'cornerstone_labelmap.py',
                               'storage_io.py', 'requirements-phase1.txt', 'Dockerfile.phase1',
                               'cloudbuild-phase1.yaml', '.dockerignore', '.gcloudignore'}
                       or rel.startswith(('external/VISTA/', 'packages/final_segmentation_deploy_ready/',
@@ -98,9 +98,9 @@ jobs:
               if path.startswith('ai-services/tnm/'):
                   rel = path.removeprefix('ai-services/tnm/')
                   common = rel in {'storage_io.py', 'model_io.py', '.dockerignore', '.gcloudignore'}
-                  if common or rel in {'t_server.py', 'Dockerfile.t', 'cloudbuild-t.yaml', 'requirements-gpu.txt'} or rel == 'runtime/nnUNetTrainer_250epochs.py':
+                  if common or rel in {'nnunet_runtime.py', 't_server.py', 'Dockerfile.t', 'cloudbuild-t.yaml', 'requirements-gpu.txt'} or rel == 'runtime/nnUNetTrainer_250epochs.py':
                       add('tnm-t-serve', 'ai-services/tnm', 'Dockerfile.t')
-                  if common or rel in {'m_server.py', 'm_pipeline.py', 'pet_dicom.py', 'Dockerfile.m', 'cloudbuild-m.yaml', 'requirements-gpu.txt'} or rel.startswith(('resources/', 'runtime/nnUNetTrainer_100epochs_Save10.py')):
+                  if common or rel in {'nnunet_runtime.py', 'm_server.py', 'm_pipeline.py', 'pet_dicom.py', 'Dockerfile.m', 'cloudbuild-m.yaml', 'requirements-gpu.txt'} or rel.startswith(('resources/', 'runtime/nnUNetTrainer_100epochs_Save10.py')):
                       add('tnm-m-serve', 'ai-services/tnm', 'Dockerfile.m')
                   if common or rel in {'core_server.py', 'Dockerfile.core', 'cloudbuild-core.yaml', 'requirements-core.txt'} or rel.startswith('runtime/'):
                       add('tnm-serve', 'ai-services/tnm', 'Dockerfile.core')
@@ -170,6 +170,7 @@ jobs:
       EMBEDDING_SERVICE_URL: http://127.0.0.1:8200
       MEDGEMMA_SERVICE_URL: http://127.0.0.1:8300
       DJANGO_SECRET_KEY: ci-only-secret
+      PATIENT_JWT_SIGNING_KEY: ci-only-patient-jwt-signing-key-32-bytes-minimum
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

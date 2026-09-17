@@ -151,7 +151,10 @@ class DoctorFollowUpPathologyOrderAPITests(TestCase):
 
     def test_created_work_item_is_visible_to_pathology_workstation(self):
         self.confirm_subtype()
+        self.subtype_order.status = ExaminationOrder.Status.COMPLETED
+        self.subtype_order.save(update_fields=["status", "updated_at"])
         created = self.client.post(self.url, self.payload("GENE"), format="json")
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
         pathology = Department.objects.create(
             hospital=self.hospital, code="PATHOLOGY", name="병리과"
         )
