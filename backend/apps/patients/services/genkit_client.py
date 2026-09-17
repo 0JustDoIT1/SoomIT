@@ -15,9 +15,26 @@ class GenkitServiceNotConfigured(GenkitServiceError):
 
 def _fetch_id_token():
     import google.auth.transport.requests
-    import google.oauth2.id_token
 
     request = google.auth.transport.requests.Request()
+
+    # genkit-serve lives in a different GCP project than the service account
+    # GOOGLE_APPLICATION_CREDENTIALS normally points to (which is used for GCS
+    # access across the rest of the app). Rather than repointing that shared
+    # env var - which would break GCS for everything else - a dedicated
+    # service account file can be set just for minting this ID token.
+    if settings.GENKIT_SERVICE_ACCOUNT_FILE:
+        from google.oauth2 import service_account
+
+        credentials = service_account.IDTokenCredentials.from_service_account_file(
+            settings.GENKIT_SERVICE_ACCOUNT_FILE,
+            target_audience=settings.GENKIT_SERVICE_URL,
+        )
+        credentials.refresh(request)
+        return credentials.token
+
+    import google.oauth2.id_token
+
     return google.oauth2.id_token.fetch_id_token(request, settings.GENKIT_SERVICE_URL)
 
 

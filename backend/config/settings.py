@@ -293,6 +293,11 @@ GENKIT_SERVICE_TIMEOUT_SECONDS = float(
     os.environ.get("GENKIT_SERVICE_TIMEOUT_SECONDS", "300")
 )
 GENKIT_SERVICE_USE_ID_TOKEN = os.environ.get("GENKIT_SERVICE_USE_ID_TOKEN", "0") == "1"
+# Optional: a service account key file used only for minting the genkit-serve
+# ID token, for when that Cloud Run service's invoker is a different account
+# than GOOGLE_APPLICATION_CREDENTIALS (used for GCS elsewhere in the app).
+# Leave unset to fall back to the default application credentials.
+GENKIT_SERVICE_ACCOUNT_FILE = os.environ.get("GENKIT_SERVICE_ACCOUNT_FILE", "")
 
 #CORS_ALLOWED_ORIGINS = [
 #    "http://localhost:3000",
