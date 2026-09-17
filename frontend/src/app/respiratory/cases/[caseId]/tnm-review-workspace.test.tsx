@@ -34,9 +34,9 @@ describe("TnmReviewWorkspace", () => {
   it("keeps a category draft while moving between T, N and T", async () => {
     const user = userEvent.setup();
     render(<TnmReviewWorkspace />);
-    await user.type(screen.getByLabelText("최종 T 선택"), "T2");
+    await user.selectOptions(screen.getByLabelText("최종 T 선택"), "T2");
     await user.click(screen.getAllByRole("tab", { name: /N 림프절/ })[0]);
-    await user.type(screen.getByLabelText("최종 N 선택"), "N1");
+    await user.selectOptions(screen.getByLabelText("최종 N 선택"), "N1");
     await user.click(screen.getByRole("tab", { name: /T 원발 종양/ }));
     expect(screen.getByLabelText("최종 T 선택")).toHaveValue("T2");
   });

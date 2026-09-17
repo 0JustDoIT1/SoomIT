@@ -12,8 +12,20 @@ class DoctorWeeklyAvailabilitySerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         start = attrs.get("start_time", getattr(self.instance, "start_time", None))
         end = attrs.get("end_time", getattr(self.instance, "end_time", None))
+        weekday = attrs.get("weekday", getattr(self.instance, "weekday", None))
         if start is not None and end is not None and end <= start:
             raise serializers.ValidationError({"end_time": "end_time must be after start_time."})
+        doctor = getattr(self.instance, "doctor", None) or self.context["request"].user
+        overlaps = DoctorWeeklyAvailability.objects.filter(
+            doctor=doctor,
+            weekday=weekday,
+            start_time__lt=end,
+            end_time__gt=start,
+        )
+        if self.instance is not None:
+            overlaps = overlaps.exclude(id=self.instance.id)
+        if overlaps.exists():
+            raise serializers.ValidationError({"start_time": "This interval overlaps an existing clinic-hours interval."})
         return attrs
 
 

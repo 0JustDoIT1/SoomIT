@@ -32,6 +32,8 @@ import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
+import { MedicationSchedulePanel } from "./medication-schedule-panel";
+import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
 import { applyCaseResponse, canApplyCaseResponse } from "../../_lib/case-request-guard";
@@ -200,6 +202,7 @@ type CasePrescriptionItem = {
   calculated_dose: string | number | null;
   final_dose: string | number | null;
   unit: string | null;
+  route: string;
   route_label: string;
   administration_day: string | null;
   frequency: string | null;
@@ -1253,7 +1256,8 @@ export default function RespiratoryCaseDetailPage() {
   };
 
   const handleCasePrescriptionFinalize = async (
-    prescriptionId: string
+    prescriptionId: string,
+    medicationSchedules: FinalizeMedicationSchedule[] = []
   ) => {
     if (!caseId) return;
 
@@ -1272,6 +1276,8 @@ export default function RespiratoryCaseDetailPage() {
         `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
         {
           method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ medication_schedules: medicationSchedules }),
         }
       );
 
@@ -1725,6 +1731,16 @@ export default function RespiratoryCaseDetailPage() {
                       </div>
                     )}
 
+                    {prescription.prescription_status === "FINAL" && (
+                      <MedicationSchedulePanel
+                        caseId={caseId}
+                        prescriptionId={prescription.id}
+                        items={prescription.items}
+                        apiBaseUrl={API_BASE_URL}
+                        authorizedFetch={authorizedFetch}
+                      />
+                    )}
+
                     {prescription.safety_check_results.length > 0 && (
                       <div className="mt-3 space-y-2">
                         <p className="text-xs font-bold text-slate-700">
@@ -1823,7 +1839,13 @@ export default function RespiratoryCaseDetailPage() {
                       </p>
                     )}
 
-                    {prescription.prescription_status === "VALIDATED" && (
+                    {prescription.prescription_status === "VALIDATED" && !prescription.safety_check_results.some((result) => result.result === "BLOCK" || (result.result === "WARNING" && !result.acknowledged_at)) && (
+                      <div className="mt-3">
+                        <PrescriptionFinalizeScheduleForm items={prescription.items} working={casePrescriptionWorking} onFinalize={async (schedules) => handleCasePrescriptionFinalize(prescription.id, schedules)} />
+                      </div>
+                    )}
+
+                    {false && (
                       <div className="mt-3 flex justify-end">
                         <button
                           type="button"
