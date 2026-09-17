@@ -1,5 +1,6 @@
 
 import xml.etree.ElementTree as ET
+from io import BytesIO
 
 import numpy as np
 import openslide
@@ -277,3 +278,15 @@ def read_patch(
         )
 
     return patch
+
+
+def create_preview(slide_path, max_size: int = 1200) -> bytes:
+    """Render a bounded RGB JPEG preview without changing the source WSI."""
+    slide = openslide.OpenSlide(str(slide_path))
+    try:
+        thumbnail = slide.get_thumbnail((max_size, max_size)).convert("RGB")
+        output = BytesIO()
+        thumbnail.save(output, format="JPEG", quality=85, optimize=True)
+        return output.getvalue()
+    finally:
+        slide.close()

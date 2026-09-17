@@ -33,10 +33,10 @@ export function useRecentPatients(key: string) {
   return { patients, remember };
 }
 
-export function RecentPatients({ patients, selectedId, onSelect }: {
-  patients: RecentPatient[]; selectedId: string | null; onSelect: (patient: RecentPatient) => void;
+export function RecentPatients({ patients, selectedId, onSelect, className }: {
+  patients: RecentPatient[]; selectedId: string | null; onSelect: (patient: RecentPatient) => void; className?: string;
 }) {
-  return <aside aria-label="최근 본 환자" className="w-[160px] shrink-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+  return <aside aria-label="최근 본 환자" className={className ?? "w-[160px] shrink-0 rounded-xl border border-slate-200 bg-white p-3 shadow-sm"}>
     <h2 className="mb-3 text-sm font-bold text-slate-700">최근 본 환자</h2>
     {patients.length === 0 ? <p className="text-xs text-slate-400">최근 본 환자가 없습니다.</p> :
       <div className="space-y-1">{patients.map(patient => <button key={patient.case_id} type="button"

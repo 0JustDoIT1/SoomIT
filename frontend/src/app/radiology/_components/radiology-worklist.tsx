@@ -1,4 +1,5 @@
 import { StateMessage } from "@/components/workspace/state-message";
+import { useState } from "react";
 
 import type {
   RadiologyWorklistFilters,
@@ -7,15 +8,21 @@ import type {
 } from "../_lib/radiology-api";
 
 const workflowLabels: Record<RadiologyWorkflowStatus, string> = {
-  CANCELLED: "취소됨",
-  EXAM_PENDING: "예약됨",
-  IMAGE_PENDING: "영상 연결 대기",
-  AI_READY: "분석 대기 중",
-  AI_RUNNING: "AI 분석 중",
-  AI_COMPLETED: "AI 분석 완료",
-  AI_FAILED: "AI 실패",
-  REVIEW_PENDING: "의사 판독 대기",
-  REVIEW_COMPLETED: "판독 완료",
+  CANCELLED: "AI 분석 전",
+  EXAM_PENDING: "AI 분석 전",
+  IMAGE_PENDING: "AI 분석 전",
+  AI_READY: "AI 분석 전",
+  AI_RUNNING: "AI 분석 전",
+  AI_COMPLETED: "검토 대기 중",
+  AI_FAILED: "AI 분석 전",
+  REVIEW_PENDING: "검토 대기 중",
+  REVIEW_COMPLETED: "진행 완료",
+};
+
+const workflowStatusGroups: Record<string, RadiologyWorkflowStatus[]> = {
+  AI_BEFORE: ["EXAM_PENDING", "IMAGE_PENDING", "AI_READY", "AI_RUNNING", "AI_FAILED", "CANCELLED"],
+  REVIEW_PENDING: ["AI_COMPLETED", "REVIEW_PENDING"],
+  REVIEW_COMPLETED: ["REVIEW_COMPLETED"],
 };
 
 export type WorklistViewStatus =
@@ -52,6 +59,9 @@ export function RadiologyWorklist({
   totalItems,
   onPageChange,
 }: RadiologyWorklistProps) {
+  const [workflowStatusFilter, setWorkflowStatusFilter] = useState("ALL");
+  const visibleItems = items.filter((item) => workflowStatusFilter === "ALL" || workflowStatusGroups[workflowStatusFilter]?.includes(item.workflow_status));
+
   function updateFilter<Key extends keyof RadiologyWorklistFilters>(
     key: Key,
     value: RadiologyWorklistFilters[Key] | "",
@@ -101,22 +111,14 @@ export function RadiologyWorklist({
         <label className="flex items-center gap-2 text-xs text-slate-500">
           오더 상태
           <select
-            value={filters.status ?? ""}
-            onChange={(event) =>
-              updateFilter(
-                "status",
-                event.target.value as
-                  | RadiologyWorklistFilters["status"]
-                  | "",
-              )
-            }
+            value={workflowStatusFilter}
+            onChange={(event) => setWorkflowStatusFilter(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-violet-300"
           >
-            <option value="">전체</option>
-            <option value="ORDERED">요청됨</option>
-            <option value="SCHEDULED">예약됨</option>
-            <option value="COMPLETED">완료</option>
-            <option value="CANCELLED">취소</option>
+            <option value="ALL">전체</option>
+            <option value="AI_BEFORE">AI 분석 전</option>
+            <option value="REVIEW_PENDING">검토 대기 중</option>
+            <option value="REVIEW_COMPLETED">진행 완료</option>
           </select>
         </label>
       </div>
@@ -142,7 +144,7 @@ export function RadiologyWorklist({
                   </td>
                 ))}
               </tr>
-            )) : items.map((item) => {
+            )) : visibleItems.map((item) => {
               const caseId = item.case.id;
 
               return (
@@ -174,16 +176,12 @@ export function RadiologyWorklist({
                   </td>
 
                   <td className="px-3 py-2.5">
-                    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                    <span className={`inline rounded-sm px-0.5 py-0 text-xs font-semibold text-black ${
                       item.workflow_status === "REVIEW_COMPLETED"
-                        ? "bg-emerald-100 text-emerald-700"
-                        : item.workflow_status === "REVIEW_PENDING"
-                          ? "bg-cyan-50 text-cyan-700"
-                          : item.workflow_status === "AI_COMPLETED"
-                            ? "bg-violet-100 text-violet-700"
-                            : item.workflow_status === "AI_RUNNING" || item.workflow_status === "AI_READY"
-                              ? "bg-blue-50 text-blue-700"
-                              : "bg-slate-100 text-slate-700"
+                        ? "bg-emerald-100/80"
+                        : item.workflow_status === "REVIEW_PENDING" || item.workflow_status === "AI_COMPLETED"
+                          ? "bg-orange-100/80"
+                          : "bg-yellow-100/80"
                     }`}>
                       {workflowLabels[item.workflow_status]}
                     </span>

@@ -47,6 +47,7 @@ it("reopens a restored recent case absent from the worklist without auto-selecti
 
 vi.mock("./_lib/pathology-workstation-api", () => ({
   fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyWorkstation: vi.fn(),
+  fetchPathologyWsiPreview: vi.fn().mockResolvedValue(new Blob(["preview"], { type: "image/jpeg" })),
   fetchPdl1Analyses: vi.fn(),
   runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), submitPathologyForReview: vi.fn(),
 }));

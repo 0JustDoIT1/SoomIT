@@ -38,6 +38,7 @@ class PredictionResponse(BaseModel):
     confidence: float = Field(ge=0, le=1)
     probabilities: Probabilities
     preprocessing: dict
+    preview: dict[str, str] | None
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:

@@ -18,6 +18,7 @@ from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnol
 from apps.ai_results.models import AiAnalysis, AnalysisType, ModelVersion
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult
+from apps.radiology.views import _PassthroughContentNegotiation
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from .serializers import (
@@ -976,6 +977,8 @@ class WholeSlideImageTileAPIView(PathologyStaffAPIViewMixin, APIView):
 
 
 class WholeSlideImagePreviewAPIView(PathologyStaffAPIViewMixin, APIView):
+    content_negotiation_class = _PassthroughContentNegotiation
+
     def get(self, request, wsi_id):
         wsi = get_object_or_404(
             WholeSlideImage.objects.select_related("image_asset"),

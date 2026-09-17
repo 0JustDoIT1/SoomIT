@@ -83,6 +83,27 @@ function workflowDisplayStatus(item: PathologyWorkstationItem) {
   return "조직검사 완료";
 }
 
+function worklistDisplayStatus(item: PathologyWorkstationItem) {
+  if (item.workflow_status === "REVIEW_COMPLETED") {
+    return "진행 완료";
+  }
+
+  if (
+    item.workflow_status === "AI_COMPLETED" ||
+    item.workflow_status === "REVIEW_PENDING"
+  ) {
+    return "검토 대기 중";
+  }
+
+  return "AI 분석 전";
+}
+
+const workflowStatusGroups: Record<string, PathologyWorkstationItem["workflow_status"][]> = {
+  AI_BEFORE: ["SCHEDULED", "SPECIMEN_COMPLETED", "IMAGE_PENDING", "AI_READY", "AI_RUNNING", "CANCELLED"],
+  REVIEW_PENDING: ["AI_COMPLETED", "REVIEW_PENDING"],
+  REVIEW_COMPLETED: ["REVIEW_COMPLETED"],
+};
+
 function percent(value: string | number | null | undefined) {
   if (value === null || value === undefined || value === "") {
     return "-";
@@ -207,9 +228,9 @@ function PatientSummary({
   return (
     <section
       aria-labelledby="pathology-selected-patient-heading"
-      className="min-h-0 overflow-y-auto bg-gradient-to-b from-[#F1F3FF]/70 to-[#F9FAFF] p-3"
+      className="min-h-0 overflow-y-auto border-t border-[#E2E5F2] bg-[#FBFBFF] p-4"
     >
-      <div className="rounded-t-xl border border-[#DDE2F7] bg-gradient-to-r from-white to-[#F1F3FF] px-4 py-3 shadow-sm">
+      <div className="bg-white px-1 py-1">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           선택 환자
         </p>
@@ -228,13 +249,13 @@ function PatientSummary({
             </p>
           </div>
 
-          <span className="whitespace-nowrap rounded-full border border-[#DDE2F7] bg-white px-2 py-1 text-[11px] font-semibold text-[#3446B8]">
+          <span className="whitespace-nowrap px-1 py-0 text-[11px] font-semibold text-[#3446B8]">
             {workflowDisplayStatus(item)}
           </span>
         </div>
       </div>
 
-      <dl className="grid gap-x-4 gap-y-3 rounded-b-xl border border-[#DDE2F7] bg-white px-4 py-4 text-xs shadow-sm sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+      <dl className="grid gap-x-4 gap-y-3 bg-white px-1 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
         {summaryRows.map(([label, value]) => (
           <div key={label}>
             <dt className="text-[11px] text-slate-400">{label}</dt>
@@ -256,8 +277,8 @@ function SelectedCaseOverview({
   item: PathologyWorkstationItem | null;
 }) {
   return (
-    <section className="mb-4 overflow-hidden rounded-2xl border border-[#DDE2F7] bg-white shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[#E2E5F2] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
+    <section className="overflow-hidden border-b border-[#E2E5F2] bg-white">
+      <div className="relative flex flex-wrap items-start justify-between gap-4 overflow-hidden border-b border-[#E2E5F2] bg-[#F8F8FF] px-5 py-4">
         <div>
           <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#5364C7]">
             선택 환자 정보
@@ -616,8 +637,8 @@ function WorkArea({
   }
 
   return (
-    <section className="mb-4 overflow-hidden rounded-2xl border border-[#DDE2F7] bg-white shadow-sm last:mb-0">
-      <header className="flex flex-wrap items-start justify-between gap-3 border-b border-[#DDE2F7] bg-gradient-to-r from-[#F1F3FF] to-white px-5 py-4">
+    <section className="overflow-hidden border-b border-[#E2E5F2] bg-white last:border-b-0">
+      <header className="relative flex flex-wrap items-start justify-between gap-3 overflow-hidden border-b border-[#DDE2F7] bg-[#F8F8FF] px-5 py-4">
         <div>
           <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
             병리 분석 Workstation
@@ -637,11 +658,11 @@ function WorkArea({
         </span>
       </header>
 
-      <div className="space-y-4 bg-[#F9FAFF] p-4">
+      <div className="space-y-4 bg-[#F7F8FF] p-4">
         {isKnownTestType ? (
           <ol
             aria-label={`${testTitle} workflow`}
-            className="grid overflow-hidden rounded-xl border border-[#DDE2F7] bg-white sm:grid-cols-4"
+            className="grid overflow-hidden rounded-lg border border-[#DDE2F7] bg-white sm:grid-cols-4"
           >
             {workflowSteps.map((step, index) => (
               <li
@@ -732,7 +753,8 @@ function WorkArea({
                 </div>
               </dl>
 
-              <div className="mt-3 flex min-h-80 flex-col items-center justify-center rounded-xl border border-slate-300 bg-slate-950 text-slate-200 shadow-inner">
+              <div className="relative mt-3 flex min-h-96 flex-col items-center justify-center rounded-lg border border-[#C7CBE5] bg-slate-950 text-slate-200 shadow-inner">
+                <PathologyWsiPreview wsiId={item.latest_wsi.id} />
                 <p className="font-semibold">
                   조직영상 미리보기
                 </p>
@@ -747,7 +769,7 @@ function WorkArea({
               variant="empty"
               title="조직영상 연결 대기"
               description="검체에 연결된 WSI가 없습니다."
-              className="mt-3 min-h-60"
+            className="mt-3 min-h-72"
             />
           )}
         </section>
@@ -1297,11 +1319,7 @@ export default function PathologyDashboardPage() {
         ? examFilter
         : undefined,
 
-      workflowStatus:
-        tab === "worklist" &&
-        workflowStatusFilter !== "ALL"
-          ? workflowStatusFilter
-          : undefined,
+      workflowStatus: undefined,
 
       signal: controller.signal,
     })
@@ -1393,8 +1411,10 @@ export default function PathologyDashboardPage() {
       );
     }
 
-    return nonCancelled;
-  }, [items, tab]);
+    return items.filter(
+      (item) => workflowStatusFilter === "ALL" || workflowStatusGroups[workflowStatusFilter]?.includes(item.workflow_status),
+    );
+  }, [items, tab, workflowStatusFilter]);
 
   const selected =
     items.find(
@@ -1463,8 +1483,8 @@ export default function PathologyDashboardPage() {
   };
 
   return (
-    <div className="min-w-0">
-      <nav className="overflow-x-auto border-b border-[#E2E5F2] bg-white">
+    <div className="min-w-0 bg-[#F5F6FF] text-slate-900">
+      <nav className="overflow-x-auto border-b border-[#DDE2F7] bg-white shadow-sm">
         <div className="mx-auto w-full max-w-[1760px] px-4 sm:px-6">
           <div className="flex min-w-max gap-7">
             {(
@@ -1480,7 +1500,7 @@ export default function PathologyDashboardPage() {
                 onClick={() =>
                   changeTab(id)
                 }
-                className={`rounded-t-lg border-b-2 px-2 py-3 text-sm font-semibold transition ${
+                className={`border-b-2 px-2 py-3 text-sm font-semibold transition ${
                   tab === id
                     ? "border-[#3446B8] bg-[#F1F3FF] text-[#3446B8]"
                     : "border-transparent text-slate-500 hover:bg-[#F1F3FF] hover:text-[#3446B8]"
@@ -1493,17 +1513,18 @@ export default function PathologyDashboardPage() {
         </div>
       </nav>
 
-      <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
-        <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[160px_minmax(360px,28fr)_minmax(0,62fr)]">
-          <RecentPatients patients={recent.patients} selectedId={selectedId} onSelect={patient => {
+      <div className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">
+        <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(500px,42fr)_minmax(0,58fr)]">
+          <section className="grid min-h-0 grid-cols-[160px_minmax(0,1fr)] overflow-hidden rounded-xl border border-[#DDE2F7] bg-white shadow-sm">
+          <RecentPatients className="min-h-0 w-[160px] shrink-0 overflow-y-auto border-r border-[#E2E5F2] bg-[#FBFBFF] p-3" patients={recent.patients} selectedId={selectedId} onSelect={patient => {
             if (patient.case_id !== selectedId) {
               setSelectedItem(null); setSelectedWorkflow(null); setDetailError(""); setDetailLoading(true); setSelectedId(patient.case_id);
             }
             recent.remember(patient);
           }} />
-          <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] overflow-hidden rounded-2xl border border-[#E2E5F2] bg-white shadow-sm divide-y divide-[#E2E5F2]">
+          <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] overflow-hidden divide-y divide-[#E2E5F2]">
             <section className="flex min-h-0 flex-col">
-              <div className="flex flex-wrap items-center gap-3 border-b border-[#E2E5F2] bg-[#F9FAFF] px-4 py-3">
+              <div className="flex flex-wrap items-center gap-3 border-b border-[#E2E5F2] bg-[#F8F8FF] px-4 py-3">
                 <h1 className="mr-auto text-sm font-bold">
                   병리 Worklist
                 </h1>
@@ -1555,20 +1576,16 @@ export default function PathologyDashboardPage() {
                           전체
                         </option>
 
-                        <option value="SCHEDULED">
-                          예약중
+                        <option value="AI_BEFORE">
+                          AI 분석 전
                         </option>
 
-                        <option value="SPECIMEN_COMPLETED">
-                          조직검사 완료
-                        </option>
-
-                        <option value="AI_COMPLETED">
-                          AI 분석 완료
+                        <option value="REVIEW_PENDING">
+                          검토 대기 중
                         </option>
 
                         <option value="REVIEW_COMPLETED">
-                          의사 판독 완료
+                          진행 완료
                         </option>
                       </select>
                     </label>
@@ -1663,8 +1680,14 @@ export default function PathologyDashboardPage() {
                           </td>
 
                           <td className="px-3 py-2.5">
-                            <span className="whitespace-nowrap font-semibold">
-                              {workflowDisplayStatus(
+                            <span className={`whitespace-nowrap rounded-sm px-0.5 py-0 font-semibold text-black ${
+                              item.workflow_status === "REVIEW_COMPLETED"
+                                ? "bg-emerald-100/80"
+                                : item.workflow_status === "REVIEW_PENDING" || item.workflow_status === "AI_COMPLETED"
+                                  ? "bg-orange-100/80"
+                                  : "bg-yellow-100/80"
+                            }`}>
+                              {worklistDisplayStatus(
                                 item,
                               )}
                             </span>
@@ -1772,7 +1795,9 @@ export default function PathologyDashboardPage() {
               />
             )}
           </div>
+          </section>
 
+          <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[#DDE2F7] bg-white shadow-sm">
           {detailLoading ? (
             <StateMessage
               variant="loading"
@@ -1786,7 +1811,7 @@ export default function PathologyDashboardPage() {
               className="m-6 self-start"
             />
           ) : selectedId && selectedWorkflow ? (
-            <main className="min-h-0 overflow-y-auto rounded-2xl border border-[#E2E5F2] bg-[#F7F8FC] p-4 shadow-sm">
+            <main className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FC] p-4">
               <SelectedCaseOverview
                 workflow={selectedWorkflow}
                 item={selected ?? selectedWorkflow.orders[0] ?? null}
@@ -1813,6 +1838,7 @@ export default function PathologyDashboardPage() {
               className="m-6 self-start"
             />
           )}
+          </section>
         </div>
       </div>
     </div>

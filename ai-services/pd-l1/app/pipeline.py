@@ -7,9 +7,9 @@ from pathlib import Path
 import torch
 
 from .predictor import InvalidFeatureFile, PDL1Predictor
-from .storage import download_gcs_file
+from .storage import download_gcs_file, upload_wsi_preview
 from .virchow2 import extract_virchow2_features, load_virchow2
-from .wsi_patch_extraction import prepare_wsi, read_patch
+from .wsi_patch_extraction import create_preview, prepare_wsi, read_patch
 
 
 class InvalidPipelineInput(ValueError):
@@ -39,12 +39,21 @@ class PDL1Pipeline:
         if not annotation:
             raise InvalidPipelineInput("annotation file is empty")
 
+        preview_uri = None
         with tempfile.TemporaryDirectory(prefix="pdl1-") as tmp:
             tmp_path = Path(tmp)
             wsi_path = tmp_path / "slide.svs"
             annotation_path = tmp_path / "slide.annotations"
             annotation_path.write_bytes(annotation)
             download_gcs_file(wsi_gcs_uri, wsi_path)
+
+            try:
+                preview_uri = upload_wsi_preview(
+                    wsi_uri=wsi_gcs_uri,
+                    content=create_preview(wsi_path),
+                )
+            except Exception:
+                preview_uri = None
 
             with self._lock:
                 prep = prepare_wsi(wsi_path, annotation_path, roi_layer)
@@ -88,4 +97,5 @@ class PDL1Pipeline:
             "stride": prep["final_stride"],
             "raw_patch_count": prep["raw_patch_count"],
         }
+        result["preview"] = {"gcs_uri": preview_uri} if preview_uri else None
         return result
