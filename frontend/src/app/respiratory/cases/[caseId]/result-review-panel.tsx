@@ -1,10 +1,11 @@
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 import { CaseImageEvidence } from "./case-image-evidence";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
+import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
 
 type ResultRecord = Record<string, unknown>;
 type ClinicalResult = { workflow_stage: string; exam_name?: string; result_status?: string; result_status_label?: string; result_date?: string | null; result_detail?: unknown };
-type AiResult = { analysis_type: string; analysis_type_label?: string; status?: string; status_label?: string; model_name?: string; model_version_name?: string; completed_at?: string | null; result_detail?: unknown };
+type AiResult = { id?: string; analysis_type: string; analysis_type_label?: string; status?: string; status_label?: string; model_name?: string; model_version_name?: string; completed_at?: string | null; result_detail?: unknown };
 
 const STAGE_CONFIG: Record<string, { title: string; description: string; department: string }> = {
   XRAY: { title: "흉부 X선 검사·결과", description: "영상의학과 판독 결과를 먼저 확인하고 AI 후보를 보조 근거로 검토합니다.", department: "영상의학과" },
@@ -36,7 +37,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
           <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
           <p className="whitespace-nowrap text-[10px] text-slate-400">화면에서 바로 확인하고 필요할 때 크게 볼 수 있습니다.</p>
         </div>
-        <div className="overflow-x-auto">{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" || stage === "PET_CT_TNM" ? <CaseDicomEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
+        <div className="overflow-x-auto">{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
       <div className="grid grid-cols-2 divide-x divide-slate-200">

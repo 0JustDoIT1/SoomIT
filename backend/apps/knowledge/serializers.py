@@ -13,6 +13,7 @@ class KnowledgeSourceSerializer(serializers.Serializer):
     chunk_index = serializers.IntegerField()
     distance = serializers.FloatField()
     excerpt = serializers.CharField(required=False)
+    source_uri = serializers.CharField(required=False, allow_null=True, allow_blank=True)
 
 
 class AskKnowledgeResponseSerializer(serializers.Serializer):

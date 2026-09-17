@@ -9,6 +9,10 @@ class ExaminationOrderCreationError(ValueError):
     pass
 
 
+class ExaminationOrderUpdateError(ValueError):
+    pass
+
+
 PREREQUISITE_STAGE = {
     ExaminationOrder.OrderType.XRAY: None,
     ExaminationOrder.OrderType.CT: WorkflowStage.XRAY,
@@ -59,3 +63,36 @@ def create_examination_order(*, case, requesting_doctor, order_type, priority, p
             priority=priority,
         )
     return order, work_item
+
+
+@transaction.atomic
+def update_examination_order(*, order, requesting_doctor, **changes):
+    locked_order = ExaminationOrder.objects.select_for_update().get(pk=order.pk)
+    if locked_order.requesting_doctor_id != requesting_doctor.id:
+        raise ExaminationOrderUpdateError("본인이 요청한 오더만 수정할 수 있습니다.")
+    if locked_order.status != ExaminationOrder.Status.ORDERED:
+        raise ExaminationOrderUpdateError("요청됨 상태의 오더만 수정할 수 있습니다.")
+    for field, value in changes.items():
+        setattr(locked_order, field, value)
+    locked_order.save(update_fields=[*changes.keys(), "updated_at"])
+    return locked_order
+
+
+@transaction.atomic
+def cancel_examination_order(*, order, requesting_doctor):
+    from apps.pathology.models import PathologyWorkItem
+
+    locked_order = ExaminationOrder.objects.select_for_update().get(pk=order.pk)
+    if locked_order.requesting_doctor_id != requesting_doctor.id:
+        raise ExaminationOrderUpdateError("본인이 요청한 오더만 취소할 수 있습니다.")
+    if locked_order.status not in {ExaminationOrder.Status.ORDERED, ExaminationOrder.Status.SCHEDULED}:
+        raise ExaminationOrderUpdateError("요청됨 또는 예약됨 상태의 오더만 취소할 수 있습니다.")
+    work_items = PathologyWorkItem.objects.select_for_update().filter(examination_order=locked_order)
+    if work_items.filter(status=PathologyWorkItem.Status.IN_PROGRESS).exists():
+        raise ExaminationOrderUpdateError("진행 중인 병리 작업이 있어 이 오더를 취소할 수 없습니다.")
+    locked_order.status = ExaminationOrder.Status.CANCELLED
+    locked_order.save(update_fields=["status", "updated_at"])
+    work_items.filter(
+        status__in=[PathologyWorkItem.Status.PENDING, PathologyWorkItem.Status.BLOCKED],
+    ).update(status=PathologyWorkItem.Status.CANCELLED)
+    return locked_order

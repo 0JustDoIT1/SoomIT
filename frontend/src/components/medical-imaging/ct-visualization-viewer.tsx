@@ -10,6 +10,7 @@ import {
 type CtVisualizationViewerProps = {
   analysisId: string;
   layers: RadiologyVisualizationLayer[];
+  fetchLayer?: (layerId: string) => Promise<ArrayBuffer>;
 };
 
 const CATEGORY_LABELS: Record<RadiologyVisualizationLayer["category"], string> = {
@@ -18,7 +19,7 @@ const CATEGORY_LABELS: Record<RadiologyVisualizationLayer["category"], string> =
   ANATOMY: "해부 구조",
 };
 
-export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationViewerProps) {
+export function CtVisualizationViewer({ analysisId, layers, fetchLayer }: CtVisualizationViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -105,7 +106,7 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
         const results = await Promise.all(
           layers.map(async (layer) => {
             try {
-              const buffer = await fetchRadiologyVisualizationLayer(analysisId, layer.id);
+              const buffer = await (fetchLayer ? fetchLayer(layer.id) : fetchRadiologyVisualizationLayer(analysisId, layer.id));
               const gltf = await loader.parseAsync(buffer, "");
               return { layer, scene: gltf.scene as import("three").Object3D };
             } catch {
@@ -220,7 +221,7 @@ export function CtVisualizationViewer({ analysisId, layers }: CtVisualizationVie
       renderer?.dispose();
       renderer?.domElement.remove();
     };
-  }, [analysisId, layers]);
+  }, [analysisId, layers, fetchLayer]);
 
   if (layers.length === 0) {
     return (

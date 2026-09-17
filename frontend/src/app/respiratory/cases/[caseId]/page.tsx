@@ -25,6 +25,7 @@ import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./cli
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
+import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
 import { CaseImageEvidence } from "./case-image-evidence";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
@@ -865,6 +866,11 @@ export default function RespiratoryCaseDetailPage() {
     "PET_CT_TNM_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
+  const ctAnalysisResult = selectPreferredAiResult(
+    tnmAnalysisResults,
+    "CT_ANALYSIS",
+  ) as TnmAnalysisResult | undefined;
+
   const tnmAnalysis = tnmAnalysisResult?.result_detail?.tnm
     ? { ...tnmAnalysisResult.result_detail.tnm, ai_result_id: tnmAnalysisResult.id }
     : undefined;
@@ -1612,7 +1618,7 @@ export default function RespiratoryCaseDetailPage() {
               onRetry={retryAiResults}
               evidenceByAnalysis={{
                 XRAY_ANALYSIS: <CaseImageEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="XRAY" />,
-                CT_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="CT" />,
+                CT_ANALYSIS: <CaseCtSegmentationEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={ctAnalysisResult?.id} />,
                 PET_CT_TNM_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="PET_CT_TNM" />,
                 PATHOLOGY_GENE_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="HE" />,
                 PDL1_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="PDL1" />,

@@ -907,6 +907,11 @@ class MedicationScheduleSerializer(serializers.ModelSerializer):
         fields = [
             "id",
             "reminder_time",
+            "start_date",
+            "end_date",
+            "repeat_type",
+            "repeat_weekdays",
+            "cycle_days",
             "enabled",
             "today_status",
             "items",

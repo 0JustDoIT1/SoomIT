@@ -13,7 +13,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase
-from apps.patients.models import CurrentMedication, LabResult, Patient, PatientHealthProfile
+from apps.patients.models import CurrentMedication, LabResult, MedicationSchedule, Patient, PatientAccount, PatientHealthProfile
 
 from .dur_client import DurClient, OPERATIONS
 from apps.radiology.services.tnm_stage_inference import TnmStageInferenceError, request_tnm_stage
@@ -27,6 +27,7 @@ from .serializers import (
     PatientClinicalResultSerializer,
     TreatmentRuleCandidateSerializer,
 )
+from .medication_schedule_serializers import DoctorMedicationScheduleSerializer, PrescriptionFinalizeSerializer
 
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -791,7 +792,7 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     @extend_schema(
-        request=None,
+        request=PrescriptionFinalizeSerializer,
         responses={200: DoctorPrescriptionSerializer},
     )
     @transaction.atomic
@@ -931,6 +932,24 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                     status=400,
                 )
 
+        finalization_serializer = PrescriptionFinalizeSerializer(
+            data=request.data or {}, context={"prescription": prescription}
+        )
+        finalization_serializer.is_valid(raise_exception=True)
+        schedule_payloads = finalization_serializer.validated_data.get("medication_schedules", [])
+        if schedule_payloads:
+            patient_account = PatientAccount.objects.filter(patient=prescription.case.patient).first()
+            if patient_account is None:
+                return Response(
+                    {"detail": "A linked patient account is required before creating medication schedules."},
+                    status=400,
+                )
+            for payload in schedule_payloads:
+                schedule_serializer = DoctorMedicationScheduleSerializer(
+                    context={"prescription": prescription, "patient_account": patient_account},
+                )
+                schedule_serializer.create(payload)
+
         prescription.prescription_status = "FINAL"
         prescription.save(
             update_fields=[
@@ -945,6 +964,74 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
             serializer.data,
             status=200,
         )
+
+
+class DoctorMedicationScheduleListCreateAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _prescription(self, request, case_id, prescription_id):
+        return Prescription.objects.filter(
+            id=prescription_id,
+            case_id=case_id,
+            case__primary_doctor=request.user,
+            case__case_status="ACTIVE",
+            prescription_status=Prescription.PrescriptionStatus.FINAL,
+        ).first()
+
+    def get(self, request, case_id, prescription_id):
+        prescription = self._prescription(request, case_id, prescription_id)
+        if prescription is None:
+            return Response({"detail": "A final prescription was not found."}, status=404)
+        schedules = MedicationSchedule.objects.filter(prescription=prescription).prefetch_related("items__prescription_item__drug")
+        return Response(DoctorMedicationScheduleSerializer(schedules, many=True, context={"prescription": prescription}).data)
+
+    @transaction.atomic
+    def post(self, request, case_id, prescription_id):
+        prescription = self._prescription(request, case_id, prescription_id)
+        if prescription is None:
+            return Response({"detail": "A final prescription was not found."}, status=404)
+        patient_account = PatientAccount.objects.filter(patient=prescription.case.patient).first()
+        if patient_account is None:
+            return Response({"detail": "A linked patient account is required."}, status=400)
+        serializer = DoctorMedicationScheduleSerializer(
+            data=request.data, context={"prescription": prescription, "patient_account": patient_account}
+        )
+        serializer.is_valid(raise_exception=True)
+        schedule = serializer.save()
+        return Response(
+            DoctorMedicationScheduleSerializer(schedule, context={"prescription": prescription}).data,
+            status=201,
+        )
+
+
+class DoctorMedicationScheduleDetailAPIView(DoctorMedicationScheduleListCreateAPIView):
+    def _schedule(self, request, case_id, prescription_id, schedule_id):
+        prescription = self._prescription(request, case_id, prescription_id)
+        if prescription is None:
+            return None, None
+        return prescription, MedicationSchedule.objects.filter(id=schedule_id, prescription=prescription).first()
+
+    @transaction.atomic
+    def patch(self, request, case_id, prescription_id, schedule_id):
+        prescription, schedule = self._schedule(request, case_id, prescription_id, schedule_id)
+        if schedule is None:
+            return Response({"detail": "Medication schedule was not found."}, status=404)
+        serializer = DoctorMedicationScheduleSerializer(
+            schedule, data=request.data, partial=True, context={"prescription": prescription}
+        )
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @transaction.atomic
+    def delete(self, request, case_id, prescription_id, schedule_id):
+        _, schedule = self._schedule(request, case_id, prescription_id, schedule_id)
+        if schedule is None:
+            return Response({"detail": "Medication schedule was not found."}, status=404)
+        schedule.enabled = False
+        schedule.save(update_fields=["enabled", "updated_at"])
+        return Response(status=204)
 
 @extend_schema(tags=["호흡기내과-처방관리"])
 class DoctorSafetyWarningAcknowledgeAPIView(APIView):

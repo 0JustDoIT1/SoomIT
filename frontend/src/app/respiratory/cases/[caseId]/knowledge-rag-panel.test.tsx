@@ -17,7 +17,7 @@ describe("KnowledgeRagPanel", () => {
   });
 
   it("numbers displayed sources by retrieval order rather than document chunk index", async () => {
-    const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ answer: "[1] First source. [2] Second source.", sources: [{ document: "First source", chunk_index: 8, distance: 0.12, excerpt: "First evidence excerpt" }, { document: "Second source", chunk_index: 1, distance: 0.18 }] }), { status: 200 }));
+    const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ answer: "[1] First source. [2] Second source.", sources: [{ document: "First source", chunk_index: 8, distance: 0.12, excerpt: "First evidence excerpt", source_uri: "https://example.test/first" }, { document: "Second source", chunk_index: 1, distance: 0.18, source_uri: "javascript:alert(1)" }] }), { status: 200 }));
     render(<KnowledgeRagPanel apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
 
     fireEvent.change(screen.getByRole("textbox"), { target: { value: "citation check" } });
@@ -26,6 +26,8 @@ describe("KnowledgeRagPanel", () => {
     expect(await screen.findByText("[1] First source")).toBeTruthy();
     expect(screen.getByText("[2] Second source")).toBeTruthy();
     expect(screen.getByText("First evidence excerpt")).toBeTruthy();
+    expect(screen.getByRole("link")).toHaveAttribute("href", "https://example.test/first");
+    expect(screen.getAllByRole("link")).toHaveLength(1);
   });
 
   it("shows the API error without inventing an answer", async () => {

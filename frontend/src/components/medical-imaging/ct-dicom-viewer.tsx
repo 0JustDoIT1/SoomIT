@@ -12,6 +12,8 @@ type CtDicomViewerProps = {
   orderId: string;
   assetId: string;
   analysisId?: string;
+  loadSeries?: (orderId: string, assetId: string) => Promise<{ imageIds: string[] }>;
+  loadSegmentation?: (analysisId: string) => Promise<CtCornerstoneSegmentation>;
 };
 
 type ViewKey = "axial" | "coronal" | "sagittal" | "volume3d";
@@ -49,7 +51,7 @@ function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
   return [-x, -y, z];
 }
 
-export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerProps) {
+export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSegmentation }: CtDicomViewerProps) {
   const axialRef = useRef<HTMLDivElement>(null);
   const coronalRef = useRef<HTMLDivElement>(null);
   const sagittalRef = useRef<HTMLDivElement>(null);
@@ -86,8 +88,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
     setError("");
     setSeriesProgress({ loaded: 0, total: 0 });
     Promise.all([
-      loadCtDicomWebSeries(orderId, assetId),
-      analysisId ? fetchRadiologyAnalysisResult(analysisId).catch(() => null) : Promise.resolve(null),
+      (loadSeries ?? loadCtDicomWebSeries)(orderId, assetId),
+      analysisId && !loadSeries ? fetchRadiologyAnalysisResult(analysisId).catch(() => null) : Promise.resolve(null),
     ])
       .then(([{ imageIds }, analysisResult]) => {
         if (disposed) return;
@@ -105,7 +107,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
     return () => {
       disposed = true;
     };
-  }, [orderId, assetId, analysisId]);
+  }, [orderId, assetId, analysisId, loadSeries]);
 
   // Builds all 4 fixed views (Axial/Coronal/Sagittal MPR + voxel 3D volume
   // rendering) once per series. Clicking a view to maximize it never re-enters
@@ -253,7 +255,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
             ? segmentationCacheRef.current.segmentation
             : null;
           if (!segmentation) {
-            segmentation = await loadCtCornerstoneSegmentation(analysisId);
+            segmentation = await (loadSegmentation ? loadSegmentation(analysisId) : loadCtCornerstoneSegmentation(analysisId));
             if (disposed) return;
             segmentationCacheRef.current = { key: segmentationKey, segmentation };
           }
@@ -301,7 +303,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId }: CtDicomViewerPro
       renderingEngine?.destroy();
       renderingEngineRef.current = null;
     };
-  }, [loading, error, analysisId, orderId, assetId]);
+  }, [loading, error, analysisId, orderId, assetId, loadSegmentation]);
 
   // Pure layout switch: maximizing/restoring a view never re-fetches or rebuilds
   // anything - the already-built viewports just need a resize once their

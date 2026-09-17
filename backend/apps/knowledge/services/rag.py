@@ -21,6 +21,7 @@ def _format_sources(chunks):
             "chunk_index": chunk.chunk_index,
             "distance": chunk.distance,
             "excerpt": chunk.content[:400],
+            "source_uri": chunk.document.source_uri,
         }
         for chunk in chunks
     ]

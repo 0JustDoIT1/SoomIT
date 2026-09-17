@@ -255,6 +255,7 @@ MEDGEMMA_SERVICE_USE_ID_TOKEN = os.environ.get("MEDGEMMA_SERVICE_USE_ID_TOKEN", 
 
 # Shared only by Django and trusted AI orchestrators such as Genkit.
 AI_SERVICE_TOKEN = os.environ.get("AI_SERVICE_TOKEN", "")
+PATIENT_APP_SERVICE_TOKEN = os.environ.get("PATIENT_APP_SERVICE_TOKEN", "")
 
 # Private Genkit Cloud Run service. Empty until the service is deployed.
 GENKIT_SERVICE_URL = os.environ.get("GENKIT_SERVICE_URL", "").rstrip("/")

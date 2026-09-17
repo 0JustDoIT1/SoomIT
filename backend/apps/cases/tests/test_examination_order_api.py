@@ -52,3 +52,46 @@ class DoctorExaminationOrderAPITests(TestCase):
         work_item = PathologyWorkItem.objects.get(id=created.data["pathology_work_item_id"])
         self.assertEqual(work_item.examination_order, order)
         self.assertEqual(work_item.task_type, PathologyWorkItem.TaskType.WSI_UPLOAD)
+
+    def test_requesting_doctor_can_update_only_ordered_order(self):
+        created = self.post_order("XRAY")
+        order = ExaminationOrder.objects.get(id=created.data["id"])
+        url = reverse("doctor-examination-order-detail", kwargs={"case_id": self.case.id, "order_id": order.id})
+
+        response = self.client.patch(url, {"priority": "URGENT", "purpose": "Urgent chest X-ray"}, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        self.assertEqual(order.priority, ExaminationOrder.Priority.URGENT)
+        self.assertEqual(order.purpose, "Urgent chest X-ray")
+        order.status = ExaminationOrder.Status.SCHEDULED
+        order.save(update_fields=["status", "updated_at"])
+        self.assertEqual(self.client.patch(url, {"purpose": "changed"}, format="json").status_code, 400)
+
+    def test_cancelling_pathology_order_cancels_pending_work_item(self):
+        self.confirm(WorkflowStage.PET_CT_TNM)
+        created = self.post_order("PATHOLOGY_GENE")
+        order = ExaminationOrder.objects.get(id=created.data["id"])
+        work_item = PathologyWorkItem.objects.get(examination_order=order)
+        url = reverse("doctor-examination-order-detail", kwargs={"case_id": self.case.id, "order_id": order.id})
+
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, 200)
+        order.refresh_from_db()
+        work_item.refresh_from_db()
+        self.assertEqual(order.status, ExaminationOrder.Status.CANCELLED)
+        self.assertEqual(work_item.status, PathologyWorkItem.Status.CANCELLED)
+
+    def test_cannot_cancel_pathology_order_with_started_work_item(self):
+        self.confirm(WorkflowStage.PET_CT_TNM)
+        created = self.post_order("PATHOLOGY_GENE")
+        order = ExaminationOrder.objects.get(id=created.data["id"])
+        PathologyWorkItem.objects.filter(examination_order=order).update(status=PathologyWorkItem.Status.IN_PROGRESS)
+        url = reverse("doctor-examination-order-detail", kwargs={"case_id": self.case.id, "order_id": order.id})
+
+        response = self.client.delete(url)
+
+        self.assertEqual(response.status_code, 400)
+        order.refresh_from_db()
+        self.assertEqual(order.status, ExaminationOrder.Status.ORDERED)

@@ -1,3 +1,5 @@
+import json
+
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.http import HttpResponse
@@ -13,6 +15,8 @@ from apps.pathology.models import PathologySpecimen, WholeSlideImage
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
+from apps.radiology.services.ct_cornerstone_storage import CtCornerstoneStorageError, download_ct_cornerstone_object
+from apps.radiology.services.ct_visualization_storage import CtVisualizationStorageError, download_ct_visualization
 from apps.radiology.services.orthanc_dicomweb import (
     OrthancDicomWebError,
     get_series_metadata,
@@ -21,6 +25,7 @@ from apps.radiology.services.orthanc_dicomweb import (
 )
 
 from .models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.ai_results.models import AiAnalysis, AnalysisType
 from .serializers import (
     DoctorCaseImageAssetSerializer,
     DoctorLungCancerCaseDetailSerializer,
@@ -31,8 +36,15 @@ from .serializers import (
     MedicalOpinionResponseSerializer,
     FollowUpPathologyOrderCreateSerializer,
     ExaminationOrderCreateSerializer,
+    ExaminationOrderUpdateSerializer,
 )
-from .services.examination_orders import ExaminationOrderCreationError, create_examination_order
+from .services.examination_orders import (
+    ExaminationOrderCreationError,
+    ExaminationOrderUpdateError,
+    cancel_examination_order,
+    create_examination_order,
+    update_examination_order,
+)
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
 from .services.pathology_orders import (
     PathologyOrderCreationError,
@@ -365,6 +377,93 @@ class DoctorCaseDicomWebInstanceAPIView(APIView):
         return response
 
 
+class DoctorCaseCtAnalysisMixin:
+    def get_ct_analysis(self, request, case_id, analysis_id):
+        case = _doctor_case_or_404(request, case_id)
+        return get_object_or_404(
+            AiAnalysis.objects.select_related("ai_result", "source_image_asset"),
+            id=analysis_id,
+            case=case,
+            analysis_type=AnalysisType.CT_ANALYSIS,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+
+
+class DoctorCaseCtSegmentationAPIView(DoctorCaseCtAnalysisMixin, APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, case_id, analysis_id):
+        analysis = self.get_ct_analysis(request, case_id, analysis_id)
+        payload = analysis.ai_result.result_payload if hasattr(analysis, "ai_result") else None
+        segmentation = payload.get("cornerstone_segmentation") if isinstance(payload, dict) else None
+        if not isinstance(segmentation, dict) or not segmentation.get("geometry_uri"):
+            return Response({"detail": "CT 분할 결과가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            geometry = json.loads(download_ct_cornerstone_object(segmentation["geometry_uri"]).decode("utf-8"))
+        except (CtCornerstoneStorageError, ValueError, UnicodeDecodeError):
+            return Response({"detail": "CT 분할 geometry를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({
+            "schema_version": segmentation.get("schema_version"),
+            "scalar_type": segmentation.get("scalar_type"),
+            "dimensions": segmentation.get("dimensions"),
+            "spacing": geometry.get("spacing"),
+            "origin": geometry.get("origin"),
+            "direction": geometry.get("direction"),
+            "segments": segmentation.get("segments", []),
+        })
+
+
+class DoctorCaseCtSegmentationLabelmapAPIView(DoctorCaseCtAnalysisMixin, APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, case_id, analysis_id):
+        analysis = self.get_ct_analysis(request, case_id, analysis_id)
+        payload = analysis.ai_result.result_payload if hasattr(analysis, "ai_result") else None
+        segmentation = payload.get("cornerstone_segmentation") if isinstance(payload, dict) else None
+        if not isinstance(segmentation, dict) or not segmentation.get("labelmap_uri"):
+            return Response({"detail": "CT 분할 결과가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            content = download_ct_cornerstone_object(segmentation["labelmap_uri"])
+        except CtCornerstoneStorageError:
+            return Response({"detail": "CT 분할 labelmap을 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(content, content_type="application/octet-stream")
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class DoctorCaseCtVisualizationAPIView(DoctorCaseCtAnalysisMixin, APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, case_id, analysis_id, layer_id=None):
+        analysis = self.get_ct_analysis(request, case_id, analysis_id)
+        payload = analysis.ai_result.result_payload if hasattr(analysis, "ai_result") else None
+        visualization = payload.get("visualization") if isinstance(payload, dict) else None
+        layers = visualization.get("layers", []) if isinstance(visualization, dict) else []
+        if not isinstance(layers, list):
+            return Response({"detail": "CT 3D 결과가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        if layer_id is None:
+            return Response({"layers": [
+                {
+                    **{key: value for key, value in layer.items() if key != "mesh_uri"},
+                    "mesh_url": f"/api/doctor/cases/{case_id}/ct-analyses/{analysis_id}/visualization/{layer.get('id')}/",
+                }
+                for layer in layers if isinstance(layer, dict) and layer.get("id") and layer.get("mesh_uri")
+            ]})
+        layer = next((item for item in layers if isinstance(item, dict) and item.get("id") == layer_id), None)
+        if layer is None or not layer.get("mesh_uri"):
+            return Response({"detail": "CT 3D 레이어가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            content = download_ct_visualization(layer["mesh_uri"])
+        except CtVisualizationStorageError:
+            return Response({"detail": "CT 3D 레이어를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(content, content_type="model/gltf-binary")
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
 class DoctorMedicalOpinionAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
@@ -532,3 +631,50 @@ class DoctorExaminationOrderAPIView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class DoctorExaminationOrderDetailAPIView(DoctorExaminationOrderAPIView):
+    def get_order(self, request, case_id, order_id):
+        case = self.get_case(request, case_id)
+        if case is None:
+            return None, Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        order = case.examination_orders.filter(id=order_id).first()
+        if order is None:
+            return None, Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        return order, None
+
+    @staticmethod
+    def serialize_order(order):
+        return {
+            "id": order.id,
+            "case_id": order.case_id,
+            "order_type": order.order_type,
+            "order_type_label": order.get_order_type_display(),
+            "priority": order.priority,
+            "status": order.status,
+            "purpose": order.purpose,
+            "clinical_note": order.clinical_note,
+            "created_at": order.created_at,
+        }
+
+    def patch(self, request, case_id, order_id):
+        order, error_response = self.get_order(request, case_id, order_id)
+        if error_response:
+            return error_response
+        serializer = ExaminationOrderUpdateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        try:
+            updated = update_examination_order(order=order, requesting_doctor=request.user, **serializer.validated_data)
+        except ExaminationOrderUpdateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.serialize_order(updated))
+
+    def delete(self, request, case_id, order_id):
+        order, error_response = self.get_order(request, case_id, order_id)
+        if error_response:
+            return error_response
+        try:
+            cancelled = cancel_examination_order(order=order, requesting_doctor=request.user)
+        except ExaminationOrderUpdateError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(self.serialize_order(cancelled))

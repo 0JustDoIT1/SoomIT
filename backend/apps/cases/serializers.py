@@ -66,6 +66,17 @@ class ExaminationOrderCreateSerializer(serializers.Serializer):
     clinical_note = serializers.CharField(required=False, allow_blank=True, allow_null=True, default="")
 
 
+class ExaminationOrderUpdateSerializer(serializers.Serializer):
+    priority = serializers.ChoiceField(choices=ExaminationOrder.Priority.choices, required=False)
+    purpose = serializers.CharField(max_length=500, required=False)
+    clinical_note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, attrs):
+        if not attrs:
+            raise serializers.ValidationError("수정할 오더 정보가 없습니다.")
+        return attrs
+
+
 class MedicalOpinionRequestSerializer(serializers.Serializer):
     instruction = serializers.CharField(
         required=False,

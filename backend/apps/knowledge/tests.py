@@ -106,6 +106,7 @@ class RagTests(TestCase):
         self.assertEqual(len(result["sources"]), 1)
         self.assertEqual(result["sources"][0]["document"], "테스트 문서")
         self.assertEqual(result["sources"][0]["excerpt"], "EGFR 변이 관련 치료 지침입니다.")
+        self.assertIsNone(result["sources"][0]["source_uri"])
 
         messages = mock_chat.call_args.args[0]
         self.assertEqual(messages[0]["role"], "system")

@@ -299,11 +299,23 @@ class AppointmentRequest(TimestampedUUIDModel):
 # v1.6: prescription_id는 Regimen/Cycle 처방 Header(clinical.Prescription)를 가리킴.
 # "복용 알림 단위"이며 특정 약물 1개를 직접 의미하지 않음 → 실제 약물 연결은 MedicationScheduleItem이 담당.
 class MedicationSchedule(TimestampedUUIDModel):
+    class RepeatType(models.TextChoices):
+        DAILY = "DAILY", "Daily"
+        WEEKLY = "WEEKLY", "Specific weekdays"
+        CYCLE_DAY = "CYCLE_DAY", "Treatment cycle days"
+
     patient_account = models.ForeignKey(PatientAccount, on_delete=models.PROTECT, related_name="medication_schedules")
     prescription = models.ForeignKey(
         "clinical.Prescription", on_delete=models.PROTECT, related_name="medication_schedules"
     )
     reminder_time = models.TimeField()
+    # Existing schedules predate duration support. New clinician-created schedules
+    # always require this value; null only preserves historic records.
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    repeat_type = models.CharField(max_length=15, choices=RepeatType.choices, default=RepeatType.DAILY)
+    repeat_weekdays = models.JSONField(default=list, blank=True)
+    cycle_days = models.JSONField(default=list, blank=True)
     enabled = models.BooleanField(default=True)
 
     class Meta:
