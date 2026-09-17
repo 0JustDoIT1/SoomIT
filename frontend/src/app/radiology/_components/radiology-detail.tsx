@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import Image from "next/image";
 import dynamic from "next/dynamic";
 
@@ -403,6 +403,8 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingCtSeries, setUploadingCtSeries] = useState(false);
   const [ctSeriesUploaded, setCtSeriesUploaded] = useState(false);
+  const [isUploadDragOver, setIsUploadDragOver] = useState(false);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
   const order = item.examination_order;
   const image = item.latest_image_asset;
@@ -432,6 +434,18 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const isCt = order.order_type === "CT";
   const serverImageReady = image?.status === "READY" || (isCt && ctSeriesUploaded);
   const canStartAnalysis = trackedAnalysis === null && (serverImageReady || (!isXray && !isCt && ctReadyToUpload));
+
+  function handleSelectedFiles(files: File[]) {
+    setSelectedFiles(isXray ? files : filterDicomFolderFiles(files));
+    setDicomHeaders([]);
+    setSelectedSeriesUid(null);
+  }
+
+  function handleUploadDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault();
+    setIsUploadDragOver(false);
+    handleSelectedFiles(Array.from(event.dataTransfer.files));
+  }
 
   useEffect(() => {
     return () => {
@@ -665,24 +679,41 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">연결된 영상 자산이 없습니다.</p>}
             </div>
-            <label className="shrink-0 cursor-pointer rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">
-              로컬 영상 선택
+          </div>
+          {selectedFiles.length === 0 ? (
+            <div
+              role="button"
+              tabIndex={0}
+              onClick={() => uploadInputRef.current?.click()}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") uploadInputRef.current?.click();
+              }}
+              onDragEnter={(event) => {
+                event.preventDefault();
+                setIsUploadDragOver(true);
+              }}
+              onDragOver={(event) => event.preventDefault()}
+              onDragLeave={(event) => {
+                event.preventDefault();
+                setIsUploadDragOver(false);
+              }}
+              onDrop={handleUploadDrop}
+              className={`mt-4 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 text-center transition-colors ${isUploadDragOver ? "border-blue-500 bg-blue-100/80" : "border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 hover:border-blue-400"}`}
+            >
+              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl text-blue-300 shadow-sm" aria-hidden="true">＋</span>
+              <p className="mt-3 text-sm font-semibold text-slate-700">영상 추가</p>
+              <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">클릭하거나 파일{isXray ? "을" : " 또는 폴더를"} 여기로 끌어다 놓으세요.</p>
               <input
+                ref={uploadInputRef}
                 type="file"
                 multiple={!isXray}
                 accept={isXray ? "image/jpeg,image/png" : ".dcm,.dicom,application/dicom"}
                 className="sr-only"
                 {...(!isXray ? { webkitdirectory: "" } : {})}
-                onChange={(event) => {
-                  const picked = Array.from(event.target.files ?? []);
-                  setSelectedFiles(isXray ? picked : filterDicomFolderFiles(picked));
-                  setDicomHeaders([]);
-                  setSelectedSeriesUid(null);
-                }}
+                onChange={(event) => handleSelectedFiles(Array.from(event.target.files ?? []))}
               />
-            </label>
-          </div>
-          {selectedFiles.length === 0 ? <div className="mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 px-6 text-center"><span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl text-blue-300 shadow-sm" aria-hidden="true">＋</span><p className="mt-3 text-sm font-semibold text-slate-700">영상 미리보기</p><p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">로컬 영상을 선택하면 미리보기 또는 Series 정보를 확인할 수 있습니다.</p></div> : null}
+            </div>
+          ) : null}
           {selectedFiles.length > 0 ? (
             <div className="mt-4 border-l-2 border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
               <div className="flex flex-wrap items-center justify-between gap-2">
