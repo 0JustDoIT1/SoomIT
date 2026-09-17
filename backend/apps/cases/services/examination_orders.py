@@ -1,6 +1,9 @@
 from django.db import transaction
 
+from apps.accounts.constants import PATHOLOGY_DEPARTMENT_CODE, RADIOLOGY_DEPARTMENT_CODE
+from apps.accounts.models import User
 from apps.clinical.models import ClinicalResult
+from apps.notifications.services import create_in_app_staff_notifications
 
 from ..models import ExaminationOrder, WorkflowStage
 
@@ -20,6 +23,44 @@ PREREQUISITE_STAGE = {
     ExaminationOrder.OrderType.PATHOLOGY_GENE: WorkflowStage.PET_CT_TNM,
     ExaminationOrder.OrderType.PDL1: WorkflowStage.PATHOLOGY_GENE,
 }
+
+ORDER_TARGET_DEPARTMENT = {
+    ExaminationOrder.OrderType.XRAY: RADIOLOGY_DEPARTMENT_CODE,
+    ExaminationOrder.OrderType.CT: RADIOLOGY_DEPARTMENT_CODE,
+    ExaminationOrder.OrderType.PET_CT_TNM: RADIOLOGY_DEPARTMENT_CODE,
+    ExaminationOrder.OrderType.PATHOLOGY_GENE: PATHOLOGY_DEPARTMENT_CODE,
+    ExaminationOrder.OrderType.PDL1: PATHOLOGY_DEPARTMENT_CODE,
+}
+
+
+def create_order_notifications(*, order, requesting_doctor):
+    department_code = ORDER_TARGET_DEPARTMENT[order.order_type]
+    hospital_id = getattr(getattr(requesting_doctor, "department_role", None), "department", None)
+    hospital_id = getattr(hospital_id, "hospital_id", None)
+    recipient_query = User.objects.filter(
+        account_status=User.AccountStatus.ACTIVE,
+        department_role__department__code=department_code,
+    )
+    if hospital_id is not None:
+        recipient_query = recipient_query.filter(department_role__department__hospital_id=hospital_id)
+    recipients = list(recipient_query.select_related("department_role__department"))
+    payload = {"examination_order_id": str(order.id), "order_type": order.order_type}
+    create_in_app_staff_notifications(
+        recipients=recipients,
+        case=order.case,
+        notification_type="EXAMINATION_ORDER",
+        title="새 검사 오더 도착",
+        message=f"{order.case.case_code} · {order.get_order_type_display()} 오더가 요청되었습니다.",
+        payload=payload,
+    )
+    create_in_app_staff_notifications(
+        recipients=[requesting_doctor],
+        case=order.case,
+        notification_type="EXAMINATION_ORDER",
+        title="검사 오더 접수",
+        message=f"{order.get_order_type_display()} 오더를 {department_code} 부서에 전달했습니다.",
+        payload=payload,
+    )
 
 
 @transaction.atomic
@@ -62,6 +103,7 @@ def create_examination_order(*, case, requesting_doctor, order_type, priority, p
             status=PathologyWorkItem.Status.PENDING,
             priority=priority,
         )
+    transaction.on_commit(lambda: create_order_notifications(order=order, requesting_doctor=requesting_doctor))
     return order, work_item
 
 

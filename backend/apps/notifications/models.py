@@ -36,6 +36,7 @@ class PatientNotificationSetting(UUIDModel):
 # ── 9-2. user_notification_settings ─────────────────────────────
 class UserNotificationSetting(UUIDModel):
     class NotificationType(models.TextChoices):
+        EXAMINATION_ORDER = "EXAMINATION_ORDER", "검사 오더"
         AI_ANALYSIS_COMPLETED = "AI_ANALYSIS_COMPLETED", "AI분석완료"
         CLINICAL_REVIEW_REQUIRED = "CLINICAL_REVIEW_REQUIRED", "검토필요"
         APPOINTMENT = "APPOINTMENT", "예약"

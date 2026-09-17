@@ -1,0 +1,70 @@
+from django.test import TestCase
+from django.urls import reverse
+from rest_framework.test import APIClient
+from rest_framework_simplejwt.tokens import RefreshToken
+
+from apps.accounts.models import User
+
+from ..models import NotificationLog
+
+
+class StaffNotificationAPITests(TestCase):
+    def setUp(self):
+        self.recipient = User.objects.create_user(
+            login_id="notification-recipient",
+            password="test",
+            name="Notification recipient",
+            account_status=User.AccountStatus.ACTIVE,
+        )
+        self.other_user = User.objects.create_user(
+            login_id="notification-other",
+            password="test",
+            name="Notification other",
+            account_status=User.AccountStatus.ACTIVE,
+        )
+        self.client = APIClient()
+        self.client.credentials(
+            HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(self.recipient).access_token}"
+        )
+        self.notification = NotificationLog.objects.create(
+            recipient_user=self.recipient,
+            notification_type="EXAMINATION_ORDER",
+            channel=NotificationLog.Channel.IN_APP,
+            title="새 검사 오더 도착",
+            message="CT 검사 오더가 요청되었습니다.",
+            delivery_status=NotificationLog.DeliveryStatus.SENT,
+        )
+        NotificationLog.objects.create(
+            recipient_user=self.other_user,
+            notification_type="EXAMINATION_ORDER",
+            channel=NotificationLog.Channel.IN_APP,
+            title="다른 사용자 알림",
+            message="다른 사용자의 알림입니다.",
+            delivery_status=NotificationLog.DeliveryStatus.SENT,
+        )
+
+    def test_staff_can_list_only_own_notifications_with_unread_count(self):
+        response = self.client.get(reverse("staff-notification-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["unread_count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+        self.assertEqual(str(response.data["results"][0]["id"]), str(self.notification.id))
+
+    def test_staff_can_mark_only_own_notification_as_read(self):
+        response = self.client.patch(
+            reverse("staff-notification-read", kwargs={"notification_id": self.notification.id})
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNotNone(response.data["read_at"])
+        self.notification.refresh_from_db()
+        self.assertIsNotNone(self.notification.read_at)
+
+    def test_staff_cannot_read_another_users_notification(self):
+        other_notification = NotificationLog.objects.get(recipient_user=self.other_user)
+        response = self.client.patch(
+            reverse("staff-notification-read", kwargs={"notification_id": other_notification.id})
+        )
+
+        self.assertEqual(response.status_code, 404)

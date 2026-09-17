@@ -8,7 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 
-from .models import DoctorSchedule, DoctorWeeklyAvailability
+from .models import DoctorSchedule, DoctorSchedulingPreference, DoctorWeeklyAvailability
 
 
 class DoctorSchedulingAPITests(TestCase):
@@ -52,6 +52,30 @@ class DoctorSchedulingAPITests(TestCase):
         self.assertEqual(len(response.data["weekly_availability"]), 1)
         self.assertEqual(len(response.data["unavailable"]), 1)
         self.assertEqual(response.data["unavailable"][0]["reason"], "leave")
+
+    def test_doctor_can_manage_slot_capacity_and_patient_lookup_uses_it(self):
+        settings_url = reverse("doctor-appointment-settings")
+        default_response = self.client.get(settings_url)
+        self.assertEqual(default_response.status_code, 200)
+        self.assertEqual(default_response.data["slot_capacity"], 5)
+        self.assertFalse(DoctorSchedulingPreference.objects.filter(doctor=self.doctor).exists())
+
+        updated_response = self.client.patch(settings_url, {"slot_capacity": 7}, format="json")
+        self.assertEqual(updated_response.status_code, 200)
+        self.assertEqual(updated_response.data["slot_capacity"], 7)
+
+        availability_response = self.client.get(
+            reverse("doctor-appointment-availability", kwargs={"doctor_id": self.doctor.id})
+        )
+        self.assertEqual(availability_response.status_code, 200)
+        self.assertEqual(availability_response.data["slot_capacity"], 7)
+
+    def test_slot_capacity_must_be_positive(self):
+        response = self.client.patch(
+            reverse("doctor-appointment-settings"), {"slot_capacity": 0}, format="json"
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("slot_capacity", response.data)
 
     @override_settings(PATIENT_APP_SERVICE_TOKEN="patient-app-test-token")
     def test_patient_app_service_can_read_availability_without_staff_jwt(self):

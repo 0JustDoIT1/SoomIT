@@ -3,7 +3,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
 
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
-import { createUnavailableSchedule, createWeeklyAvailability, deleteUnavailableSchedule, deleteWeeklyAvailability, fetchUnavailableSchedules, fetchWeeklyAvailability, type DoctorAvailability, type DoctorUnavailableSchedule, updateUnavailableSchedule, updateWeeklyAvailability } from "./schedule-api";
+import { createUnavailableSchedule, createWeeklyAvailability, deleteUnavailableSchedule, deleteWeeklyAvailability, fetchSchedulingPreference, fetchUnavailableSchedules, fetchWeeklyAvailability, type DoctorAvailability, type DoctorUnavailableSchedule, updateSchedulingPreference, updateUnavailableSchedule, updateWeeklyAvailability } from "./schedule-api";
 import { ScheduleMonthCalendar } from "./schedule-month-calendar";
 
 const WEEKDAYS = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"];
@@ -17,6 +17,7 @@ export function DoctorScheduleWorkspace() {
   const { authorizedFetch, isReady } = useRespiratoryAuth();
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
   const [unavailable, setUnavailable] = useState<DoctorUnavailableSchedule[]>([]);
+  const [slotCapacity, setSlotCapacity] = useState(5);
   const [showAvailabilityForm, setShowAvailabilityForm] = useState(false);
   const [editingAvailability, setEditingAvailability] = useState<DoctorAvailability | null>(null);
   const [showUnavailableForm, setShowUnavailableForm] = useState(false);
@@ -29,9 +30,10 @@ export function DoctorScheduleWorkspace() {
     if (!isReady) return;
     setLoading(true);
     try {
-      const [nextAvailability, nextUnavailable] = await Promise.all([fetchWeeklyAvailability(authorizedFetch), fetchUnavailableSchedules(authorizedFetch)]);
+      const [nextAvailability, nextUnavailable, preference] = await Promise.all([fetchWeeklyAvailability(authorizedFetch), fetchUnavailableSchedules(authorizedFetch), fetchSchedulingPreference(authorizedFetch)]);
       setAvailability(nextAvailability);
       setUnavailable(nextUnavailable);
+      setSlotCapacity(Number.isInteger(preference.slot_capacity) && preference.slot_capacity > 0 ? preference.slot_capacity : 5);
       setMessage(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "일정 정보를 불러오지 못했습니다.");
@@ -39,6 +41,23 @@ export function DoctorScheduleWorkspace() {
       setLoading(false);
     }
   }, [authorizedFetch, isReady]);
+
+  async function saveSlotCapacity() {
+    if (!Number.isInteger(slotCapacity) || slotCapacity < 1 || slotCapacity > 99) {
+      setMessage("예약 슬롯 정원은 1명 이상 99명 이하로 입력해주세요.");
+      return;
+    }
+    setSaving(true);
+    try {
+      const preference = await updateSchedulingPreference(authorizedFetch, { slot_capacity: slotCapacity });
+      setSlotCapacity(preference.slot_capacity);
+      setMessage("예약 슬롯 정원을 저장했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "예약 슬롯 정원을 저장하지 못했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0);
@@ -141,6 +160,10 @@ export function DoctorScheduleWorkspace() {
       <main className="grid flex-1 grid-cols-[minmax(0,1fr)_340px] items-start gap-4 p-5">
         <ScheduleMonthCalendar availability={availability} unavailable={unavailable} />
         <aside className="space-y-4">
+          <section className="rounded-xl border border-slate-200 bg-white">
+            <header className="border-b border-slate-200 px-4 py-4"><h2 className="font-bold">예약 슬롯 정원</h2><p className="mt-1 text-xs text-slate-500">30분 단위 한 슬롯에 예약할 수 있는 최대 인원입니다.</p></header>
+            <div className="flex items-end gap-2 p-4"><label className="min-w-0 flex-1 text-xs font-semibold text-slate-600"><span className="mb-1.5 block">최대 인원</span><input aria-label="예약 슬롯 최대 인원" type="number" min={1} max={99} value={slotCapacity} onChange={(event) => setSlotCapacity(Number(event.target.value))} className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900" /></label><span className="pb-2 text-sm text-slate-500">명</span><button type="button" disabled={saving || loading} onClick={() => void saveSlotCapacity()} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300">저장</button></div>
+          </section>
           <section className="rounded-xl border border-slate-200 bg-white">
             <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4">
               <div><h2 className="font-bold">요일별 기본 진료시간</h2><p className="mt-1 text-xs text-slate-500">예약 간격은 30분으로 고정됩니다.</p></div>

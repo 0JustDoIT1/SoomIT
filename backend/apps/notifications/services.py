@@ -9,7 +9,38 @@ from .models import (
     NotificationLog,
     PatientDeviceToken,
     PatientNotificationSetting,
+    UserNotificationSetting,
 )
+
+
+def create_in_app_staff_notifications(*, recipients, case, notification_type, title, message, payload=None):
+    """Persist in-app alerts for actual staff recipients; no client-side mock data."""
+    recipient_ids = {recipient.id for recipient in recipients}
+    if not recipient_ids:
+        return []
+    disabled_user_ids = set(
+        UserNotificationSetting.objects.filter(
+            user_id__in=recipient_ids,
+            notification_type=notification_type,
+            enabled=False,
+        ).values_list("user_id", flat=True)
+    )
+    eligible_recipients = [recipient for recipient in recipients if recipient.id not in disabled_user_ids]
+    now = timezone.now()
+    return NotificationLog.objects.bulk_create([
+        NotificationLog(
+            recipient_user=recipient,
+            case=case,
+            notification_type=notification_type,
+            channel=NotificationLog.Channel.IN_APP,
+            title=title,
+            message=message,
+            payload=payload or {},
+            delivery_status=NotificationLog.DeliveryStatus.SENT,
+            sent_at=now,
+        )
+        for recipient in eligible_recipients
+    ])
 
 
 def _get_firebase_app():

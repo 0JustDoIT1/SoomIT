@@ -21,4 +21,5 @@ urlpatterns = [
     path("api/knowledge/", include("apps.knowledge.urls")),
     path("api/ai/", include("apps.knowledge.ai_urls")),
     path("api/chat/", include("apps.chat.urls")),
+    path("api/notifications/", include("apps.notifications.urls")),
 ]
