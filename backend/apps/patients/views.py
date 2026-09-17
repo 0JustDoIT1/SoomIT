@@ -806,6 +806,7 @@ class ExaminationScheduleListAPIView(
                 examination_order__isnull=False,
                 appointment_status="CONFIRMED",
                 visit_status="SCHEDULED",
+                scheduled_at__gte=timezone.now(),
             )
             .select_related(
                 "patient",

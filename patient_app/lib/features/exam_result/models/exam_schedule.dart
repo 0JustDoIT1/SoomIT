@@ -32,21 +32,16 @@ class ExamSchedule {
   factory ExamSchedule.fromJson(Map<String, dynamic> json) {
     return ExamSchedule(
       id: json['id'] as String,
-      scheduledAt: DateTime.parse(
-        json['scheduled_at'] as String,
-      ),
-      examType: json['exam_type'] as String,
+      scheduledAt: DateTime.parse(json['scheduled_at'] as String),
+      examType: json['order_type'] as String? ?? '',
       examName: json['exam_name'] as String,
       appointmentStatus: json['appointment_status'] as String,
-      appointmentStatusLabel:
-          json['appointment_status_label'] as String,
+      appointmentStatusLabel: json['appointment_status_label'] as String,
       visitStatus: json['visit_status'] as String,
-      visitStatusLabel:
-          json['visit_status_label'] as String,
+      visitStatusLabel: json['visit_status_label'] as String,
       hospitalName: json['hospital_name'] as String?,
       doctorName: json['doctor_name'] as String?,
-      preparationGuide:
-          json['preparation_guide'] as String?,
+      preparationGuide: json['preparation_guide'] as String?,
     );
   }
 }

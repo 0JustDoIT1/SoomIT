@@ -301,7 +301,9 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
         exam_names = {
             "XRAY": "흉부 X-ray 검사",
             "CT": "흉부 CT 검사",
-            "WSI": "병리 검사",
+            "PET_CT_TNM": "PET-CT 및 TNM 병기 평가",
+            "PATHOLOGY_GENE": "조직·유전자 검사",
+            "PDL1": "PD-L1 검사",
         }
 
         return exam_names.get(
@@ -328,9 +330,11 @@ class ExaminationScheduleSerializer(serializers.ModelSerializer):
         order_type = obj.examination_order.order_type
 
         guides = {
-            "XRAY": "검사 전 별도의 준비사항은 없습니다.",
-            "CT": "검사 전 안내받은 금식 및 조영제 관련 주의사항을 확인해주세요.",
-            "WSI": "검사 관련 안내사항은 담당 의료진의 설명을 따라주세요.",
+            "XRAY": "검사 전 별도의 준비사항은 없으며, 병원에서 받은 안내가 있다면 해당 안내를 따라주세요.",
+            "CT": "검사 전 안내받은 금식 여부와 조영제 관련 주의사항을 확인해주세요.",
+            "PET_CT_TNM": "검사 전 금식, 운동 및 복용 약 관련 병원 안내를 확인해주세요.",
+            "PATHOLOGY_GENE": "검사 방법에 따라 준비사항이 다를 수 있으므로 담당 의료진의 안내를 따라주세요.",
+            "PDL1": "조직 검체를 이용하는 검사로, 별도 안내가 있다면 담당 의료진의 설명을 따라주세요.",
         }
 
         return guides.get(
