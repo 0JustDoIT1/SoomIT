@@ -41,6 +41,7 @@ from .views import (
     DoctorExaminationOrderAPIView,
     DoctorExaminationOrderDetailAPIView,
     DoctorMedicalOpinionAPIView,
+    DoctorTreatmentOpinionAPIView,
     DoctorLungCancerCaseDetailAPIView,
     DoctorLungCancerCaseListAPIView,
 )
@@ -165,6 +166,7 @@ urlpatterns = [
     DoctorCurrentMedicationListCreateAPIView.as_view(),
     name="doctor-current-medication-list-create",
     ),
+    path("<uuid:case_id>/treatment-opinion/", DoctorTreatmentOpinionAPIView.as_view(), name="doctor-treatment-opinion"),
     path("<uuid:case_id>/allergy-profile/", DoctorAllergyProfileAPIView.as_view(), name="doctor-allergy-profile"),
     path(
         "<uuid:case_id>/lab-results/",

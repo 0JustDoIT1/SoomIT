@@ -14,6 +14,9 @@ from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaf
 from apps.pathology.models import PathologySpecimen, WholeSlideImage
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
+from apps.knowledge.services.medgemma_client import request_chat_completion
+from apps.clinical.models import Prescription
+from apps.clinical.views import DoctorTreatmentEvidenceAPIView
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
 from apps.radiology.services.ct_cornerstone_storage import CtCornerstoneStorageError, download_ct_cornerstone_object
 from apps.radiology.services.ct_visualization_storage import CtVisualizationStorageError, download_ct_visualization
@@ -501,6 +504,50 @@ class DoctorMedicalOpinionAPIView(APIView):
             MedicalOpinionResponseSerializer(result).data,
             status=status.HTTP_200_OK,
         )
+
+
+class DoctorTreatmentOpinionAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    SYSTEM_PROMPT = (
+        "Draft a concise clinician-review treatment opinion using only supplied confirmed context, "
+        "selected regimen, Treatment Rule, NCI evidence, prescription and safety data. "
+        "Do not invent biomarkers, recommend a new regimen, alter doses, or change safety results. "
+        "Return JSON with clinical_summary, treatment_summary, evidence_summary, safety_summary, cautions."
+    )
+
+    def post(self, request, case_id):
+        evidence_response = DoctorTreatmentEvidenceAPIView().get(request, case_id)
+        if evidence_response.status_code != status.HTTP_200_OK:
+            return evidence_response
+        evidence = evidence_response.data
+        case = LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user, case_status="ACTIVE").first()
+        prescription = Prescription.objects.filter(case=case).prefetch_related("items", "safety_check_results").order_by("-created_at").first()
+        prescription_data = {"prescription_available": prescription is not None}
+        safety_data = {"safety_status": "safety_not_run", "results": []}
+        if prescription:
+            items = list(prescription.items.all())
+            prescription_data.update({"status": prescription.prescription_status, "phase": prescription.phase,
+                "cycle_number": prescription.cycle_number, "items": [{"drug": item.drug.drug_name,
+                "final_dose": item.final_dose, "calculated_dose": item.calculated_dose, "unit": item.unit,
+                "route": item.route, "administration_day": item.administration_day, "frequency": item.frequency} for item in items]})
+            results = list(prescription.safety_check_results.all())
+            safety_data["results"] = [{"check_type": r.check_type, "result": r.result, "source": r.source,
+                "source_code": r.source_code, "message": r.message, "acknowledged": r.acknowledged_at is not None} for r in results]
+            safety_data["safety_status"] = ("block_present" if any(r.result == "BLOCK" for r in results)
+                else "unresolved_warning" if any(r.result == "WARNING" and r.acknowledged_at is None for r in results)
+                else "safety_completed") if results else "safety_not_run"
+        prompt_context = {"clinical_context": evidence["clinical_context"], "regimen": evidence["regimen"],
+            "treatment_rule": evidence["treatment_rule"], "evidence": evidence["evidence"],
+            "prescription": prescription_data, "safety": safety_data}
+        try:
+            opinion = request_chat_completion([{"role": "system", "content": self.SYSTEM_PROMPT},
+                {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str)}], max_tokens=600, temperature=0)
+        except MedgemmaServiceError:
+            return Response({"status": "MEDGEMMA_ERROR", "review_required": True}, status=502)
+        return Response({"status": "AVAILABLE", "case_id": str(case_id), "regimen": evidence["regimen"],
+            "treatment_rule": evidence["treatment_rule"], "opinion": opinion, "sources": evidence["evidence"]["sources"],
+            "safety_status": safety_data["safety_status"], "review_required": True})
 
 
 class DoctorFollowUpPathologyOrderAPIView(APIView):
