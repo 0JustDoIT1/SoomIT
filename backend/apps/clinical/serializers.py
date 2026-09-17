@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis, AnalysisType
 
-from .models import ClinicalResult, TnmResult
+from .models import ClinicalResult, CtResult, TnmResult
 from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
 
 
@@ -58,6 +58,25 @@ class DoctorTnmDraftSerializer(serializers.Serializer):
             "confirmed_by_user_id": str(instance.confirmed_by_user_id) if instance.confirmed_by_user_id else None,
             "confirmed_at": instance.confirmed_at,
         }
+
+class DoctorCtResultWriteSerializer(serializers.Serializer):
+    reviewed_ai_result_id = serializers.UUIDField()
+    overall_assessment = serializers.ChoiceField(choices=CtResult.OverallAssessment.choices)
+    overall_malignancy_risk = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=100, required=False, allow_null=True)
+    finding_summary = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, attrs):
+        case = self.context["case"]
+        order = self.context["order"]
+        from apps.ai_results.models import AiAnalysis, AnalysisType
+        result = AiAnalysis.objects.filter(
+            ai_result_id=attrs["reviewed_ai_result_id"], case=case,
+            examination_order=order, analysis_type=AnalysisType.CT_ANALYSIS,
+            status=AiAnalysis.Status.SUCCEEDED,
+        ).exists()
+        if not result:
+            raise serializers.ValidationError({"reviewed_ai_result_id": "A succeeded CT AI result for this order is required."})
+        return attrs
 
 class PatientClinicalResultSerializer(serializers.ModelSerializer):
     workflow_stage = serializers.CharField()

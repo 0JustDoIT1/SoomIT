@@ -9,7 +9,6 @@ x-django-base: &django-base
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
     GOOGLE_APPLICATION_CREDENTIALS: /app/gcs-key.json
-    ORTHANC_BASE_URL: http://orthanc:8042
   depends_on:
     redis:
       condition: service_healthy

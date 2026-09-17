@@ -13,10 +13,13 @@ from apps.clinical.views import (
     DoctorTreatmentDecisionConfirmAPIView,
     DoctorPrescriptionSafetyCheckAPIView,
     DoctorRegimenCandidateListAPIView,
+    DoctorTreatmentEvidenceAPIView,
     DoctorTnmDraftAPIView,
     DoctorTnmConfirmAPIView,
     DoctorTnmStageAPIView,
     DoctorTnmStageConfirmAPIView,
+    DoctorCtResultAPIView,
+    DoctorCtResultConfirmAPIView,
 )
 
 from .views import (
@@ -106,6 +109,8 @@ urlpatterns = [
         name="doctor-clinical-result-list",
     ),
     path("<uuid:case_id>/clinical-results/tnm/", DoctorTnmDraftAPIView.as_view(), name="doctor-tnm-draft"),
+    path("<uuid:case_id>/clinical-results/ct/", DoctorCtResultAPIView.as_view(), name="doctor-ct-result"),
+    path("<uuid:case_id>/clinical-results/ct/<uuid:result_id>/confirm/", DoctorCtResultConfirmAPIView.as_view(), name="doctor-ct-result-confirm"),
     path("<uuid:case_id>/clinical-results/tnm/<uuid:result_id>/confirm/", DoctorTnmConfirmAPIView.as_view(), name="doctor-tnm-confirm"),
     path("<uuid:case_id>/clinical-results/tnm/<uuid:result_id>/stage/", DoctorTnmStageAPIView.as_view(), name="doctor-tnm-stage"),
     path("<uuid:case_id>/clinical-results/tnm/<uuid:result_id>/stage/confirm/", DoctorTnmStageConfirmAPIView.as_view(), name="doctor-tnm-stage-confirm"),
@@ -170,4 +175,5 @@ urlpatterns = [
     name="doctor-prescription-safety-check",
     ),
     path("<uuid:case_id>/regimen-candidates/", DoctorRegimenCandidateListAPIView.as_view(), name="doctor-regimen-candidates"),
+    path("<uuid:case_id>/treatment-evidence/", DoctorTreatmentEvidenceAPIView.as_view(), name="doctor-treatment-evidence"),
 ]

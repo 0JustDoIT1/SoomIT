@@ -76,6 +76,48 @@ def quantify(mask_path: Path) -> dict:
     }
 
 
+def component_candidates(mask_path: Path) -> tuple[np.ndarray, int, list[dict]]:
+    image = nib.load(str(mask_path))
+    mask = np.asarray(image.dataobj) > 0
+    labels, count = ndimage.label(mask)
+    spacing = np.asarray(image.header.get_zooms()[:3], dtype=float)
+    candidates = []
+    for component_id in range(1, int(count) + 1):
+        coordinates = np.argwhere(labels == component_id)
+        minimum = coordinates.min(axis=0)
+        maximum = coordinates.max(axis=0)
+        voxel_count = int(coordinates.shape[0])
+        bbox_size_mm = (maximum - minimum + 1) * spacing
+        centroid_mm = nib.affines.apply_affine(image.affine, coordinates.mean(axis=0))
+        candidates.append({
+            "component_id": component_id,
+            "voxel_count": voxel_count,
+            "volume_ml": float(voxel_count * np.prod(spacing) / 1000.0),
+            "bbox": {
+                "min_voxel": minimum.tolist(),
+                "max_voxel": maximum.tolist(),
+                "size_mm": bbox_size_mm.tolist(),
+            },
+            "centroid": {
+                "voxel": coordinates.mean(axis=0).tolist(),
+                "mm": centroid_mm.tolist(),
+            },
+        })
+    return labels, int(count), candidates
+
+
+def select_component(mask_path: Path, component_id: int) -> None:
+    image = nib.load(str(mask_path))
+    mask = np.asarray(image.dataobj) > 0
+    labels, count = ndimage.label(mask)
+    if component_id < 1 or component_id > int(count):
+        raise ValueError(f"primary_component_id must identify a component from 1 to {count}")
+    selected = (labels == component_id).astype(np.uint8)
+    output = nib.Nifti1Image(selected, image.affine, header=image.header.copy())
+    output.set_data_dtype(np.uint8)
+    nib.save(output, str(mask_path))
+
+
 def restore_to_original_geometry(crop_mask_path: Path, metadata_path: Path, output_path: Path) -> Path:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     crop_image = nib.load(str(crop_mask_path))
@@ -112,6 +154,7 @@ class TRequest(BaseModel):
     t_input_uri: str
     crop_metadata_uri: str | None = None
     output_gcs_uri: str | None = None
+    primary_component_id: int | None = Field(default=None, ge=1)
 
 
 @app.get("/health")
@@ -148,9 +191,21 @@ def predict(body: TRequest) -> dict:
             if not mask_path.is_file():
                 raise FileNotFoundError("nnU-Net did not create the expected tumor mask")
             restored_mask_path = restore_to_original_geometry(mask_path, metadata_path, root / "restored" / "tumor_mask.nii.gz")
+            _, prediction_component_count, components = component_candidates(restored_mask_path)
+            if prediction_component_count > 1 and body.primary_component_id is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail={
+                        "code": "PRIMARY_TUMOR_SELECTION_REQUIRED",
+                        "message": "T prediction contains multiple components",
+                        "component_count": prediction_component_count,
+                        "components": components,
+                    },
+                )
+            if body.primary_component_id is not None:
+                select_component(restored_mask_path, body.primary_component_id)
             metrics = quantify(restored_mask_path)
-            if metrics["component_count"] > 1:
-                raise ValueError("PRIMARY_TUMOR_SELECTION_REQUIRED: T prediction contains multiple components")
+            metrics["prediction_component_count"] = prediction_component_count
             upload_file(restored_mask_path, destination)
             return {
                 "status": "completed", "case_id": body.case_id, "model_revision": MODEL_REVISION,

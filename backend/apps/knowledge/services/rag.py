@@ -27,9 +27,9 @@ def _format_sources(chunks):
     ]
 
 
-def answer_with_rag(question, top_k=DEFAULT_TOP_K, max_tokens=300):
+def answer_with_rag(question, top_k=DEFAULT_TOP_K, max_tokens=300, document_ids=None):
     """질문을 pgvector로 검색해 찾은 청크를 medgemma 프롬프트에 컨텍스트로 넣고 답변을 생성한다."""
-    chunks = search_knowledge(question, top_k=top_k)
+    chunks = search_knowledge(question, top_k=top_k, document_ids=document_ids)
 
     messages = []
     if chunks:

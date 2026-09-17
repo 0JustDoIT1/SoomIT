@@ -24,12 +24,17 @@ from .serializers import (
     PrescriptionItemUpdateSerializer,
     DoctorTreatmentDecisionSerializer,
     DoctorTnmDraftSerializer,
+    DoctorCtResultWriteSerializer,
     PatientClinicalResultSerializer,
     TreatmentRuleCandidateSerializer,
 )
 from .medication_schedule_serializers import DoctorMedicationScheduleSerializer, PrescriptionFinalizeSerializer
 
 from decimal import Decimal, ROUND_HALF_UP
+from apps.knowledge.models import KnowledgeDocument
+from apps.knowledge.services.embedding_client import EmbeddingServiceError
+from apps.knowledge.services.medgemma_client import MedgemmaServiceError
+from apps.knowledge.services.rag import answer_with_rag
 
 
 UNRESOLVED_SAFETY_SOURCE_CODES = {
@@ -103,6 +108,64 @@ class DoctorTnmDraftAPIView(APIView):
 
     def patch(self, request, case_id):
         return self.post(request, case_id)
+
+class DoctorCtResultAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def _context(self, request, case_id):
+        case = LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user, case_status="ACTIVE").first()
+        if case is None:
+            return None, None
+        order = ExaminationOrder.objects.filter(case=case, order_type=ExaminationOrder.OrderType.CT).order_by("-created_at").first()
+        return case, order
+
+    @transaction.atomic
+    def post(self, request, case_id):
+        case, order = self._context(request, case_id)
+        if case is None or order is None:
+            return Response({"detail": "CT order was not found."}, status=404)
+        serializer = DoctorCtResultWriteSerializer(data=request.data, context={"case": case, "order": order})
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        result = ClinicalResult.objects.filter(case=case, examination_order=order, workflow_stage="CT").select_related("ct_detail").first()
+        if result is not None and result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "A confirmed CT result cannot be modified."}, status=409)
+        from apps.ai_results.models import AiResult
+        if result is None:
+            result = ClinicalResult.objects.create(case=case, examination_order=order, workflow_stage="CT", reviewed_ai_result=AiResult.objects.get(id=values["reviewed_ai_result_id"]), result_status=ClinicalResult.ResultStatus.DRAFT)
+            CtResult.objects.create(clinical_result=result, overall_assessment=values["overall_assessment"], overall_malignancy_risk=values.get("overall_malignancy_risk"), finding_summary=values.get("finding_summary"))
+            created = True
+        else:
+            result.reviewed_ai_result_id = values["reviewed_ai_result_id"]
+            result.save(update_fields=["reviewed_ai_result", "updated_at"])
+            detail = result.ct_detail
+            for key in ("overall_assessment", "overall_malignancy_risk", "finding_summary"):
+                setattr(detail, key, values.get(key))
+            detail.save(update_fields=["overall_assessment", "overall_malignancy_risk", "finding_summary"])
+            created = False
+        return Response({"id": str(result.id), "workflow_stage": result.workflow_stage, "result_status": result.result_status, "reviewed_ai_result_id": str(result.reviewed_ai_result_id)}, status=201 if created else 200)
+
+    patch = post
+
+class DoctorCtResultConfirmAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, case_id, result_id):
+        result = ClinicalResult.objects.select_for_update().filter(id=result_id, case_id=case_id, workflow_stage="CT", case__primary_doctor=request.user, case__case_status="ACTIVE").first()
+        if result is None:
+            return Response({"detail": "CT result was not found."}, status=404)
+        if result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "CT result is already confirmed."}, status=409)
+        if not hasattr(result, "ct_detail"):
+            return Response({"detail": "CT result detail is missing."}, status=400)
+        result.result_status = ClinicalResult.ResultStatus.CONFIRMED
+        result.confirmed_by_user = request.user
+        result.confirmed_at = timezone.now()
+        result.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+        return Response({"id": str(result.id), "workflow_stage": result.workflow_stage, "result_status": result.result_status, "reviewed_ai_result_id": str(result.reviewed_ai_result_id), "confirmed_by_user_id": str(request.user.id), "confirmed_at": result.confirmed_at})
 
 
 class DoctorTnmConfirmAPIView(APIView):
@@ -1790,3 +1853,70 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
         context = super().get_serializer_context()
         context["match_reasons_by_id"] = getattr(self, "_match_reasons", {})
         return context
+
+
+class DoctorTreatmentEvidenceAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    NCI_PDQ_URI = "gs://soomit-bucket/knowledge/lung-cancer/nsclc-treatment-pdq/nci-nsclc-pdq.pdf"
+
+    def get(self, request, case_id):
+        candidate_view = DoctorRegimenCandidateListAPIView()
+        candidate_view.request = request
+        candidate_view.kwargs = {"case_id": case_id}
+        data = candidate_view._candidate_input()
+        case = data["case"]
+        if case is None:
+            return Response({"status": "REGIMEN_NOT_CURRENT_CANDIDATE"}, status=404)
+
+        decision = TreatmentDecision.objects.filter(
+            clinical_result__case=case, clinical_result__result_status="CONFIRMED",
+        ).select_related("selected_regimen").order_by("-clinical_result__confirmed_at").first()
+        regimen = decision.selected_regimen if decision else None
+        if regimen is None:
+            return Response({"status": "NO_SELECTED_REGIMEN", "case_id": str(case_id)})
+
+        candidates = list(candidate_view.get_queryset())
+        matching = next((rule for rule in candidates if rule.regimen_id == regimen.id), None)
+        if matching is None:
+            return Response({"status": "REGIMEN_NOT_CURRENT_CANDIDATE", "case_id": str(case_id)})
+
+        confirmed_findings = [
+            {"gene": finding.gene_symbol, "alteration_code": finding.alteration_code}
+            for finding in data["findings"]
+            if finding.assessment == "LIKELY_POSITIVE"
+        ]
+        drug_names = list(regimen.regimen_drugs.values_list("drug__drug_name", flat=True).distinct())
+        context = {
+            "cancer_type": data["cancer_type"], "histology": data["histology"],
+            "stage": data["stage_group"], "confirmed_gene_findings": confirmed_findings,
+            "pdl1_tps": data["pdl1_tps"], "ecog": data["ecog"],
+            "treatment_line": data["treatment_line"],
+        }
+        query = (
+            f"{context['cancer_type'] or ''} {context['histology'] or ''}, "
+            f"stage {context['stage'] or ''}, "
+            f"confirmed alterations {', '.join(finding['alteration_code'] for finding in confirmed_findings)}, "
+            f"treatment line {context['treatment_line'] or ''}, selected regimen {regimen.regimen_code} {regimen.regimen_name}, "
+            f"drugs {', '.join(drug_names)}. Summarize NCI PDQ evidence relevant to this selected regimen."
+        ).strip()
+        document = KnowledgeDocument.objects.filter(source_uri=self.NCI_PDQ_URI).first()
+        if document is None:
+            return Response({"status": "NO_EVIDENCE", "case_id": str(case_id)})
+        try:
+            evidence = answer_with_rag(query, document_ids=[document.id])
+        except (EmbeddingServiceError, MedgemmaServiceError, KeyError, TypeError, ValueError):
+            return Response({"status": "RAG_ERROR", "case_id": str(case_id)}, status=502)
+        if not evidence["sources"]:
+            return Response({"status": "NO_EVIDENCE", "case_id": str(case_id)})
+        return Response({
+            "status": "AVAILABLE", "case_id": str(case_id),
+            "regimen": {"id": str(regimen.id), "code": regimen.regimen_code, "name": regimen.regimen_name},
+            "treatment_rule": {
+                "rule_code": matching.rule_code,
+                "match_reasons": candidate_view._match_reasons.get(matching.id, []),
+                "evidence_source": matching.evidence_source,
+            },
+            "clinical_context": context,
+            "evidence": evidence,
+        })
