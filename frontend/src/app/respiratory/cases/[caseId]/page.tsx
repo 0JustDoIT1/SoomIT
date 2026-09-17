@@ -76,6 +76,7 @@ type TnmAnalysisResult = {
       predicted_m: string | null;
       predicted_stage_group: string | null;
       confidence: number | string | null;
+      result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> };
     };
   } | null;
 };
@@ -105,6 +106,12 @@ type TnmClinicalResult = {
     };
   };
 };
+
+function formatAiTnm(value: Partial<NonNullable<NonNullable<TnmAnalysisResult["result_detail"]>["tnm"]>> & { result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> }; ai_result_id?: string }) {
+  const payload = value?.result_payload;
+  const t = payload?.t; const n = payload?.n; const m = payload?.m;
+  return { ...value, predicted_t: t ? (t.t_candidate ? String(t.t_candidate) : t.size_only_t_candidate ? `크기 기준 후보 ${t.size_only_t_candidate}` : "판정 후보 없음") : value?.predicted_t, predicted_n: n ? `${n.nplus_probability == null ? "-" : `${(Number(n.nplus_probability) * 100).toFixed(1)}%`} · ${n.risk_tier ?? "위험도 미정"}${n.may_assign_cn === false ? " · cN 직접 할당 불가" : ""}` : value?.predicted_n, predicted_m: m ? (m.m_candidate === "M_indeterminate" ? "M 판정 보류" : String(m.m_candidate ?? "판정 후보 없음")) : value?.predicted_m };
+}
 
 type GeneClinicalResult = {
   workflow_stage: string;
@@ -874,8 +881,8 @@ export default function RespiratoryCaseDetailPage() {
     "CT_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
-  const tnmAnalysis = tnmAnalysisResult?.result_detail?.tnm
-    ? { ...tnmAnalysisResult.result_detail.tnm, ai_result_id: tnmAnalysisResult.id }
+  const tnmAnalysis = tnmAnalysisResult?.result_detail
+    ? formatAiTnm({ ...tnmAnalysisResult.result_detail.tnm, result_payload: (tnmAnalysisResult.result_detail as { result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> } }).result_payload, ai_result_id: tnmAnalysisResult.id })
     : undefined;
 
   const tnmClinicalResult = tnmClinicalResults.find(
