@@ -226,6 +226,9 @@ jobs:
             -out /tmp/nginx-certs/live/soomit.kro.kr/fullchain.pem \
             -subj '/CN=soomit.kro.kr' >/dev/null 2>&1
           docker run --rm \
+            --add-host django:127.0.0.1 \
+            --add-host realtime:127.0.0.1 \
+            --add-host nextjs:127.0.0.1 \
             -v "$PWD/infra/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
             -v /tmp/nginx-certs:/etc/letsencrypt:ro \
             nginx:1.27-alpine nginx -t
