@@ -35,6 +35,7 @@ from .views import (
     PatientAppointmentChangeRequestAPIView,
     PatientDeviceTokenAPIView,
     PatientAppointmentAvailabilityAPIView,
+    PatientAppointmentDoctorListAPIView,
     )
 
 
@@ -68,6 +69,12 @@ urlpatterns = [
         "auth/patient-link/",
         PatientLinkAPIView.as_view(),
         name="patient-link",
+    ),
+
+    path(
+        "appointments/doctors/",
+        PatientAppointmentDoctorListAPIView.as_view(),
+        name="patient-appointment-doctor-list",
     ),
 
     # Flutter 환자 앱 - 예약 목록

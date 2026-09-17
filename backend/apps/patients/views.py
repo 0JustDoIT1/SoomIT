@@ -516,6 +516,61 @@ class AppointmentListAPIView(ListAPIView):
     tags=["환자앱-예약"],
     summary="의사 예약 가능 시간 조회",
 )
+@extend_schema(
+    tags=["환자앱-예약"],
+    summary="예약 가능한 의료진 목록 조회",
+)
+class PatientAppointmentDoctorListAPIView(
+    APIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
+    def get(self, request):
+        patient_account = (
+            get_linked_patient_account(request)
+        )
+        patient = patient_account.patient
+
+        doctors = (
+            User.objects
+            .filter(
+                account_status=(
+                    User.AccountStatus.ACTIVE
+                ),
+                department_role__role=(
+                    DepartmentRole.Role.DOCTOR
+                ),
+                department_role__department__hospital=(
+                    patient.hospital
+                ),
+            )
+            .select_related(
+                "department_role__department"
+            )
+            .order_by("name", "id")
+        )
+
+        return Response(
+            [
+                {
+                    "id": str(doctor.id),
+                    "name": doctor.name,
+                    "department": (
+                        doctor
+                        .department_role
+                        .department
+                        .name
+                    ),
+                }
+                for doctor in doctors
+            ],
+            status=status.HTTP_200_OK,
+        )
 class PatientAppointmentAvailabilityAPIView(
     APIView
 ):

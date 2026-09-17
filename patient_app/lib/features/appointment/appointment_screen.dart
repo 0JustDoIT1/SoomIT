@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'models/appointment.dart';
 import 'services/appointment_service.dart';
 import 'appointment_detail_screen.dart';
+import 'appointment_request_sheet.dart';
 
 class AppointmentScreen extends StatefulWidget {
   const AppointmentScreen({super.key});
@@ -40,9 +41,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
         builder: (context, snapshot) {
           // API 로딩 중
           if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+            return const Center(child: CircularProgressIndicator());
           }
 
           // API 오류
@@ -101,22 +100,21 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
               (appointment) => Padding(
                 padding: const EdgeInsets.only(bottom: 12),
                 child: GestureDetector(
-                onTap: () async {
-                  await Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AppointmentDetailScreen(
-                        appointment: appointment,
+                  onTap: () async {
+                    await Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            AppointmentDetailScreen(appointment: appointment),
                       ),
-                    ),
-                  );
-                
-                  if (!mounted) return;
-                
-                  setState(() {
-                    _loadAppointments();
-                  });
-                },
+                    );
+
+                    if (!mounted) return;
+
+                    setState(() {
+                      _loadAppointments();
+                    });
+                  },
                   child: _buildAppointmentHistory(
                     date: _formatDate(appointment.scheduledAt),
                     day: _getDayOfWeek(appointment.scheduledAt),
@@ -130,89 +128,41 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                 ),
               ),
             ),
-            
+
             const SizedBox(height: 12),
-            
+
             _buildRequestButton(context),
           ],
         ),
       ),
     );
   }
+
   Future<void> _requestAppointment() async {
-    final now = DateTime.now();
-  
-    final selectedDate = await showDatePicker(
+    final created = await showModalBottomSheet<bool>(
       context: context,
-      initialDate: now.add(const Duration(days: 1)),
-      firstDate: now,
-      lastDate: DateTime(
-        now.year + 1,
-        now.month,
-        now.day,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      helpText: '예약 날짜 선택',
-      cancelText: '취소',
-      confirmText: '선택',
+      builder: (_) => const AppointmentRequestSheet(),
     );
-  
-    if (selectedDate == null || !mounted) {
+
+    if (created != true || !mounted) {
       return;
     }
-  
-    final selectedTime = await showTimePicker(
-      context: context,
-      initialTime: const TimeOfDay(
-        hour: 10,
-        minute: 0,
-      ),
-      helpText: '예약 시간 선택',
-      cancelText: '취소',
-      confirmText: '선택',
-    );
-  
-    if (selectedTime == null || !mounted) {
-      return;
-    }
-  
-    final scheduledAt = DateTime(
-      selectedDate.year,
-      selectedDate.month,
-      selectedDate.day,
-      selectedTime.hour,
-      selectedTime.minute,
-    );
-  
-    try {
-      await _appointmentService.requestAppointment(
-        doctorId: null,
-        scheduledAt: scheduledAt,
-      );
-  
-      if (!mounted) return;
-  
-      setState(() {
-        _loadAppointments();
-      });
-  
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('예약 요청이 완료되었습니다.'),
-        ),
-      );
-    } catch (e) {
-      if (!mounted) return;
-  
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '예약 요청에 실패했습니다.\n'
-            '이미 같은 시간에 예약이 있거나 예약할 수 없는 시간일 수 있습니다.',
-          ),
-        ),
-      );
-    }
+
+    setState(() {
+      _loadAppointments();
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('예약 요청이 완료되었습니다.')));
   }
+
   Widget _buildPageTitle() {
     return const Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -228,10 +178,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
         SizedBox(height: 6),
         Text(
           '진료 및 검사 일정을 확인해보세요.',
-          style: TextStyle(
-            fontSize: 14,
-            color: Color(0xFF8B95A1),
-          ),
+          style: TextStyle(fontSize: 14, color: Color(0xFF8B95A1)),
         ),
       ],
     );
@@ -308,10 +255,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
 
           const SizedBox(height: 18),
 
-          Container(
-            height: 1,
-            color: Colors.white.withValues(alpha: 0.2),
-          ),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.2)),
 
           const SizedBox(height: 16),
 
@@ -365,16 +309,11 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFFE9EDF2),
-        ),
+        border: Border.all(color: const Color(0xFFE9EDF2)),
       ),
       child: const Row(
         children: [
-          Icon(
-            Icons.event_available_outlined,
-            color: Color(0xFF8B95A1),
-          ),
+          Icon(Icons.event_available_outlined, color: Color(0xFF8B95A1)),
           SizedBox(width: 12),
           Expanded(
             child: Text(
@@ -418,9 +357,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFE9EDF2),
-        ),
+        border: Border.all(color: const Color(0xFFE9EDF2)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -599,10 +536,7 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
                 SizedBox(height: 6),
                 Text(
                   '진료 예약을 신청해보세요.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF8B95A1),
-                  ),
+                  style: TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
                 ),
               ],
             ),
@@ -644,18 +578,12 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
 
             const Text(
               '잠시 후 다시 시도해주세요.',
-              style: TextStyle(
-                fontSize: 13,
-                color: Color(0xFF8B95A1),
-              ),
+              style: TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
             ),
 
             const SizedBox(height: 18),
 
-            OutlinedButton(
-              onPressed: _retry,
-              child: const Text('다시 시도'),
-            ),
+            OutlinedButton(onPressed: _retry, child: const Text('다시 시도')),
           ],
         ),
       ),
@@ -667,23 +595,15 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
       width: double.infinity,
       height: 52,
       child: OutlinedButton.icon(
-      onPressed: _requestAppointment, 
-        icon: const Icon(
-          Icons.add_rounded,
-          size: 21,
-        ),
+        onPressed: _requestAppointment,
+        icon: const Icon(Icons.add_rounded, size: 21),
         label: const Text(
           '진료 예약 요청',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFF2B66F6),
-          side: const BorderSide(
-            color: Color(0xFF2B66F6),
-          ),
+          side: const BorderSide(color: Color(0xFF2B66F6)),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -692,23 +612,20 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
     );
   }
 
-  Appointment? _findUpcomingAppointment(
-    List<Appointment> appointments,
-  ) {
+  Appointment? _findUpcomingAppointment(List<Appointment> appointments) {
     final now = DateTime.now();
 
-    final upcoming = appointments
-        .where(
-          (appointment) =>
-              appointment.scheduledAt.isAfter(now) &&
-              appointment.appointmentStatus != 'CANCELLED' &&
-              appointment.cancellationRequestedAt == null &&
-              appointment.visitStatus == 'SCHEDULED',
-        )
-        .toList()
-      ..sort(
-        (a, b) => a.scheduledAt.compareTo(b.scheduledAt),
-      );
+    final upcoming =
+        appointments
+            .where(
+              (appointment) =>
+                  appointment.scheduledAt.isAfter(now) &&
+                  appointment.appointmentStatus != 'CANCELLED' &&
+                  appointment.cancellationRequestedAt == null &&
+                  appointment.visitStatus == 'SCHEDULED',
+            )
+            .toList()
+          ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
 
     if (upcoming.isEmpty) {
       return null;
@@ -768,8 +685,8 @@ String _formatTime(DateTime date) {
   final hour = date.hour == 0
       ? 12
       : date.hour > 12
-          ? date.hour - 12
-          : date.hour;
+      ? date.hour - 12
+      : date.hour;
 
   final minute = date.minute.toString().padLeft(2, '0');
 
@@ -790,15 +707,7 @@ String _formatFullDate(DateTime date) {
 }
 
 String _getDayOfWeek(DateTime date) {
-  const days = [
-    '월',
-    '화',
-    '수',
-    '목',
-    '금',
-    '토',
-    '일',
-  ];
+  const days = ['월', '화', '수', '목', '금', '토', '일'];
 
   return days[date.weekday - 1];
 }
