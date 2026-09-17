@@ -101,6 +101,15 @@ CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = TIME_ZONE
 CELERY_BEAT_SCHEDULER = "celery.beat:PersistentScheduler"
+CELERY_BEAT_SCHEDULE = {
+    "send-medication-reminders-every-minute": {
+        "task": (
+            "apps.notifications.tasks."
+            "send_due_medication_reminders"
+        ),
+        "schedule": 60.0,
+    },
+}
 
 STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
