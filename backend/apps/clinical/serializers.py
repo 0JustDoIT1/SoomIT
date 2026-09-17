@@ -154,6 +154,14 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
                 or "유전자 검사 결과가 등록되었습니다."
             )
 
+        # PD-L1
+        if hasattr(obj, "pdl1_detail"):
+            if obj.pdl1_detail.interpretation:
+                return obj.pdl1_detail.interpretation
+            if obj.pdl1_detail.tps_percent is not None:
+                return f"PD-L1 TPS {obj.pdl1_detail.tps_percent}%"
+            return "PD-L1 검사 결과가 등록되었습니다."
+
         return "검사 결과가 등록되었습니다."
 
 # 호흡기내과 - Case 검사 결과 상세 조회용

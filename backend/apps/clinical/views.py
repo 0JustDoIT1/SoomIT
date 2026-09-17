@@ -6,7 +6,7 @@ from django.utils import timezone
 
 from drf_spectacular.utils import extend_schema
 from rest_framework.generics import ListAPIView
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,6 +14,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase
 from apps.patients.models import CurrentMedication, LabResult, MedicationSchedule, Patient, PatientAccount, PatientHealthProfile
+from apps.patients.patient_authentication import PatientJWTAuthentication
 
 from .dur_client import DurClient, OPERATIONS
 from apps.radiology.services.tnm_stage_inference import TnmStageInferenceError, request_tnm_stage
@@ -378,13 +379,17 @@ def calculate_dose(dose_basis, standard_dose, height_cm=None, weight_kg=None, eg
 @extend_schema(tags=["환자앱-검사결과"])
 class PatientClinicalResultListAPIView(ListAPIView):
     serializer_class = PatientClinicalResultSerializer
+    authentication_classes = [PatientJWTAuthentication]
+    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        # 로그인 연동 전 개발용 테스트 환자
-        patient = Patient.objects.first()
-
-        if patient is None:
-            return ClinicalResult.objects.none()
+        patient_account = self.request.user.patient_account
+        if (
+            patient_account.link_status != PatientAccount.LinkStatus.LINKED
+            or patient_account.patient_id is None
+        ):
+            raise PermissionDenied("A linked patient account is required.")
+        patient = patient_account.patient
 
         return (
             ClinicalResult.objects
@@ -399,6 +404,7 @@ class PatientClinicalResultListAPIView(ListAPIView):
                 "pathology_detail",
                 "tnm_detail",
                 "gene_detail",
+                "pdl1_detail",
             )
             .order_by("-confirmed_at", "-updated_at")
         )

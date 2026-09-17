@@ -21,12 +21,16 @@ def _fetch_id_token():
     return google.oauth2.id_token.fetch_id_token(request, settings.GENKIT_SERVICE_URL)
 
 
-def request_patient_chat(message, history):
+def request_patient_chat(message, history, patient_access_token):
     if not settings.GENKIT_SERVICE_URL:
         raise GenkitServiceNotConfigured("Genkit 서비스가 아직 설정되지 않았습니다.")
 
     body = json.dumps(
-        {"message": message, "history": history},
+        {
+            "message": message,
+            "history": history,
+            "patientAccessToken": patient_access_token,
+        },
         ensure_ascii=False,
     ).encode("utf-8")
     headers = {"Content-Type": "application/json; charset=utf-8"}

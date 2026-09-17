@@ -3,6 +3,7 @@ import express from 'express';
 import { config } from './config.js';
 import { ChatInputSchema, chatFlow } from './flows/chatFlow.js';
 import { initializeMedicalKnowledgeMcp } from './mcp/medicalKnowledgeMcp.js';
+import { PATIENT_DATA_TOOL_NAMES } from './mcp/patientDataMcp.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -12,11 +13,21 @@ app.get('/health', (_request, response) => {
   response.json({
     status: 'ok',
     model: config.geminiModel,
-    mcp: { status: 'ready', tools: ['search_medical_knowledge'] },
+    mcp: {
+      status: 'ready',
+      tools: ['search_medical_knowledge', ...PATIENT_DATA_TOOL_NAMES],
+    },
   });
 });
 
 app.post('/chat', async (request, response) => {
+  if (
+    typeof request.body?.patientAccessToken !== 'string' ||
+    !request.body.patientAccessToken.trim()
+  ) {
+    response.status(401).json({ detail: 'Patient authentication context is required.' });
+    return;
+  }
   const parsed = ChatInputSchema.safeParse(request.body);
   if (!parsed.success) {
     response.status(400).json({ detail: parsed.error.flatten() });

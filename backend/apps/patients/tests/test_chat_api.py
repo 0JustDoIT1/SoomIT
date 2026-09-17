@@ -17,10 +17,12 @@ class PatientChatAPITests(SimpleTestCase):
         self.user = SimpleNamespace(is_authenticated=True)
 
     def _request(self, data=None, authenticated=True):
+        headers = {"HTTP_AUTHORIZATION": "Bearer patient-access-token"} if authenticated else {}
         request = self.factory.post(
             "/api/patient/chat/",
             data or {"message": "폐 결절이 무엇인가요?", "history": []},
             format="json",
+            **headers,
         )
         if authenticated:
             force_authenticate(request, user=self.user)
@@ -46,6 +48,7 @@ class PatientChatAPITests(SimpleTestCase):
         mock_chat.assert_called_once_with(
             message=data["message"],
             history=data["history"],
+            patient_access_token="patient-access-token",
         )
 
     @patch("apps.patients.chat_views.request_patient_chat")
