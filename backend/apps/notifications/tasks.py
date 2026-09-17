@@ -1,15 +1,20 @@
-from datetime import datetime
+from datetime import datetime, time, timedelta
 
 from celery import shared_task
 from django.db.models import Q
 from django.utils import timezone
 
 from apps.patients.models import (
+    Appointment,
     MedicationIntakeLog,
     MedicationSchedule,
+    PatientAccount,
 )
 
-from .models import PatientNotificationSetting
+from .models import (
+    NotificationLog,
+    PatientNotificationSetting,
+)
 from .services import send_patient_push
 
 
@@ -211,5 +216,154 @@ def send_due_medication_reminders():
     return {
         "checked_count": checked_count,
         "created_count": created_count,
+        "notification_count": notification_count,
+    }
+EXAMINATION_NAMES = {
+    "XRAY": "흉부 X-ray 검사",
+    "CT": "흉부 CT 검사",
+    "PET_CT_TNM": "PET-CT 및 TNM 병기 평가",
+    "PATHOLOGY_GENE": "조직·유전자 검사",
+    "PDL1": "PD-L1 검사",
+}
+
+EXAMINATION_GUIDES = {
+    "XRAY": "병원에서 받은 안내사항을 확인해주세요.",
+    "CT": "금식 여부와 조영제 관련 주의사항을 확인해주세요.",
+    "PET_CT_TNM": "금식, 운동 및 복용 약 관련 안내를 확인해주세요.",
+    "PATHOLOGY_GENE": "담당 의료진이 안내한 준비사항을 확인해주세요.",
+    "PDL1": "담당 의료진이 안내한 준비사항을 확인해주세요.",
+}
+
+
+@shared_task(
+    name=(
+        "apps.notifications.tasks."
+        "send_upcoming_examination_reminders"
+    )
+)
+def send_upcoming_examination_reminders():
+    current_at = timezone.localtime()
+    target_date = current_at.date() + timedelta(days=1)
+    current_timezone = timezone.get_current_timezone()
+
+    start_at = timezone.make_aware(
+        datetime.combine(target_date, time.min),
+        current_timezone,
+    )
+    end_at = start_at + timedelta(days=1)
+
+    appointments = (
+        Appointment.objects
+        .filter(
+            examination_order__isnull=False,
+            appointment_status=(
+                Appointment.AppointmentStatus.CONFIRMED
+            ),
+            visit_status=(
+                Appointment.VisitStatus.SCHEDULED
+            ),
+            scheduled_at__gte=start_at,
+            scheduled_at__lt=end_at,
+            patient__accounts__link_status=(
+                PatientAccount.LinkStatus.LINKED
+            ),
+        )
+        .select_related(
+            "patient",
+            "examination_order",
+        )
+        .distinct()
+        .order_by("scheduled_at")
+    )
+
+    checked_count = 0
+    duplicate_count = 0
+    notification_count = 0
+
+    for appointment in appointments:
+        checked_count += 1
+
+        patient_account = (
+            appointment.patient.accounts
+            .filter(
+                link_status=(
+                    PatientAccount.LinkStatus.LINKED
+                )
+            )
+            .first()
+        )
+
+        if patient_account is None:
+            continue
+
+        appointment_id = str(appointment.id)
+
+        already_sent = (
+            NotificationLog.objects
+            .filter(
+                recipient_patient_account=patient_account,
+                notification_type=(
+                    PatientNotificationSetting
+                    .NotificationType
+                    .EXAMINATION
+                ),
+                payload__appointment_id=appointment_id,
+                payload__reminder_type="DAY_BEFORE",
+            )
+            .exists()
+        )
+
+        if already_sent:
+            duplicate_count += 1
+            continue
+
+        order_type = (
+            appointment.examination_order.order_type
+        )
+        exam_name = EXAMINATION_NAMES.get(
+            order_type,
+            "검사",
+        )
+        preparation_guide = EXAMINATION_GUIDES.get(
+            order_type,
+            "병원에서 받은 준비사항을 확인해주세요.",
+        )
+        local_scheduled_at = timezone.localtime(
+            appointment.scheduled_at
+        )
+        scheduled_time = local_scheduled_at.strftime(
+            "%H:%M"
+        )
+
+        send_result = send_patient_push(
+            patient_account=patient_account,
+            notification_type=(
+                PatientNotificationSetting
+                .NotificationType
+                .EXAMINATION
+            ),
+            title="내일 검사 일정이 있습니다.",
+            message=(
+                f"{exam_name} · {scheduled_time}. "
+                f"{preparation_guide}"
+            ),
+            payload={
+                "appointment_id": appointment_id,
+                "examination_order_id": str(
+                    appointment.examination_order_id
+                ),
+                "scheduled_at": (
+                    appointment.scheduled_at.isoformat()
+                ),
+                "reminder_type": "DAY_BEFORE",
+            },
+        )
+
+        if send_result["success_count"] > 0:
+            notification_count += 1
+
+    return {
+        "checked_count": checked_count,
+        "duplicate_count": duplicate_count,
         "notification_count": notification_count,
     }

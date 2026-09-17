@@ -2,6 +2,8 @@ import os
 from datetime import timedelta
 from pathlib import Path
 
+from celery.schedules import crontab
+
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -113,6 +115,16 @@ CELERY_BEAT_SCHEDULE = {
             "send_due_medication_reminders"
         ),
         "schedule": 60.0,
+    },
+    "send-examination-reminders-daily": {
+        "task": (
+            "apps.notifications.tasks."
+            "send_upcoming_examination_reminders"
+        ),
+        "schedule": crontab(
+            hour=9,
+            minute=0,
+        ),
     },
 }
 
