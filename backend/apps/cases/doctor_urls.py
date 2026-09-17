@@ -22,6 +22,7 @@ from apps.clinical.views import (
     DoctorCtResultConfirmAPIView,
 )
 from apps.patients.views import DoctorAllergyProfileAPIView
+from apps.clinical.mfds_product_views import DoctorMfdsProductSearchAPIView
 
 from .views import (
     DoctorCaseImageAssetListAPIView,
@@ -53,6 +54,7 @@ from apps.patients.views import (
 
 
 urlpatterns = [
+    path("mfds-products/", DoctorMfdsProductSearchAPIView.as_view(), name="doctor-mfds-product-search"),
     path(
         "",
         DoctorLungCancerCaseListAPIView.as_view(),

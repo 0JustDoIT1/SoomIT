@@ -1,0 +1,8 @@
+export type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+export type RegimenCandidate = { id: string; rule_code: string; priority: number; match_reasons: string[]; evidence_source?: string | null; regimen_detail: { id: string; regimen_code: string; regimen_name: string } };
+export type TreatmentDecision = { id?: string; treatment_type?: string | null; selected_regimen?: string | null; treatment_plan?: string | null; targeted_therapy_plan?: string | null; rationale?: string | null; decision_status?: string | null };
+export type TreatmentEvidenceResponse = { status: string; regimen?: { id: string; code: string; name: string }; treatment_rule?: { rule_code: string; match_reasons: string[]; evidence_source?: string | null }; clinical_context?: Record<string, unknown>; evidence?: { answer: string; sources: { document: string; chunk_index: number; distance: number; excerpt?: string }[] } };
+export type TreatmentOpinionResponse = { status: string; opinion?: string; sources?: { document: string; chunk_index: number; distance: number; excerpt?: string }[]; safety_status?: string; review_required?: boolean };
+export type PrescriptionItem = { id: string; drug_name: string; ingredient_name?: string | null; mfds_item_seq?: string | null; calculated_dose: string | number | null; final_dose: string | number | null; unit: string | null };
+export type SafetyResult = { id: string; check_type: string; result: "PASS" | "WARNING" | "BLOCK"; message: string; source_code?: string | null; acknowledged_at?: string | null };
+export type Prescription = { id: string; regimen_detail?: { regimen_name: string; regimen_code: string }; items: PrescriptionItem[]; safety_check_results: SafetyResult[] };

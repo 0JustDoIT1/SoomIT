@@ -1251,6 +1251,7 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
 
         item.save(
             update_fields=[
+                "mfds_item_seq",
                 "final_dose",
                 "instructions",
                 "updated_at",

@@ -464,6 +464,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
         ]
 
 class PrescriptionItemUpdateSerializer(serializers.Serializer):
+    mfds_item_seq = serializers.CharField(required=False, allow_null=True, max_length=50)
     final_dose = serializers.DecimalField(
         max_digits=PrescriptionItem._meta.get_field("final_dose").max_digits,
         decimal_places=PrescriptionItem._meta.get_field("final_dose").decimal_places,
@@ -472,6 +473,11 @@ class PrescriptionItemUpdateSerializer(serializers.Serializer):
     instructions = serializers.CharField(
         required=False, allow_blank=True, allow_null=True, trim_whitespace=False,
     )
+
+    def validate_mfds_item_seq(self, value):
+        if value is not None and (not value.isdigit() or not value):
+            raise serializers.ValidationError("mfds_item_seq must be a numeric ITEM_SEQ.")
+        return value
 
 
 class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
