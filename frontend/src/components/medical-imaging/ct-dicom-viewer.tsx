@@ -52,6 +52,7 @@ function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
 }
 
 export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSegmentation }: CtDicomViewerProps) {
+  const workspaceRef = useRef<HTMLDivElement>(null);
   const axialRef = useRef<HTMLDivElement>(null);
   const coronalRef = useRef<HTMLDivElement>(null);
   const sagittalRef = useRef<HTMLDivElement>(null);
@@ -80,6 +81,19 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   // Caches the loaded labelmap data across re-renders, keyed by analysis+
   // volume, so it is only downloaded once per series.
   const segmentationCacheRef = useRef<{ key: string; segmentation: CtCornerstoneSegmentation } | null>(null);
+
+  const resetViewports = () => {
+    renderingEngineRef.current?.getViewports().forEach((viewport) => {
+      viewport.resetCamera();
+      viewport.render();
+    });
+    setFocusedView(null);
+  };
+
+  const onWorkspaceKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "f" || event.key === "F") { event.preventDefault(); void workspaceRef.current?.requestFullscreen?.(); }
+    if (event.key === "r" || event.key === "R") { event.preventDefault(); resetViewports(); }
+  };
 
   useEffect(() => {
     let disposed = false;
@@ -335,8 +349,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   };
 
   return (
-    <div className="grid min-h-[420px] overflow-hidden bg-slate-950">
-      <div className="relative min-h-[420px]">
+    <div ref={workspaceRef} tabIndex={0} onKeyDown={onWorkspaceKeyDown} className="grid h-full min-h-0 overflow-hidden bg-slate-950 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동">
+      <div className="relative min-h-0">
         {focusedView && (
           <button
             type="button"

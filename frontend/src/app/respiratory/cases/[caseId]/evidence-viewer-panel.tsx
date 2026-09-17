@@ -27,6 +27,7 @@ type EvidenceViewerPanelProps = {
   onRetry?: () => void;
   detections?: XrayDetection[];
   detectionImageSize?: { width: number; height: number } | null;
+  analysisStatus?: string;
 };
 
 export function EvidenceViewerPanel({
@@ -38,9 +39,12 @@ export function EvidenceViewerPanel({
   onRetry,
   detections = [],
   detectionImageSize,
+  analysisStatus,
 }: EvidenceViewerPanelProps) {
   const [activeAssetId, setActiveAssetId] = useState(selectedAssetId ?? assets[0]?.id ?? "");
   const [minimumDetectionScore, setMinimumDetectionScore] = useState(0.5);
+  const [selectedDetectionIndex, setSelectedDetectionIndex] = useState<number | null>(null);
+  const [zoom, setZoom] = useState(1);
   const viewerRef = useRef<HTMLDivElement>(null);
   const unavailableId = "tnm-reference-api-unavailable";
   const activeAsset = assets.find((asset) => asset.id === (selectedAssetId ?? activeAssetId)) ?? assets[0];
@@ -52,15 +56,24 @@ export function EvidenceViewerPanel({
     await viewerRef.current.requestFullscreen();
   };
 
+  const onViewerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "f" || event.key === "F") { event.preventDefault(); void openFullscreen(); }
+    if (event.key === "+" || event.key === "=") { event.preventDefault(); setZoom((value) => Math.min(3, Number((value + 0.2).toFixed(1)))); }
+    if (event.key === "-") { event.preventDefault(); setZoom((value) => Math.max(0.6, Number((value - 0.2).toFixed(1)))); }
+    if (event.key === "r" || event.key === "R") { event.preventDefault(); setZoom(1); setSelectedDetectionIndex(null); }
+  };
+
   return (
-    <section className="grid h-full min-h-[360px] grid-rows-[32px_minmax(290px,1fr)_38px] overflow-hidden border-t border-slate-200 bg-white">
-      <header className="flex items-center justify-between gap-3 px-3">
+    <section className="grid h-full min-h-0 grid-rows-[28px_48px_minmax(0,1fr)] overflow-hidden border border-slate-800 bg-slate-950">
+      <span className="sr-only">{activeAsset?.storage_type || "-"} · {activeAsset?.status || "-"}</span>
+      <header className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-3 text-slate-100">
         <h3 className="whitespace-nowrap text-[11px] font-bold text-slate-900">영상 미리보기</h3>
         <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-medium text-amber-700">Annotation API 연동 대기</span>
       </header>
 
-      <div className="grid min-h-0 grid-cols-2 border-y border-slate-100">
-        <div ref={viewerRef} className="relative flex min-h-0 items-center justify-center overflow-hidden bg-slate-950 text-white">
+      <div className="row-start-3 grid min-h-0 grid-cols-[minmax(0,1fr)_124px] bg-slate-950">
+        <div ref={viewerRef} tabIndex={0} onKeyDown={onViewerKeyDown} className="relative flex min-h-0 items-center justify-center overflow-hidden bg-slate-950 text-white outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="원본 영상 뷰어. F 전체화면, 더하기·빼기 확대·축소, R 초기화">
+          {imageUrl && <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-3 text-[10px] text-slate-100"><span className="rounded bg-black/65 px-2 py-1">{activeAsset?.image_type || "IMAGE"} · {activeAsset?.file_format || "-"}</span><span className="rounded bg-black/65 px-2 py-1 text-right">{activeAsset?.acquired_at ? new Date(activeAsset.acquired_at).toLocaleString("ko-KR") : "Study date unavailable"}</span></div>}
           {loading ? (
             <p role="status" className="text-xs font-semibold text-slate-300">원본 영상을 불러오는 중입니다.</p>
           ) : error ? (
@@ -74,10 +87,10 @@ export function EvidenceViewerPanel({
               )}
             </div>
           ) : imageUrl ? (
-            <div className="relative inline-block h-full max-w-full">
+            <div className="relative inline-block h-full max-w-full transition-transform" style={{ transform: `scale(${zoom})` }}>
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={imageUrl} alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`} className="block h-full max-w-full object-contain" />
-              {activeAsset?.image_type === "XRAY" && detectionImageSize && visibleDetections.map((detection, index) => <DetectionBox key={`${detection.class_name}-${index}`} detection={detection} width={detectionImageSize.width} height={detectionImageSize.height} />)}
+              {activeAsset?.image_type === "XRAY" && detectionImageSize && visibleDetections.map((detection, index) => <DetectionBox key={`${detection.class_name}-${index}`} detection={detection} index={index} width={detectionImageSize.width} height={detectionImageSize.height} selected={selectedDetectionIndex === index} onSelect={() => setSelectedDetectionIndex(index)} />)}
             </div>
           ) : (
             <div className="px-6 text-center">
@@ -90,27 +103,35 @@ export function EvidenceViewerPanel({
           {imageUrl && <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 text-[9px]">{activeAsset?.image_type || "영상"} · {activeAsset?.file_format || "형식 미상"}</span>}
         </div>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-slate-200 bg-white p-3" aria-label="원본 영상 목록">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-semibold text-slate-700">영상 목록 및 정보</p>
+        <aside className="min-h-0 overflow-y-auto border-l border-slate-200 bg-white p-2.5" aria-label="원본 영상 목록 및 촬영 정보">
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <p className="text-[10px] font-bold text-slate-800">영상 정보</p>
             <span className="text-[9px] text-slate-400">{assets.length}건</span>
           </div>
           {assets.length === 0 ? (
-            <p className="py-6 text-center text-[10px] text-slate-400">연결된 영상이 없습니다.</p>
+            <div className="py-6 text-center text-[10px] leading-4 text-slate-400"><p>연결된 영상이 없습니다.</p><p className="mt-1">영상이 연결되면 Series와 촬영 정보를 이 영역에서 확인합니다.</p></div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-1.5">
               {assets.map((asset) => (
-                <button key={asset.id} type="button" onClick={() => setActiveAssetId(asset.id)} className={`w-full rounded border px-2 py-2 text-left text-[9px] ${asset.id === activeAsset?.id ? "border-blue-300 bg-blue-50 text-blue-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                  <span className="block truncate font-semibold">{asset.image_type || "영상"} · {asset.file_format || "-"}</span>
-                  <span className="mt-1 block truncate text-slate-400">{asset.storage_type || "저장소 정보 없음"} · {asset.status || "상태 없음"}</span>
+                <button key={asset.id} type="button" onClick={() => setActiveAssetId(asset.id)} className={`w-full rounded-lg border px-2 py-2 text-left text-[9px] ${asset.id === activeAsset?.id ? "border-blue-300 bg-blue-50 text-blue-800 shadow-sm" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
+                  <span className="block truncate text-[10px] font-bold">{asset.image_type || "영상"} · {asset.file_format || "-"}</span>
+                  <span className="mt-1 block truncate text-slate-500">상태 {asset.status || "-"}</span>
+                  <span className="mt-1 block truncate text-slate-500">저장소 {asset.storage_type || "-"}</span>
+                  {asset.acquired_at && <span className="mt-1 block truncate text-slate-500">촬영 {new Date(asset.acquired_at).toLocaleString("ko-KR")}</span>}
                 </button>
               ))}
             </div>
           )}
+          <div className="mt-3 border-t border-slate-100 pt-3">
+            <p className="text-[10px] font-bold text-slate-700">데이터 품질</p>
+            <p className="mt-1 text-[10px] text-slate-500">영상 로딩 {imageUrl ? "완료" : "대기"} · Series {assets.length ? "확인됨" : "없음"}</p>
+            <p className="mt-1 text-[10px] text-slate-500">AI 분석 {analysisStatus || "결과 없음"} · 입력 품질 정보 미제공</p>
+          </div>
+          {activeAsset?.image_type === "XRAY" && detections.length > 0 && <div className="mt-3 border-t border-slate-100 pt-3"><p className="text-[10px] font-bold text-slate-700">AI 병변 연결</p><div className="mt-2 space-y-1">{visibleDetections.map((detection, index) => <button key={`${detection.class_name}-${index}`} type="button" onClick={() => setSelectedDetectionIndex(index)} className={`w-full rounded border px-2 py-1.5 text-left text-[10px] ${selectedDetectionIndex === index ? "border-rose-400 bg-rose-50 text-rose-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}><span className="font-bold">L{index + 1}</span> · {detection.class_name} · {(detection.score * 100).toFixed(1)}%</button>)}</div></div>}
         </aside>
       </div>
 
-      <footer className={`relative flex items-center gap-1.5 px-3 ${activeAsset?.image_type === "XRAY" ? "[&>button:nth-of-type(n+2)]:hidden" : ""}`}>
+      <footer className={`row-start-2 relative flex min-w-0 items-center gap-1.5 overflow-x-auto border-y border-slate-800 bg-slate-900 px-3 py-1 ${activeAsset?.image_type === "XRAY" ? "[&>button:nth-of-type(n+2)]:hidden [&>span.absolute]:hidden" : ""}`}>
         <button type="button" disabled={!imageUrl} onClick={openFullscreen} aria-describedby={!imageUrl ? unavailableId : undefined} className="whitespace-nowrap rounded border border-blue-300 px-2 py-1 text-[9px] font-semibold text-blue-700 disabled:border-slate-200 disabled:text-slate-400">크게 보기</button>
         {activeAsset?.image_type === "XRAY" && detections.length > 0 && <span className="flex items-center gap-1"><span className="text-[9px] text-slate-500">AI 병변 {visibleDetections.length}/{detections.length}</span>{([0, 0.5, 0.7] as const).map((score) => <button key={score} type="button" onClick={() => setMinimumDetectionScore(score)} className={`rounded px-1.5 py-1 text-[9px] ${minimumDetectionScore === score ? "bg-rose-600 font-semibold text-white" : "bg-rose-50 text-rose-700"}`}>{score === 0 ? "전체" : `${Math.round(score * 100)}%+`}</button>)}</span>}
         <button type="button" disabled aria-describedby={unavailableId} className="whitespace-nowrap rounded border border-slate-200 px-2 py-1 text-[9px] font-semibold text-slate-400">관심 위치 표시</button>
@@ -130,7 +151,7 @@ export function getBrowserImageUrl(asset?: ImageAsset) {
   return ["PNG", "JPG", "JPEG", "WEBP", "GIF"].includes(asset.file_format.toUpperCase()) ? asset.storage_uri : null;
 }
 
-function DetectionBox({ detection, width, height }: { detection: XrayDetection; width: number; height: number }) {
+function DetectionBox({ detection, index, width, height, selected, onSelect }: { detection: XrayDetection; index: number; width: number; height: number; selected: boolean; onSelect: () => void }) {
   const [x1, y1, x2, y2] = detection.bbox_xyxy;
   if (![x1, y1, x2, y2, width, height].every(Number.isFinite) || width <= 0 || height <= 0) return null;
   const left = Math.max(0, Math.min(100, (x1 / width) * 100));
@@ -138,7 +159,7 @@ function DetectionBox({ detection, width, height }: { detection: XrayDetection; 
   const boxWidth = Math.max(0, Math.min(100 - left, ((x2 - x1) / width) * 100));
   const boxHeight = Math.max(0, Math.min(100 - top, ((y2 - y1) / height) * 100));
   if (!boxWidth || !boxHeight) return null;
-  return <div className="pointer-events-none absolute border-2 border-rose-500 bg-rose-500/10 shadow-[0_0_0_1px_rgba(255,255,255,.65)]" style={{ left: `${left}%`, top: `${top}%`, width: `${boxWidth}%`, height: `${boxHeight}%` }}>
-    <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white">{detection.class_name} {(detection.score * 100).toFixed(0)}%</span>
-  </div>;
+  return <button type="button" aria-label={`L${index + 1} ${detection.class_name}`} onClick={onSelect} className={`absolute border-2 bg-rose-500/10 shadow-[0_0_0_1px_rgba(255,255,255,.65)] ${selected ? "z-20 border-amber-300 ring-2 ring-amber-200" : "border-rose-500"}`} style={{ left: `${left}%`, top: `${top}%`, width: `${boxWidth}%`, height: `${boxHeight}%` }}>
+    <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white">L{index + 1} · {detection.class_name} {(detection.score * 100).toFixed(0)}%</span>
+  </button>;
 }

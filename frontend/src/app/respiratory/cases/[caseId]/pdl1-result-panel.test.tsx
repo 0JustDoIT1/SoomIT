@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import { Pdl1ResultPanel } from "./pdl1-result-panel";
+import { Pdl1ResultPanel } from "./pdl1-imaging-workstation";
 
 describe("Pdl1ResultPanel", () => {
   it("shows an honest empty state without the removed gene comparison", () => {

@@ -232,7 +232,7 @@ export function CtVisualizationViewer({ analysisId, layers, fetchLayer }: CtVisu
   }
 
   return (
-    <div className="grid min-h-[360px] grid-cols-[1fr_190px] overflow-hidden bg-slate-950">
+    <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_160px] overflow-hidden bg-slate-950">
       <div className="relative min-h-0">
         <div ref={containerRef} className="absolute inset-0" aria-label="CT 3D 뷰어" />
         {layerProgress.total > 0 && layerProgress.loaded < layerProgress.total && (

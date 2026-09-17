@@ -35,6 +35,7 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const [retryVersion, setRetryVersion] = useState(0);
   const [detections, setDetections] = useState<XrayDetection[]>([]);
   const [detectionImageSize, setDetectionImageSize] = useState<{ width: number; height: number } | null>(null);
+  const [analysisStatus, setAnalysisStatus] = useState("");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,6 +74,7 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         if (!controller.signal.aborted) {
           setDetections(nextDetections);
           setDetectionImageSize(typeof image?.width === "number" && typeof image?.height === "number" ? { width: image.width, height: image.height } : null);
+          setAnalysisStatus(xrayAnalysis?.status === "SUCCEEDED" ? "완료" : "결과 없음");
         }
       } catch (cause) {
         if (!controller.signal.aborted) {
@@ -91,5 +93,5 @@ export function CaseImageEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     };
   }, [apiBaseUrl, authorizedFetch, caseId, retryVersion, stage]);
 
-  return <EvidenceViewerPanel assets={assets} loading={loading} error={error} retrying={loading && retryVersion > 0} onRetry={() => setRetryVersion((value) => value + 1)} detections={detections} detectionImageSize={detectionImageSize} />;
+  return <EvidenceViewerPanel assets={assets} loading={loading} error={error} retrying={loading && retryVersion > 0} onRetry={() => setRetryVersion((value) => value + 1)} detections={detections} detectionImageSize={detectionImageSize} analysisStatus={analysisStatus} />;
 }

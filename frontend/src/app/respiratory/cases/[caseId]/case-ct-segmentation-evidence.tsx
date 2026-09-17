@@ -19,6 +19,7 @@ export function CaseCtSegmentationEvidence({ apiBaseUrl, authorizedFetch, caseId
   const [asset, setAsset] = useState<Asset | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"DICOM" | "SEGMENTATION">("DICOM");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -73,5 +74,5 @@ export function CaseCtSegmentationEvidence({ apiBaseUrl, authorizedFetch, caseId
   if (loading) return <p className="rounded border border-slate-200 bg-white px-3 py-5 text-center text-xs text-slate-500">CT 원본 영상과 분할 결과를 준비하는 중입니다.</p>;
   if (error) return <p role="alert" className="rounded border border-rose-100 bg-rose-50 px-3 py-3 text-xs text-rose-700">{error}</p>;
   if (!asset) return null;
-  return <div className="space-y-3"><section className="overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="border-b border-slate-200 px-4 py-3"><p className="text-[10px] font-semibold text-blue-600">원본 근거 · CT 분할</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">흉부 CT 원본 및 결절 분할 오버레이</h2></header><CtDicomViewer orderId={asset.id} assetId={asset.id} analysisId={analysisId} loadSeries={loadSeries} loadSegmentation={loadSegmentation} /></section><CaseCtVisualization apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={analysisId} /></div>;
+  return <section className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-3 py-2"><div><p className="text-[10px] font-semibold text-blue-600">원본 근거 · CT 분할</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">흉부 CT</h2></div><div className="flex rounded-md bg-slate-100 p-0.5"><button type="button" onClick={() => setView("DICOM")} className={`rounded px-2 py-1 text-[10px] font-semibold ${view === "DICOM" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>원본 영상</button><button type="button" onClick={() => setView("SEGMENTATION")} className={`rounded px-2 py-1 text-[10px] font-semibold ${view === "SEGMENTATION" ? "bg-white text-blue-700 shadow-sm" : "text-slate-500"}`}>분할 결과</button></div></header><div className="min-h-0 flex-1 overflow-hidden">{view === "DICOM" ? <CtDicomViewer orderId={asset.id} assetId={asset.id} analysisId={analysisId} loadSeries={loadSeries} loadSegmentation={loadSegmentation} /> : <CaseCtVisualization apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={analysisId} />}</div></section>;
 }

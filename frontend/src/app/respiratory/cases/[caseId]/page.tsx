@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { API_BASE_URL, type ExaminationOrder } from "../../_lib/respiratory-api";
@@ -10,15 +10,15 @@ import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
 import { ResultReviewPanel } from "./result-review-panel";
 import { CaseChatPanel } from "./case-chat-panel";
-import { PathologyGeneReviewPanel } from "./pathology-gene-review-panel";
+import { PathologyGeneReviewPanel } from "./pathology-gene-imaging-workstation";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
-import { CasePatientSidebar } from "./case-patient-sidebar";
 import { BottomActionBar } from "./bottom-action-bar";
 import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
+import { CasePatientSidebar } from "./case-patient-sidebar";
 import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
 import { CaseCoordinationPanels } from "./case-coordination-panels";
-import { Pdl1ResultPanel } from "./pdl1-result-panel";
+import { Pdl1ResultPanel } from "./pdl1-imaging-workstation";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
@@ -37,6 +37,7 @@ import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } fro
 import { deriveCurrentActions } from "../../_lib/derive-current-actions";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
 import { applyCaseResponse, canApplyCaseResponse } from "../../_lib/case-request-guard";
+import { CASE_NAVIGATION_REQUEST_EVENT, getRequestedCaseId } from "../../_lib/case-navigation-guard";
 
 type CaseItem = {
   id: string;
@@ -429,6 +430,9 @@ export default function RespiratoryCaseDetailPage() {
   const [selectedCase, setSelectedCase] =
     useState<CaseItem | null>(null);
   const [caseRefreshVersion, setCaseRefreshVersion] = useState(0);
+  const [lastResultSyncAt, setLastResultSyncAt] = useState<Date | null>(null);
+  const [resultsSyncing, setResultsSyncing] = useState(false);
+  const [resultSyncNotice, setResultSyncNotice] = useState("");
 
   const [searchText, setSearchText] = useState("");
 
@@ -502,7 +506,38 @@ export default function RespiratoryCaseDetailPage() {
   const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
   const [panelRetrying, setPanelRetrying] = useState<"AI" | "CLINICAL" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
+  const resultSignatureRef = useRef("");
   activeCaseIdRef.current = caseId;
+
+  const refreshCaseResults = useCallback(async () => {
+    setResultsSyncing(true);
+    try {
+      const [aiResponse, clinicalResponse] = await Promise.all([
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`),
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`),
+      ]);
+      const [aiPayload, clinicalPayload] = await Promise.all([
+        aiResponse.ok ? aiResponse.json() : Promise.resolve([]),
+        clinicalResponse.ok ? clinicalResponse.json() : Promise.resolve([]),
+      ]);
+      if (!canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) return;
+      if (Array.isArray(aiPayload)) {
+        setTnmAnalysisResults(aiPayload as TnmAnalysisResult[]);
+        setPdl1Results(selectPdl1Results(aiPayload));
+      }
+      if (Array.isArray(clinicalPayload)) setTnmClinicalResults(clinicalPayload as TnmClinicalResult[]);
+      const signature = `${caseId}:${resultSyncSignature(aiPayload)}:${resultSyncSignature(clinicalPayload)}`;
+      const previousSignature = resultSignatureRef.current;
+      if (previousSignature.startsWith(`${caseId}:`) && previousSignature !== signature) {
+        setResultSyncNotice("새 AI 또는 전문의 결과가 반영되었습니다.");
+        window.setTimeout(() => setResultSyncNotice(""), 6000);
+      }
+      resultSignatureRef.current = signature;
+      setLastResultSyncAt(new Date());
+    } finally {
+      if (canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) setResultsSyncing(false);
+    }
+  }, [authorizedFetch, caseId]);
 
   const [selectedTreatmentMenu, setSelectedTreatmentMenu] =
   useState<TreatmentSubMenu>("AI_RECOMMENDATION");
@@ -519,6 +554,10 @@ export default function RespiratoryCaseDetailPage() {
   const [prescriptionItemDirty, setPrescriptionItemDirty] = useState<Record<string, boolean>>({});
   const caseTriggerRef = useRef<HTMLElement | null>(null);
 
+  useEffect(() => {
+    if (caseId) window.localStorage.setItem("respiratory-last-case-id", caseId);
+  }, [caseId]);
+
   const treatmentBaseline = {
     treatment_type: caseTreatmentDecision?.treatment_type ?? "",
     selected_regimen: caseTreatmentDecision?.selected_regimen ?? "",
@@ -530,6 +569,31 @@ export default function RespiratoryCaseDetailPage() {
   const hasUnsavedPrescriptionDraft = hasPrescriptionDraftChanges({ cycleNumber: casePrescriptionCycleNumber, phase: casePrescriptionPhase, cycleStartDate: casePrescriptionCycleStartDate, itemDirty: prescriptionItemDirty });
   const hasUnacknowledgedWarnings = casePrescriptions.some((prescription) => prescription.safety_check_results.some((result) => result.result === "WARNING" && !result.acknowledged_at));
   const hasUnsavedCaseChanges = combineUnsavedCaseChanges({ tnm: tnmDirty, treatment: hasUnsavedTreatmentDraft, prescription: hasUnsavedPrescriptionDraft, unacknowledgedWarnings: hasUnacknowledgedWarnings });
+
+  useEffect(() => {
+    if (!hasUnsavedCaseChanges) return;
+
+    const warnBeforeLeaving = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      // Browsers intentionally show their own localized confirmation message.
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warnBeforeLeaving);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeaving);
+  }, [hasUnsavedCaseChanges]);
+
+  useEffect(() => {
+    const interceptCaseNavigation = (event: Event) => {
+      const requestedCaseId = getRequestedCaseId(event);
+      if (!requestedCaseId || requestedCaseId === caseId || !hasUnsavedCaseChanges) return;
+
+      caseTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setPendingCaseId(requestedCaseId);
+      event.preventDefault();
+    };
+    window.addEventListener(CASE_NAVIGATION_REQUEST_EVENT, interceptCaseNavigation);
+    return () => window.removeEventListener(CASE_NAVIGATION_REQUEST_EVENT, interceptCaseNavigation);
+  }, [caseId, hasUnsavedCaseChanges]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -544,6 +608,7 @@ export default function RespiratoryCaseDetailPage() {
         setCasePrescriptions([]);
         setTnmAnalysisResults([]);
         setTnmClinicalResults([]);
+        setResultSyncNotice("");
         setRegimenCandidates([]);
         setCaseTreatmentDecision(null);
         setCaseOrders([]);
@@ -712,6 +777,33 @@ export default function RespiratoryCaseDetailPage() {
     }
     return () => controller.abort();
   }, [authorizedFetch, caseId, caseRefreshVersion]);
+
+  useEffect(() => {
+    if (!caseId) return;
+    let disposed = false;
+    let polling = false;
+    const pollResults = async () => {
+      if (polling || document.hidden) return;
+      polling = true;
+      try {
+        await refreshCaseResults();
+      } catch {
+        // Keep the last confirmed screen state on a transient background refresh failure.
+      } finally {
+        polling = false;
+      }
+    };
+    const timer = window.setInterval(() => { if (!disposed) void pollResults(); }, 30_000);
+    const refreshWhenVisible = () => {
+      if (!document.hidden && !disposed) void pollResults();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [caseId, refreshCaseResults]);
 
   const filteredCases = cases.filter((item) => {
     const keyword = searchText.trim().toLowerCase();
@@ -1329,11 +1421,23 @@ export default function RespiratoryCaseDetailPage() {
   }
 
   return (
-    <div className="fixed inset-x-0 bottom-0 top-[54px] flex min-h-0 w-full flex-col overflow-hidden bg-slate-50">
-      <CaseSummaryHeader caseData={selectedCase} />
+    <>
+      <section className="flex h-full min-h-0 items-center justify-center bg-[#f3f7fd] p-6 xl:hidden" aria-label="Case Workspace 최소 해상도 안내">
+        <div className="max-w-md rounded-2xl border border-blue-100 bg-white p-8 text-center shadow-sm">
+          <p className="text-sm font-bold text-slate-900">Case Workspace는 Desktop 환경에 맞춰 설계되었습니다.</p>
+          <p className="mt-3 text-sm leading-6 text-slate-500">영상과 판독 정보를 안전하게 함께 확인하려면 화면 너비 1280px 이상에서 열어 주세요.</p>
+        </div>
+      </section>
+      <div className="hidden h-full min-h-0 min-w-0 grid-cols-[minmax(210px,230px)_128px_minmax(0,1fr)] overflow-hidden bg-[#f3f7fd] xl:grid">
       <CaseChatPanel caseId={caseId} authorizedFetch={authorizedFetch} />
-      <div className="grid min-h-0 flex-1 grid-cols-[235px_165px_minmax(0,1fr)] overflow-hidden">
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
+      <CaseInfoMenu selected={selectedInfoMenu} onSelect={handleInfoMenuSelect} />
+      <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden p-2">
+      <CaseSummaryHeader key={caseId} caseData={selectedCase} />
+      <CaseWorkflowBar
+        currentStage={selectedCase.current_stage}
+        hasPdl1Result={Boolean(latestPdl1Result || resolvedPdl1ClinicalResult?.result_detail?.pdl1)}
+      />
 
       {/* A. 담당 환자 목록 */}
       <aside className="hidden w-[220px] shrink-0 flex-col border-r border-slate-200 bg-white">
@@ -1469,8 +1573,6 @@ export default function RespiratoryCaseDetailPage() {
         </div>
       </aside>
 
-      <CaseInfoMenu selected={selectedInfoMenu} onSelect={handleInfoMenuSelect} />
-
       {/* 기존 계층형 메뉴는 기능 호환을 위해 보존하고 화면에서는 숨깁니다. */}
       <aside
         style={{ width: "155px" }}
@@ -1560,12 +1662,7 @@ export default function RespiratoryCaseDetailPage() {
       </aside>
 
       {/* D. 상세 영역 */}
-      <main className={selectedInfoMenu === "PET_CT_TNM" ? "grid min-h-0 min-w-0 grid-rows-[auto_auto_minmax(0,1fr)_52px] overflow-x-auto overflow-y-hidden p-2 pb-0" : "min-w-0 overflow-x-auto overflow-y-auto p-3"}>
-        <CaseWorkflowBar
-          currentStage={selectedCase.current_stage}
-          hasPdl1Result={Boolean(latestPdl1Result || resolvedPdl1ClinicalResult?.result_detail?.pdl1)}
-        />
-        <CurrentActionQueue
+      <CurrentActionQueue
           actions={currentActions}
           onNavigate={(href) => router.push(href)}
           onOpen={(action) => {
@@ -1577,7 +1674,8 @@ export default function RespiratoryCaseDetailPage() {
             handleInfoMenuSelect("AI_SUMMARY");
             setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
-        />
+      />
+      <main className={selectedInfoMenu === "CT" || selectedInfoMenu === "XRAY" ? "min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-blue-100 bg-white p-2 shadow-sm" : "min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-blue-100 bg-white p-3 shadow-sm"}>
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
@@ -2561,6 +2659,10 @@ export default function RespiratoryCaseDetailPage() {
           aiError={aiResultError}
           retrying={panelRetrying === "AI"}
           onRetry={retryAiResults}
+          lastSyncedAt={lastResultSyncAt}
+          syncingResults={resultsSyncing}
+          onRefreshResults={() => { void refreshCaseResults(); }}
+          syncNotice={resultSyncNotice}
         />
         ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
         <PathologyGeneReviewPanel
@@ -2577,6 +2679,10 @@ export default function RespiratoryCaseDetailPage() {
           aiRetrying={panelRetrying === "AI"}
           onRetryClinical={retryClinicalResults}
           onRetryAi={retryAiResults}
+          lastSyncedAt={lastResultSyncAt}
+          syncingResults={resultsSyncing}
+          onRefreshResults={() => { void refreshCaseResults(); }}
+          syncNotice={resultSyncNotice}
         />
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
@@ -2592,6 +2698,10 @@ export default function RespiratoryCaseDetailPage() {
           aiRetrying={panelRetrying === "AI"}
           onRetryClinical={retryClinicalResults}
           onRetryAi={retryAiResults}
+          lastSyncedAt={lastResultSyncAt}
+          syncingResults={resultsSyncing}
+          onRefreshResults={() => { void refreshCaseResults(); }}
+          syncNotice={resultSyncNotice}
         />
         ) : (
         <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
@@ -2622,7 +2732,8 @@ export default function RespiratoryCaseDetailPage() {
         </main>
         </div>
         {pendingCaseId && <CaseChangeDialog onCancel={() => setPendingCaseId(null)} onDiscard={discardDraftAndMove} returnFocusRef={caseTriggerRef} />}
-        </div>
+      </div>
+    </>
     );
 }
 
@@ -2989,4 +3100,13 @@ function formatBirthDate(value: string) {
   }
 
   return `${year}.${month}.${day}`;
+}
+
+function resultSyncSignature(value: unknown) {
+  if (!Array.isArray(value)) return "";
+  return value.map((item) => {
+    if (!item || typeof item !== "object") return "";
+    const record = item as Record<string, unknown>;
+    return [record.id, record.status, record.result_status, record.completed_at, record.result_date].map((part) => String(part ?? "")).join(":");
+  }).sort().join("|");
 }

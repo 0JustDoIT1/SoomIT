@@ -60,6 +60,8 @@ export default function RespiratoryCasesPage() {
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [notifications, setNotifications] = useState<NotificationResponse>({ unread_count: 0, results: [] });
+  const [lastCasesSyncAt, setLastCasesSyncAt] = useState<Date | null>(null);
+  const [casesSyncing, setCasesSyncing] = useState(false);
 
   const fetchNotifications = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -75,9 +77,10 @@ export default function RespiratoryCasesPage() {
     }
   }, [authorizedFetch]);
 
-  const fetchCases = useCallback(async (signal?: AbortSignal) => {
-    setLoading(true);
-    setError("");
+  const fetchCases = useCallback(async (signal?: AbortSignal, silent = false) => {
+    if (!silent) setLoading(true);
+    if (silent) setCasesSyncing(true);
+    if (!silent) setError("");
 
     try {
       const response = await authorizedFetch(
@@ -89,13 +92,20 @@ export default function RespiratoryCasesPage() {
       }
       setCases(readCaseList(await response.json()));
       setCurrentPage(1);
+      setLastCasesSyncAt(new Date());
     } catch (fetchError) {
       if (fetchError instanceof DOMException && fetchError.name === "AbortError") {
         return;
       }
-      setError(getCaseListFetchError(fetchError));
+      // Keep the already visible worklist usable if a background refresh has a
+      // transient network failure. Initial load and explicit retries still
+      // expose the error state and its retry action.
+      if (!silent) setError(getCaseListFetchError(fetchError));
     } finally {
-      if (!signal?.aborted) setLoading(false);
+      if (!signal?.aborted) {
+        if (!silent) setLoading(false);
+        if (silent) setCasesSyncing(false);
+      }
     }
   }, [authorizedFetch]);
 
@@ -108,6 +118,11 @@ export default function RespiratoryCasesPage() {
       window.clearTimeout(requestTimer);
       controller.abort();
     };
+  }, [fetchCases]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => void fetchCases(undefined, true), 30_000);
+    return () => window.clearInterval(interval);
   }, [fetchCases]);
 
   useEffect(() => {
@@ -174,6 +189,11 @@ export default function RespiratoryCasesPage() {
             조회된 Case <strong className="ml-2 text-slate-900">{cases.length}건</strong>
           </div>
         </header>
+
+        <div className="mb-4 flex items-center justify-end gap-3 text-xs text-slate-500">
+          <span>{casesSyncing ? "업무함을 갱신하는 중입니다." : lastCasesSyncAt ? `마지막 갱신 ${lastCasesSyncAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}` : "자동 갱신: 30초"}</span>
+          <button type="button" onClick={() => void fetchCases(undefined, true)} disabled={casesSyncing} className="rounded border border-blue-200 bg-white px-2.5 py-1.5 font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{casesSyncing ? "갱신 중" : "업무함 새로고침"}</button>
+        </div>
 
         {!loading && !error && <>
           <section className="mb-5 grid grid-cols-4 gap-3">
