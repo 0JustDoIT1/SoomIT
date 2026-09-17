@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../app_lock/app_lock_setting_screen.dart';
 import 'language_setting_screen.dart';
 import 'notification_setting_screen.dart';
 
@@ -28,16 +29,25 @@ class SettingsScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          const NotificationSettingScreen(),
+                      builder: (context) => const NotificationSettingScreen(),
                     ),
                   );
                 },
               ),
-              const Divider(
-                height: 1,
-                indent: 52,
+              const Divider(height: 1, indent: 52),
+              _buildSettingItem(
+                icon: Icons.lock_outline_rounded,
+                title: '앱 잠금',
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const AppLockSettingScreen(),
+                    ),
+                  );
+                },
               ),
+              const Divider(height: 1, indent: 52),
               _buildSettingItem(
                 icon: Icons.language_rounded,
                 title: '언어 설정',
@@ -45,17 +55,14 @@ class SettingsScreen extends StatelessWidget {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (context) =>
-                          const LanguageSettingScreen(),
+                      builder: (context) => const LanguageSettingScreen(),
                     ),
                   );
                 },
               ),
             ],
           ),
-
           const SizedBox(height: 16),
-
           _buildSection(
             title: '앱 정보',
             children: [
@@ -80,10 +87,7 @@ class SettingsScreen extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(
-            left: 4,
-            bottom: 8,
-          ),
+          padding: const EdgeInsets.only(left: 4, bottom: 8),
           child: Text(
             title,
             style: const TextStyle(
@@ -97,13 +101,9 @@ class SettingsScreen extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFFE5EAF0),
-            ),
+            border: Border.all(color: const Color(0xFFE5EAF0)),
           ),
-          child: Column(
-            children: children,
-          ),
+          child: Column(children: children),
         ),
       ],
     );
@@ -116,10 +116,7 @@ class SettingsScreen extends StatelessWidget {
     String? trailing,
   }) {
     return ListTile(
-      leading: Icon(
-        icon,
-        color: const Color(0xFF475569),
-      ),
+      leading: Icon(icon, color: const Color(0xFF475569)),
       title: Text(
         title,
         style: const TextStyle(
@@ -131,15 +128,9 @@ class SettingsScreen extends StatelessWidget {
       trailing: trailing != null
           ? Text(
               trailing,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF8B95A1),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
             )
-          : const Icon(
-              Icons.chevron_right_rounded,
-              color: Color(0xFFAAB2BD),
-            ),
+          : const Icon(Icons.chevron_right_rounded, color: Color(0xFFAAB2BD)),
       onTap: onTap,
     );
   }

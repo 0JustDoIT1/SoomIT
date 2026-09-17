@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/app_shell.dart';
+import '../app_lock/app_lock_gate.dart';
 import 'login_screen.dart';
 import 'services/patient_auth_service.dart';
 
@@ -38,7 +39,7 @@ class _AuthGateState extends State<AuthGate> {
         }
 
         if (snapshot.data == true) {
-          return const AppShell();
+          return const AppLockGate(child: AppShell());
         }
 
         return const LoginScreen();
