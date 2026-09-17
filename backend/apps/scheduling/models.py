@@ -66,3 +66,21 @@ class DoctorWeeklyAvailability(TimestampedUUIDModel):
                 name="uq_docweeklyavail_interval",
             ),
         ]
+
+
+class DoctorSchedulingPreference(TimestampedUUIDModel):
+    """Doctor-level appointment settings shared by every weekly clinic-hour interval."""
+
+    doctor = models.OneToOneField(
+        User, on_delete=models.PROTECT, related_name="scheduling_preference"
+    )
+    slot_capacity = models.PositiveSmallIntegerField(default=5)
+
+    class Meta:
+        db_table = "doctor_scheduling_preferences"
+        constraints = [
+            models.CheckConstraint(
+                check=Q(slot_capacity__gt=0),
+                name="ck_docschedulepref_slot_capacity_positive",
+            ),
+        ]

@@ -113,6 +113,7 @@ class AppointmentAvailabilityServiceTests(
                     "enabled": True,
                 },
             ],
+            "slot_capacity": 5,
             "unavailable": [
                 {
                     "start_at": (
@@ -174,14 +175,8 @@ class AppointmentAvailabilityServiceTests(
         self.assertEqual(
             result["dates"][0]["slots"],
             [
-                (
-                    "2026-09-21"
-                    "T09:00:00+09:00"
-                ),
-                (
-                    "2026-09-21"
-                    "T10:00:00+09:00"
-                ),
+                {"start_at": "2026-09-21T09:00:00+09:00", "capacity": 5, "booked_count": 0, "remaining_count": 5},
+                {"start_at": "2026-09-21T10:00:00+09:00", "capacity": 5, "booked_count": 0, "remaining_count": 5},
+                {"start_at": "2026-09-21T10:30:00+09:00", "capacity": 5, "booked_count": 1, "remaining_count": 4},
             ],
         )
-        

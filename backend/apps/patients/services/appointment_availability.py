@@ -171,13 +171,15 @@ def build_available_slots(
         [],
     )
 
+    slot_capacity = schedule_data.get("slot_capacity", 5)
+
     if not isinstance(
         weekly_availability,
         list,
     ) or not isinstance(
         unavailable_data,
         list,
-    ):
+    ) or not isinstance(slot_capacity, int) or isinstance(slot_capacity, bool) or slot_capacity < 1:
         raise AppointmentAvailabilityError(
             "의료진 일정 응답 형식이 올바르지 않습니다."
         )
@@ -291,7 +293,7 @@ def build_available_slots(
                     ) in unavailable_ranges
                 )
 
-                is_booked = any(
+                booked_count = sum(
                     _overlaps(
                         slot_start,
                         slot_end,
@@ -304,13 +306,19 @@ def build_available_slots(
                     ) in booked_ranges
                 )
 
+                remaining_count = max(slot_capacity - booked_count, 0)
+
                 if (
                     slot_start > now
                     and not is_unavailable
-                    and not is_booked
                 ):
                     slots.append(
-                        slot_start.isoformat()
+                        {
+                            "start_at": slot_start.isoformat(),
+                            "capacity": slot_capacity,
+                            "booked_count": booked_count,
+                            "remaining_count": remaining_count,
+                        }
                     )
 
                 slot_start = slot_end
@@ -320,7 +328,7 @@ def build_available_slots(
                 "date": (
                     target_date.isoformat()
                 ),
-                "slots": sorted(set(slots)),
+                "slots": sorted(slots, key=lambda item: item["start_at"]),
             }
         )
 
@@ -331,6 +339,7 @@ def build_available_slots(
         "start": start_date.isoformat(),
         "end": end_date.isoformat(),
         "slot_minutes": SLOT_MINUTES,
+        "slot_capacity": slot_capacity,
         "dates": date_results,
     }
 
@@ -361,6 +370,8 @@ def is_appointment_slot_available(
     )
 
     return any(
-        requested_value in date_item["slots"]
+        slot["start_at"] == requested_value
+        and slot["remaining_count"] > 0
         for date_item in availability["dates"]
+        for slot in date_item["slots"]
     )

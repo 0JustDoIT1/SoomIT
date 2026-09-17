@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 vi.mock("../_components/respiratory-auth-provider", () => ({
@@ -16,5 +17,13 @@ describe("DoctorScheduleWorkspace", () => {
     expect(await screen.findByText("09:00 – 12:00")).toBeTruthy();
     expect(screen.getByText("30분")).toBeTruthy();
     expect(screen.queryByText("백엔드 API 연동 대기")).toBeNull();
+  });
+
+  it("allows selecting multiple weekdays when adding a clinic-time interval", async () => {
+    const user = userEvent.setup();
+    render(<DoctorScheduleWorkspace />);
+    await user.click(screen.getByRole("button", { name: "시간 입력" }));
+    expect(screen.getByRole("checkbox", { name: "월" })).toBeTruthy();
+    expect(screen.getByRole("checkbox", { name: "일" })).toBeTruthy();
   });
 });

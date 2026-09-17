@@ -10,9 +10,9 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import User
 
-from .models import DoctorSchedule, DoctorWeeklyAvailability
+from .models import DoctorSchedule, DoctorSchedulingPreference, DoctorWeeklyAvailability
 from .permissions import IsPatientAppService
-from .serializers import DoctorUnavailableSerializer, DoctorWeeklyAvailabilitySerializer
+from .serializers import DoctorSchedulingPreferenceSerializer, DoctorUnavailableSerializer, DoctorWeeklyAvailabilitySerializer
 
 
 class DoctorOwnedQuerysetMixin:
@@ -53,6 +53,20 @@ class DoctorUnavailableDetailAPIView(DoctorOwnedQuerysetMixin, RetrieveUpdateDes
     queryset = DoctorSchedule.objects.filter(schedule_type=DoctorSchedule.ScheduleType.UNAVAILABLE)
 
 
+@extend_schema(tags=["Doctor scheduling"])
+class DoctorSchedulingPreferenceAPIView(DoctorOwnedQuerysetMixin, APIView):
+    def get(self, request):
+        preference = DoctorSchedulingPreference.objects.filter(doctor=request.user).first()
+        return Response(DoctorSchedulingPreferenceSerializer(preference or DoctorSchedulingPreference(doctor=request.user)).data)
+
+    def patch(self, request):
+        preference, _ = DoctorSchedulingPreference.objects.get_or_create(doctor=request.user)
+        serializer = DoctorSchedulingPreferenceSerializer(preference, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
 @extend_schema(tags=["Appointment availability"])
 class DoctorAppointmentAvailabilityAPIView(
     DoctorOwnedQuerysetMixin,
@@ -86,8 +100,10 @@ class DoctorAppointmentAvailabilityAPIView(
                 end_at__gt=datetime.combine(start, time.min, tzinfo=start_at_tz(request)),
             )
 
+        preference = DoctorSchedulingPreference.objects.filter(doctor=doctor).first()
         return Response({
             "doctor_id": str(doctor.id),
+            "slot_capacity": preference.slot_capacity if preference else 5,
             "weekly_availability": DoctorWeeklyAvailabilitySerializer(
                 DoctorWeeklyAvailability.objects.filter(doctor=doctor, enabled=True), many=True
             ).data,

@@ -72,7 +72,7 @@ export function ScheduleMonthCalendar({
             <div key={date.toISOString()} className={`min-h-28 border-b border-r border-slate-200 p-2 ${dailyUnavailable.length ? "bg-rose-50/50" : "bg-white"}`}>
               <div className={`mb-1 text-xs font-semibold ${isToday ? "inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-white" : "text-slate-700"}`}>{date.getDate()}</div>
               <div className="space-y-1">
-                {dailyAvailability.map((item) => <p key={item.id} className="truncate rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">진료 {formatTime(item.start_time)}–{formatTime(item.end_time)}</p>)}
+                {dailyUnavailable.length === 0 && dailyAvailability.map((item) => <p key={item.id} className="truncate rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">진료 {formatTime(item.start_time)}–{formatTime(item.end_time)}</p>)}
                 {dailyUnavailable.map((item) => <p key={item.id} title={item.reason ?? "휴진·진료 불가"} className="truncate rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-medium text-rose-700">휴진{item.reason ? ` · ${item.reason}` : ""}</p>)}
               </div>
             </div>

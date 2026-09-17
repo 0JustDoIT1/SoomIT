@@ -24,3 +24,42 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+html[data-respiratory-theme="dark"] {
+  color-scheme: dark;
+}
+
+html[data-respiratory-theme="dark"] .respiratory-app {
+  background: #0f172a;
+  color: #e2e8f0;
+}
+
+html[data-respiratory-theme="dark"] .respiratory-app .bg-white,
+html[data-respiratory-theme="dark"] .respiratory-app .bg-slate-50,
+html[data-respiratory-theme="dark"] .respiratory-app .bg-slate-50\/50,
+html[data-respiratory-theme="dark"] .respiratory-app .bg-\[\#f6f8fb\] {
+  background-color: #111827 !important;
+}
+
+html[data-respiratory-theme="dark"] .respiratory-app .bg-blue-50,
+html[data-respiratory-theme="dark"] .respiratory-app .bg-blue-50\/70,
+html[data-respiratory-theme="dark"] .respiratory-app .bg-blue-50\/50 {
+  background-color: #172554 !important;
+}
+
+html[data-respiratory-theme="dark"] .respiratory-app .border-slate-100,
+html[data-respiratory-theme="dark"] .respiratory-app .border-slate-200 {
+  border-color: #334155 !important;
+}
+
+html[data-respiratory-theme="dark"] .respiratory-app .text-slate-900,
+html[data-respiratory-theme="dark"] .respiratory-app .text-slate-800,
+html[data-respiratory-theme="dark"] .respiratory-app .text-slate-700,
+html[data-respiratory-theme="dark"] .respiratory-app .text-slate-600 {
+  color: #e2e8f0 !important;
+}
+
+html[data-respiratory-theme="dark"] .respiratory-app .text-slate-500,
+html[data-respiratory-theme="dark"] .respiratory-app .text-slate-400 {
+  color: #94a3b8 !important;
+}

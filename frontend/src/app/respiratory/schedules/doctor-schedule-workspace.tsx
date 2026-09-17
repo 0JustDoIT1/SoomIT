@@ -49,18 +49,22 @@ export function DoctorScheduleWorkspace() {
     event.preventDefault();
     const form = event.currentTarget;
     const data = new FormData(form);
-    const weekday = Number(data.get("weekday"));
     const start_time = String(data.get("startTime") ?? "");
     const end_time = String(data.get("endTime") ?? "");
-    if (!Number.isInteger(weekday) || weekday < 0 || weekday > 6 || !start_time || !end_time || end_time <= start_time) {
-      setMessage("요일과 올바른 시작·종료 시간을 입력해 주세요.");
+    const weekdays = editingAvailability ? [Number(data.get("weekday"))] : data.getAll("weekdays").map(Number);
+    if (!weekdays.length || weekdays.some((weekday) => !Number.isInteger(weekday) || weekday < 0 || weekday > 6) || !start_time || !end_time || end_time <= start_time) {
+      setMessage("적용 요일과 올바른 시작·종료 시간을 입력해 주세요.");
+      return;
+    }
+    if (!editingAvailability && weekdays.some((weekday) => availability.some((item) => item.weekday === weekday && item.start_time < end_time && item.end_time > start_time))) {
+      setMessage("선택한 요일 중 기존 진료시간과 겹치는 구간이 있습니다.");
       return;
     }
     setSaving(true);
     try {
-      const body = { weekday, start_time, end_time, enabled: data.get("enabled") === "on" };
-      if (editingAvailability) await updateWeeklyAvailability(authorizedFetch, editingAvailability.id, body);
-      else await createWeeklyAvailability(authorizedFetch, body);
+      const body = { start_time, end_time, enabled: data.get("enabled") === "on" };
+      if (editingAvailability) await updateWeeklyAvailability(authorizedFetch, editingAvailability.id, { ...body, weekday: weekdays[0] });
+      else await Promise.all(weekdays.map((weekday) => createWeeklyAvailability(authorizedFetch, { ...body, weekday })));
       form.reset();
       setShowAvailabilityForm(false);
       setEditingAvailability(null);
@@ -155,7 +159,7 @@ export function DoctorScheduleWorkspace() {
       </main>
       {showAvailabilityForm && <Modal title={editingAvailability ? "기본 진료시간 수정" : "기본 진료시간 입력"} onClose={() => { setShowAvailabilityForm(false); setEditingAvailability(null); }}>
         <form key={editingAvailability?.id ?? "new"} onSubmit={submitAvailability} className="space-y-4">
-          <Field label="요일"><select name="weekday" required defaultValue={editingAvailability?.weekday ?? ""}><option value="" disabled>요일 선택</option>{WEEKDAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field>
+          {editingAvailability ? <Field label="요일"><select name="weekday" required defaultValue={editingAvailability.weekday}>{WEEKDAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field> : <fieldset><legend className="mb-1.5 text-xs font-semibold text-slate-600">적용 요일</legend><div className="grid grid-cols-4 gap-2">{WEEKDAYS.map((label, index) => <label key={label} className="flex items-center gap-1.5 rounded border border-slate-200 px-2 py-2 text-xs"><input name="weekdays" type="checkbox" value={index} />{label.slice(0, 1)}</label>)}</div><p className="mt-2 text-[11px] text-slate-500">같은 시간 구간을 선택한 모든 요일에 등록합니다.</p></fieldset>}
           <div className="grid grid-cols-2 gap-3"><Field label="시작 시간"><input name="startTime" type="time" required defaultValue={editingAvailability?.start_time.slice(0, 5)} /></Field><Field label="종료 시간"><input name="endTime" type="time" required defaultValue={editingAvailability?.end_time.slice(0, 5)} /></Field></div>
           <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-500">예약 간격 <strong className="ml-1 text-slate-800">30분</strong></span><label className="flex items-center gap-2"><input name="enabled" type="checkbox" defaultChecked={editingAvailability?.enabled ?? true} /> 환자 예약 사용</label></div>
           <div className="flex justify-end gap-2"><button type="button" onClick={() => { setShowAvailabilityForm(false); setEditingAvailability(null); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">취소</button><button disabled={saving} className="button-primary">{saving ? "저장 중" : editingAvailability ? "수정 저장" : "저장"}</button></div>

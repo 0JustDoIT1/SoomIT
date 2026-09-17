@@ -1,6 +1,13 @@
 from rest_framework import serializers
 
-from .models import DoctorSchedule, DoctorWeeklyAvailability
+from .models import DoctorSchedule, DoctorSchedulingPreference, DoctorWeeklyAvailability
+
+
+class DoctorSchedulingPreferenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoctorSchedulingPreference
+        fields = ["slot_capacity", "created_at", "updated_at"]
+        read_only_fields = ["created_at", "updated_at"]
 
 
 class DoctorWeeklyAvailabilitySerializer(serializers.ModelSerializer):
