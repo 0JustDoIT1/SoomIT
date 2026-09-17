@@ -21,6 +21,7 @@ from apps.clinical.views import (
     DoctorCtResultAPIView,
     DoctorCtResultConfirmAPIView,
 )
+from apps.patients.views import DoctorAllergyProfileAPIView
 
 from .views import (
     DoctorCaseImageAssetListAPIView,
@@ -160,10 +161,11 @@ urlpatterns = [
         name="doctor-prescription-item-update",
     ),
     path(
-    "<uuid:case_id>/current-medications/",
+        "<uuid:case_id>/current-medications/",
     DoctorCurrentMedicationListCreateAPIView.as_view(),
     name="doctor-current-medication-list-create",
     ),
+    path("<uuid:case_id>/allergy-profile/", DoctorAllergyProfileAPIView.as_view(), name="doctor-allergy-profile"),
     path(
         "<uuid:case_id>/lab-results/",
         DoctorLabResultListCreateAPIView.as_view(),

@@ -17,9 +17,32 @@ from .models import (
     Patient,
     PatientAccount,
     PatientQuestionnaire,
+    PatientHealthProfile,
     SocialAccount,
     SymptomLog,
 )
+
+
+class PatientAllergyProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatientHealthProfile
+        fields = ["allergy_status", "allergies"]
+
+    def validate_allergies(self, value):
+        if not isinstance(value, list):
+            raise serializers.ValidationError("allergies must be a list.")
+        if any(not isinstance(item, str) or not item.strip() for item in value):
+            raise serializers.ValidationError("allergies must contain non-empty strings.")
+        return [item.strip() for item in value]
+
+    def validate(self, attrs):
+        status = attrs.get("allergy_status", getattr(self.instance, "allergy_status", None))
+        allergies = attrs.get("allergies", getattr(self.instance, "allergies", []))
+        if status == PatientHealthProfile.AllergyStatus.NONE and allergies:
+            raise serializers.ValidationError({"allergies": "Must be empty when allergy_status is NONE."})
+        if status == PatientHealthProfile.AllergyStatus.PRESENT and not allergies:
+            raise serializers.ValidationError({"allergies": "At least one allergy is required when status is PRESENT."})
+        return attrs
 
 
 # ─────────────────────────────────────────────

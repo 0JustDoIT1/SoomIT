@@ -41,6 +41,7 @@ from .models import (
     MedicationSchedule,
     MedicationIntakeLog,
     SymptomLog,
+    PatientHealthProfile,
 )
 
 from .serializers import (
@@ -70,6 +71,7 @@ from .serializers import (
     UnlinkedPatientAccountProfileSerializer,
     PatientDeviceTokenSerializer,
     PatientDeviceTokenDeactivateSerializer,
+    PatientAllergyProfileSerializer,
 )
 
 from .patient_authentication import (
@@ -371,6 +373,37 @@ class DoctorCurrentMedicationListCreateAPIView(ListCreateAPIView):
             patient=case.patient,
             recorded_by_user=self.request.user,
         )
+
+
+class DoctorAllergyProfileAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_case(self):
+        return LungCancerCase.objects.select_related("patient").filter(
+            id=self.kwargs["case_id"], primary_doctor=self.request.user, case_status="ACTIVE",
+        ).first()
+
+    def get(self, request, case_id):
+        case = self.get_case()
+        if case is None:
+            return Response({"detail": "Case not found."}, status=status.HTTP_404_NOT_FOUND)
+        profile = PatientHealthProfile.objects.filter(patient=case.patient).first()
+        if profile is None:
+            return Response({"detail": "Patient health profile not found."}, status=status.HTTP_404_NOT_FOUND)
+        return Response(PatientAllergyProfileSerializer(profile).data)
+
+    def patch(self, request, case_id):
+        case = self.get_case()
+        if case is None:
+            return Response({"detail": "Case not found."}, status=status.HTTP_404_NOT_FOUND)
+        profile = PatientHealthProfile.objects.filter(patient=case.patient).first()
+        if profile is None:
+            return Response({"detail": "Patient health profile not found."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = PatientAllergyProfileSerializer(profile, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 @extend_schema(tags=["호흡기내과-환자정보"])
 class DoctorLabResultListCreateAPIView(ListCreateAPIView):
