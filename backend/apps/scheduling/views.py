@@ -54,8 +54,15 @@ class DoctorUnavailableDetailAPIView(DoctorOwnedQuerysetMixin, RetrieveUpdateDes
 
 
 @extend_schema(tags=["Appointment availability"])
-class DoctorAppointmentAvailabilityAPIView(DoctorOwnedQuerysetMixin, APIView):
+class DoctorAppointmentAvailabilityAPIView(
+    DoctorOwnedQuerysetMixin,
+    APIView,
+):
     """Read model for the patient appointment backend; EXTRA_AVAILABLE is intentionally excluded."""
+
+    permission_classes = [
+        IsAuthenticated | IsPatientAppService
+    ]
 
     def get(self, request, doctor_id):
         doctor = User.objects.filter(id=doctor_id, account_status=User.AccountStatus.ACTIVE).first()
@@ -93,4 +100,3 @@ def start_at_tz(request):
     from django.utils import timezone
 
     return timezone.get_current_timezone()
-    permission_classes = [IsAuthenticated | IsPatientAppService]

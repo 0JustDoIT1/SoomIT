@@ -158,12 +158,44 @@ class AppointmentSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────
 # 환자앱 예약
 # ─────────────────────────────────────────────
+class PatientAppointmentAvailabilityQuerySerializer(
+    serializers.Serializer
+):
+    doctor_id = serializers.UUIDField()
+    start = serializers.DateField()
+    end = serializers.DateField()
 
-class PatientAppointmentRequestSerializer(serializers.Serializer):
-    doctor_id = serializers.UUIDField(
-        required=False,
-        allow_null=True,
-    )
+    def validate(self, attrs):
+        start = attrs["start"]
+        end = attrs["end"]
+
+        if end < start:
+            raise serializers.ValidationError(
+                {
+                    "end": (
+                        "종료일은 시작일보다 "
+                        "빠를 수 없습니다."
+                    ),
+                }
+            )
+
+        if (end - start).days > 31:
+            raise serializers.ValidationError(
+                {
+                    "end": (
+                        "예약 가능 시간은 최대 "
+                        "31일까지 조회할 수 있습니다."
+                    ),
+                }
+            )
+
+        return attrs
+
+
+class PatientAppointmentRequestSerializer(
+    serializers.Serializer
+):
+    doctor_id = serializers.UUIDField()
     scheduled_at = serializers.DateTimeField()
 
     def validate_scheduled_at(self, value):
@@ -172,6 +204,15 @@ class PatientAppointmentRequestSerializer(serializers.Serializer):
         if value <= timezone.now():
             raise serializers.ValidationError(
                 "예약 시간은 현재 시간 이후여야 합니다."
+            )
+
+        if (
+            value.minute % 30 != 0
+            or value.second != 0
+            or value.microsecond != 0
+        ):
+            raise serializers.ValidationError(
+                "예약 시간은 30분 단위여야 합니다."
             )
 
         return value

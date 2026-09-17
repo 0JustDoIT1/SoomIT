@@ -25,7 +25,7 @@ from .views import (
     PatientNotificationSettingListAPIView,
     PatientNotificationSettingUpdateAPIView,
     PatientQuestionnaireListAPIView,
-    PatientQuestionnaireDetailAPIView, 
+    PatientQuestionnaireDetailAPIView,
     CoordinatorPatientQuestionnaireAPIView,
     PatientMedicationScheduleListAPIView,
     PatientMedicationIntakeTakenAPIView,
@@ -34,6 +34,7 @@ from .views import (
     PatientAppointmentCancelRequestAPIView,
     PatientAppointmentChangeRequestAPIView,
     PatientDeviceTokenAPIView,
+    PatientAppointmentAvailabilityAPIView,
     )
 
 
@@ -44,31 +45,31 @@ urlpatterns = [
         PatientGoogleLoginAPIView.as_view(),
         name="patient-google-login",
     ),
-    
+
     path(
         "auth/register/",
         PatientRegistrationAPIView.as_view(),
         name="patient-register",
     ),
-    
+
     path("", PatientListAPIView.as_view(), name="patient-list"),
     path("hospitals/", PatientHospitalListAPIView.as_view(), name="patient-hospital-list"),
     path("doctors/", PatientDoctorListAPIView.as_view(), name="patient-doctor-list"),
     path("app-accounts/register/", PatientAccountRegistrationAPIView.as_view(), name="patient-account-register"),
     path("app-accounts/lookup/", PatientAccountLookupAPIView.as_view(), name="patient-account-lookup"),
-    
+
     path(
         "auth/token/refresh/",
         PatientTokenRefreshAPIView.as_view(),
         name="patient-token-refresh",
     ),
-    
+
     path(
         "auth/patient-link/",
         PatientLinkAPIView.as_view(),
         name="patient-link",
     ),
-    
+
     # Flutter 환자 앱 - 예약 목록
     path(
         "appointments/", AppointmentListAPIView.as_view(), name="appointment-list",),
@@ -79,33 +80,39 @@ urlpatterns = [
         PatientAppointmentRequestAPIView.as_view(),
         name="patient-appointment-request",
     ),
-    
+
+    path(
+        "appointments/availability/",
+        PatientAppointmentAvailabilityAPIView.as_view(),
+        name="patient-appointment-availability",
+    ),
+
     path(
         "appointments/<uuid:appointment_id>/cancel-request/",
         PatientAppointmentCancelRequestAPIView.as_view(),
         name="patient-appointment-cancel-request",
     ),
-    
+
     path(
         "appointments/<uuid:appointment_id>/change-request/",
         PatientAppointmentChangeRequestAPIView.as_view(),
         name="patient-appointment-change-request",
     ),
-    
+
     #  검사 일정
     path(
         "exam-schedules/",
         ExaminationScheduleListAPIView.as_view(),
         name="exam-schedule-list",
     ),
-    
+
     # - 프로필
     path(
         "profile/",
         PatientProfileAPIView.as_view(),
         name="patient-profile",
     ),
-    
+
     #
     path(
     "notifications/",
@@ -139,27 +146,27 @@ urlpatterns = [
         PatientDeviceTokenAPIView.as_view(),
         name="patient-device-token",
     ),
-    
+
     # 문진표 작성 내역
     path(
         "questionnaires/",
         PatientQuestionnaireListAPIView.as_view(),
         name="patient-questionnaire-list",
     ),
-    
+
     path(
         "questionnaires/<uuid:id>/",
         PatientQuestionnaireDetailAPIView.as_view(),
         name="patient-questionnaire-detail",
     ),
-    
+
     # 복약 일정
     path(
         "medications/",
         PatientMedicationScheduleListAPIView.as_view(),
         name="patient-medication-list",
     ),
-    
+
     # 복약 기록 조회
     path(
         "medications/intake/",

@@ -72,6 +72,13 @@ from .serializers import (
     PatientDeviceTokenSerializer,
     PatientDeviceTokenDeactivateSerializer,
     PatientAllergyProfileSerializer,
+    PatientAppointmentAvailabilityQuerySerializer,
+)
+
+from .services.appointment_availability import (
+    AppointmentAvailabilityError,
+    build_available_slots,
+    is_appointment_slot_available,
 )
 
 from .patient_authentication import (
@@ -504,8 +511,67 @@ class AppointmentListAPIView(ListAPIView):
             )
             .order_by("-scheduled_at")
         )
-        
-# 환자 예약 요청 POST      
+
+@extend_schema(
+    tags=["환자앱-예약"],
+    summary="의사 예약 가능 시간 조회",
+)
+class PatientAppointmentAvailabilityAPIView(
+    APIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
+    def get(self, request):
+        serializer = (
+            PatientAppointmentAvailabilityQuerySerializer(
+                data=request.query_params
+            )
+        )
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        get_linked_patient_account(request)
+
+        doctor_id = (
+            serializer.validated_data[
+                "doctor_id"
+            ]
+        )
+        start_date = (
+            serializer.validated_data["start"]
+        )
+        end_date = (
+            serializer.validated_data["end"]
+        )
+
+        try:
+            availability = build_available_slots(
+                doctor_id=doctor_id,
+                start_date=start_date,
+                end_date=end_date,
+            )
+        except AppointmentAvailabilityError as error:
+            return Response(
+                {
+                    "detail": str(error),
+                },
+                status=(
+                    status.HTTP_503_SERVICE_UNAVAILABLE
+                ),
+            )
+
+        return Response(
+            availability,
+            status=status.HTTP_200_OK,
+        )
+
+# 환자 예약 요청 POST
 @extend_schema(
     tags=["환자앱-예약"],
     summary="환자 예약 요청",
@@ -537,35 +603,62 @@ class PatientAppointmentRequestAPIView(APIView):
         )
         patient = patient_account.patient
 
-        doctor = None
         doctor_id = (
-            serializer.validated_data.get(
-                "doctor_id"
-            )
+            serializer.validated_data["doctor_id"]
         )
 
-        if doctor_id is not None:
-            try:
-                doctor = User.objects.get(
-                    id=doctor_id
-                )
-            except User.DoesNotExist:
-                return Response(
-                    {
-                        "doctor_id": (
-                            "해당 의료진을 찾을 수 없습니다."
-                        ),
-                    },
-                    status=(
-                        status.HTTP_400_BAD_REQUEST
+        try:
+            doctor = (
+                User.objects
+                .select_for_update()
+                .get(
+                    id=doctor_id,
+                    account_status=(
+                        User.AccountStatus.ACTIVE
                     ),
                 )
-
+            )
+        except User.DoesNotExist:
+            return Response(
+                {
+                    "doctor_id": (
+                        "해당 의료진을 찾을 수 없습니다."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         scheduled_at = (
             serializer.validated_data[
                 "scheduled_at"
             ]
         )
+
+        try:
+            slot_available = (
+                is_appointment_slot_available(
+                    doctor_id=doctor.id,
+                    scheduled_at=scheduled_at,
+                )
+            )
+        except AppointmentAvailabilityError as error:
+            return Response(
+                {
+                    "detail": str(error),
+                },
+                status=(
+                    status.HTTP_503_SERVICE_UNAVAILABLE
+                ),
+            )
+
+        if not slot_available:
+            return Response(
+                {
+                    "detail": (
+                        "선택한 시간은 예약할 수 없습니다."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         duplicate_exists = (
             Appointment.objects
@@ -624,7 +717,7 @@ class PatientAppointmentRequestAPIView(APIView):
             ).data,
             status=status.HTTP_201_CREATED,
         )
-        
+
 # ─────────────────────────────────────────────
 # 환자 검사 일정 조회
 # - 로그인 구현 전 개발용
@@ -705,7 +798,7 @@ class PatientProfileAPIView(
             return patient_account
 
         return patient_account.patient
-    
+
 # ─────────────────────────────────────────────
 # 환자 앱 알림 목록 조회
 # ─────────────────────────────────────────────
@@ -967,7 +1060,7 @@ class PatientNotificationSettingUpdateAPIView(
             serializer.data,
             status=status.HTTP_200_OK,
         )
-        
+
 # ─────────────────────────────────────────────
 # 문진표 목록 조회 / 작성 제출
 # ─────────────────────────────────────────────
@@ -1129,12 +1222,12 @@ class CoordinatorPatientQuestionnaireAPIView(APIView):
         if questionnaire is None:
             return Response({"detail": "제출된 문진표가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
         return Response(PatientQuestionnaireSerializer(questionnaire).data)
-        
-# ─────────────────────────────────────────────
-# 복약 
-# ─────────────────────────────────────────────        
 
-    
+# ─────────────────────────────────────────────
+# 복약
+# ─────────────────────────────────────────────
+
+
 @extend_schema(
     tags=["환자앱-복약"],
     summary="환자 복약 일정 조회",
@@ -1368,7 +1461,7 @@ class PatientMedicationIntakeTakenAPIView(
             },
             status=status.HTTP_200_OK,
         )
-        
+
 @extend_schema(
     tags=["환자앱-증상"],
     summary="환자 증상 기록 조회/등록",
@@ -1533,7 +1626,7 @@ class PatientSymptomLogListCreateAPIView(
             risk_level=risk_level,
             logged_at=recorded_at,
         )
-        
+
 @extend_schema(
     tags=["환자앱-예약"],
     summary="환자 예약 취소 요청",
@@ -1603,7 +1696,7 @@ class PatientAppointmentCancelRequestAPIView(APIView):
             AppointmentSerializer(appointment).data,
             status=status.HTTP_201_CREATED,
         )
-        
+
 
 @extend_schema(
     tags=["환자앱-예약"],
@@ -1669,7 +1762,7 @@ class PatientAppointmentChangeRequestAPIView(APIView):
                 {"detail": "처리 대기 중인 예약 요청이 있습니다."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        
+
         if (
             old_appointment.visit_status
             != Appointment.VisitStatus.SCHEDULED
@@ -1682,7 +1775,7 @@ class PatientAppointmentChangeRequestAPIView(APIView):
         new_scheduled_at = serializer.validated_data[
             "new_scheduled_at"
         ]
-        
+
         if new_scheduled_at == old_appointment.scheduled_at:
             return Response(
                 {"detail": "기존 예약 시간과 동일한 시간으로는 변경할 수 없습니다."},
