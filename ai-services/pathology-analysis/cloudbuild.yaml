@@ -35,15 +35,18 @@ steps:
     args:
       - build
       - --tag
-      - gcr.io/$PROJECT_ID/pathology-analysis-serve:pathology-analysis-v1
+      - gcr.io/$PROJECT_ID/pathology-analysis-serve:$_IMAGE_TAG
       - .
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - gcr.io/$PROJECT_ID/pathology-analysis-serve:pathology-analysis-v1
+      - gcr.io/$PROJECT_ID/pathology-analysis-serve:$_IMAGE_TAG
 
 images:
-  - gcr.io/$PROJECT_ID/pathology-analysis-serve:pathology-analysis-v1
+  - gcr.io/$PROJECT_ID/pathology-analysis-serve:$_IMAGE_TAG
+
+substitutions:
+  _IMAGE_TAG: pathology-analysis-v1
 
 availableSecrets:
   secretManager:

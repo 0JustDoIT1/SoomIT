@@ -20,15 +20,18 @@ steps:
     args:
       - build
       - --tag
-      - gcr.io/$PROJECT_ID/pdl1-serve:final_model
+      - gcr.io/$PROJECT_ID/pdl1-serve:$_IMAGE_TAG
       - .
   - name: gcr.io/cloud-builders/docker
     args:
       - push
-      - gcr.io/$PROJECT_ID/pdl1-serve:final_model
+      - gcr.io/$PROJECT_ID/pdl1-serve:$_IMAGE_TAG
 
 images:
-  - gcr.io/$PROJECT_ID/pdl1-serve:final_model
+  - gcr.io/$PROJECT_ID/pdl1-serve:$_IMAGE_TAG
+
+substitutions:
+  _IMAGE_TAG: final_model
 
 availableSecrets:
   secretManager:

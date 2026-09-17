@@ -1,7 +1,7 @@
 name: soomit-infra
 
 x-django-base: &django-base
-  image: soomit-backend:local
+  image: ${BACKEND_IMAGE:-soomit-backend:local}
   restart: unless-stopped
   env_file:
     - ../backend/.env
@@ -68,7 +68,7 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL}
         NEXT_PUBLIC_REALTIME_WS_URL: ${NEXT_PUBLIC_REALTIME_WS_URL:?Set NEXT_PUBLIC_REALTIME_WS_URL}
-    image: soomit-frontend:local
+    image: ${FRONTEND_IMAGE:-soomit-frontend:local}
     container_name: soomit-infra-nextjs
     restart: unless-stopped
     env_file:
@@ -77,7 +77,7 @@ services:
   realtime:
     build:
       context: ../realtime
-    image: soomit-realtime:local
+    image: ${REALTIME_IMAGE:-soomit-realtime:local}
     container_name: soomit-infra-realtime
     restart: unless-stopped
     environment:

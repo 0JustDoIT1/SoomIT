@@ -5,11 +5,12 @@ steps:
       - --file
       - Dockerfile.phase1
       - --tag
-      - gcr.io/$PROJECT_ID/ct-analysis-phase1-serve:latest
+      - gcr.io/$PROJECT_ID/ct-analysis-phase1-serve:$_IMAGE_TAG
       - .
 images:
-  - gcr.io/$PROJECT_ID/ct-analysis-phase1-serve:latest
+  - gcr.io/$PROJECT_ID/ct-analysis-phase1-serve:$_IMAGE_TAG
+substitutions:
+  _IMAGE_TAG: latest
 timeout: 3600s
 options:
   machineType: E2_HIGHCPU_32
-

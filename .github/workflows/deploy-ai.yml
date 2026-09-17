@@ -1,0 +1,165 @@
+name: Deploy AI services
+
+on:
+  push:
+    branches: [production]
+    paths:
+      - 'ai-services/**'
+  workflow_dispatch:
+    inputs:
+      service:
+        description: AI service to rebuild and redeploy
+        required: true
+        type: choice
+        options:
+          - ct-analysis-phase1-serve
+          - ct-analysis-phase2-serve
+          - ct-detection-serve
+          - xray-serve
+          - pdl1-serve
+          - pathology-analysis-serve
+          - embedding-serve
+          - medgemma-serve
+          - genkit-serve
+          - tnm-t-serve
+          - tnm-m-serve
+          - tnm-serve
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: soomit-506909
+  REGION: asia-southeast1
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      has_services: ${{ steps.detect.outputs.has_services }}
+      image_tag: ${{ steps.detect.outputs.image_tag }}
+      matrix: ${{ steps.detect.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        shell: bash
+        env:
+          MANUAL_SERVICE: ${{ inputs.service }}
+        run: |
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            printf '%s\n' "manual:$MANUAL_SERVICE" > /tmp/changed.txt
+          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            git ls-tree -r --name-only "${{ github.sha }}" > /tmp/changed.txt
+          else
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/changed.txt
+          fi
+          python - <<'PY'
+          import json, os
+          paths = [line.strip() for line in open('/tmp/changed.txt', encoding='utf-8') if line.strip()]
+          services = {}
+          def add(service, context, config='', dockerfile='Dockerfile'):
+              services[service] = {'service': service, 'context': context, 'config': config, 'dockerfile': dockerfile}
+
+          if paths and paths[0].startswith('manual:'):
+              selected = paths[0].split(':', 1)[1]
+              mapping = {
+                  'ct-analysis-phase1-serve': ('ai-services/ct-analysis', 'cloudbuild-phase1.yaml', 'Dockerfile.phase1'),
+                  'ct-analysis-phase2-serve': ('ai-services/ct-analysis', 'cloudbuild-phase2.yaml', 'Dockerfile.phase2'),
+                  'pdl1-serve': ('ai-services/pd-l1', 'cloudbuild.yaml', 'Dockerfile'),
+                  'pathology-analysis-serve': ('ai-services/pathology-analysis', 'cloudbuild.yaml', 'Dockerfile'),
+                  'tnm-t-serve': ('ai-services/tnm', 'cloudbuild-t.yaml', 'Dockerfile.t'),
+                  'tnm-m-serve': ('ai-services/tnm', 'cloudbuild-m.yaml', 'Dockerfile.m'),
+                  'tnm-serve': ('ai-services/tnm', 'cloudbuild-core.yaml', 'Dockerfile.core'),
+              }
+              context, config, dockerfile = mapping.get(selected, (f'ai-services/{selected.removesuffix("-serve")}', '', 'Dockerfile'))
+              if selected == 'pdl1-serve': context = 'ai-services/pd-l1'
+              if selected == 'pathology-analysis-serve': context = 'ai-services/pathology-analysis'
+              add(selected, context, config, dockerfile)
+          else:
+              for path in paths:
+                  direct = {
+                      'xray-serve': ('ai-services/xray/', {'Dockerfile','requirements.txt','server.py','inference.py','artifact.py','.dockerignore','.gcloudignore'}, ()),
+                      'ct-detection-serve': ('ai-services/ct-detection/', {'Dockerfile','requirements.txt','server.py','input_io.py','artifact.py','orthanc_client.py','.dockerignore','.gcloudignore'}, ('code/','config/','external/')),
+                      'embedding-serve': ('ai-services/embedding/', {'Dockerfile','requirements.txt','server.py','encoder.py','download_model.py','.dockerignore','.gcloudignore'}, ()),
+                      'medgemma-serve': ('ai-services/medgemma/', {'Dockerfile','server.py','cloudbuild.yaml','.dockerignore','.gcloudignore'}, ()),
+                      'genkit-serve': ('ai-services/genkit/', {'Dockerfile','package.json','package-lock.json','tsconfig.json','.dockerignore','.gcloudignore'}, ('src/',)),
+                      'pdl1-serve': ('ai-services/pd-l1/', {'Dockerfile','requirements.txt','artifact.py','cloudbuild.yaml','.dockerignore','.gcloudignore'}, ('app/','mil_baseline/')),
+                      'pathology-analysis-serve': ('ai-services/pathology-analysis/', {'Dockerfile','requirements.txt','cloudbuild.yaml','.dockerignore','.gcloudignore'}, ('app/','validation/')),
+                  }
+                  for service, (prefix, files, directories) in direct.items():
+                      if path.startswith(prefix):
+                          rel = path.removeprefix(prefix)
+                          if rel in files or rel.startswith(directories):
+                              config = 'cloudbuild.yaml' if service in {'pdl1-serve', 'pathology-analysis-serve', 'medgemma-serve'} else ''
+                              add(service, prefix.rstrip('/'), config)
+
+                  if path.startswith('ai-services/ct-analysis/'):
+                      rel = path.removeprefix('ai-services/ct-analysis/')
+                      p1 = rel in {'artifact.py','input_io.py','orthanc_client.py','model_artifacts.py','phase1_server.py','visualization.py','cornerstone_labelmap.py','storage_io.py','requirements-phase1.txt','Dockerfile.phase1','cloudbuild-phase1.yaml','.dockerignore','.gcloudignore'} or rel.startswith(('external/VISTA/','packages/final_segmentation_deploy_ready/','packages/final_quantification_deploy_ready/','packages/final_morphology_deploy_ready/','packages/final_texture_deploy_ready/','packages/final_malignancy_deploy_ready/','packages/final_t_input_deploy_ready/'))
+                      p2 = rel in {'phase2_server.py','storage_io.py','requirements-phase2.txt','Dockerfile.phase2','cloudbuild-phase2.yaml','.dockerignore','.gcloudignore'}
+                      shared = rel.startswith(('packages/final_ct_analysis_deploy_ready/','packages/final_n_input_deploy_ready/'))
+                      if p1 or shared: add('ct-analysis-phase1-serve','ai-services/ct-analysis','cloudbuild-phase1.yaml','Dockerfile.phase1')
+                      if p2 or shared: add('ct-analysis-phase2-serve','ai-services/ct-analysis','cloudbuild-phase2.yaml','Dockerfile.phase2')
+
+                  if path.startswith('ai-services/tnm/'):
+                      rel = path.removeprefix('ai-services/tnm/')
+                      common = rel in {'storage_io.py','model_io.py','.dockerignore','.gcloudignore'}
+                      if common or rel in {'t_server.py','Dockerfile.t','cloudbuild-t.yaml','requirements-gpu.txt'} or rel == 'runtime/nnUNetTrainer_250epochs.py': add('tnm-t-serve','ai-services/tnm','cloudbuild-t.yaml','Dockerfile.t')
+                      if common or rel in {'m_server.py','m_pipeline.py','pet_dicom.py','Dockerfile.m','cloudbuild-m.yaml','requirements-gpu.txt'} or rel.startswith(('resources/','runtime/nnUNetTrainer_100epochs_Save10.py')): add('tnm-m-serve','ai-services/tnm','cloudbuild-m.yaml','Dockerfile.m')
+                      if common or rel in {'core_server.py','Dockerfile.core','cloudbuild-core.yaml','requirements-core.txt'} or rel.startswith('runtime/'): add('tnm-serve','ai-services/tnm','cloudbuild-core.yaml','Dockerfile.core')
+
+          matrix = {'include': [services[name] for name in sorted(services)]}
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              handle.write(f'has_services={str(bool(services)).lower()}\n')
+              tag = os.environ['GITHUB_SHA'] if not (paths and paths[0].startswith('manual:')) else f"{os.environ['GITHUB_SHA']}-{os.environ['GITHUB_RUN_NUMBER']}"
+              handle.write(f'image_tag={tag}\n')
+              handle.write('matrix=' + json.dumps(matrix, separators=(',', ':')) + '\n')
+          PY
+
+  deploy:
+    needs: changes
+    if: needs.changes.outputs.has_services == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Build SHA-tagged image
+        working-directory: ${{ matrix.context }}
+        shell: bash
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/${{ matrix.service }}:${{ needs.changes.outputs.image_tag }}"
+          if [[ -n "${{ matrix.config }}" ]]; then
+            gcloud builds submit --project="$PROJECT_ID" --config="${{ matrix.config }}" \
+              --substitutions="_IMAGE_TAG=${{ needs.changes.outputs.image_tag }}" .
+          else
+            gcloud builds submit --project="$PROJECT_ID" \
+              --tag="$IMAGE" --timeout=3600s .
+          fi
+      - name: Deploy only this Cloud Run service
+        shell: bash
+        run: |
+          IMAGE="gcr.io/$PROJECT_ID/${{ matrix.service }}:${{ needs.changes.outputs.image_tag }}"
+          gcloud run services update "${{ matrix.service }}" \
+            --project="$PROJECT_ID" --region="$REGION" --image="$IMAGE" --quiet
+      - name: Verify revision and health
+        shell: bash
+        run: |
+          SERVICE="${{ matrix.service }}"
+          IMAGE="gcr.io/$PROJECT_ID/$SERVICE:${{ needs.changes.outputs.image_tag }}"
+          READY="$(gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$REGION" --format='value(status.latestReadyRevisionName)')"
+          DEPLOYED="$(gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$REGION" --format='value(spec.template.spec.containers[0].image)')"
+          URL="$(gcloud run services describe "$SERVICE" --project="$PROJECT_ID" --region="$REGION" --format='value(status.url)')"
+          test -n "$READY"
+          test "$DEPLOYED" = "$IMAGE"
+          TOKEN="$(gcloud auth print-identity-token --audiences="$URL")"
+          curl -fsS -H "Authorization: Bearer $TOKEN" "$URL/health"
+          echo "revision=$READY image=$DEPLOYED"

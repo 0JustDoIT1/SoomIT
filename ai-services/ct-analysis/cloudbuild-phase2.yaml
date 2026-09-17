@@ -5,9 +5,10 @@ steps:
       - --file
       - Dockerfile.phase2
       - --tag
-      - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:latest
+      - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:$_IMAGE_TAG
       - .
 images:
-  - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:latest
+  - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:$_IMAGE_TAG
+substitutions:
+  _IMAGE_TAG: latest
 timeout: 1800s
-

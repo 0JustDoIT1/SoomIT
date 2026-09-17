@@ -1,0 +1,256 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main, production]
+
+permissions:
+  contents: read
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.detect.outputs.frontend }}
+      backend: ${{ steps.detect.outputs.backend }}
+      realtime: ${{ steps.detect.outputs.realtime }}
+      infra: ${{ steps.detect.outputs.infra }}
+      has_ai: ${{ steps.detect.outputs.has_ai }}
+      ai_matrix: ${{ steps.detect.outputs.ai_matrix }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git diff --name-only "origin/${{ github.base_ref }}...${{ github.sha }}" > /tmp/changed.txt
+          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            git ls-tree -r --name-only "${{ github.sha }}" > /tmp/changed.txt
+          else
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/changed.txt
+          fi
+          python - <<'PY'
+          import json, os
+          from pathlib import PurePosixPath
+
+          paths = [line.strip() for line in open('/tmp/changed.txt', encoding='utf-8') if line.strip()]
+          output = os.environ['GITHUB_OUTPUT']
+
+          def any_under(prefix):
+              return any(path.startswith(prefix) for path in paths)
+
+          flags = {
+              'frontend': any_under('frontend/'),
+              'backend': any_under('backend/'),
+              'realtime': any_under('realtime/'),
+              'infra': any_under('infra/'),
+          }
+
+          services = {}
+          def add(name, context, dockerfile):
+              services[name] = {'service': name, 'context': context, 'dockerfile': dockerfile}
+
+          for path in paths:
+              if path.startswith('ai-services/xray/'):
+                  add('xray-serve', 'ai-services/xray', 'Dockerfile')
+              if path.startswith('ai-services/ct-detection/'):
+                  add('ct-detection-serve', 'ai-services/ct-detection', 'Dockerfile')
+              if path.startswith('ai-services/embedding/'):
+                  add('embedding-serve', 'ai-services/embedding', 'Dockerfile')
+              if path.startswith('ai-services/medgemma/'):
+                  add('medgemma-serve', 'ai-services/medgemma', 'Dockerfile')
+              if path.startswith('ai-services/genkit/'):
+                  add('genkit-serve', 'ai-services/genkit', 'Dockerfile')
+              if path.startswith('ai-services/pd-l1/'):
+                  add('pdl1-serve', 'ai-services/pd-l1', 'Dockerfile')
+              if path.startswith('ai-services/pathology-analysis/'):
+                  add('pathology-analysis-serve', 'ai-services/pathology-analysis', 'Dockerfile')
+
+              if path.startswith('ai-services/ct-analysis/'):
+                  rel = path.removeprefix('ai-services/ct-analysis/')
+                  phase1 = (
+                      rel in {'artifact.py', 'input_io.py', 'orthanc_client.py', 'model_artifacts.py',
+                              'phase1_server.py', 'visualization.py', 'cornerstone_labelmap.py',
+                              'storage_io.py', 'requirements-phase1.txt', 'Dockerfile.phase1',
+                              'cloudbuild-phase1.yaml', '.dockerignore', '.gcloudignore'}
+                      or rel.startswith(('external/VISTA/', 'packages/final_segmentation_deploy_ready/',
+                                         'packages/final_quantification_deploy_ready/',
+                                         'packages/final_morphology_deploy_ready/',
+                                         'packages/final_texture_deploy_ready/',
+                                         'packages/final_malignancy_deploy_ready/',
+                                         'packages/final_t_input_deploy_ready/'))
+                  )
+                  phase2 = (
+                      rel in {'phase2_server.py', 'storage_io.py', 'requirements-phase2.txt',
+                              'Dockerfile.phase2', 'cloudbuild-phase2.yaml', '.dockerignore', '.gcloudignore'}
+                  )
+                  shared = rel.startswith(('packages/final_ct_analysis_deploy_ready/',
+                                           'packages/final_n_input_deploy_ready/'))
+                  if phase1 or shared:
+                      add('ct-analysis-phase1-serve', 'ai-services/ct-analysis', 'Dockerfile.phase1')
+                  if phase2 or shared:
+                      add('ct-analysis-phase2-serve', 'ai-services/ct-analysis', 'Dockerfile.phase2')
+
+              if path.startswith('ai-services/tnm/'):
+                  rel = path.removeprefix('ai-services/tnm/')
+                  common = rel in {'storage_io.py', 'model_io.py', '.dockerignore', '.gcloudignore'}
+                  if common or rel in {'t_server.py', 'Dockerfile.t', 'cloudbuild-t.yaml', 'requirements-gpu.txt'} or rel == 'runtime/nnUNetTrainer_250epochs.py':
+                      add('tnm-t-serve', 'ai-services/tnm', 'Dockerfile.t')
+                  if common or rel in {'m_server.py', 'm_pipeline.py', 'pet_dicom.py', 'Dockerfile.m', 'cloudbuild-m.yaml', 'requirements-gpu.txt'} or rel.startswith(('resources/', 'runtime/nnUNetTrainer_100epochs_Save10.py')):
+                      add('tnm-m-serve', 'ai-services/tnm', 'Dockerfile.m')
+                  if common or rel in {'core_server.py', 'Dockerfile.core', 'cloudbuild-core.yaml', 'requirements-core.txt'} or rel.startswith('runtime/'):
+                      add('tnm-serve', 'ai-services/tnm', 'Dockerfile.core')
+
+          matrix = {'include': [services[name] for name in sorted(services)]}
+          with open(output, 'a', encoding='utf-8') as handle:
+              for name, value in flags.items():
+                  handle.write(f'{name}={str(value).lower()}\n')
+              handle.write(f'has_ai={str(bool(services)).lower()}\n')
+              handle.write('ai_matrix=' + json.dumps(matrix, separators=(',', ':')) + '\n')
+          PY
+
+  frontend:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build
+        env:
+          NEXT_PUBLIC_API_BASE_URL: https://soomit.kro.kr
+          NEXT_PUBLIC_REALTIME_WS_URL: wss://soomit.kro.kr
+
+  backend:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_DB: sumit
+          POSTGRES_USER: sumit
+          POSTGRES_PASSWORD: sumit_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U sumit -d sumit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+    defaults:
+      run:
+        working-directory: backend
+    env:
+      POSTGRES_DB: sumit
+      POSTGRES_USER: sumit
+      POSTGRES_PASSWORD: sumit_ci
+      POSTGRES_HOST: 127.0.0.1
+      POSTGRES_PORT: '5432'
+      CELERY_BROKER_URL: redis://127.0.0.1:6379/0
+      CELERY_RESULT_BACKEND: redis://127.0.0.1:6379/1
+      PDL1_INFERENCE_SERVICE_URL: http://127.0.0.1:8100
+      ORTHANC_BASE_URL: http://127.0.0.1:8042
+      EMBEDDING_SERVICE_URL: http://127.0.0.1:8200
+      MEDGEMMA_SERVICE_URL: http://127.0.0.1:8300
+      DJANGO_SECRET_KEY: ci-only-secret
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: backend/requirements.txt
+      - run: pip install -r requirements.txt
+      - run: python manage.py check
+      - run: python manage.py makemigrations --check --dry-run
+      - run: python manage.py test
+      - run: docker build -t soomit-backend:ci .
+
+  realtime:
+    needs: changes
+    if: needs.changes.outputs.realtime == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: realtime
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: realtime/requirements.txt
+      - run: pip install -r requirements.txt pytest
+      - run: python -m compileall -q app
+      - run: pytest -q
+      - run: docker build -t soomit-realtime:ci .
+
+  infra:
+    needs: changes
+    if: needs.changes.outputs.infra == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - shell: bash
+        run: |
+          touch backend/.env frontend/.env
+          NEXT_PUBLIC_API_BASE_URL=https://soomit.kro.kr \
+          NEXT_PUBLIC_REALTIME_WS_URL=wss://soomit.kro.kr \
+          AI_SERVICE_TOKEN=ci-only-token \
+          ORTHANC_USERNAME=ci ORTHANC_PASSWORD=ci \
+          ORTHANC_PUBLIC_URL=http://127.0.0.1:8042 \
+          docker compose --env-file backend/.env --env-file frontend/.env \
+            -f infra/docker-compose.yml config --quiet
+      - shell: bash
+        run: |
+          mkdir -p /tmp/nginx-certs/live/soomit.kro.kr
+          openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout /tmp/nginx-certs/live/soomit.kro.kr/privkey.pem \
+            -out /tmp/nginx-certs/live/soomit.kro.kr/fullchain.pem \
+            -subj '/CN=soomit.kro.kr' >/dev/null 2>&1
+          docker run --rm \
+            -v "$PWD/infra/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
+            -v /tmp/nginx-certs:/etc/letsencrypt:ro \
+            nginx:1.27-alpine nginx -t
+
+  ai:
+    needs: changes
+    if: needs.changes.outputs.has_ai == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJson(needs.changes.outputs.ai_matrix) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax check
+        if: matrix.service != 'genkit-serve'
+        run: python -m compileall -q "${{ matrix.context }}"
+      - uses: actions/setup-node@v4
+        if: matrix.service == 'genkit-serve'
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ai-services/genkit/package-lock.json
+      - name: Genkit build and tests
+        if: matrix.service == 'genkit-serve'
+        working-directory: ai-services/genkit
+        run: npm ci && npm test
+      - name: Dockerfile validation
+        run: docker build --check --file "${{ matrix.context }}/${{ matrix.dockerfile }}" "${{ matrix.context }}"

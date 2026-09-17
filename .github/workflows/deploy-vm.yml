@@ -1,0 +1,213 @@
+name: Deploy VM services
+
+on:
+  push:
+    branches: [production]
+    paths:
+      - 'frontend/**'
+      - 'backend/**'
+      - 'realtime/**'
+      - 'infra/**'
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PROJECT_ID: soomit-506909
+  REGION: asia-southeast1
+  ZONE: asia-southeast1-b
+  VM_NAME: soom-it
+  AR_REPOSITORY: soomit
+  REGISTRY: asia-southeast1-docker.pkg.dev
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      frontend: ${{ steps.detect.outputs.frontend }}
+      backend: ${{ steps.detect.outputs.backend }}
+      realtime: ${{ steps.detect.outputs.realtime }}
+      nginx: ${{ steps.detect.outputs.nginx }}
+      infra: ${{ steps.detect.outputs.infra }}
+      infra_services: ${{ steps.detect.outputs.infra_services }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: detect
+        shell: bash
+        run: |
+          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+            git ls-tree -r --name-only "${{ github.sha }}" > /tmp/changed.txt
+          else
+            git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/changed.txt
+          fi
+          pip install --quiet PyYAML==6.0.2
+          BEFORE='${{ github.event.before }}' python - <<'PY'
+          import os, subprocess, yaml
+
+          paths = [line.strip() for line in open('/tmp/changed.txt', encoding='utf-8') if line.strip()]
+          flags = {
+              'frontend': any(path.startswith('frontend/') for path in paths),
+              'backend': any(path.startswith('backend/') for path in paths),
+              'realtime': any(path.startswith('realtime/') for path in paths),
+              'infra': any(path.startswith('infra/') for path in paths),
+              'nginx': 'infra/nginx.conf' in paths,
+          }
+          changed_infra_services = set()
+          if 'infra/docker-compose.yml' in paths:
+              before = os.environ['BEFORE']
+              if before == '0000000000000000000000000000000000000000':
+                  old = {}
+              else:
+                  before_text = subprocess.check_output(
+                      ['git', 'show', f'{before}:infra/docker-compose.yml'], text=True
+                  )
+                  old = (yaml.safe_load(before_text) or {}).get('services', {})
+              new = (yaml.safe_load(open('infra/docker-compose.yml', encoding='utf-8')) or {}).get('services', {})
+              changed = {name for name in set(old) | set(new) if old.get(name) != new.get(name)}
+              flags['frontend'] |= 'nextjs' in changed
+              flags['backend'] |= bool({'django', 'celery_worker', 'celery_beat'} & changed)
+              flags['realtime'] |= 'realtime' in changed
+              changed_infra_services |= changed - {'nextjs', 'django', 'celery_worker', 'celery_beat', 'realtime'}
+          if flags['nginx']:
+              changed_infra_services.add('nginx')
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as handle:
+              for name, value in flags.items():
+                  handle.write(f'{name}={str(value).lower()}\n')
+              handle.write('infra_services=' + ' '.join(sorted(changed_infra_services)) + '\n')
+          PY
+
+  registry:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.realtime == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - run: |
+          gcloud artifacts repositories describe "$AR_REPOSITORY" --project="$PROJECT_ID" --location="$REGION" >/dev/null
+
+  build:
+    needs: [changes, registry]
+    if: needs.registry.result == 'success'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - component: frontend
+            enabled: ${{ needs.changes.outputs.frontend }}
+            image: frontend
+            context: frontend
+          - component: backend
+            enabled: ${{ needs.changes.outputs.backend }}
+            image: backend
+            context: backend
+          - component: realtime
+            enabled: ${{ needs.changes.outputs.realtime }}
+            image: realtime
+            context: realtime
+    steps:
+      - name: Skip unchanged component
+        if: matrix.enabled != 'true'
+        run: echo "${{ matrix.component }} unchanged"
+      - uses: actions/checkout@v4
+        if: matrix.enabled == 'true'
+      - uses: google-github-actions/auth@v2
+        if: matrix.enabled == 'true'
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+      - uses: google-github-actions/setup-gcloud@v2
+        if: matrix.enabled == 'true'
+      - name: Configure Artifact Registry
+        if: matrix.enabled == 'true'
+        shell: bash
+        run: |
+          gcloud auth configure-docker "$REGISTRY" --quiet
+      - name: Build and push
+        if: matrix.enabled == 'true'
+        shell: bash
+        run: |
+          IMAGE="$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/${{ matrix.image }}:${{ github.sha }}"
+          args=()
+          if [[ "${{ matrix.component }}" == "frontend" ]]; then
+            args+=(--build-arg NEXT_PUBLIC_API_BASE_URL=https://soomit.kro.kr)
+            args+=(--build-arg NEXT_PUBLIC_REALTIME_WS_URL=wss://soomit.kro.kr)
+          fi
+          docker build "${args[@]}" -t "$IMAGE" "${{ matrix.context }}"
+          docker push "$IMAGE"
+
+  deploy:
+    needs: [changes, build]
+    if: always() && !failure() && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.realtime == 'true' || needs.changes.outputs.infra == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+      - uses: google-github-actions/setup-gcloud@v2
+      - name: Update changed VM services
+        shell: bash
+        env:
+          FRONTEND_CHANGED: ${{ needs.changes.outputs.frontend }}
+          BACKEND_CHANGED: ${{ needs.changes.outputs.backend }}
+          REALTIME_CHANGED: ${{ needs.changes.outputs.realtime }}
+          NGINX_CHANGED: ${{ needs.changes.outputs.nginx }}
+          INFRA_CHANGED: ${{ needs.changes.outputs.infra }}
+          INFRA_SERVICES: ${{ needs.changes.outputs.infra_services }}
+        run: |
+          gcloud compute ssh "$VM_NAME" --project="$PROJECT_ID" --zone="$ZONE" --command="
+            set -eu
+            cd ~/SoomIT
+            git fetch origin production
+            git checkout production
+            git pull --ff-only origin production
+            echo \"\$(gcloud auth print-access-token)\" | sudo docker login -u oauth2accesstoken --password-stdin $REGISTRY
+            export FRONTEND_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/frontend:${{ github.sha }}'
+            export BACKEND_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/backend:${{ github.sha }}'
+            export REALTIME_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/realtime:${{ github.sha }}'
+            compose='sudo -E docker compose --env-file backend/.env --env-file frontend/.env -f infra/docker-compose.yml'
+            \$compose config --quiet
+            if [ '$BACKEND_CHANGED' = true ]; then
+              \$compose pull django celery_worker celery_beat
+              \$compose run --rm --no-deps django python manage.py migrate
+              \$compose up -d --no-build --no-deps django celery_worker celery_beat
+              for attempt in \$(seq 1 30); do curl -fsS http://127.0.0.1:8000/admin/login/ >/dev/null && break; sleep 2; done
+              curl -fsS http://127.0.0.1:8000/admin/login/ >/dev/null
+            fi
+            if [ '$REALTIME_CHANGED' = true ]; then
+              \$compose pull realtime
+              \$compose up -d --no-build --no-deps realtime
+              for attempt in \$(seq 1 30); do sudo docker exec soomit-infra-realtime python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5).read()\" && break; sleep 2; done
+              sudo docker exec soomit-infra-realtime python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/health', timeout=5).read()\"
+            fi
+            if [ '$FRONTEND_CHANGED' = true ]; then
+              \$compose pull nextjs
+              \$compose up -d --no-build --no-deps nextjs
+              for attempt in \$(seq 1 30); do sudo docker exec soomit-infra-nextjs node -e \"fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\" && break; sleep 2; done
+              sudo docker exec soomit-infra-nextjs node -e \"fetch('http://127.0.0.1:3000').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))\"
+            fi
+            if [ -n '$INFRA_SERVICES' ]; then
+              \$compose up -d --no-build --no-deps $INFRA_SERVICES
+            fi
+            if [ '$NGINX_CHANGED' = true ]; then
+              sudo docker exec soomit-infra-nginx nginx -t
+              sudo docker exec soomit-infra-nginx nginx -s reload
+            fi
+            \$compose ps
+          "
+
+  verify:
+    needs: [changes, deploy]
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "commit=${{ github.sha }}"
+          echo "frontend=${{ needs.changes.outputs.frontend }}"
+          echo "backend=${{ needs.changes.outputs.backend }}"
+          echo "realtime=${{ needs.changes.outputs.realtime }}"
+          echo "infra=${{ needs.changes.outputs.infra }}"
