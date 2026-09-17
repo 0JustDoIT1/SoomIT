@@ -24,7 +24,7 @@ OUTPUT_GCS_PREFIX = os.environ.get(
 MODEL_REVISION = os.environ.get("MODEL_REVISION", "ct-analysis-v1.0.0")
 CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 inference_lock = threading.Lock()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 LOBE_MASKS = (
     "lung_upper_lobe_left.nii.gz",

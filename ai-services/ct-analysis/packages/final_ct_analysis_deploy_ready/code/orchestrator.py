@@ -49,7 +49,7 @@ N_ROOT = (
     / "final_n_input_deploy_ready"
 )
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 def log_latency(stage, started):

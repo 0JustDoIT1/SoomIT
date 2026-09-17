@@ -69,7 +69,7 @@ contract: dict[str, Any] = {}
 anatomy_contract: dict[str, Any] = {}
 nnunet_predictor: ResidentNnUNetPredictor | None = None
 inference_lock = threading.Lock()
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 def log_latency(stage: str, started: float) -> None:
