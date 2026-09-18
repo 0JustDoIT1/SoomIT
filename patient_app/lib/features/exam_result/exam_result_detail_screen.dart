@@ -150,7 +150,7 @@ class ExamResultDetailScreen extends StatelessWidget {
                 _buildInfoRow(
                   icon: Icons.category_outlined,
                   label: '검사 종류',
-                  value: exam.examType,
+                  value: exam.examName,
                 ),
 
                 const Divider(
@@ -266,11 +266,57 @@ class ExamResultDetailScreen extends StatelessWidget {
 
           const SizedBox(height: 18),
 
+          if (exam.resultSections.isEmpty)
+            Text(
+              exam.resultSummary,
+              style: const TextStyle(
+                fontSize: 14,
+                height: 1.65,
+                color: Color(0xFF4E5968),
+              ),
+            )
+          else
+            Column(
+              children: exam.resultSections
+                  .map(_buildResultSection)
+                  .toList(),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildResultSection(
+    ExamResultSection section,
+  ) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8F9FB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: const Color(0xFFE9EDF2),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
           Text(
-            exam.resultSummary,
+            section.label,
+            style: const TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF191F28),
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            section.summary,
             style: const TextStyle(
               fontSize: 14,
-              height: 1.65,
+              height: 1.6,
               color: Color(0xFF4E5968),
             ),
           ),

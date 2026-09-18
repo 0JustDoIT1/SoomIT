@@ -86,6 +86,7 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     result_summary = serializers.SerializerMethodField()
+    result_sections = serializers.SerializerMethodField()
     result_date = serializers.SerializerMethodField()
 
     class Meta:
@@ -98,15 +99,16 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
             "result_status_label",
             "result_date",
             "result_summary",
+            "result_sections",
         ]
 
     def get_exam_name(self, obj):
         exam_names = {
             "XRAY": "흉부 X-ray 검사",
             "CT": "흉부 CT 검사",
-            "PET_CT_TNM": "PET-CT 및 TNM 병기 평가",
-            "PATHOLOGY_GENE": "조직·유전자 검사",
-            "PDL1": "PD-L1 검사",
+            "PET_CT_TNM": "PET-CT",
+            "PATHOLOGY_GENE": "조직(유전자)검사",
+            "PDL1": "조직(유전자)검사",
         }
 
         return exam_names.get(
@@ -120,6 +122,41 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
             return obj.confirmed_at
 
         return obj.updated_at
+
+    def get_result_sections(self, obj):
+        sections = []
+
+        if hasattr(obj, "pathology_detail"):
+            sections.append({
+                "type": "PATHOLOGY",
+                "label": "조직검사",
+                "summary": (
+                    obj.pathology_detail.diagnosis_summary
+                    or obj.pathology_detail.get_malignancy_status_display()
+                ),
+            })
+
+        if hasattr(obj, "gene_detail"):
+            sections.append({
+                "type": "GENE",
+                "label": "유전자검사",
+                "summary": (
+                    obj.gene_detail.interpretation
+                    or "유전자 검사 결과가 등록되었습니다."
+                ),
+            })
+
+        if hasattr(obj, "pdl1_detail"):
+            sections.append({
+                "type": "PDL1",
+                "label": "PD-L1",
+                "summary": (
+                    obj.pdl1_detail.interpretation
+                    or "PD-L1 검사 결과가 등록되었습니다."
+                ),
+            })
+
+        return sections
 
     def get_result_summary(self, obj):
         # X-ray
@@ -156,11 +193,10 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
 
         # PD-L1
         if hasattr(obj, "pdl1_detail"):
-            if obj.pdl1_detail.interpretation:
-                return obj.pdl1_detail.interpretation
-            if obj.pdl1_detail.tps_percent is not None:
-                return f"PD-L1 TPS {obj.pdl1_detail.tps_percent}%"
-            return "PD-L1 검사 결과가 등록되었습니다."
+            return (
+                obj.pdl1_detail.interpretation
+                or "PD-L1 검사 결과가 등록되었습니다."
+            )
 
         return "검사 결과가 등록되었습니다."
 
