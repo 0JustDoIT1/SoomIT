@@ -183,8 +183,8 @@ jobs:
               \$compose pull django celery_worker celery_beat
               \$compose run --rm --no-deps django python manage.py migrate
               \$compose up -d --no-build --no-deps django celery_worker celery_beat
-              for attempt in \$(seq 1 30); do curl -fsS http://127.0.0.1:8000/admin/login/ >/dev/null && break; sleep 2; done
-              curl -fsS http://127.0.0.1:8000/admin/login/ >/dev/null
+              for attempt in \$(seq 1 30); do curl -fsS http://127.0.0.1:8000/django-admin/login/ >/dev/null && break; sleep 2; done
+              curl -fsS http://127.0.0.1:8000/django-admin/login/ >/dev/null
             fi
             if [ '$REALTIME_CHANGED' = true ]; then
               \$compose pull realtime
@@ -201,7 +201,7 @@ jobs:
             if [ -n '$INFRA_SERVICES' ]; then
               \$compose up -d --no-build --no-deps $INFRA_SERVICES
             fi
-            if [ '$NGINX_CHANGED' = true ]; then
+            if [ '$NGINX_CHANGED' = true ] || [ '$BACKEND_CHANGED' = true ] || [ '$FRONTEND_CHANGED' = true ] || [ '$REALTIME_CHANGED' = true ]; then
               sudo docker exec soomit-infra-nginx nginx -t
               sudo docker exec soomit-infra-nginx nginx -s reload
             fi
