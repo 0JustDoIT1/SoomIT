@@ -90,10 +90,15 @@ class HospitalAdminStaffSerializer(serializers.Serializer):
     department = serializers.SerializerMethodField()
     role = serializers.CharField(source="department_role.role", read_only=True)
     role_display_name = serializers.CharField(source="department_role.display_name", read_only=True)
+    license_number = serializers.SerializerMethodField()
 
     def get_department(self, obj):
         department = obj.department_role.department
         return {"id": str(department.id), "code": department.code, "name": department.name}
+
+    def get_license_number(self, obj):
+        profile = getattr(obj, "doctor_profile", None)
+        return profile.license_number if profile else None
 
 
 class HospitalAdminStaffCreateSerializer(serializers.Serializer):

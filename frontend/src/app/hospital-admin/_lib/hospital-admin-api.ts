@@ -5,9 +5,9 @@ export type Department = { id: string; code: string; name: string; roles: Depart
 export type Staff = {
   id: string; login_id: string; name: string; account_status: string;
   department: { id: string; code: string; name: string };
-  role: string; role_display_name: string;
+  role: string; role_display_name: string; license_number: string | null;
 };
-export type StaffCreateRequest = { login_id: string; name: string; password: string; department_role_id: string };
+export type StaffCreateRequest = { login_id: string; name: string; password: string; department_role_id: string; license_number?: string };
 export type HospitalAdminLoginResponse = { access: string; refresh: string; user: HospitalAdminUser };
 
 export class HospitalAdminApiError extends Error {
@@ -38,6 +38,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
     const data: unknown = await response.json().catch(() => null);
     throw new HospitalAdminApiError(errorMessage(data) ?? "요청을 처리하지 못했습니다.", response.status);
   }
+  if (response.status === 204) return undefined as T;
   return response.json();
 }
 
@@ -48,3 +49,4 @@ export const loginHospitalAdmin = (username: string, password: string) => reques
 export const fetchDepartments = (token: string, signal?: AbortSignal) => request<Department[]>("/api/hospital-admin/departments/", { headers: authHeaders(token), signal });
 export const fetchStaff = (token: string, signal?: AbortSignal) => request<Staff[]>("/api/hospital-admin/staff/", { headers: authHeaders(token), signal });
 export const createStaff = (token: string, data: StaffCreateRequest) => request<Staff>("/api/hospital-admin/staff/", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify(data) });
+export const deleteStaff = (token: string, staffId: string) => request<void>(`/api/hospital-admin/staff/${staffId}/`, { method: "DELETE", headers: authHeaders(token) });

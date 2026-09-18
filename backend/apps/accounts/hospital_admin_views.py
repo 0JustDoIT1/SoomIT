@@ -1,4 +1,5 @@
 from django.db import IntegrityError
+from django.db.models.deletion import ProtectedError
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
@@ -54,7 +55,7 @@ class HospitalAdminStaffListCreateAPIView(APIView):
     def get(self, request):
         staff = User.objects.filter(
             department_role__department__hospital_id=request.hospital_admin.hospital_id,
-        ).select_related("department_role__department").order_by("name", "login_id", "id")
+        ).select_related("department_role__department", "doctor_profile").order_by("name", "login_id", "id")
         return Response(HospitalAdminStaffSerializer(staff, many=True).data)
 
     @extend_schema(request=HospitalAdminStaffCreateSerializer, responses={201: HospitalAdminStaffSerializer})
@@ -77,5 +78,25 @@ class HospitalAdminStaffListCreateAPIView(APIView):
             user = provision_staff(department_role=department_role, **user_data)
         except IntegrityError as exc:
             raise ValidationError({"login_id": "이미 사용 중인 로그인 식별값입니다."}) from exc
-        user = User.objects.select_related("department_role__department").get(pk=user.pk)
+        user = User.objects.select_related("department_role__department", "doctor_profile").get(pk=user.pk)
         return Response(HospitalAdminStaffSerializer(user).data, status=status.HTTP_201_CREATED)
+
+
+class HospitalAdminStaffDestroyAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsHospitalAdmin]
+
+    def delete(self, request, staff_id):
+        user = get_object_or_404(
+            User,
+            pk=staff_id,
+            department_role__department__hospital_id=request.hospital_admin.hospital_id,
+        )
+        try:
+            user.delete()
+        except ProtectedError:
+            return Response(
+                {"detail": "진료나 검사 기록이 연결된 직원은 삭제할 수 없습니다."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        return Response(status=status.HTTP_204_NO_CONTENT)

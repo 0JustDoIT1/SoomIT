@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import (
     Department,
     DepartmentRole,
+    DoctorProfile,
     Hospital,
     HospitalAdmin,
     SystemAdmin,
@@ -82,6 +83,44 @@ class HospitalAdminManagementAPITestCase(APITestCase):
         self.assertEqual(other.status_code, status.HTTP_404_NOT_FOUND)
         self.assertFalse(User.objects.filter(login_id="cross-hospital").exists())
         self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_doctor_create_requires_and_returns_license_number(self):
+        self.authenticate()
+        doctor_role = DepartmentRole.objects.create(
+            department=self.department,
+            role=DepartmentRole.Role.DOCTOR,
+            display_name="의사",
+        )
+        endpoint = reverse("hospital-admin:staff-list-create")
+        missing = self.client.post(endpoint, {
+            "login_id": "doctor-missing-license",
+            "name": "면허 없는 의사",
+            "password": "password",
+            "department_role_id": str(doctor_role.id),
+        }, format="json")
+        self.assertEqual(missing.status_code, status.HTTP_400_BAD_REQUEST)
+
+        response = self.client.post(endpoint, {
+            "login_id": "new-doctor",
+            "name": "신규 의사",
+            "password": "password",
+            "department_role_id": str(doctor_role.id),
+            "license_number": "LICENSE-001",
+        }, format="json")
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["license_number"], "LICENSE-001")
+        self.assertTrue(DoctorProfile.objects.filter(user__login_id="new-doctor", license_number="LICENSE-001").exists())
+
+    def test_staff_delete_is_limited_to_own_hospital(self):
+        self.authenticate()
+        response = self.client.delete(reverse("hospital-admin:staff-destroy", kwargs={"staff_id": self.employee.id}))
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(User.objects.filter(pk=self.employee.id).exists())
+
+        other_employee = User.objects.get(login_id="other-employee")
+        response = self.client.delete(reverse("hospital-admin:staff-destroy", kwargs={"staff_id": other_employee.id}))
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertTrue(User.objects.filter(pk=other_employee.id).exists())
 
     def test_staff_provisioning_rolls_back_when_role_link_fails(self):
         original_save = User.save
