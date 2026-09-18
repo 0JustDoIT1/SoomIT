@@ -1,7 +1,7 @@
-import Link from "next/link";
-import Image from "next/image";
-import { AdminLoginPanel } from "./admin-login-panel";
-import styles from "./admin-login.module.css";
+import Link from 'next/link';
+import Image from 'next/image';
+import { AdminLoginPanel } from './admin-login-panel';
+import styles from './admin-login.module.css';
 
 export default function AdminLoginPage() {
   return (
@@ -52,7 +52,6 @@ export default function AdminLoginPage() {
             <h1 className={styles.title}>관리자 로그인</h1>
 
             <div className={styles.description}>
-              <p>관리자 전용 페이지입니다.</p>
               <p>승인된 계정으로만 접속할 수 있습니다.</p>
             </div>
 

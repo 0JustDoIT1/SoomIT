@@ -39,7 +39,9 @@ jobs:
       - id: detect
         shell: bash
         run: |
-          if [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            printf 'frontend/\nbackend/\nrealtime/\n' > /tmp/changed.txt
+          elif [[ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]]; then
             git ls-tree -r --name-only "${{ github.sha }}" > /tmp/changed.txt
           else
             git diff --name-only "${{ github.event.before }}" "${{ github.sha }}" > /tmp/changed.txt
@@ -161,7 +163,7 @@ jobs:
           INFRA_CHANGED: ${{ needs.changes.outputs.infra }}
           INFRA_SERVICES: ${{ needs.changes.outputs.infra_services }}
         run: |
-          gcloud compute ssh "$VM_NAME" --project="$PROJECT_ID" --zone="$ZONE" --command="
+          gcloud compute ssh "hbc3869@$VM_NAME" --project="$PROJECT_ID" --zone="$ZONE" --command="
             set -eu
             cd /home/hbc3869/SoomIT
             git fetch origin production
