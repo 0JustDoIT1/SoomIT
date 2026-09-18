@@ -487,6 +487,13 @@ export function startRadiologyAnalysis(orderId: string, signal?: AbortSignal) {
   );
 }
 
+export function resetRadiologyPetTnmAnalysis(orderId: string, signal?: AbortSignal) {
+  return radiologyRequest<{ order_id: string; analysis_id: string; invalidated_asset_id: string }>(
+    `/api/radiology/orders/${orderId}/pet-tnm-analysis/reset/`,
+    { method: "POST", body: JSON.stringify({}), signal },
+  );
+}
+
 export function fetchRadiologyAnalysis(analysisId: string, signal?: AbortSignal) {
   return radiologyRequest<RadiologyAnalysisDetail>(
     `/api/radiology/analyses/${analysisId}/`,

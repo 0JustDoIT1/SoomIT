@@ -20,6 +20,7 @@ import {
   fetchRadiologyAnalysisResult,
   fetchRadiologyXrayImage,
   RadiologyApiError,
+  resetRadiologyPetTnmAnalysis,
   startRadiologyAnalysis,
   submitRadiologyAnalysisForReview,
   uploadRadiologyCtSeries, uploadRadiologyPetSeries,
@@ -390,6 +391,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   onImageUploaded?: () => void;
 }) {
   const [startingAnalysis, setStartingAnalysis] = useState(false);
+  const [resettingPetTnm, setResettingPetTnm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(
     item.workflow_status === "REVIEW_PENDING" || item.workflow_status === "REVIEW_COMPLETED",
@@ -405,6 +407,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingCtSeries, setUploadingCtSeries] = useState(false);
   const [ctSeriesUploaded, setCtSeriesUploaded] = useState(false);
+  const [resetAssetId, setResetAssetId] = useState<string | null>(null);
   const [isUploadDragOver, setIsUploadDragOver] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
@@ -434,7 +437,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   );
   const ctReadyToUpload = !isXray && selectedSeriesFiles.length > 0 && ctSeriesValidation?.valid === true;
   const isCt = order.order_type === "CT";
-  const serverImageReady = image?.status === "READY" || (isCt && ctSeriesUploaded);
+  const serverImageReady = (image?.status === "READY" && image.id !== resetAssetId) || (isCt && ctSeriesUploaded);
   const uploadLocked = serverImageReady;
   const canStartAnalysis = trackedAnalysis === null && (serverImageReady || (!isXray && !isCt && ctReadyToUpload));
 
@@ -540,12 +543,16 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   }, [analysisResult, trackedAnalysisId, trackedAnalysisStatus]);
 
   async function handleStartAnalysis() {
+    if (order.order_type === "PET_CT_TNM" && trackedAnalysis?.status === "FAILED") {
+      await handleResetPetTnmAnalysis();
+      return;
+    }
     if (!canStartAnalysis) return;
     setStartingAnalysis(true);
     setActionError("");
     setActionMessage("");
     try {
-      if (!isXray && order.order_type === "PET_CT_TNM" && image?.status !== "READY") {
+      if (!isXray && order.order_type === "PET_CT_TNM" && !serverImageReady) {
         if (!selectedSeriesUid) throw new RadiologyApiError("분석할 CT Series를 선택해 주세요.");
         const selectedFilesForUpload = selectedSeriesFiles.map((header) => header.file);
         if (order.order_type === "PET_CT_TNM") {
@@ -566,6 +573,28 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       setActionError(error instanceof Error ? error.message : "AI 분석을 등록하지 못했습니다.");
     } finally {
       setStartingAnalysis(false);
+    }
+  }
+
+  async function handleResetPetTnmAnalysis() {
+    if (order.order_type !== "PET_CT_TNM" || trackedAnalysis?.status !== "FAILED" || resettingPetTnm) return;
+    setResettingPetTnm(true);
+    setActionError("");
+    setActionMessage("");
+    try {
+      const reset = await resetRadiologyPetTnmAnalysis(order.id);
+      setResetAssetId(reset.invalidated_asset_id);
+      setTrackedAnalysis(null);
+      setAnalysisResult(null);
+      setSelectedFiles([]);
+      setDicomHeaders([]);
+      setSelectedSeriesUid(null);
+      setActionMessage("실패한 분석을 초기화했습니다. PET 영상을 다시 선택해 서버에 등록한 뒤 AI 분석을 실행해 주세요.");
+      onImageUploaded?.();
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "PET-CT/TNM 분석을 초기화하지 못했습니다.");
+    } finally {
+      setResettingPetTnm(false);
     }
   }
 
@@ -812,6 +841,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
           ) : null}
           {trackedAnalysis?.status === "FAILED" ? <p className="mt-4 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">AI 분석에 실패했습니다.{trackedAnalysis.error_message ? ` ${trackedAnalysis.error_message}` : ""}</p> : null}
           {!trackedAnalysis ? <p className="mt-3 text-xs text-slate-500">READY 영상 자산에서 분석을 실행할 수 있습니다.</p> : null}
+          {trackedAnalysis?.status === "FAILED" && order.order_type === "PET_CT_TNM" ? <div className="mt-3"><button type="button" onClick={handleResetPetTnmAnalysis} disabled={resettingPetTnm} className="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:text-slate-400">{resettingPetTnm ? "초기화 중" : "분석 재실행"}</button></div> : null}
           {actionMessage ? <p className="mt-3 border-l-2 border-blue-600 bg-blue-50 px-3 py-2 text-xs text-blue-800">{actionMessage}</p> : null}
           {actionError ? <p className="mt-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p> : null}
 

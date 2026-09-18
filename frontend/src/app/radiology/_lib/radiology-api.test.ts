@@ -2,7 +2,12 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 import { staffAuthenticatedFetch } from "@/lib/api";
 
-import { fetchRadiologyCompletedExams, fetchRadiologyXrayImage, uploadRadiologyXrayImage } from "./radiology-api";
+import {
+  fetchRadiologyCompletedExams,
+  fetchRadiologyXrayImage,
+  resetRadiologyPetTnmAnalysis,
+  uploadRadiologyXrayImage,
+} from "./radiology-api";
 
 vi.mock("@/lib/api", () => ({ staffAuthenticatedFetch: vi.fn() }));
 
@@ -50,5 +55,22 @@ it("loads completed radiology exam history through the grouped history endpoint"
   expect(staffAuthenticatedFetch).toHaveBeenCalledWith(
     "http://api.test/api/radiology/completed-exams/",
     expect.objectContaining({ method: "GET" }),
+  );
+});
+
+it("resets only the failed PET-TNM analysis through the order reset endpoint", async () => {
+  vi.mocked(staffAuthenticatedFetch).mockResolvedValue(
+    new Response(JSON.stringify({ order_id: "order-1", analysis_id: "analysis-1", invalidated_asset_id: "asset-1" }), { status: 200 }),
+  );
+
+  await expect(resetRadiologyPetTnmAnalysis("order-1")).resolves.toEqual({
+    order_id: "order-1",
+    analysis_id: "analysis-1",
+    invalidated_asset_id: "asset-1",
+  });
+
+  expect(staffAuthenticatedFetch).toHaveBeenCalledWith(
+    "http://api.test/api/radiology/orders/order-1/pet-tnm-analysis/reset/",
+    expect.objectContaining({ method: "POST" }),
   );
 });
