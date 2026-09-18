@@ -132,6 +132,8 @@ jobs:
         with:
           credentials_json: ${{ secrets.GCP_CREDENTIALS }}
       - uses: google-github-actions/setup-gcloud@v2
+      - name: Show active deployment identity
+        run: gcloud auth list --filter=status:ACTIVE --format="value(account)"
       - name: Build SHA-tagged image
         working-directory: ${{ matrix.context }}
         shell: bash
