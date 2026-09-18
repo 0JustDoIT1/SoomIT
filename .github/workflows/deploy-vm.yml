@@ -162,7 +162,7 @@ jobs:
         run: |
           gcloud compute ssh "$VM_NAME" --project="$PROJECT_ID" --zone="$ZONE" --command="
             set -eu
-            cd ~/SoomIT
+            cd /home/hbc3869/SoomIT
             git fetch origin production
             git checkout production
             git pull --ff-only origin production
