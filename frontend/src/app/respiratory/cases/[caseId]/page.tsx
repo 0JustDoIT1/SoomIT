@@ -2671,7 +2671,6 @@ export default function RespiratoryCaseDetailPage() {
           syncingResults={resultsSyncing}
           onRefreshResults={() => { void refreshCaseResults(); }}
           syncNotice={resultSyncNotice}
-          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : undefined}
         />
         ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
         <PathologyGeneReviewPanel
@@ -2696,6 +2695,7 @@ export default function RespiratoryCaseDetailPage() {
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
+          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : undefined}
           caseId={caseId}
           apiBaseUrl={API_BASE_URL}
           authorizedFetch={authorizedFetch}
