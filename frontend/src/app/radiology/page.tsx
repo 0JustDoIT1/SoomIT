@@ -1,12 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from "react";
 import { RecentPatients, useRecentPatients, type RecentPatient } from "@/components/workspace/recent-patients";
 
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
 
 import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
+import { RadiologyCompletedHistory } from "./_components/radiology-completed-history";
 import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
   fetchRadiologyCaseWorkflow,
@@ -75,7 +76,13 @@ function RadiologyStatusTable({
   );
 }
 
-function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (workflow: RadiologyCaseWorkflow) => void }) {
+function RadiologyCaseDetail({
+  caseId,
+  currentExam,
+}: {
+  caseId: string;
+  currentExam: RadiologyCaseWorklistItem["current_exam"] | null;
+}) {
   const [workflow, setWorkflow] = useState<RadiologyCaseWorkflow | null>(null);
   const [error, setError] = useState("");
   const [reloadVersion, setReloadVersion] = useState(0);
@@ -83,18 +90,24 @@ function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (
   useEffect(() => {
     const controller = new AbortController();
     void fetchRadiologyCaseWorkflow(caseId, controller.signal)
-      .then(data => { if (!controller.signal.aborted) { setWorkflow(data); onLoaded(data); } })
+      .then(data => { if (!controller.signal.aborted) setWorkflow(data); })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setError(reason instanceof Error ? reason.message : "검사 흐름을 불러오지 못했습니다.");
         }
       });
     return () => controller.abort();
-  }, [caseId, onLoaded, reloadVersion]);
+  }, [caseId, reloadVersion]);
 
   if (error) return <StateMessage variant="error" title={error} className="m-6" />;
   if (!workflow) return <StateMessage variant="loading" title="검사 흐름을 불러오는 중입니다." className="m-6" />;
   if (workflow.exams.length === 0) return <StateMessage variant="empty" title="표시할 영상 검사가 없습니다." className="m-6" />;
+  if (!currentExam) return <StateMessage variant="empty" title="표시할 현재 검사가 없습니다." className="m-6" />;
+
+  const currentWorkflowExam = workflow.exams.find(
+    (exam) => exam.examination_order.id === currentExam.examination_order.id,
+  );
+  if (!currentWorkflowExam) return <StateMessage variant="empty" title="표시할 현재 검사가 없습니다." className="m-6" />;
 
   return (
     <main className="min-h-0 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -117,24 +130,20 @@ function RadiologyCaseDetail({ caseId, onLoaded }: { caseId: string; onLoaded: (
           </div>
         </div>
       </header>
-      <div className="space-y-5">
-        {workflow.exams.map((exam, index) => (
-          <section key={exam.examination_order.id}>
-            <div className="flex items-center justify-between gap-3 rounded-t-xl border border-b-0 border-violet-100 bg-gradient-to-r from-violet-50 to-blue-50/60 px-5 py-3">
-              <p className="text-sm font-bold text-slate-800">
-                <span className="mr-2 text-xs text-violet-600">{String(index + 1).padStart(2, "0")}</span>
-                {exam.examination_order.order_type_label}
-              </p>
-              <StatusBadge status={exam.workflow_status} label={exam.workflow_status_label} />
-            </div>
-            <RadiologyDetail
-              item={exam}
-              embedded
-              onImageUploaded={() => setReloadVersion((version) => version + 1)}
-            />
-          </section>
-        ))}
-      </div>
+      <section>
+        <div className="flex items-center justify-between gap-3 rounded-t-xl border border-b-0 border-violet-100 bg-gradient-to-r from-violet-50 to-blue-50/60 px-5 py-3">
+          <p className="text-sm font-bold text-slate-800">
+            <span className="mr-2 text-xs text-violet-600">01</span>
+            {currentWorkflowExam.examination_order.order_type_label}
+          </p>
+          <StatusBadge status={currentWorkflowExam.workflow_status} label={currentWorkflowExam.workflow_status_label} />
+        </div>
+        <RadiologyDetail
+          item={currentWorkflowExam}
+          embedded
+          onImageUploaded={() => setReloadVersion((version) => version + 1)}
+        />
+      </section>
     </main>
   );
 }
@@ -146,20 +155,10 @@ export default function RadiologyWorklistPage() {
   const [recentSelection, setRecentSelection] = useState<RecentPatient | null>(null);
   const recent = useRecentPatients("radiologyRecentPatients");
   const selectedCaseId = selectedItem?.case.id ?? recentSelection?.case_id ?? null;
-  const onWorkflowLoaded = useCallback((workflow: RadiologyCaseWorkflow) => {
-    setSelectedItem(current => {
-      if (current) return current;
-      const exam = workflow.exams.at(-1);
-      return exam ? { case: workflow.case, patient: workflow.patient, responsible_doctor: workflow.responsible_doctor,
-        exam_count: workflow.exams.length, current_exam: exam, workflow_status: exam.workflow_status,
-        workflow_status_label: exam.workflow_status_label } : null;
-    });
-  }, []);
   const [filters, setFilters] = useState<RadiologyWorklistFilters>({});
   const [viewStatus, setViewStatus] = useState<WorklistViewStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [pagePending, startPageTransition] = useTransition();
   const [activeTab, setActiveTab] = useState<WorkstationTab>("worklist");
 
   const totalPages = Math.max(1, Math.ceil(worklistItems.length / pageSize));
@@ -169,9 +168,6 @@ export default function RadiologyWorklistPage() {
   );
   const aiItems = worklistItems.filter((item) =>
     ["AI_READY", "AI_RUNNING", "AI_FAILED", "AI_COMPLETED", "REVIEW_PENDING"].includes(item.workflow_status),
-  );
-  const completedItems = worklistItems.filter(
-    (item) => item.workflow_status === "REVIEW_COMPLETED",
   );
 
   function handleSelectItem(item: RadiologyCaseWorklistItem) {
@@ -188,7 +184,7 @@ export default function RadiologyWorklistPage() {
 
   function handlePageChange(nextPage: number) {
     const boundedPage = Math.min(Math.max(nextPage, 1), totalPages);
-    startPageTransition(() => setCurrentPage(boundedPage));
+    setCurrentPage(boundedPage);
   }
 
   useEffect(() => {
@@ -285,7 +281,7 @@ export default function RadiologyWorklistPage() {
                 items={pagedItems}
                 selectedId={selectedCaseId}
                 onSelect={handleSelectItem}
-                viewStatus={pagePending ? "loading" : viewStatus}
+                viewStatus={viewStatus}
                 errorMessage={errorMessage}
                 filters={filters}
                 onFiltersChange={handleFiltersChange}
@@ -298,14 +294,49 @@ export default function RadiologyWorklistPage() {
                 <RadiologyPatientSummary item={selectedItem.current_exam} onClear={() => { setSelectedItem(null); setRecentSelection(null); }} />
               ) : recentSelection ? (
                 <div className="p-4"><p>{recentSelection.patient_name}</p><p>{recentSelection.birth_date || "-"}</p></div>
-              ) : (
-                <StateMessage variant="empty" title="환자를 선택하세요" description="Worklist에서 검사 항목을 선택하면 환자 정보가 표시됩니다." className="m-4" />
-              )}
+              ) : null}
             </div>
             {selectedCaseId ? (
-              <RadiologyCaseDetail key={selectedCaseId} caseId={selectedCaseId} onLoaded={onWorkflowLoaded} />
+              <RadiologyCaseDetail
+                key={selectedCaseId}
+                caseId={selectedCaseId}
+                currentExam={selectedItem?.current_exam ?? null}
+              />
             ) : (
-              <StateMessage variant="empty" title="영상 작업을 시작할 환자를 선택하세요" description="Worklist에서 환자를 선택하면 X-ray / CT / PET-CT-TNM 검사 흐름을 확인할 수 있습니다." className="m-8 self-center rounded-xl border border-slate-200 bg-white shadow-sm" />
+              <main className="flex min-h-0 items-center justify-center overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+                <div className="flex -translate-y-8 flex-col items-center text-center">
+                  <img src="/images/soomi.png" alt="" className="mb-5 h-auto w-44 object-contain" />
+                  <h2 className="text-xl font-bold text-slate-900">환자를 선택해 주세요</h2>
+                  <p className="mt-2 max-w-[360px] text-sm leading-6 text-slate-500">
+                    왼쪽 Worklist에서 환자를 선택하면 X-ray / CT / PET-CT·TNM 작업을 시작할 수 있습니다.
+                  </p>
+                  <div className="mt-6 flex flex-wrap justify-center gap-3" aria-label="지원 검사 종류">
+                    <div className="flex min-w-[104px] items-center justify-center gap-2 rounded-[10px] border border-[#E5EEFC] bg-[#F4F8FF] px-4 py-3 text-sm font-semibold text-[#25324B]">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                        <path d="M11.2 5.2C8.1 5.7 6.5 8.4 6.5 12.5c0 3.5 1.5 5.8 4.5 6.3V5.2Zm1.6 0v13.6c3-.5 4.5-2.8 4.5-6.3 0-4.1-1.6-6.8-4.7-7.3Z" />
+                        <path d="M12 4v15.3M8.2 8.5c1.2.5 2.1 1.7 2.5 3.5m5.1-3.5c-1.2.5-2.1 1.7-2.5 3.5" strokeLinecap="round" />
+                      </svg>
+                      <span>X-ray</span>
+                    </div>
+                    <div className="flex min-w-[104px] items-center justify-center gap-2 rounded-[10px] border border-[#ECE8FC] bg-[#F8F6FF] px-4 py-3 text-sm font-semibold text-[#25324B]">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                        <rect x="4" y="4" width="16" height="16" rx="2" />
+                        <circle cx="12" cy="12" r="4" />
+                        <path d="M12 8v8m-4-4h8" strokeLinecap="round" />
+                      </svg>
+                      <span>CT</span>
+                    </div>
+                    <div className="flex min-w-[144px] items-center justify-center gap-2 rounded-[10px] border border-[#E1F1EC] bg-[#F3FAF8] px-4 py-3 text-sm font-semibold text-[#25324B]">
+                      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                        <circle cx="12" cy="12" r="7" />
+                        <circle cx="12" cy="12" r="3" />
+                        <path d="M12 2v3m0 14v3M2 12h3m14 0h3" strokeLinecap="round" />
+                      </svg>
+                      <span>PET-CT·TNM</span>
+                    </div>
+                  </div>
+                </div>
+              </main>
             )}
           </div>
         ) : null}
@@ -315,9 +346,7 @@ export default function RadiologyWorklistPage() {
               : <RadiologyStatusTable title="AI 작업" items={aiItems} emptyTitle="현재 표시할 AI 작업이 없습니다." />
         ) : null}
         {activeTab === "history" ? (
-          viewStatus === "loading" ? <StateMessage variant="loading" title="완료 기록을 불러오는 중입니다." />
-            : viewStatus === "error" || viewStatus === "unauthorized" ? <StateMessage variant="error" title="완료 기록을 조회할 수 없습니다." description={errorMessage} />
-              : <RadiologyStatusTable title="완료 기록" items={completedItems} emptyTitle="현재 조회 데이터에서 확인 가능한 완료 기록이 없습니다." />
+          <RadiologyCompletedHistory />
         ) : null}
       </div>
     </div>

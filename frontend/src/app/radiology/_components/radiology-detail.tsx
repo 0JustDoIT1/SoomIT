@@ -33,6 +33,10 @@ const CtSeriesPreview = dynamic(
   () => import("./ct-series-preview").then((module) => module.CtSeriesPreview),
   { ssr: false },
 );
+const CtRegisteredSeriesPreview = dynamic(
+  () => import("./ct-registered-series-preview").then((module) => module.CtRegisteredSeriesPreview),
+  { ssr: false },
+);
 
 type TrackedAnalysis = Pick<
   RadiologyAnalysisDetail,
@@ -385,9 +389,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   embedded?: boolean;
   onImageUploaded?: () => void;
 }) {
-  const [showResultNotice, setShowResultNotice] = useState(false);
   const [startingAnalysis, setStartingAnalysis] = useState(false);
-  const [loadingResult, setLoadingResult] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(
     item.workflow_status === "REVIEW_PENDING" || item.workflow_status === "REVIEW_COMPLETED",
@@ -433,9 +435,11 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const ctReadyToUpload = !isXray && selectedSeriesFiles.length > 0 && ctSeriesValidation?.valid === true;
   const isCt = order.order_type === "CT";
   const serverImageReady = image?.status === "READY" || (isCt && ctSeriesUploaded);
+  const uploadLocked = serverImageReady;
   const canStartAnalysis = trackedAnalysis === null && (serverImageReady || (!isXray && !isCt && ctReadyToUpload));
 
   function handleSelectedFiles(files: File[]) {
+    if (uploadLocked) return;
     setSelectedFiles(isXray ? files : filterDicomFolderFiles(files));
     setDicomHeaders([]);
     setSelectedSeriesUid(null);
@@ -444,6 +448,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   function handleUploadDrop(event: DragEvent<HTMLDivElement>) {
     event.preventDefault();
     setIsUploadDragOver(false);
+    if (uploadLocked) return;
     handleSelectedFiles(Array.from(event.dataTransfer.files));
   }
 
@@ -528,7 +533,6 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       .then((result) => {
         if (!controller.signal.aborted) {
           setAnalysisResult(result);
-          setShowResultNotice(true);
         }
       })
       .catch(() => undefined);
@@ -557,7 +561,6 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       const created = await startRadiologyAnalysis(order.id);
       setTrackedAnalysis(trackAnalysis(created));
       setAnalysisResult(null);
-      setShowResultNotice(false);
       setActionMessage(created.status === "PENDING" ? "AI 분석이 실행 대기 상태로 등록되었습니다." : "AI 분석이 등록되었습니다.");
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "AI 분석을 등록하지 못했습니다.");
@@ -600,25 +603,6 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       setActionError(error instanceof Error ? error.message : "X-ray 영상을 업로드하지 못했습니다.");
     } finally {
       setUploadingImage(false);
-    }
-  }
-
-  async function handleLoadResult() {
-    if (!trackedAnalysis) return;
-    if (analysisResult) {
-      setShowResultNotice((current) => !current);
-      return;
-    }
-    setLoadingResult(true);
-    setActionError("");
-    try {
-      const result = await fetchRadiologyAnalysisResult(trackedAnalysis.analysis_id);
-      setAnalysisResult(result);
-      setShowResultNotice(true);
-    } catch (error) {
-      setActionError(error instanceof RadiologyApiError ? error.message : "AI 결과를 불러오지 못했습니다.");
-    } finally {
-      setLoadingResult(false);
     }
   }
 
@@ -684,13 +668,14 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
             <div
               role="button"
               tabIndex={0}
-              onClick={() => uploadInputRef.current?.click()}
+              aria-disabled={uploadLocked}
+              onClick={() => { if (!uploadLocked) uploadInputRef.current?.click(); }}
               onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === " ") uploadInputRef.current?.click();
+                if (!uploadLocked && (event.key === "Enter" || event.key === " ")) uploadInputRef.current?.click();
               }}
               onDragEnter={(event) => {
                 event.preventDefault();
-                setIsUploadDragOver(true);
+                if (!uploadLocked) setIsUploadDragOver(true);
               }}
               onDragOver={(event) => event.preventDefault()}
               onDragLeave={(event) => {
@@ -698,7 +683,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                 setIsUploadDragOver(false);
               }}
               onDrop={handleUploadDrop}
-              className={`mt-4 flex min-h-48 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed px-6 text-center transition-colors ${isUploadDragOver ? "border-blue-500 bg-blue-100/80" : "border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 hover:border-blue-400"}`}
+              className={`relative mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed px-6 text-center transition-colors ${uploadLocked ? "cursor-not-allowed border-slate-300 bg-slate-100/80" : isUploadDragOver ? "border-blue-500 bg-blue-100/80" : "border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 hover:border-blue-400"}`}
             >
               <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl text-blue-300 shadow-sm" aria-hidden="true">＋</span>
               <p className="mt-3 text-sm font-semibold text-slate-700">영상 추가</p>
@@ -708,10 +693,19 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                 type="file"
                 multiple={!isXray}
                 accept={isXray ? "image/jpeg,image/png" : ".dcm,.dicom,application/dicom"}
+                disabled={uploadLocked}
                 className="sr-only"
                 {...(!isXray ? { webkitdirectory: "" } : {})}
                 onChange={(event) => handleSelectedFiles(Array.from(event.target.files ?? []))}
               />
+              {uploadLocked ? (
+                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-white/75 px-6 text-center backdrop-blur-[1px]">
+                  <span className="text-2xl text-violet-700" aria-hidden="true">🔒</span>
+                  <p className="mt-2 text-sm font-semibold text-slate-800">업로드 완료</p>
+                  <p className="mt-1 text-xs text-slate-600">서버 등록 후에는 파일을 변경할 수 없습니다</p>
+                  <p className="mt-1 text-[11px] text-slate-500">드래그 앤 드롭 불가 · 파일 선택 불가</p>
+                </div>
+              ) : null}
             </div>
           ) : null}
           {selectedFiles.length > 0 ? (
@@ -787,6 +781,13 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
           <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p>
         </section>
 
+        {isCt && image?.status === "READY" && image.id ? (
+          <section className="rounded-xl border border-blue-100 bg-white p-5 shadow-sm" aria-labelledby="ct-preview-heading">
+            <h3 id="ct-preview-heading" className="text-sm font-bold text-slate-800">CT 영상 미리보기</h3>
+            <CtRegisteredSeriesPreview orderId={order.id} assetId={image.id} />
+          </section>
+        ) : null}
+
         <section className="rounded-xl border border-violet-100 bg-gradient-to-br from-white to-violet-50/30 p-5 shadow-sm" aria-labelledby="ai-analysis-heading">
           <div className="flex items-center justify-between gap-4">
             <div className="min-w-0">
@@ -814,16 +815,16 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
           {actionError ? <p className="mt-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p> : null}
 
           {analysisCompleted ? (
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-blue-50 px-4 py-3">
-              <div><p className="text-sm font-semibold text-emerald-800">AI 분석 완료</p><p className="mt-1 text-xs text-slate-600">분석 결과를 확인할 수 있습니다.</p></div>
-              <button type="button" disabled={loadingResult} onClick={handleLoadResult} className="rounded-lg bg-violet-600 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:opacity-50">{loadingResult ? "결과 조회 중" : "AI 결과 보기"}</button>
+            <div className="mt-4 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-blue-50 px-4 py-3">
+              <p className="text-sm font-semibold text-emerald-800">AI 분석 완료</p>
+              <p className="mt-1 text-xs text-slate-600">분석 결과가 아래 결과 영역에 표시됩니다.</p>
             </div>
           ) : null}
         </section>
 
         <section className="rounded-xl border border-violet-100 bg-white p-5 shadow-sm" aria-labelledby="ai-result-heading">
           <h3 id="ai-result-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-violet-600">03</span>AI 분석 결과</h3>
-          {showResultNotice && analysisResult ? <div className="mt-4"><AnalysisResultView data={analysisResult} sourceImageUrl={serverImageUrl} /></div> : <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">분석 완료 후 결과가 표시됩니다.</div>}
+          {analysisResult ? <div className="mt-4"><AnalysisResultView data={analysisResult} sourceImageUrl={serverImageUrl} /></div> : analysisRunning ? <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">AI 분석 중입니다.</div> : trackedAnalysis?.status === "FAILED" ? <div className="mt-3 rounded-lg border border-dashed border-red-200 bg-red-50/60 px-4 py-5 text-center text-xs text-red-700">AI 분석 결과를 표시할 수 없습니다.</div> : <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">AI 분석이 완료되면 결과가 여기에 표시됩니다.</div>}
         </section>
 
         <section className={`rounded-xl border p-5 shadow-sm ${item.workflow_status === "REVIEW_COMPLETED" ? "border-emerald-200 bg-emerald-50/60" : "border-violet-200 bg-gradient-to-r from-violet-50/90 to-blue-50/70"}`} aria-labelledby="review-heading">

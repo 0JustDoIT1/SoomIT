@@ -614,16 +614,8 @@ class PathologyReadAPITestCase(APITestCase):
         response = self.client.get(reverse("pathology:workstation-list"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(len(response.data["results"]), 1)
-        self.assertEqual(
-            str(response.data["results"][0]["id"]),
-            str(self.work_item.id),
-        )
-        self.assertEqual(
-            response.data["results"][0]["workflow_status"],
-            "REVIEW_COMPLETED",
-        )
+        self.assertEqual(response.data["count"], 0)
+        self.assertEqual(len(response.data["results"]), 0)
 
     def test_pathology_workstation_filters_by_projected_workflow_status(self):
         self.authenticate_pathology_user()
@@ -639,13 +631,34 @@ class PathologyReadAPITestCase(APITestCase):
         )
 
         self.assertEqual(matching_response.status_code, status.HTTP_200_OK)
-        self.assertEqual(matching_response.data["count"], 1)
-        self.assertEqual(
-            matching_response.data["results"][0]["workflow_status"],
-            "REVIEW_COMPLETED",
-        )
+        self.assertEqual(matching_response.data["count"], 0)
         self.assertEqual(non_matching_response.status_code, status.HTTP_200_OK)
         self.assertEqual(non_matching_response.data["count"], 0)
+
+    def test_completed_exam_history_returns_only_review_completed_orders(self):
+        pending_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.user,
+            purpose="Pending PD-L1",
+        )
+        PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pending_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+        self.authenticate_pathology_user()
+
+        response = self.client.get(reverse("pathology:completed-exam-history"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(len(response.data[0]["completed_exams"]), 1)
+        completed = response.data[0]["completed_exams"][0]
+        self.assertEqual(completed["order_type"], "PATHOLOGY_GENE")
+        self.assertEqual(completed["workflow_status"], "REVIEW_COMPLETED")
+        self.assertIsNone(completed["completed_at"])
 
     def test_non_pathology_staff_cannot_access_workstation(self):
         other_department = Department.objects.create(
