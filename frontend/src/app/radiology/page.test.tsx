@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
@@ -21,7 +21,7 @@ it("reopens a restored recent case absent from the worklist without auto-selecti
 });
 
 vi.mock("./_lib/radiology-api", () => ({
-  fetchRadiologyCaseWorklist: vi.fn(), fetchRadiologyCaseWorkflow: vi.fn(),
+  fetchRadiologyCaseWorklist: vi.fn(), fetchRadiologyCaseWorkflow: vi.fn(), fetchRadiologyCompletedExams: vi.fn(),
   RadiologyApiError: class extends Error {},
 }));
 vi.mock("./_components/radiology-detail", () => ({
@@ -65,6 +65,54 @@ it("refetches the selected case workflow after an image upload", async () => {
   expect(fetchRadiologyCaseWorkflow).toHaveBeenCalledTimes(1);
   await user.click(screen.getByRole("button", { name: "uploaded-image" }));
   await waitFor(() => expect(fetchRadiologyCaseWorkflow).toHaveBeenCalledTimes(2));
+});
+
+it("renders only the worklist current exam from a case workflow", async () => {
+  sessionStorage.setItem("accessToken", "test");
+  const patient = { name: "patient-1", patient_code: "code-1" };
+  const caseInfo = { id: "case-1", case_code: "CASE-1" };
+  const makeExam = (id: string, label: string) => ({
+    patient,
+    case: caseInfo,
+    examination_order: { id, order_type_label: label },
+    requesting_doctor: { id: "doctor-1", name: "doctor" },
+    responsible_doctor: null,
+    image_asset_count: 0,
+    latest_image_asset: null,
+    latest_ai_analysis: null,
+    workflow_status: "REVIEW_COMPLETED",
+    workflow_status_label: "완료",
+    scheduled_at: null,
+    ai_result: null,
+    review: null,
+  });
+  const xray = makeExam("xray-order", "X-ray");
+  const ct = makeExam("ct-order", "CT");
+  const pet = makeExam("pet-order", "PET-CT/TNM");
+  vi.mocked(fetchRadiologyCaseWorklist).mockResolvedValue([{
+    case: caseInfo,
+    patient,
+    responsible_doctor: null,
+    exam_count: 3,
+    current_exam: pet,
+    workflow_status: "AI_READY",
+    workflow_status_label: "분석 대기",
+  }] as unknown as Awaited<ReturnType<typeof fetchRadiologyCaseWorklist>>);
+  vi.mocked(fetchRadiologyCaseWorkflow).mockResolvedValue({
+    patient,
+    case: caseInfo,
+    responsible_doctor: null,
+    exams: [xray, ct, pet],
+  } as unknown as Awaited<ReturnType<typeof fetchRadiologyCaseWorkflow>>);
+
+  const user = userEvent.setup();
+  render(<Page />);
+  await user.click(await screen.findByText("patient-1"));
+
+  const workstation = await screen.findByRole("main");
+  expect(within(workstation).getByText("PET-CT/TNM")).toBeInTheDocument();
+  expect(within(workstation).queryByText("X-ray")).not.toBeInTheDocument();
+  expect(within(workstation).queryByText("CT")).not.toBeInTheDocument();
 });
 
 it("preserves selected case, summary and workflow through all pagination controls", async () => {

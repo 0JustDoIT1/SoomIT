@@ -119,6 +119,17 @@ export type RadiologyCaseWorkflow = {
   exams: RadiologyWorkflowExam[];
 };
 
+export type RadiologyCompletedExam = RadiologyWorkflowExam & {
+  completed_at: string | null;
+};
+
+export type RadiologyCompletedExamHistory = {
+  patient: RadiologyWorklistItem["patient"];
+  case: RadiologyWorklistItem["case"];
+  responsible_doctor: RadiologyWorklistItem["responsible_doctor"];
+  completed_exams: RadiologyCompletedExam[];
+};
+
 export type RadiologyAnalysisDetail = {
   analysis_id: string;
   case_id: string;
@@ -359,6 +370,13 @@ export async function fetchRadiologyCaseWorklist(
 export function fetchRadiologyCaseWorkflow(caseId: string, signal?: AbortSignal) {
   return radiologyRequest<RadiologyCaseWorkflow>(
     `/api/radiology/cases/${caseId}/workflow/`,
+    { method: "GET", signal },
+  );
+}
+
+export function fetchRadiologyCompletedExams(signal?: AbortSignal) {
+  return radiologyRequest<RadiologyCompletedExamHistory[]>(
+    "/api/radiology/completed-exams/",
     { method: "GET", signal },
   );
 }

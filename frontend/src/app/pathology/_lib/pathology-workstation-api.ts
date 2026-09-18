@@ -50,6 +50,16 @@ export type PathologyCaseWorkflow = {
   orders: PathologyWorkstationItem[];
 };
 
+export type PathologyCompletedExam = PathologyWorkstationItem & {
+  completed_at: string | null;
+};
+
+export type PathologyCompletedExamHistory = {
+  patient: PathologyWorkstationItem["patient"];
+  case: PathologyWorkstationItem["case"];
+  completed_exams: PathologyCompletedExam[];
+};
+
 export type PathologyWorkstationPage = {
   count: number;
   next: string | null;
@@ -129,6 +139,14 @@ export async function fetchPathologyCaseWorkflow(
     { signal },
   );
   return readJson<PathologyCaseWorkflow>(response);
+}
+
+export async function fetchPathologyCompletedExams(signal?: AbortSignal) {
+  const response = await staffAuthenticatedFetch(
+    url("/api/pathology/completed-exams/"),
+    { signal },
+  );
+  return readJson<PathologyCompletedExamHistory[]>(response);
 }
 
 export async function fetchPdl1Analyses(caseId: string) {

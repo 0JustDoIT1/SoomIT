@@ -7,6 +7,7 @@ import { StateMessage } from "@/components/workspace/state-message";
 import {
   cancelPathologyGeneAnalysis,
   fetchPathologyCaseWorkflow,
+  fetchPathologyCompletedExams,
   fetchPathologyGeneAnalyses,
   fetchPathologyWsiPreview,
   fetchPathologyWorkstation,
@@ -18,6 +19,7 @@ import {
   submitPathologyForReview,
   type PathologyWorkstationItem,
   type PathologyCaseWorkflow,
+  type PathologyCompletedExamHistory,
 } from "./_lib/pathology-workstation-api";
 
 import type { PathologyAiAnalysis } from "./_lib/pathology-api";
@@ -344,6 +346,112 @@ function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
   }, [wsiId]);
 
   return previewUrl ? <img src={previewUrl} alt="H&E 원본 조직영상 미리보기" className="absolute inset-0 h-full w-full object-contain" /> : null;
+}
+
+function PathologyCompletedHistory() {
+  const [histories, setHistories] = useState<PathologyCompletedExamHistory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetchPathologyCompletedExams(controller.signal)
+      .then((data) => {
+        if (!controller.signal.aborted) setHistories(data);
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setError(reason instanceof Error ? reason.message : "완료 기록을 불러오지 못했습니다.");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, []);
+
+  if (loading) return <StateMessage variant="loading" title="완료 기록을 불러오는 중입니다." />;
+  if (error) return <StateMessage variant="error" title={error} />;
+  if (histories.length === 0) return <StateMessage variant="empty" title="완료된 병리 검사가 없습니다." />;
+
+  return (
+    <section className="space-y-4" aria-label="병리 완료 기록">
+      {histories.map((history) => (
+        <article key={history.case.id} className="overflow-hidden rounded-xl border border-[#DDE2F7] bg-white">
+          <header className="border-b border-[#E2E5F2] bg-[#FBFBFF] px-5 py-4">
+            <h2 className="text-base font-bold text-slate-900">{history.patient.name}</h2>
+            <p className="mt-1 text-xs text-slate-500">{history.patient.patient_code} · {history.case.case_code}</p>
+          </header>
+          <div className="divide-y divide-[#E2E5F2]">
+            {history.completed_exams.map((item) => {
+              const analysis = item.order_type === "PATHOLOGY_GENE" ? item.latest_gene_analysis : item.latest_ai_analysis;
+              const pathology = analysis?.result_detail?.pathology;
+              const pdl1 = analysis?.result_detail?.pdl1;
+              const geneStatusValue = pathologyGeneStatus(analysis?.result_detail?.result_payload);
+              const isLuad = pathology?.predicted_subtype === "LUAD" || pathology?.predicted_histologic_type === "LUAD";
+              const isGeneNotApplicable = geneStatusValue === "NOT_APPLICABLE_NON_LUAD" || !isLuad;
+              return (
+                <details key={item.examination_order?.id ?? item.id} className="group">
+                  <summary className="flex cursor-pointer list-none items-center gap-3 px-5 py-4 text-sm hover:bg-[#FBFBFF]">
+                    <span className="text-[#5364C7] transition group-open:rotate-90">›</span>
+                    <span className="font-semibold text-slate-800">{item.order_type_label ?? item.current_exam_or_task}</span>
+                    <span className="ml-auto rounded-sm bg-emerald-100/80 px-1.5 py-0.5 text-xs font-semibold text-black">진행 완료</span>
+                    <span className="text-xs text-slate-500">{item.completed_at ? new Date(item.completed_at).toLocaleDateString("ko-KR") : "완료일 정보 없음"}</span>
+                  </summary>
+                  <div className="grid gap-5 border-t border-[#EEF0F8] px-5 py-4 lg:grid-cols-[180px_minmax(0,1fr)]">
+                    <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border border-[#E2E5F2] bg-[#F7F8FC] text-xs text-slate-400">
+                      <span>대표 영상 미리보기</span>
+                      {item.latest_wsi ? <PathologyWsiPreview wsiId={item.latest_wsi.id} /> : null}
+                    </div>
+                    <div className="space-y-4 text-sm">
+                      <dl className="grid gap-3 text-xs sm:grid-cols-3">
+                        {[
+                          ["검사", item.order_type_label ?? "-"],
+                          ["검체", item.specimen?.specimen_code ?? "-"],
+                          ["파일", item.latest_wsi?.original_filename ?? "-"],
+                          ["의사 판독", item.diagnostic_review?.status ?? "-"],
+                          ["판독 완료", item.diagnostic_review?.completed_at ? new Date(item.diagnostic_review.completed_at).toLocaleDateString("ko-KR") : "-"],
+                        ].map(([label, value]) => (
+                          <div key={label}>
+                            <dt className="text-slate-400">{label}</dt>
+                            <dd className="mt-1 break-words font-medium text-slate-800">{value}</dd>
+                          </div>
+                        ))}
+                      </dl>
+                      {item.order_type === "PATHOLOGY_GENE" ? (
+                        <div className="space-y-3 border-t border-[#EEF0F8] pt-3">
+                          <p className="text-xs font-semibold text-[#5364C7]">저장된 조직·유전자 분석 결과</p>
+                          <dl className="grid gap-3 text-xs sm:grid-cols-3">
+                            <div><dt className="text-slate-400">예측 아형</dt><dd className="mt-1 font-medium text-slate-800">{pathology?.predicted_subtype ?? pathology?.predicted_histologic_type ?? "-"}</dd></div>
+                            <div><dt className="text-slate-400">아형 확률</dt><dd className="mt-1 font-medium text-slate-800">{percent(pathology?.subtype_confidence)}</dd></div>
+                            <div><dt className="text-slate-400">유전자 분석</dt><dd className="mt-1 font-medium text-slate-800">{isGeneNotApplicable ? "유전자 분석 비대상 (NOT_APPLICABLE_NON_LUAD)" : "저장된 예측 결과"}</dd></div>
+                          </dl>
+                          {!isGeneNotApplicable && analysis?.result_detail?.genes?.length ? (
+                            <div className="flex flex-wrap gap-2">
+                              {analysis.result_detail.genes.map((gene) => <span key={gene.gene_symbol} className="bg-[#F1F3FF] px-2 py-1 text-xs text-slate-700">{gene.gene_symbol} · {gene.predicted_status_label}</span>)}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <div className="border-t border-[#EEF0F8] pt-3">
+                          <p className="text-xs font-semibold text-[#5364C7]">저장된 PD-L1 분석 결과</p>
+                          <dl className="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                            <div><dt className="text-slate-400">TPS 예측 구간</dt><dd className="mt-1 font-medium text-slate-800">{pdl1?.predicted_tps_range_label ?? "-"}</dd></div>
+                            <div><dt className="text-slate-400">Confidence</dt><dd className="mt-1 font-medium text-slate-800">{percent(pdl1?.confidence)}</dd></div>
+                            <div><dt className="text-slate-400">ROI annotation</dt><dd className="mt-1 font-medium text-slate-800">{item.latest_wsi?.pdl1_input_ready ? "등록됨" : "-"}</dd></div>
+                          </dl>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </article>
+      ))}
+    </section>
+  );
 }
 
 function WorkArea({
@@ -903,14 +1011,6 @@ function WorkArea({
             <AnalysisStatus status={pathology?.status} />
           </div>
 
-          <button
-            type="button"
-            disabled={!canViewPathologyGeneResult}
-            onClick={() => setIsResultOpen(true)}
-            className="mt-3 rounded-md bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
-          >
-            AI 결과 보기
-          </button>
         </section>
           </>
         ) : null}
@@ -985,9 +1085,9 @@ function WorkArea({
           </section>
         ) : null}
 
-        {currentAnalysis?.status === "SUCCEEDED" ? (
+        {isPathologyGene || currentAnalysis?.status === "SUCCEEDED" ? (
           <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#5364C7]">
                   AI 결과
@@ -996,16 +1096,17 @@ function WorkArea({
                   AI 분석 결과
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setIsResultOpen(true)}
-                className="rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F]"
-              >
-                AI 결과 보기
-              </button>
             </div>
 
-            {isPathologyGene && pathologyResult ? (
+            {currentAnalysis?.status !== "SUCCEEDED" ? (
+              <p className="mt-4 rounded-lg border border-[#E2E5F2] bg-[#F7F8FC] px-4 py-3 text-sm text-slate-500">
+                {currentAnalysis?.status === "PENDING" || currentAnalysis?.status === "RUNNING"
+                  ? "AI 분석 중입니다."
+                  : "AI 분석이 완료되면 결과가 여기에 표시됩니다."}
+              </p>
+            ) : null}
+
+            {currentAnalysis?.status === "SUCCEEDED" && isPathologyGene && pathologyResult ? (
               <>
                 <p className="mt-4 text-xs font-bold text-slate-700">조직 결과</p>
                 <dl className="mt-2 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
@@ -1035,7 +1136,7 @@ function WorkArea({
               </>
             ) : null}
 
-            {isPdl1 && pdl1Result ? (
+            {currentAnalysis?.status === "SUCCEEDED" && isPdl1 && pdl1Result ? (
               <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
                 {[
                   ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
@@ -1058,7 +1159,7 @@ function WorkArea({
               </dl>
             ) : null}
 
-            {isPathologyGene ? (
+            {currentAnalysis?.status === "SUCCEEDED" && isPathologyGene ? (
               <div className="mt-5">
                 <p className="text-xs font-bold text-slate-700">유전자 결과</p>
                 {pathologyGeneNotApplicable ? (
@@ -1372,6 +1473,8 @@ export default function PathologyDashboardPage() {
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (tab === "completed") return;
+
     const controller = new AbortController();
 
     void fetchPathologyWorkstation({
@@ -1434,7 +1537,7 @@ export default function PathologyDashboardPage() {
     const controller = new AbortController();
 
     void fetchPathologyCaseWorkflow(selectedId, controller.signal)
-      .then(data => { if (!controller.signal.aborted) { setSelectedWorkflow(data); setSelectedItem(current => current?.case_id === selectedId ? current : data.orders[0] ?? null); } })
+      .then(data => { if (!controller.signal.aborted) setSelectedWorkflow(data); })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setDetailError(
@@ -1481,9 +1584,15 @@ export default function PathologyDashboardPage() {
   }, [items, tab, workflowStatusFilter]);
 
   const selected =
-    items.find(
-      (item) => item.case_id === selectedId,
-    ) ?? (selectedItem?.case_id === selectedId ? selectedItem : null);
+    (selectedItem?.case_id === selectedId ? selectedItem : null) ??
+    items.find((item) => item.case_id === selectedId) ??
+    null;
+  const currentWorkflowOrder =
+    selectedWorkflow && selected?.examination_order?.id
+      ? selectedWorkflow.orders.find(
+          (order) => order.examination_order?.id === selected.examination_order?.id,
+        ) ?? null
+      : null;
 
   const totalPages = Math.max(
     1,
@@ -1578,6 +1687,7 @@ export default function PathologyDashboardPage() {
       </nav>
 
       <div className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">
+        {tab === "completed" ? <PathologyCompletedHistory /> : (
         <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(500px,42fr)_minmax(0,58fr)]">
           <section className="grid min-h-0 grid-cols-[160px_minmax(0,1fr)] overflow-hidden rounded-xl border border-[#DDE2F7] bg-white shadow-sm">
           <RecentPatients className="min-h-0 w-[160px] shrink-0 overflow-y-auto border-r border-[#E2E5F2] bg-[#FBFBFF] p-3" patients={recent.patients} selectedId={selectedId} onSelect={patient => {
@@ -1657,9 +1767,9 @@ export default function PathologyDashboardPage() {
                 ) : null}
               </div>
 
-              {loading ? (
+              {loading && items.length === 0 ? (
                 <WorklistSkeleton />
-              ) : error ? (
+              ) : error && items.length === 0 ? (
                 <StateMessage
                   variant="error"
                   title={error}
@@ -1771,8 +1881,7 @@ export default function PathologyDashboardPage() {
                 </div>
               )}
 
-              {!loading &&
-              !error &&
+              {!error &&
               totalCount > 0 ? (
                 <div className="flex items-center justify-center gap-1 border-t border-slate-200 px-3 py-2.5 text-xs">
                   <button
@@ -1851,23 +1960,33 @@ export default function PathologyDashboardPage() {
                 <p>{recent.patients.find(patient => patient.case_id === selectedId)?.patient_name}</p>
                 <p>{recent.patients.find(patient => patient.case_id === selectedId)?.birth_date || "-"}</p>
               </div>
-            ) : (
-              <StateMessage
-                variant="empty"
-                title="환자를 선택하세요."
-                className="m-4"
-              />
-            )}
+            ) : null}
           </div>
           </section>
 
           <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[#DDE2F7] bg-white shadow-sm">
           {detailLoading ? (
-            <StateMessage
-              variant="loading"
-              title="병리 검사 상세를 불러오는 중입니다."
-              className="m-6 self-start"
-            />
+            <div
+              className="flex min-h-0 flex-1 items-center justify-center bg-[#F7F8FC] px-6 py-10"
+              role="status"
+              aria-live="polite"
+            >
+              <div className="-translate-y-6 text-center">
+                <img
+                  src="/images/soomi2.png"
+                  alt=""
+                  className="mx-auto h-[115px] w-auto object-contain"
+                />
+                <p className="mt-4 text-base font-semibold text-[#25324B]">
+                  병리 검사 정보를 불러오는 중입니다
+                </p>
+                <p className="mt-2 text-sm text-slate-500">잠시만 기다려 주세요</p>
+                <span
+                  className="mx-auto mt-4 block h-4 w-4 animate-spin rounded-full border-2 border-[#DDE2F7] border-t-[#5364C7]"
+                  aria-label="로딩 중"
+                />
+              </div>
+            </div>
           ) : detailError ? (
             <StateMessage
               variant="error"
@@ -1878,32 +1997,61 @@ export default function PathologyDashboardPage() {
             <main className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FC] p-4">
               <SelectedCaseOverview
                 workflow={selectedWorkflow}
-                item={selected ?? selectedWorkflow.orders[0] ?? null}
+                item={currentWorkflowOrder}
               />
-              {selectedWorkflow.orders.map((order, index) => (
+              {currentWorkflowOrder ? (
                 <WorkArea
-                  key={order.examination_order?.id ?? order.id}
-                  item={order}
-                  sectionNumber={index + 1}
+                  key={currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}
+                  item={currentWorkflowOrder}
+                  sectionNumber={1}
                 />
-              ))}
-              {selectedWorkflow.orders.length === 0 ? (
+              ) : selectedWorkflow.orders.length === 0 ? (
                 <StateMessage
                   variant="empty"
                   title="표시할 병리 검사 오더가 없습니다."
                   className="m-6"
                 />
-              ) : null}
+              ) : (
+                <StateMessage
+                  variant="empty"
+                  title="표시할 현재 병리 검사 오더가 없습니다."
+                  className="m-6"
+                />
+              )}
             </main>
           ) : (
-            <StateMessage
-              variant="empty"
-              title="병리 작업을 선택하세요."
-              className="m-6 self-start"
-            />
+            <main className="flex min-h-0 flex-1 items-center justify-center bg-[#F7F8FC] p-6">
+              <div className="flex -translate-y-8 flex-col items-center text-center">
+                <img src="/images/soomi.png" alt="" className="mb-5 h-auto w-48 object-contain" />
+                <h1 className="text-xl font-bold text-slate-900">환자를 선택해 주세요</h1>
+                <p className="mt-2 max-w-[340px] text-sm leading-6 text-slate-500">
+                  왼쪽 Worklist에서 환자를 선택하면 조직·유전자 / PD-L1 작업을 시작할 수 있습니다.
+                </p>
+                <div className="mt-6 flex flex-wrap justify-center gap-3" aria-label="병리 검사 종류">
+                  <div className="flex min-w-[154px] items-center justify-center gap-2 rounded-[10px] border border-[#ECE8FC] bg-[#F8F6FF] px-4 py-3 text-sm font-semibold text-[#25324B]">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                      <path d="m8 4 3 3-2 2 4 4 2-2 3 3" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M13 6.5 18.5 12M6.5 17.5l4-4M4 20h16" strokeLinecap="round" />
+                      <circle cx="17.5" cy="6.5" r="2.5" />
+                    </svg>
+                    <span>조직·유전자 검사</span>
+                  </div>
+                  <div className="flex min-w-[118px] items-center justify-center gap-2 rounded-[10px] border border-[#E1F1EC] bg-[#F3FAF8] px-4 py-3 text-sm font-semibold text-[#25324B]">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                      <circle cx="8" cy="9" r="3" />
+                      <circle cx="16" cy="8" r="2.5" />
+                      <circle cx="14" cy="16" r="3.5" />
+                      <path d="m10.4 10.7 1.5 2.1m2.1-2.2-.7 1.9" strokeLinecap="round" />
+                    </svg>
+                    <span>PD-L1 검사</span>
+                  </div>
+                </div>
+              </div>
+            </main>
           )}
           </section>
         </div>
+        )}
       </div>
     </div>
   );
