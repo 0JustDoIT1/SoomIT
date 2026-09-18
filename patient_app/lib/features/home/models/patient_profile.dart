@@ -8,7 +8,9 @@ class PatientProfile {
   final String sexLabel;
 
   final String? phoneNumber;
+  final String? postalCode;
   final String? address;
+  final String? addressDetail;
   final String? hospitalName;
 
   final String appLinkStatus;
@@ -21,7 +23,9 @@ class PatientProfile {
     required this.sex,
     required this.sexLabel,
     required this.phoneNumber,
+    required this.postalCode,
     required this.address,
+    required this.addressDetail,
     required this.hospitalName,
     required this.appLinkStatus,
   });
@@ -31,18 +35,16 @@ class PatientProfile {
       id: json['id'] as String,
       patientCode: json['patient_code'] as String? ?? '미연결',
       name: json['name'] as String,
-
       birthDate: json['birth_date'] != null
           ? DateTime.parse(json['birth_date'] as String)
           : null,
-
       sex: json['sex'] as String,
       sexLabel: json['sex_label'] as String,
-
       phoneNumber: json['phone_number'] as String?,
+      postalCode: json['postal_code'] as String?,
       address: json['address'] as String?,
+      addressDetail: json['address_detail'] as String?,
       hospitalName: json['hospital_name'] as String?,
-
       appLinkStatus: json['app_link_status'] as String,
     );
   }

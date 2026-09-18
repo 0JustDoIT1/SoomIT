@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:kpostal/kpostal.dart';
 
 import '../home/models/patient_profile.dart';
 import '../home/services/profile_service.dart';
@@ -18,6 +19,15 @@ class _ProfileEditScreenState
 
   final TextEditingController _phoneController =
       TextEditingController();
+  final TextEditingController _postalCodeController =
+      TextEditingController();
+  final TextEditingController _addressController =
+      TextEditingController();
+  final TextEditingController _addressDetailController =
+      TextEditingController();
+
+  final FocusNode _addressDetailFocusNode =
+      FocusNode();
 
   PatientProfile? _profile;
 
@@ -35,6 +45,10 @@ class _ProfileEditScreenState
   @override
   void dispose() {
     _phoneController.dispose();
+    _postalCodeController.dispose();
+    _addressController.dispose();
+    _addressDetailController.dispose();
+    _addressDetailFocusNode.dispose();
     super.dispose();
   }
 
@@ -47,6 +61,12 @@ class _ProfileEditScreenState
 
       _phoneController.text =
           profile.phoneNumber ?? '';
+      _postalCodeController.text =
+          profile.postalCode ?? '';
+      _addressController.text =
+          profile.address ?? '';
+      _addressDetailController.text =
+          profile.addressDetail ?? '';
 
       setState(() {
         _profile = profile;
@@ -64,18 +84,66 @@ class _ProfileEditScreenState
     }
   }
 
+  Future<void> _searchAddress() async {
+    final result =
+        await Navigator.of(context).push<Kpostal>(
+      MaterialPageRoute<Kpostal>(
+        builder: (context) {
+          return KpostalView(
+            appBar: AppBar(
+              title: const Text(
+                '주소 검색',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              backgroundColor:
+                  const Color(0xFFF9F8FC),
+              foregroundColor:
+                  const Color(0xFF191F28),
+              surfaceTintColor:
+                  Colors.transparent,
+            ),
+          );
+        },
+      ),
+    );
+
+    if (!mounted || result == null) return;
+
+    setState(() {
+      _postalCodeController.text =
+          result.postCode;
+      _addressController.text =
+          result.address;
+      _addressDetailController.clear();
+    });
+
+    _addressDetailFocusNode.requestFocus();
+  }
+
   Future<void> _saveProfile() async {
     final phoneNumber =
         _phoneController.text.trim();
+    final postalCode =
+        _postalCodeController.text.trim();
+    final address =
+        _addressController.text.trim();
+    final addressDetail =
+        _addressDetailController.text.trim();
 
     if (phoneNumber.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '전화번호를 입력해주세요.',
-          ),
-        ),
-      );
+      _showMessage('전화번호를 입력해주세요.');
+      return;
+    }
+
+    if (postalCode.isEmpty || address.isEmpty) {
+      _showMessage('주소를 검색해주세요.');
+      return;
+    }
+
+    if (addressDetail.isEmpty) {
+      _showMessage('상세주소를 입력해주세요.');
       return;
     }
 
@@ -85,8 +153,11 @@ class _ProfileEditScreenState
       });
 
       final updatedProfile =
-          await _profileService.updatePhoneNumber(
-        phoneNumber,
+          await _profileService.updateProfile(
+        phoneNumber: phoneNumber,
+        postalCode: postalCode,
+        address: address,
+        addressDetail: addressDetail,
       );
 
       if (!mounted) return;
@@ -95,15 +166,17 @@ class _ProfileEditScreenState
         _profile = updatedProfile;
         _phoneController.text =
             updatedProfile.phoneNumber ?? '';
+        _postalCodeController.text =
+            updatedProfile.postalCode ?? '';
+        _addressController.text =
+            updatedProfile.address ?? '';
+        _addressDetailController.text =
+            updatedProfile.addressDetail ?? '';
         _isSaving = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '전화번호가 변경되었습니다.',
-          ),
-        ),
+      _showMessage(
+        '프로필 정보가 변경되었습니다.',
       );
     } catch (_) {
       if (!mounted) return;
@@ -112,14 +185,18 @@ class _ProfileEditScreenState
         _isSaving = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '전화번호 변경에 실패했습니다.',
-          ),
-        ),
+      _showMessage(
+        '프로필 정보 변경에 실패했습니다.',
       );
     }
+  }
+
+  void _showMessage(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+      ),
+    );
   }
 
   @override
@@ -210,9 +287,7 @@ class _ProfileEditScreenState
               color: Color(0xFF191F28),
             ),
           ),
-
           const SizedBox(height: 12),
-
           Container(
             width: double.infinity,
             padding: const EdgeInsets.all(18),
@@ -246,18 +321,12 @@ class _ProfileEditScreenState
                 ),
                 _divider(),
                 _buildReadOnlyRow(
-                  '주소',
-                  profile.address ?? '-',
-                ),
-                _divider(),
-                _buildReadOnlyRow(
                   '등록 병원',
                   profile.hospitalName ?? '-',
                 ),
               ],
             ),
           ),
-
           const SizedBox(height: 24),
 
           const Text(
@@ -268,9 +337,7 @@ class _ProfileEditScreenState
               color: Color(0xFF191F28),
             ),
           ),
-
           const SizedBox(height: 12),
-
           Container(
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
@@ -289,6 +356,85 @@ class _ProfileEditScreenState
                 ),
                 border: OutlineInputBorder(),
               ),
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          const Text(
+            '주소',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: Color(0xFF191F28),
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius:
+                  BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextField(
+                        controller:
+                            _postalCodeController,
+                        readOnly: true,
+                        decoration:
+                            const InputDecoration(
+                          labelText: '우편번호',
+                          border:
+                              OutlineInputBorder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    SizedBox(
+                      height: 56,
+                      child: OutlinedButton(
+                        onPressed:
+                            _searchAddress,
+                        child: const Text(
+                          '주소 검색',
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller:
+                      _addressController,
+                  readOnly: true,
+                  decoration:
+                      const InputDecoration(
+                    labelText: '기본주소',
+                    border:
+                        OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                TextField(
+                  controller:
+                      _addressDetailController,
+                  focusNode:
+                      _addressDetailFocusNode,
+                  decoration:
+                      const InputDecoration(
+                    labelText: '상세주소',
+                    hintText: '동, 호수 등 상세주소',
+                    border:
+                        OutlineInputBorder(),
+                  ),
+                ),
+              ],
             ),
           ),
 
@@ -324,7 +470,7 @@ class _ProfileEditScreenState
 
           const Center(
             child: Text(
-              '기본 정보 변경이 필요한 경우 병원에 문의해주세요.',
+              '이름, 환자번호, 생년월일, 성별, 등록 병원 변경은 병원에 문의해주세요.',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 12,

@@ -12,13 +12,19 @@ class ProfileService {
     );
   }
 
-  Future<PatientProfile> updatePhoneNumber(
-    String phoneNumber,
-  ) async {
+  Future<PatientProfile> updateProfile({
+    required String phoneNumber,
+    required String postalCode,
+    required String address,
+    required String addressDetail,
+  }) async {
     final response = await DioClient.instance.patch(
       '/api/patients/profile/',
       data: {
         'phone_number': phoneNumber,
+        'postal_code': postalCode,
+        'address': address,
+        'address_detail': addressDetail,
       },
     );
 

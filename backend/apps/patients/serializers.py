@@ -365,7 +365,9 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "sex",
             "sex_label",
             "phone_number",
+            "postal_code",
             "address",
+            "address_detail",
             "hospital_name",
             "app_link_status",
         ]
@@ -377,7 +379,6 @@ class PatientProfileSerializer(serializers.ModelSerializer):
             "birth_date",
             "sex",
             "sex_label",
-            "address",
             "hospital_name",
             "app_link_status",
         ]
