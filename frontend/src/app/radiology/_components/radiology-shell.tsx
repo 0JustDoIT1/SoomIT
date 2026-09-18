@@ -48,7 +48,6 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
             </span>
             <div className="text-right">
               <p className="text-sm font-bold text-slate-800">{userName}</p>
-              <p className="mt-0.5 text-xs text-slate-500">방사선사</p>
             </div>
             <button type="button" onClick={handleLogout} className="rounded-lg border border-violet-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-violet-300 hover:bg-white hover:text-violet-700">
               로그아웃

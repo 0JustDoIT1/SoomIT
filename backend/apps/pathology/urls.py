@@ -18,6 +18,7 @@ from .views import (
     PathologyCompletedExamHistoryAPIView,
     PathologyWorkstationListAPIView,
     PathologySubmitForReviewAPIView,
+    PDL1ResultConfirmAPIView,
     PathologyDiagnosisConfirmAPIView,
     PathologyDiagnosisDetailAPIView,
     SpecimenWholeSlideImageListAPIView,
@@ -29,6 +30,11 @@ from .views import (
 app_name = "pathology"
 
 urlpatterns = [
+    path(
+        "cases/<uuid:case_id>/pdl1-results/confirm/",
+        PDL1ResultConfirmAPIView.as_view(),
+        name="pdl1-result-confirm",
+    ),
     path(
         "cases/<uuid:case_id>/submit-for-review/",
         PathologySubmitForReviewAPIView.as_view(),

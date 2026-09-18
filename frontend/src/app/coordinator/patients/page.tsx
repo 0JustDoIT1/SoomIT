@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/lib/api";
+import Image from "next/image";
 import Script from "next/script";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
@@ -583,7 +584,7 @@ export default function PatientsPage() {
         </div>
 
         {/* 검색 / 필터 */}
-        <div className="mt-6 flex items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
+        <div className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex-1">
             <input
               type="text"
@@ -602,7 +603,6 @@ export default function PatientsPage() {
             <option value="FEMALE">여</option>
             <option value="MALE">남</option>
             <option value="OTHER">기타</option>
-            <option value="UNKNOWN">미상</option>
           </select>
           <button
             type="button"
@@ -616,7 +616,7 @@ export default function PatientsPage() {
 
       {/* 로딩 */}
       {loading && (
-        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
           환자 정보를 불러오는 중입니다.
         </div>
       )}
@@ -630,7 +630,7 @@ export default function PatientsPage() {
 
       {/* 환자 목록 */}
       {!loading && !error && (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-4">
             <p className="text-sm font-semibold text-slate-700">
               환자 목록
@@ -692,6 +692,7 @@ export default function PatientsPage() {
                       colSpan={7}
                       className="px-5 py-12 text-center text-sm text-slate-400"
                     >
+                      <Image src="/images/soomi-search.png" alt="" width={56} height={56} className="mx-auto mb-2 h-14 w-14 object-contain" />
                       검색 조건에 해당하는 환자가 없습니다.
                     </td>
                   </tr>
@@ -775,7 +776,7 @@ export default function PatientsPage() {
                       void fetchDoctors(hospitalId);
                     }}
                     disabled={hospitalsLoading || Boolean(hospitalsError)}
-                    className={inputClassName}
+                    className={`${inputClassName} [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
                   >
                     <option value="">
                       {hospitalsLoading ? "Loading hospitals" : "Select a hospital"}
@@ -928,7 +929,6 @@ export default function PatientsPage() {
                     <option value="FEMALE">여</option>
                     <option value="MALE">남</option>
                     <option value="OTHER">기타</option>
-                    <option value="UNKNOWN">미상</option>
                   </select>
                 </FormField>
                 <FormField label="연락처" required>
@@ -1228,7 +1228,6 @@ export default function PatientsPage() {
                     <option value="FEMALE">여</option>
                     <option value="MALE">남</option>
                     <option value="OTHER">기타</option>
-                    <option value="UNKNOWN">미상</option>
                   </select>
                 </FormField>
                 <FormField label="연락처" required>

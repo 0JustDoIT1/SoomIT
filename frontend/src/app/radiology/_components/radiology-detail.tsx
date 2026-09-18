@@ -683,11 +683,15 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                 setIsUploadDragOver(false);
               }}
               onDrop={handleUploadDrop}
-              className={`relative mt-4 flex min-h-48 flex-col items-center justify-center rounded-xl border border-dashed px-6 text-center transition-colors ${uploadLocked ? "cursor-not-allowed border-slate-300 bg-slate-100/80" : isUploadDragOver ? "border-blue-500 bg-blue-100/80" : "border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 hover:border-blue-400"}`}
+              className={`relative mt-4 flex flex-col items-center justify-center rounded-xl border border-dashed text-center transition-colors ${uploadLocked ? "cursor-not-allowed border-slate-300 bg-slate-100/80 px-4 py-3" : isUploadDragOver ? "min-h-48 border-blue-500 bg-blue-100/80 px-6" : "min-h-48 border-blue-200 bg-gradient-to-br from-slate-50 to-blue-50/70 px-6 hover:border-blue-400"}`}
             >
-              <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl text-blue-300 shadow-sm" aria-hidden="true">＋</span>
-              <p className="mt-3 text-sm font-semibold text-slate-700">영상 추가</p>
-              <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">클릭하거나 파일{isXray ? "을" : " 또는 폴더를"} 여기로 끌어다 놓으세요.</p>
+              {!uploadLocked ? (
+                <>
+                  <span className="flex h-12 w-12 items-center justify-center rounded-full bg-white text-xl text-blue-300 shadow-sm" aria-hidden="true">＋</span>
+                  <p className="mt-3 text-sm font-semibold text-slate-700">영상 추가</p>
+                  <p className="mt-1 max-w-sm text-xs leading-5 text-slate-500">클릭하거나 파일{isXray ? "을" : " 또는 폴더를"} 여기로 끌어다 놓으세요.</p>
+                </>
+              ) : null}
               <input
                 ref={uploadInputRef}
                 type="file"
@@ -699,12 +703,9 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                 onChange={(event) => handleSelectedFiles(Array.from(event.target.files ?? []))}
               />
               {uploadLocked ? (
-                <div className="absolute inset-0 flex flex-col items-center justify-center rounded-xl bg-white/75 px-6 text-center backdrop-blur-[1px]">
-                  <span className="text-2xl text-violet-700" aria-hidden="true">🔒</span>
-                  <p className="mt-2 text-sm font-semibold text-slate-800">업로드 완료</p>
-                  <p className="mt-1 text-xs text-slate-600">서버 등록 후에는 파일을 변경할 수 없습니다</p>
-                  <p className="mt-1 text-[11px] text-slate-500">드래그 앤 드롭 불가 · 파일 선택 불가</p>
-                </div>
+                <p className="text-xs font-medium text-slate-600">
+                  업로드 완료 · 파일 변경 불가
+                </p>
               ) : null}
             </div>
           ) : null}

@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from rest_framework import serializers
 from django.conf import settings
 
@@ -58,6 +60,14 @@ class PathologyReviewSubmissionSerializer(serializers.Serializer):
     ai_analysis_id = serializers.UUIDField()
 
 
+class PDL1ResultConfirmSerializer(serializers.Serializer):
+    ai_analysis_id = serializers.UUIDField()
+    source_wsi_id = serializers.UUIDField()
+    tps_percent = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"))
+    interpretation = serializers.CharField(allow_blank=False, trim_whitespace=True)
+    note = serializers.CharField(required=False, allow_blank=True, allow_null=True, trim_whitespace=False)
+
+
 class GeneFindingWriteSerializer(serializers.Serializer):
     gene_symbol = serializers.CharField(max_length=30)
     assessment = serializers.ChoiceField(choices=GeneFinding.Assessment.choices)
@@ -109,6 +119,7 @@ class PathologyDiagnosisSerializer(serializers.ModelSerializer):
             "diagnosis_summary": detail.diagnosis_summary,
         }
 
+
     def get_gene(self, obj):
         if not hasattr(obj, "gene_detail"):
             return None
@@ -125,6 +136,26 @@ class PathologyDiagnosisSerializer(serializers.ModelSerializer):
                 }
                 for finding in detail.gene_findings.all()
             ],
+        }
+
+
+class PDL1ClinicalResultSerializer(serializers.ModelSerializer):
+    confirmed_by_name = serializers.CharField(source="confirmed_by_user.name", read_only=True, allow_null=True)
+    pdl1 = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ClinicalResult
+        fields = ["id", "result_status", "confirmed_by_user_id", "confirmed_by_name", "confirmed_at", "pdl1"]
+
+    def get_pdl1(self, obj):
+        detail = getattr(obj, "pdl1_detail", None)
+        if detail is None:
+            return None
+        return {
+            "tps_percent": detail.tps_percent,
+            "interpretation": detail.interpretation,
+            "note": detail.note,
+            "source_wsi_id": str(detail.source_wsi_id) if detail.source_wsi_id else None,
         }
 
 
@@ -734,7 +765,12 @@ class PathologyWorkstationSerializer(serializers.ModelSerializer):
             for result in getattr(obj.case, "workstation_confirmed_results", [])
             if order and self._clinical_result_order_id(result) == order.id
         ]
-        return PathologyDiagnosisSerializer(results[0]).data if results else None
+        if not results:
+            return None
+        result = results[0]
+        if result.workflow_stage == "PDL1":
+            return PDL1ClinicalResultSerializer(result).data
+        return PathologyDiagnosisSerializer(result).data
 
     def get_examination_order(self, obj):
         order = self._pathology_order(obj)

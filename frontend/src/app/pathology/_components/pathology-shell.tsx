@@ -55,7 +55,6 @@ export function PathologyShell({ children }: { children: ReactNode }) {
             </span>
             <div className="text-right">
               <p className="text-sm font-bold text-slate-800">{userName}</p>
-              <p className="mt-0.5 text-xs text-slate-500">임상병리사</p>
             </div>
             <button
               type="button"

@@ -18,6 +18,7 @@ import {
   uploadPdl1Input,
   uploadPathologyGeneInput,
   submitPathologyForReview,
+  confirmPdl1Result,
   type PathologyWorkstationItem,
   type PathologyCaseWorkflow,
   type PathologyCompletedExamHistory,
@@ -496,6 +497,14 @@ function WorkArea({
   const [runningPathologyGene, setRunningPathologyGene] = useState(false);
   const [cancellingPathologyGene, setCancellingPathologyGene] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
+  const [pdl1Confirmation, setPdl1Confirmation] = useState<{
+    result_status: string; confirmed_at: string; pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
+  } | null>(null);
+  const [pdl1TpsPercent, setPdl1TpsPercent] = useState("");
+  const [pdl1Interpretation, setPdl1Interpretation] = useState("");
+  const [pdl1Note, setPdl1Note] = useState("");
+  const [confirmingPdl1, setConfirmingPdl1] = useState(false);
+  const [isPathologyDoctor, setIsPathologyDoctor] = useState(false);
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
@@ -520,6 +529,23 @@ function WorkArea({
   const pathologyGeneResultStatus = pathologyGeneStatus(
     pathologyGeneAnalysis?.result_detail?.result_payload,
   );
+
+  useEffect(() => {
+    try {
+      const user = JSON.parse(sessionStorage.getItem("user") ?? "null") as { role?: string; department?: { code?: string } } | null;
+      setIsPathologyDoctor(user?.role === "DOCTOR" && user.department?.code === "PATHOLOGY");
+    } catch {
+      setIsPathologyDoctor(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (item.order_type !== "PDL1" || !item.clinical_result || typeof item.clinical_result !== "object") return;
+    const result = item.clinical_result as { result_status?: string; confirmed_at?: string; pdl1?: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string } };
+    if (result.result_status === "CONFIRMED" && result.confirmed_at && result.pdl1) {
+      setPdl1Confirmation({ result_status: result.result_status, confirmed_at: result.confirmed_at, pdl1: result.pdl1 });
+    }
+  }, [item.clinical_result, item.order_type]);
   const pathologyGeneIsLuad =
     pathologyResult?.predicted_subtype === "LUAD" ||
     pathologyResult?.predicted_histologic_type === "LUAD";
@@ -598,6 +624,26 @@ function WorkArea({
       setError(reason instanceof Error ? reason.message : "PD-L1 입력 파일 업로드에 실패했습니다.");
     } finally {
       setUploadingPdl1Input(false);
+    }
+  }
+
+  async function handlePdl1Confirm() {
+    if (!pdl1AnalysisId || !item.latest_wsi?.id || confirmingPdl1) return;
+    setConfirmingPdl1(true);
+    setError("");
+    try {
+      const result = await confirmPdl1Result(item.case_id, {
+        ai_analysis_id: pdl1AnalysisId,
+        source_wsi_id: item.latest_wsi.id,
+        tps_percent: pdl1TpsPercent,
+        interpretation: pdl1Interpretation,
+        note: pdl1Note,
+      });
+      setPdl1Confirmation(result);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "PD-L1 결과를 확정하지 못했습니다.");
+    } finally {
+      setConfirmingPdl1(false);
     }
   }
 
@@ -1023,17 +1069,18 @@ function WorkArea({
               <div
                 role="button"
                 tabIndex={0}
+                aria-disabled={pdl1InputReady}
                 onClick={() => !pdl1InputReady && pdl1WsiInputRef.current?.click()}
                 onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && !pdl1InputReady) pdl1WsiInputRef.current?.click(); }}
                 onDragEnter={(event) => { event.preventDefault(); if (!pdl1InputReady) setUploadDragTarget("pdl1-wsi"); }}
                 onDragOver={(event) => event.preventDefault()}
                 onDragLeave={(event) => { event.preventDefault(); setUploadDragTarget(null); }}
                 onDrop={(event) => { if (!pdl1InputReady) handleUploadDrop(event, handlePdl1WsiSelection); }}
-                className={`relative flex min-h-40 flex-col items-center justify-center rounded-lg border p-4 text-center transition-colors ${uploadDragTarget === "pdl1-wsi" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1WsiFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-[#8B96E8]"}`}
+                className={`relative flex min-h-40 flex-col items-center justify-center rounded-lg border p-4 text-center transition-colors ${pdl1InputReady ? "cursor-not-allowed border-slate-200 bg-slate-50" : uploadDragTarget === "pdl1-wsi" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1WsiFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-[#8B96E8]"}`}
               >
                 <span className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2 text-left">
                   <span className="text-xs font-semibold text-slate-700">WSI 파일</span>
-                  {pdl1WsiFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
+                  {pdl1InputReady ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">업로드 완료 · 변경 불가</span> : pdl1WsiFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
                 </span>
                 <span className="mt-2 flex flex-col items-center gap-1">
                   <span className="text-3xl font-light leading-none text-[#5364C7]" aria-hidden="true">＋</span>
@@ -1046,17 +1093,18 @@ function WorkArea({
               <div
                 role="button"
                 tabIndex={0}
+                aria-disabled={pdl1InputReady}
                 onClick={() => !pdl1InputReady && pdl1AnnotationInputRef.current?.click()}
                 onKeyDown={(event) => { if ((event.key === "Enter" || event.key === " ") && !pdl1InputReady) pdl1AnnotationInputRef.current?.click(); }}
                 onDragEnter={(event) => { event.preventDefault(); if (!pdl1InputReady) setUploadDragTarget("pdl1-annotation"); }}
                 onDragOver={(event) => event.preventDefault()}
                 onDragLeave={(event) => { event.preventDefault(); setUploadDragTarget(null); }}
                 onDrop={(event) => { if (!pdl1InputReady) handleUploadDrop(event, handlePdl1AnnotationSelection); }}
-                className={`relative flex min-h-40 flex-col items-center justify-center rounded-lg border p-4 text-center transition-colors ${uploadDragTarget === "pdl1-annotation" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1AnnotationFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-[#8B96E8]"}`}
+                className={`relative flex min-h-40 flex-col items-center justify-center rounded-lg border p-4 text-center transition-colors ${pdl1InputReady ? "cursor-not-allowed border-slate-200 bg-slate-50" : uploadDragTarget === "pdl1-annotation" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1AnnotationFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-[#8B96E8]"}`}
               >
                 <span className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2 text-left">
                   <span className="text-xs font-semibold text-slate-700">HALO annotation 파일</span>
-                  {pdl1AnnotationFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
+                  {pdl1InputReady ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">업로드 완료 · 변경 불가</span> : pdl1AnnotationFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
                 </span>
                 <span className="mt-2 flex flex-col items-center gap-1">
                   <span className="text-3xl font-light leading-none text-[#5364C7]" aria-hidden="true">＋</span>
@@ -1158,6 +1206,29 @@ function WorkArea({
                   </div>
                 ))}
               </dl>
+            ) : null}
+
+            {isPdl1 && currentAnalysis?.status === "SUCCEEDED" ? (
+              <section className="mt-4 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-4">
+                <h4 className="text-sm font-bold text-slate-800">PD-L1 결과 확정</h4>
+                {pdl1Confirmation ? (
+                  <div className="mt-3 text-sm text-slate-700">
+                    <p className="font-semibold text-emerald-700">확정 완료</p>
+                    <p className="mt-1">TPS {pdl1Confirmation.pdl1.tps_percent}% · {pdl1Confirmation.pdl1.interpretation}</p>
+                    <p className="mt-1 text-xs text-slate-500">확정 시각: {new Date(pdl1Confirmation.confirmed_at).toLocaleString()}</p>
+                  </div>
+                ) : isPathologyDoctor ? (
+                  <div className="mt-3 grid gap-3">
+                    <label className="text-xs font-semibold text-slate-700">TPS (%)<input type="number" min="0" max="100" step="0.01" value={pdl1TpsPercent} onChange={(event) => setPdl1TpsPercent(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                    <label className="text-xs font-semibold text-slate-700">해석/판정<textarea value={pdl1Interpretation} onChange={(event) => setPdl1Interpretation(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                    <label className="text-xs font-semibold text-slate-700">병리 소견<textarea value={pdl1Note} onChange={(event) => setPdl1Note(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
+                    <p className="text-xs text-slate-500">근거 WSI: {item.latest_wsi?.original_filename ?? "연결된 PD-L1 WSI가 없습니다."}</p>
+                    <button type="button" disabled={!pdl1TpsPercent || !pdl1Interpretation.trim() || !item.latest_wsi?.id || confirmingPdl1} onClick={handlePdl1Confirm} className="w-fit rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{confirmingPdl1 ? "확정 중" : "PD-L1 결과 확정"}</button>
+                  </div>
+                ) : (
+                  <p className="mt-3 text-xs text-slate-500">PD-L1 최종 확정은 병리과 의사만 수행할 수 있습니다.</p>
+                )}
+              </section>
             ) : null}
 
             {currentAnalysis?.status === "SUCCEEDED" && isPathologyGene ? (
@@ -2047,6 +2118,13 @@ export default function PathologyDashboardPage() {
                       <path d="m10.4 10.7 1.5 2.1m2.1-2.2-.7 1.9" strokeLinecap="round" />
                     </svg>
                     <span>PD-L1 검사</span>
+                  </div>
+                  <div className="flex min-w-[118px] items-center justify-center gap-2 rounded-[10px] border border-[#E5EEFC] bg-[#F4F8FF] px-4 py-3 text-sm font-semibold text-[#25324B]">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" className="h-5 w-5">
+                      <path d="M5 5h14v14H5z" />
+                      <path d="M8 9h8M8 12h8M8 15h5" strokeLinecap="round" />
+                    </svg>
+                    <span>결과 확인</span>
                   </div>
                 </div>
               </div>

@@ -1,9 +1,8 @@
 "use client";
 
-import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import type { ReactNode } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useSyncExternalStore, type ReactNode } from "react";
 
 const tabs = [
   {
@@ -20,12 +19,41 @@ const tabs = [
   },
 ];
 
+function subscribeToSessionStorage() {
+  return () => undefined;
+}
+
+function getStoredUserName() {
+  const storedUser = sessionStorage.getItem("user");
+  if (!storedUser) return "사용자";
+
+  try {
+    const user = JSON.parse(storedUser) as { name?: string; username?: string };
+    return user.name || user.username || "사용자";
+  } catch {
+    return "사용자";
+  }
+}
+
 export default function CoordinatorLayout({
   children,
 }: {
   children: ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const userName = useSyncExternalStore(
+    subscribeToSessionStorage,
+    getStoredUserName,
+    () => "사용자",
+  );
+
+  function handleLogout() {
+    sessionStorage.removeItem("accessToken");
+    sessionStorage.removeItem("refreshToken");
+    sessionStorage.removeItem("user");
+    router.replace("/login");
+  }
 
   const isActive = (href: string) => {
     return pathname === href || pathname.startsWith(`${href}/`);
@@ -39,24 +67,7 @@ export default function CoordinatorLayout({
         <div className="border-b border-slate-200">
           <div className="mx-auto flex h-[72px] w-full max-w-[1760px] items-center justify-between px-4 sm:px-6">
             {/* Logo + Department */}
-            <div className="flex items-center gap-6">
-              <Link
-                href="/coordinator/dashboard"
-                className="flex items-center"
-                aria-label="원무과 대시보드로 이동"
-              >
-                <Image
-                  src="/logo2.png"
-                  alt="숨잇 로고"
-                  width={150}
-                  height={70}
-                  priority
-                  className="h-auto w-[125px] object-contain"
-                />
-              </Link>
-
-              <div className="h-7 w-px bg-slate-200" />
-
+            <div>
               <div>
                 <p className="text-[15px] font-bold text-slate-800">
                   원무과
@@ -97,12 +108,17 @@ export default function CoordinatorLayout({
 
               <div className="text-right">
                 <p className="text-sm font-semibold text-slate-700">
-                  원무과
-                </p>
-                <p className="mt-0.5 text-[11px] text-slate-400">
-                  원무과 담당자
+                  {userName}
                 </p>
               </div>
+
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="rounded-lg border border-pink-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-pink-300 hover:bg-white hover:text-pink-600"
+              >
+                로그아웃
+              </button>
             </div>
           </div>
         </div>
@@ -136,7 +152,7 @@ export default function CoordinatorLayout({
       </header>
 
       {/* 3. 페이지 본문 */}
-      <main className="mx-auto w-full max-w-[1760px] px-4 py-5 sm:px-6 sm:py-6">
+      <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">
         {children}
       </main>
     </div>

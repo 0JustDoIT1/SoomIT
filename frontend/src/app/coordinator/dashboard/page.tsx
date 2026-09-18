@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/lib/api";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -63,25 +64,22 @@ function FilterButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex h-11 items-center gap-2 whitespace-nowrap text-sm transition ${
+      className={`relative flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border px-3.5 text-sm transition ${
         active
-          ? "font-semibold text-slate-900"
-          : "font-medium text-slate-500 hover:text-slate-800"
+          ? "border-pink-200 bg-pink-50 font-semibold text-pink-600"
+          : "border-transparent bg-white font-medium text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800"
       }`}
     >
       {label}
 
       <span
         className={`text-xs ${
-          active ? "text-pink-500" : "text-slate-400"
+          active ? "font-bold text-pink-600" : "font-semibold text-slate-400"
         }`}
       >
         {count}
       </span>
 
-      {active && (
-        <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />
-      )}
     </button>
   );
 }
@@ -271,7 +269,7 @@ export default function CoordinatorDashboardPage() {
 
   if (loading) {
     return (
-      <div className="border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500">
+      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500 shadow-sm">
         대시보드 정보를 불러오는 중입니다.
       </div>
     );
@@ -279,7 +277,7 @@ export default function CoordinatorDashboardPage() {
 
   if (error) {
     return (
-      <div className="border border-red-100 bg-red-50 px-6 py-5 text-sm text-red-600">
+      <div className="rounded-2xl border border-red-100 bg-red-50/70 px-6 py-5 text-sm text-red-600">
         {error}
       </div>
     );
@@ -299,9 +297,9 @@ export default function CoordinatorDashboardPage() {
       </div>
 
       {/* 상단 업무 필터 */}
-      <div className="border-b border-slate-200">
-        <div className="flex min-w-max items-center gap-3 overflow-x-auto">
-          <span className="mr-1 text-sm font-bold text-slate-400">
+      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
+        <div className="flex min-w-max items-center gap-2 overflow-x-auto">
+          <span className="mr-1 px-2 text-sm font-semibold text-slate-500">
             예약 요청 :
           </span>
 
@@ -330,7 +328,7 @@ export default function CoordinatorDashboardPage() {
             }
           />
 
-          <div className="mx-5 h-5 w-px bg-slate-200" />
+          <div className="mx-1 h-5 w-px bg-slate-200" />
 
           <FilterButton
             label="오늘 예약"
@@ -341,7 +339,7 @@ export default function CoordinatorDashboardPage() {
             }
           />
 
-          <div className="mx-5 h-5 w-px bg-slate-200" />
+          <div className="mx-1 h-5 w-px bg-slate-200" />
 
           <FilterButton
             label="일정 변경"
@@ -355,10 +353,10 @@ export default function CoordinatorDashboardPage() {
       </div>
 
       {/* 환자 흐름 */}
-      <section className="mt-7">
-        <div className="mb-4 flex items-end justify-between">
+      <section className="mt-8">
+        <div className="mb-4 flex items-end justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-slate-800">
+            <h2 className="text-xl font-bold tracking-tight text-slate-800">
               오늘 환자 흐름
             </h2>
 
@@ -367,7 +365,7 @@ export default function CoordinatorDashboardPage() {
             </p>
           </div>
 
-          <span className="text-xs text-slate-400">
+          <span className="rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
             {filteredFlows.length}명
           </span>
         </div>
@@ -375,7 +373,7 @@ export default function CoordinatorDashboardPage() {
 
 
 
-        <div className="border-y border-slate-200 bg-white">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           {filteredFlows.map((item) => (
             <PatientFlowRow
               key={item.appointment.id}
@@ -390,8 +388,12 @@ export default function CoordinatorDashboardPage() {
           ))}
 
           {filteredFlows.length === 0 && (
-            <div className="py-16 text-center">
-              <p className="text-sm text-slate-400">
+            <div className="flex flex-col items-center py-12 text-center">
+              <Image src="/images/soomi-search.png" alt="" width={128} height={128} className="mb-3 h-32 w-32 object-contain" />
+              <p className="text-base font-semibold text-slate-700">
+                예약된 환자가 없습니다
+              </p>
+              <p className="mt-1 text-sm text-slate-400">
                 해당 조건의 예약 환자가 없습니다.
               </p>
             </div>

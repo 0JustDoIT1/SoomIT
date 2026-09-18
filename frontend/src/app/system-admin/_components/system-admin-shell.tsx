@@ -43,7 +43,7 @@ export function SystemAdminShell({ children }: { children: ReactNode }) {
           <div><p className="text-sm font-semibold">시스템 관리 콘솔</p><p className="text-xs text-slate-500">병원 및 관리자 계정 관리</p></div>
           <p className="ml-auto text-sm font-medium text-slate-700">{userName}</p>
         </header>
-        <main className="min-w-0 flex-1 p-4 sm:p-6 xl:p-8">{children}</main>
+        <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">{children}</main>
       </div>
     </div>
   );

@@ -21,7 +21,7 @@ function getRedirectPath(
   }
 
   if (
-    user.role === "TECHNOLOGIST" &&
+    (user.role === "TECHNOLOGIST" || user.role === "DOCTOR") &&
     user.department.code === "PATHOLOGY"
   ) {
     return "/pathology";

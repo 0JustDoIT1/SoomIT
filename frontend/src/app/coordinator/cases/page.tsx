@@ -1,6 +1,7 @@
 "use client";
 
 import { API_BASE_URL } from "@/lib/api";
+import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
@@ -136,7 +137,7 @@ export default function CasesPage() {
         </div>
 
         {/* 검색 / 필터 */}
-        <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl bg-white p-4 shadow-sm">
+        <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="min-w-[260px] flex-1">
             <input
               type="text"
@@ -184,7 +185,7 @@ export default function CasesPage() {
       </div>
 
       {loading && (
-        <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
           Case 정보를 불러오는 중입니다.
         </div>
       )}
@@ -196,7 +197,7 @@ export default function CasesPage() {
       )}
 
       {!loading && !error && (
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm">
+        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-100 px-5 py-4">
             <p className="text-sm font-semibold text-slate-700">
               Case 목록
@@ -267,6 +268,7 @@ export default function CasesPage() {
                       colSpan={6}
                       className="px-5 py-12 text-center text-sm text-slate-400"
                     >
+                      <Image src="/images/soomi-search.png" alt="" width={56} height={56} className="mx-auto mb-2 h-14 w-14 object-contain" />
                       검색 조건에 해당하는 Case가 없습니다.
                     </td>
                   </tr>

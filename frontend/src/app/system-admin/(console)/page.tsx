@@ -30,7 +30,7 @@ export default function SystemAdminDashboardPage() {
     void load(); return () => controller.abort();
   }, []);
 
-  return <div className="mx-auto max-w-7xl"><h1 className="text-2xl font-bold">대시보드</h1><p className="mt-1 text-sm text-slate-500">병원과 병원 관리자 현황을 확인합니다.</p>
+  return <div><h1 className="text-2xl font-bold">대시보드</h1><p className="mt-1 text-sm text-slate-500">병원과 병원 관리자 현황을 확인합니다.</p>
     {state === "loading" ? <StateMessage variant="loading" title="관리 정보를 불러오는 중입니다." className="mt-6" /> : null}
     {state === "error" ? <StateMessage variant="error" title="관리 정보를 조회할 수 없습니다." description={error} className="mt-6" /> : null}
     {state === "ready" ? <><dl className="mt-7 grid grid-cols-2 border-y border-slate-200 bg-white"><div className="p-5"><dt className="text-sm text-slate-500">등록 병원</dt><dd className="mt-2 text-3xl font-bold">{hospitals.length}</dd></div><div className="border-l border-slate-200 p-5"><dt className="text-sm text-slate-500">HospitalAdmin</dt><dd className="mt-2 text-3xl font-bold">{adminCount}</dd></div></dl>

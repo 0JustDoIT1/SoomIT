@@ -661,7 +661,7 @@ export default function AppointmentsPage() {
               </span>
             </div>
 
-            <div className="divide-y divide-slate-100 border-y border-slate-200 bg-white">
+            <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
               {requestedAppointments.map(
                 (appointment) => (
                   <button
@@ -731,7 +731,7 @@ export default function AppointmentsPage() {
             </span>
           </div>
 
-          <div className="divide-y divide-slate-100 border-y border-slate-200 bg-white">
+          <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             {appointmentRequests.map((appointmentRequest) => (
               <button
                 key={appointmentRequest.id}
@@ -779,21 +779,21 @@ export default function AppointmentsPage() {
       )}
 
       {requestError && (
-        <div className="mt-6 border border-red-100 bg-red-50 p-4 text-sm text-red-600">
+        <div className="mt-6 rounded-2xl border border-red-100 bg-red-50/70 p-4 text-sm text-red-600">
           {requestError}
         </div>
       )}
 
       {/* 로딩 */}
       {loading && (
-        <div className="mt-6 border border-slate-200 bg-white p-8 text-sm text-slate-500">
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
           예약 정보를 불러오는 중입니다.
         </div>
       )}
 
       {/* 오류 */}
       {error && (
-        <div className="mt-6 border border-red-100 bg-red-50 p-6 text-sm text-red-600">
+        <div className="mt-6 rounded-2xl border border-red-100 bg-red-50/70 p-6 text-sm text-red-600">
           {error}
         </div>
       )}

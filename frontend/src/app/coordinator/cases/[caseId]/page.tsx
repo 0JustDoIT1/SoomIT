@@ -135,7 +135,7 @@ export default function CaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
         Case 상세 정보를 불러오는 중입니다.
       </div>
     );
@@ -143,7 +143,7 @@ export default function CaseDetailPage() {
 
   if (error || !caseData) {
     return (
-      <div className="rounded-2xl bg-red-50 p-6 text-sm text-red-600">
+      <div className="rounded-2xl border border-red-100 bg-red-50/70 p-6 text-sm text-red-600">
         {error || "Case 정보가 없습니다."}
       </div>
     );
@@ -188,7 +188,7 @@ export default function CaseDetailPage() {
 
       {/* 기본 정보 */}
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-medium text-slate-400">
             환자 정보
           </p>
@@ -202,7 +202,7 @@ export default function CaseDetailPage() {
           </p>
         </div>
 
-        <div className="rounded-2xl bg-white p-5 shadow-sm">
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p className="text-xs font-medium text-slate-400">
             현재 단계
           </p>
@@ -218,7 +218,7 @@ export default function CaseDetailPage() {
       </div>
 
       {/* Case 진행 현황 */}
-      <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div>
           <h2 className="text-lg font-bold text-slate-800">
             Case 진행 현황
@@ -287,7 +287,7 @@ export default function CaseDetailPage() {
       </div>
 
       {/* 의료진 확정 결과 */}
-      <div className="mt-6 rounded-2xl bg-white p-6 shadow-sm">
+      <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex items-start justify-between gap-4">
           <div>
             <h2 className="text-lg font-bold text-slate-800">

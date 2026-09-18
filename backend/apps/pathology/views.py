@@ -9,15 +9,17 @@ from rest_framework import status
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from apps.accounts.constants import PATHOLOGY_DEPARTMENT_CODE
+from apps.accounts.models import DepartmentRole
 from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnologist
 from apps.ai_results.models import AiAnalysis, AnalysisType, ModelVersion
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult
+from apps.clinical.models import ClinicalResult, PDL1Result
 from apps.radiology.views import _PassthroughContentNegotiation
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
@@ -30,6 +32,7 @@ from .serializers import (
     PathologyDiagnosisConfirmSerializer,
     PathologyDiagnosisWriteSerializer,
     PathologyReviewSubmissionSerializer,
+    PDL1ResultConfirmSerializer,
     PathologyReportSerializer,
     PathologySpecimenSerializer,
     PathologyWorkItemSerializer,
@@ -59,6 +62,36 @@ def pathology_hospital_id(request):
 class PathologyStaffAPIViewMixin:
     authentication_classes = [JWTAuthentication]
     permission_classes = PATHOLOGY_STAFF_PERMISSIONS
+
+
+class IsPathologyDoctor(BasePermission):
+    def has_permission(self, request, view):
+        department_role = getattr(request.user, "department_role", None)
+        return bool(
+            department_role
+            and department_role.role == DepartmentRole.Role.DOCTOR
+            and department_role.department.code == PATHOLOGY_DEPARTMENT_CODE
+        )
+
+
+class IsPathologyReader(BasePermission):
+    def has_permission(self, request, view):
+        department_role = getattr(request.user, "department_role", None)
+        return bool(
+            department_role
+            and department_role.department.code == PATHOLOGY_DEPARTMENT_CODE
+            and department_role.role in {DepartmentRole.Role.DOCTOR, DepartmentRole.Role.TECHNOLOGIST}
+        )
+
+
+class PathologyDoctorAPIViewMixin:
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsPathologyDoctor]
+
+
+class PathologyReadAPIViewMixin:
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsPathologyStaff, IsPathologyReader]
 
 
 class PathologyWorkstationPagination(PageNumberPagination):
@@ -101,7 +134,7 @@ def _workstation_queryset(request):
         workflow_stage__in=["PATHOLOGY_GENE", "PDL1"],
         result_status=ClinicalResult.ResultStatus.CONFIRMED,
     ).select_related(
-        "pathology_detail", "confirmed_by_user", "examination_order",
+        "pathology_detail", "pdl1_detail__source_wsi", "confirmed_by_user", "examination_order",
         "source_image_asset__examination_order",
         "reviewed_ai_result__ai_analysis__examination_order",
         "reviewed_ai_result__ai_analysis__source_image_asset__examination_order",
@@ -247,7 +280,7 @@ class PathologyDiagnosisConfirmAPIView(PathologyDiagnosisDetailAPIView):
         return Response(PathologyDiagnosisSerializer(diagnosis).data)
 
 
-class CasePathologyAiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
+class CasePathologyAiAnalysisListAPIView(PathologyReadAPIViewMixin, ListAPIView):
     serializer_class = PathologyAiAnalysisSerializer
 
     def get_queryset(self):
@@ -451,7 +484,7 @@ class CasePathologyGeneAnalysisCancelAPIView(PathologyStaffAPIViewMixin, APIView
 
 
 
-class CasePDL1AiAnalysisListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
+class CasePDL1AiAnalysisListAPIView(PathologyReadAPIViewMixin, ListAPIView):
     serializer_class = PathologyAiAnalysisSerializer
 
     def get_queryset(self):
@@ -632,7 +665,7 @@ class PathologyWorkItemListAPIView(ListAPIView):
         return queryset
 
 
-class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
+class PathologyWorkstationListAPIView(PathologyReadAPIViewMixin, ListAPIView):
     serializer_class = PathologyWorkstationSerializer
     pagination_class = PathologyWorkstationPagination
 
@@ -708,7 +741,7 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
         return representatives
 
 
-class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
+class PathologyCaseWorkflowAPIView(PathologyReadAPIViewMixin, APIView):
     order_rank = {
         ExaminationOrder.OrderType.PATHOLOGY_GENE: 0,
         ExaminationOrder.OrderType.PDL1: 1,
@@ -833,6 +866,95 @@ class PathologyCompletedExamHistoryAPIView(PathologyStaffAPIViewMixin, APIView):
             (item.completed_at for item in completed_reviews if item.completed_at is not None),
             None,
         )
+
+
+class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
+    @transaction.atomic
+    def post(self, request, case_id):
+        serializer = PDL1ResultConfirmSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        hospital_id = pathology_hospital_id(request)
+        case = get_object_or_404(
+            LungCancerCase.objects.select_for_update().select_related("patient"),
+            id=case_id,
+            patient__hospital_id=hospital_id,
+        )
+        order = get_object_or_404(
+            ExaminationOrder.objects.select_for_update(),
+            case=case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+        )
+        wsi = get_object_or_404(
+            WholeSlideImage.objects.select_for_update().select_related("image_asset", "specimen"),
+            id=serializer.validated_data["source_wsi_id"],
+            specimen__case=case,
+            specimen__examination_order=order,
+            stain=WholeSlideImage.Stain.PDL1,
+            is_current=True,
+            image_asset__status=CaseImageAsset.Status.READY,
+        )
+        analysis = get_object_or_404(
+            AiAnalysis.objects.select_for_update().select_related("ai_result"),
+            id=serializer.validated_data["ai_analysis_id"],
+            case=case,
+            examination_order=order,
+            analysis_type=AnalysisType.PDL1_ANALYSIS,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        if not hasattr(analysis, "ai_result"):
+            raise ValidationError({"ai_analysis_id": "A succeeded PD-L1 AI result is required."})
+        if analysis.source_image_asset_id != wsi.image_asset_id:
+            raise ValidationError({"ai_analysis_id": "The PD-L1 analysis must use the selected source WSI."})
+
+        clinical_result = (
+            ClinicalResult.objects.select_for_update()
+            .filter(case=case, examination_order=order, workflow_stage=WorkflowStage.PDL1)
+            .select_related("pdl1_detail")
+            .first()
+        )
+        if clinical_result and clinical_result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "PD-L1 result is already confirmed."}, status=status.HTTP_409_CONFLICT)
+        if clinical_result is None:
+            clinical_result = ClinicalResult.objects.create(
+                case=case,
+                examination_order=order,
+                workflow_stage=WorkflowStage.PDL1,
+                source_image_asset=wsi.image_asset,
+                reviewed_ai_result=analysis.ai_result,
+                result_status=ClinicalResult.ResultStatus.CONFIRMED,
+                confirmed_by_user=request.user,
+                confirmed_at=timezone.now(),
+            )
+            detail = PDL1Result.objects.create(
+                clinical_result=clinical_result,
+                tps_percent=serializer.validated_data["tps_percent"],
+                interpretation=serializer.validated_data["interpretation"],
+                note=serializer.validated_data.get("note"),
+                source_wsi=wsi,
+            )
+        else:
+            clinical_result.source_image_asset = wsi.image_asset
+            clinical_result.reviewed_ai_result = analysis.ai_result
+            clinical_result.result_status = ClinicalResult.ResultStatus.CONFIRMED
+            clinical_result.confirmed_by_user = request.user
+            clinical_result.confirmed_at = timezone.now()
+            clinical_result.save(update_fields=["source_image_asset", "reviewed_ai_result", "result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+            detail = getattr(clinical_result, "pdl1_detail", None)
+            if detail is None:
+                detail = PDL1Result.objects.create(clinical_result=clinical_result)
+            detail.tps_percent = serializer.validated_data["tps_percent"]
+            detail.interpretation = serializer.validated_data["interpretation"]
+            detail.note = serializer.validated_data.get("note")
+            detail.source_wsi = wsi
+            detail.save(update_fields=["tps_percent", "interpretation", "note", "source_wsi"])
+        return Response({
+            "id": str(clinical_result.id),
+            "workflow_stage": clinical_result.workflow_stage,
+            "result_status": clinical_result.result_status,
+            "confirmed_by_user_id": str(request.user.id),
+            "confirmed_at": clinical_result.confirmed_at,
+            "pdl1": {"tps_percent": detail.tps_percent, "interpretation": detail.interpretation, "note": detail.note, "source_wsi_id": str(detail.source_wsi_id)},
+        }, status=status.HTTP_201_CREATED)
 
 
 class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
@@ -1058,7 +1180,7 @@ class WholeSlideImageTileAPIView(PathologyStaffAPIViewMixin, APIView):
         return response
 
 
-class WholeSlideImagePreviewAPIView(PathologyStaffAPIViewMixin, APIView):
+class WholeSlideImagePreviewAPIView(PathologyReadAPIViewMixin, APIView):
     content_negotiation_class = _PassthroughContentNegotiation
 
     def get(self, request, wsi_id):
