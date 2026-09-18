@@ -4,6 +4,7 @@ from .models import AiAnalysis
 
 
 class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
+    ai_result_id = serializers.SerializerMethodField()
     analysis_type_label = serializers.CharField(
         source="get_analysis_type_display",
         read_only=True,
@@ -31,6 +32,7 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
         model = AiAnalysis
         fields = [
             "id",
+            "ai_result_id",
             "analysis_type",
             "analysis_type_label",
             "status",
@@ -45,6 +47,9 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
             "result_detail",
             "created_at",
         ]
+
+    def get_ai_result_id(self, obj):
+        return str(obj.ai_result.id) if hasattr(obj, "ai_result") else None
 
     def get_input_context(self, obj):
         """Expose auditable input identifiers, never storage paths or URLs."""

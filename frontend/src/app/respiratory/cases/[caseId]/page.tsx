@@ -68,6 +68,7 @@ type CaseItem = {
 
 type TnmAnalysisResult = {
   id?: string;
+  ai_result_id?: string;
   analysis_type: string;
   analysis_type_label?: string;
   status?: string;
@@ -2696,7 +2697,7 @@ export default function RespiratoryCaseDetailPage() {
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
-          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : selectedResultMenu === "CT" && selectedCase?.current_stage === "CT" ? <CtWorkflowDecision caseId={caseId} aiResultId={ctAnalysisResult?.id} clinicalResult={selectedClinicalResult as unknown as { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } }} authorizedFetch={authorizedFetch} onCompleted={() => { showToast("흉부 CT 결과가 확정되었습니다."); setCaseRefreshVersion((current) => current + 1); void retryClinicalResults(); }} /> : undefined}
+          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : selectedResultMenu === "CT" && selectedCase?.current_stage === "CT" ? <CtWorkflowDecision caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult as unknown as { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } }} authorizedFetch={authorizedFetch} onCompleted={() => { showToast("흉부 CT 결과가 확정되었습니다."); setCaseRefreshVersion((current) => current + 1); void retryClinicalResults(); }} /> : undefined}
           caseId={caseId}
           apiBaseUrl={API_BASE_URL}
           authorizedFetch={authorizedFetch}
