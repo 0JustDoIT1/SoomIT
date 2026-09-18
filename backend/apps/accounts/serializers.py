@@ -1,3 +1,5 @@
+import re
+
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -42,6 +44,8 @@ class StaffProfileSerializer(serializers.Serializer):
             "license_number": profile.license_number,
             "birth_date": profile.birth_date,
             "gender": profile.gender,
+            "phone": profile.phone,
+            "email": profile.email,
             "profile_image_uri": profile.profile_image_uri,
             "tags": profile.tags,
         }
@@ -50,7 +54,7 @@ class StaffProfileSerializer(serializers.Serializer):
 class DoctorProfileUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = DoctorProfile
-        fields = ["license_number", "birth_date", "gender", "profile_image_uri", "tags"]
+        fields = ["license_number", "birth_date", "gender", "phone", "email", "profile_image_uri", "tags"]
         extra_kwargs = {"license_number": {"required": False}}
 
     def validate_tags(self, value):
@@ -59,6 +63,13 @@ class DoctorProfileUpdateSerializer(serializers.ModelSerializer):
         if len(value) > 10:
             raise serializers.ValidationError("A maximum of 10 tags is allowed.")
         return [item.strip() for item in value]
+
+    def validate_phone(self, value):
+        # Kept as a plain string field (not an integer) - only non-digit
+        # characters (hyphens, spaces, "+82" etc.) are stripped before saving.
+        if not value:
+            return value
+        return re.sub(r"\D", "", value) or None
 
 
 class StaffLoginSerializer(serializers.Serializer):

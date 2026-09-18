@@ -148,6 +148,33 @@ class RadiologyWorklistAPITestCase(APITestCase):
             status=status_value,
         )
 
+    def _create_completed_exam(self, order, *, workflow_stage, image_type, analysis_type):
+        asset = self._create_asset(
+            order,
+            workflow_stage=workflow_stage,
+            image_type=image_type,
+        )
+        analysis = self._create_analysis(
+            asset,
+            AiAnalysis.Status.SUCCEEDED,
+            analysis_type=analysis_type,
+        )
+        AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        RadiologyReview.objects.create(
+            case=order.case,
+            examination_order=order,
+            ai_analysis=analysis,
+            assigned_doctor=self.doctor,
+            submitted_by=self.user,
+            submitted_at=timezone.now(),
+            status=RadiologyReview.Status.COMPLETED,
+        )
+        return asset, analysis
+
     def _authenticate(self, user, hospital, department_code="RADIOLOGY", role="TECHNOLOGIST"):
         token = AccessToken.for_user(user)
         token["hospital_id"] = str(hospital.id)
@@ -381,6 +408,129 @@ class RadiologyWorklistAPITestCase(APITestCase):
         review.save(update_fields=["status", "updated_at"])
         completed_response = self.client.get(self.url)
         self.assertEqual(completed_response.data[0]["workflow_status"], "REVIEW_COMPLETED")
+
+    def test_completed_exam_history_returns_completed_xray_ct_and_pet_ct_tnm(self):
+        self._create_completed_exam(
+            self.order,
+            workflow_stage=WorkflowStage.XRAY,
+            image_type=CaseImageAsset.ImageType.XRAY,
+            analysis_type="XRAY_ANALYSIS",
+        )
+        ct_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
+        self._create_completed_exam(
+            ct_order,
+            workflow_stage=WorkflowStage.CT,
+            image_type=CaseImageAsset.ImageType.CT,
+            analysis_type="CT_ANALYSIS",
+        )
+        pet_order = self._create_order(
+            self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
+        self._create_completed_exam(
+            pet_order,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
+            image_type=CaseImageAsset.ImageType.PET,
+            analysis_type="PET_CT_TNM_ANALYSIS",
+        )
+
+        response = self.client.get(reverse("radiology:completed-exams"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        completed_exams = response.data[0]["completed_exams"]
+        self.assertEqual(
+            {item["examination_order"]["order_type"] for item in completed_exams},
+            {"XRAY", "CT", "PET_CT_TNM"},
+        )
+        self.assertTrue(all(item["workflow_status"] == "REVIEW_COMPLETED" for item in completed_exams))
+        self.assertTrue(all(item["latest_image_asset"] for item in completed_exams))
+        self.assertTrue(all(item["ai_result"] is not None for item in completed_exams))
+        self.assertTrue(all(item["review"]["status"] == "COMPLETED" for item in completed_exams))
+        self.assertTrue(all(item["completed_at"] is None for item in completed_exams))
+
+    def test_completed_exam_history_excludes_non_completed_and_other_hospital(self):
+        pending_asset = self._create_asset(self.order)
+        pending_analysis = self._create_analysis(pending_asset, AiAnalysis.Status.SUCCEEDED)
+        AiResult.objects.create(
+            ai_analysis=pending_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        RadiologyReview.objects.create(
+            case=self.case,
+            examination_order=self.order,
+            ai_analysis=pending_analysis,
+            assigned_doctor=self.doctor,
+            submitted_by=self.user,
+            submitted_at=timezone.now(),
+            status=RadiologyReview.Status.PENDING,
+        )
+
+        ai_completed_order = self._create_order(self.case, order_type=ExaminationOrder.OrderType.CT)
+        ai_completed_asset = self._create_asset(
+            ai_completed_order,
+            workflow_stage=WorkflowStage.CT,
+            image_type=CaseImageAsset.ImageType.CT,
+        )
+        ai_completed_analysis = self._create_analysis(
+            ai_completed_asset,
+            AiAnalysis.Status.SUCCEEDED,
+            analysis_type="CT_ANALYSIS",
+        )
+        AiResult.objects.create(
+            ai_analysis=ai_completed_analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+
+        cancelled_order = self._create_order(
+            self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            status=ExaminationOrder.Status.CANCELLED,
+        )
+        self._create_completed_exam(
+            cancelled_order,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
+            image_type=CaseImageAsset.ImageType.PET,
+            analysis_type="PET_CT_TNM_ANALYSIS",
+        )
+        self._create_completed_exam(
+            self.other_order,
+            workflow_stage=WorkflowStage.XRAY,
+            image_type=CaseImageAsset.ImageType.XRAY,
+            analysis_type="XRAY_ANALYSIS",
+        )
+
+        response = self.client.get(reverse("radiology:completed-exams"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data, [])
+
+    def test_completed_exam_history_uses_confirmed_at_without_review_timestamp_fallback(self):
+        _, analysis = self._create_completed_exam(
+            self.order,
+            workflow_stage=WorkflowStage.XRAY,
+            image_type=CaseImageAsset.ImageType.XRAY,
+            analysis_type="XRAY_ANALYSIS",
+        )
+        confirmed_at = timezone.now().replace(microsecond=0)
+        ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=self.order,
+            workflow_stage=WorkflowStage.XRAY,
+            reviewed_ai_result=analysis.ai_result,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            confirmed_at=confirmed_at,
+        )
+
+        response = self.client.get(reverse("radiology:completed-exams"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(
+            response.data[0]["completed_exams"][0]["completed_at"],
+            confirmed_at.isoformat().replace("+00:00", "Z"),
+        )
 
     def test_succeeded_without_result_is_read_only_ai_failed_workflow(self):
         asset = self._create_asset(self.order)

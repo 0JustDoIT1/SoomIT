@@ -27,6 +27,11 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import DepartmentRole, Hospital, User
+from apps.accounts.permissions import (
+    IsActiveStaff,
+    IsAdministrationStaff,
+    IsMedicalStaff,
+)
 from apps.cases.models import LungCancerCase, WorkflowStage
 from apps.notifications.models import PatientNotificationSetting
 
@@ -1269,9 +1274,25 @@ class PatientQuestionnaireDetailAPIView(
 class CoordinatorPatientQuestionnaireAPIView(APIView):
     """원무과용 최신 제출 문진 조회 (읽기 전용)."""
 
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [
+        IsAuthenticated,
+        IsActiveStaff,
+        IsAdministrationStaff,
+        IsMedicalStaff,
+    ]
+
     def get(self, request, patient_id):
+        hospital_id = (
+            request.user.department_role.department.hospital_id
+        )
+
         questionnaire = (
-            PatientQuestionnaire.objects.filter(patient_id=patient_id, is_completed=True)
+            PatientQuestionnaire.objects.filter(
+                patient_id=patient_id,
+                patient__hospital_id=hospital_id,
+                is_completed=True,
+            )
             .order_by("-completed_at", "-created_at")
             .first()
         )

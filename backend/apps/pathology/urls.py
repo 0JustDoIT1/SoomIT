@@ -15,6 +15,7 @@ from .views import (
     PathologyWorkItemDetailAPIView,
     PathologyWorkItemListAPIView,
     PathologyCaseWorkflowAPIView,
+    PathologyCompletedExamHistoryAPIView,
     PathologyWorkstationListAPIView,
     PathologySubmitForReviewAPIView,
     PathologyDiagnosisConfirmAPIView,
@@ -42,6 +43,11 @@ urlpatterns = [
         "cases/<uuid:case_id>/workflow/",
         PathologyCaseWorkflowAPIView.as_view(),
         name="case-workflow",
+    ),
+    path(
+        "completed-exams/",
+        PathologyCompletedExamHistoryAPIView.as_view(),
+        name="completed-exam-history",
     ),
     path(
         "work-items/",

@@ -444,7 +444,16 @@ Widget _buildScheduleErrorState() {
         final results = snapshot.data ?? [];
 
         if (results.isEmpty) {
-          return _buildEmptyResultState();
+          return RefreshIndicator(
+            onRefresh: () async {
+              setState(() {
+                _loadResults();
+              });
+
+              await _resultsFuture;
+            },
+            child: _buildEmptyResultState(),
+          );
         }
 
         return RefreshIndicator(

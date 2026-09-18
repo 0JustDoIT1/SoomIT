@@ -225,7 +225,7 @@ class RadiologyWorklistAPIView(RadiologyPermissionMixin, ListAPIView):
         return queryset
 
 
-def _workflow_order_queryset(hospital_id):
+def _workflow_order_queryset(hospital_id, *, include_confirmed_results=False):
     confirmed_review = ClinicalResult.objects.filter(
         reviewed_ai_result__ai_analysis_id=OuterRef("pk"),
         result_status=ClinicalResult.ResultStatus.CONFIRMED,
@@ -254,6 +254,16 @@ def _workflow_order_queryset(hospital_id):
         )
         .order_by("-created_at")
     )
+    if include_confirmed_results:
+        analysis_queryset = analysis_queryset.prefetch_related(
+            Prefetch(
+                "ai_result__clinical_results",
+                queryset=ClinicalResult.objects.filter(
+                    result_status=ClinicalResult.ResultStatus.CONFIRMED,
+                ).order_by("-confirmed_at"),
+                to_attr="workflow_confirmed_results",
+            )
+        )
     image_queryset = CaseImageAsset.objects.order_by("-created_at").prefetch_related(
         Prefetch(
             "ai_analyses",
@@ -289,6 +299,51 @@ def _workflow_order_queryset(hospital_id):
             ),
         )
         .order_by("-created_at")
+    )
+
+
+def _serialize_workflow_exam(order, serializer):
+    item = serializer.to_representation(order)
+    analysis = serializer._get_latest_ai_analysis(order)
+    review = None
+    if analysis is not None:
+        reviews = getattr(analysis, "workflow_reviews", [])
+        if reviews:
+            review_item = reviews[0]
+            review = {
+                "id": review_item.id,
+                "status": review_item.status,
+                "assigned_doctor": {
+                    "id": review_item.assigned_doctor_id,
+                    "name": review_item.assigned_doctor.name,
+                },
+                "submitted_at": review_item.submitted_at,
+            }
+
+    ai_result = None
+    if (
+        analysis is not None
+        and analysis.status == AiAnalysis.Status.SUCCEEDED
+        and hasattr(analysis, "ai_result")
+    ):
+        ai_result = RadiologyAiResultSerializer(analysis).data["result"]
+    item["ai_result"] = ai_result
+    item["review"] = review
+    return item, analysis
+
+
+def _completed_at_for_analysis(analysis):
+    if analysis is None or not hasattr(analysis, "ai_result"):
+        return None
+
+    confirmed_results = getattr(analysis.ai_result, "workflow_confirmed_results", [])
+    return next(
+        (
+            result.confirmed_at
+            for result in confirmed_results
+            if result.confirmed_at is not None
+        ),
+        None,
     )
 
 
@@ -390,31 +445,7 @@ class RadiologyCaseWorkflowAPIView(RadiologyPermissionMixin, APIView):
         exam_rank = {"XRAY": 0, "CT": 1, "PET_CT_TNM": 2}
         exams = []
         for order in orders:
-            item = serializer.to_representation(order)
-            analysis = serializer._get_latest_ai_analysis(order)
-            review = None
-            if analysis is not None:
-                reviews = getattr(analysis, "workflow_reviews", [])
-                if reviews:
-                    review_item = reviews[0]
-                    review = {
-                        "id": review_item.id,
-                        "status": review_item.status,
-                        "assigned_doctor": {
-                            "id": review_item.assigned_doctor_id,
-                            "name": review_item.assigned_doctor.name,
-                        },
-                        "submitted_at": review_item.submitted_at,
-                    }
-            ai_result = None
-            if (
-                analysis is not None
-                and analysis.status == AiAnalysis.Status.SUCCEEDED
-                and hasattr(analysis, "ai_result")
-            ):
-                ai_result = RadiologyAiResultSerializer(analysis).data["result"]
-            item["ai_result"] = ai_result
-            item["review"] = review
+            item, _ = _serialize_workflow_exam(order, serializer)
             exams.append(item)
 
         exams.sort(
@@ -446,6 +477,46 @@ class RadiologyCaseWorkflowAPIView(RadiologyPermissionMixin, APIView):
                 "exams": exams,
             }
         )
+
+
+class RadiologyCompletedExamHistoryAPIView(RadiologyPermissionMixin, APIView):
+    def get(self, request):
+        orders = list(
+            _workflow_order_queryset(
+                self.get_hospital_id(),
+                include_confirmed_results=True,
+            )
+        )
+        serializer = RadiologyWorklistSerializer()
+        history_by_case = {}
+
+        for order in orders:
+            item, analysis = _serialize_workflow_exam(order, serializer)
+            if item["workflow_status"] != "REVIEW_COMPLETED":
+                continue
+
+            item["completed_at"] = _completed_at_for_analysis(analysis)
+            history = history_by_case.setdefault(
+                order.case_id,
+                {
+                    "patient": item["patient"],
+                    "case": item["case"],
+                    "responsible_doctor": item["responsible_doctor"],
+                    "completed_exams": [],
+                },
+            )
+            history["completed_exams"].append(item)
+
+        histories = list(history_by_case.values())
+        for history in histories:
+            history["completed_exams"].sort(
+                key=lambda item: (
+                    item["completed_at"] is not None,
+                    item["completed_at"],
+                ),
+                reverse=True,
+            )
+        return Response(histories)
 
 
 class RadiologyOrderImageCreateAPIView(RadiologyPermissionMixin, APIView):

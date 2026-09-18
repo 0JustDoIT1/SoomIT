@@ -7,6 +7,7 @@ from .views import (
     RadiologyAnalysisResultAPIView,
     RadiologyAnalysisVisualizationAPIView,
     RadiologyAnalysisSubmitForReviewAPIView,
+    RadiologyCompletedExamHistoryAPIView,
     RadiologyCaseWorkflowAPIView,
     RadiologyCaseWorklistAPIView,
     RadiologyOrderAnalysisCreateAPIView,
@@ -27,6 +28,7 @@ app_name = "radiology"
 
 urlpatterns = [
     path("worklist/", RadiologyWorklistAPIView.as_view(), name="worklist"),
+    path("completed-exams/", RadiologyCompletedExamHistoryAPIView.as_view(), name="completed-exams"),
     path("cases/", RadiologyCaseWorklistAPIView.as_view(), name="case-worklist"),
     path(
         "cases/<uuid:case_id>/workflow/",

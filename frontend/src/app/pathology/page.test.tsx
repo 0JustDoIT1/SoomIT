@@ -4,6 +4,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
 import {
   fetchPathologyCaseWorkflow,
+  fetchPathologyCompletedExams,
   fetchPathologyWorkstation,
   fetchPdl1Analyses,
 } from "./_lib/pathology-workstation-api";
@@ -11,6 +12,7 @@ beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   vi.mocked(fetchPdl1Analyses).mockResolvedValue([]);
+  vi.mocked(fetchPathologyCompletedExams).mockResolvedValue([]);
 });
 
 function emptyWorkflow(caseId: string, patientName = caseId) {
@@ -45,8 +47,28 @@ it("reopens a restored recent case absent from the worklist without auto-selecti
   expect(button).toHaveAttribute("aria-pressed", "true");
 });
 
+it("loads completed pathology exams from the dedicated read-only endpoint", async () => {
+  vi.mocked(fetchPathologyWorkstation).mockResolvedValue({ count: 0, results: [], next: null, previous: null });
+  vi.mocked(fetchPathologyCompletedExams).mockResolvedValue([{
+    patient: { id: "patient-1", name: "완료환자", patient_code: "PATH-001", birth_date: "", sex: "" },
+    case: { id: "case-1", case_code: "CASE-001", current_stage: "", case_status: "" },
+    completed_exams: [{
+      id: "item-1", case_id: "case-1", order_type: "PDL1", order_type_label: "PD-L1 검사",
+      current_exam_or_task: "PD-L1 검사", completed_at: null,
+    }],
+  }] as unknown as Awaited<ReturnType<typeof fetchPathologyCompletedExams>>);
+
+  render(<Page />);
+  await userEvent.click(await screen.findByRole("button", { name: "완료 기록" }));
+
+  expect(await screen.findByText("완료환자")).toBeInTheDocument();
+  expect(screen.getAllByText("PD-L1 검사").length).toBeGreaterThan(0);
+  expect(screen.getByText("완료일 정보 없음")).toBeInTheDocument();
+  expect(fetchPathologyCompletedExams).toHaveBeenCalledWith(expect.any(AbortSignal));
+});
+
 vi.mock("./_lib/pathology-workstation-api", () => ({
-  fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyWorkstation: vi.fn(),
+  fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyCompletedExams: vi.fn(), fetchPathologyWorkstation: vi.fn(),
   fetchPathologyWsiPreview: vi.fn().mockResolvedValue(new Blob(["preview"], { type: "image/jpeg" })),
   fetchPdl1Analyses: vi.fn(),
   runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), submitPathologyForReview: vi.fn(),
@@ -68,7 +90,7 @@ it("keeps selection and workflow across numbered/next/previous pages and loading
   const detail = await screen.findByText("표시할 병리 검사 오더가 없습니다.");
   await user.click(screen.getByRole("button", { name: "2" }));
   await waitFor(() => expect(release).toBeDefined());
-  expect(screen.getByRole("status", { name: "Worklist 로딩 중" })).toBeInTheDocument();
+  expect(screen.queryByRole("status", { name: "Worklist 로딩 중" })).not.toBeInTheDocument();
   expect(screen.getAllByText("case-Alice").length).toBeGreaterThan(0);
   expect(detail).toBeInTheDocument();
   delay = false;
@@ -179,6 +201,24 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
     workflow_status: "AI_COMPLETED",
     workflow_status_label: "AI 분석 완료",
   } as unknown as Awaited<ReturnType<typeof fetchPathologyWorkstation>>["results"][number];
+  item.latest_gene_analysis = item.latest_ai_analysis;
+  const completedPdl1: typeof item = {
+    ...item,
+    id: "order-pdl1",
+    order_type: "PDL1",
+    order_type_label: "PD-L1 검사",
+    current_exam_or_task: "PD-L1 검사",
+    examination_order: {
+      id: "exam-pdl1",
+      status: "COMPLETED",
+      priority: "ROUTINE",
+      order_type: "PDL1",
+      order_type_label: "PD-L1 검사",
+      created_at: "2026-01-01T00:00:00Z",
+    },
+    workflow_status: "REVIEW_COMPLETED",
+    workflow_status_label: "의사 판독 완료",
+  };
 
   vi.mocked(fetchPathologyWorkstation).mockResolvedValue({
     count: 1,
@@ -189,7 +229,7 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
   vi.mocked(fetchPathologyCaseWorkflow).mockResolvedValue({
     patient: item.patient,
     case: item.case,
-    orders: [item],
+    orders: [completedPdl1, item],
   });
 
   render(<Page />);
@@ -207,6 +247,7 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
   const workflow = screen.getByRole("list", {
     name: "조직·유전자 검사 workflow",
   });
+  expect(screen.queryByRole("list", { name: "PD-L1 검사 workflow" })).not.toBeInTheDocument();
   for (const step of ["조직데이터", "AI 분석", "AI 분석 결과", "의사에게 제출"]) {
     expect(within(workflow).getByText(step)).toBeInTheDocument();
   }
@@ -217,7 +258,6 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
   expect(screen.getAllByText("악성 확률").length).toBeGreaterThan(0);
   expect(screen.getByText("AI 분석 결과를 의사 판독 대상으로 제출합니다.")).toBeInTheDocument();
 
-  const resultButtons = screen.getAllByRole("button", { name: "AI 결과 보기" });
-  await userEvent.click(resultButtons[resultButtons.length - 1]);
-  expect(screen.getByRole("dialog", { name: "조직·유전자 AI 결과" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "AI 결과 보기" })).not.toBeInTheDocument();
+  expect(screen.getAllByText("AI 분석 결과").length).toBeGreaterThan(0);
 });

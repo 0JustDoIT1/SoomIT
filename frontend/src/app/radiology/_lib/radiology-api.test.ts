@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from "vitest";
 
 import { staffAuthenticatedFetch } from "@/lib/api";
 
-import { fetchRadiologyXrayImage, uploadRadiologyXrayImage } from "./radiology-api";
+import { fetchRadiologyCompletedExams, fetchRadiologyXrayImage, uploadRadiologyXrayImage } from "./radiology-api";
 
 vi.mock("@/lib/api", () => ({ staffAuthenticatedFetch: vi.fn() }));
 
@@ -36,6 +36,19 @@ it("loads a registered X-ray through the authenticated backend endpoint", async 
   expect(blob.type).toBe("image/png");
   expect(staffAuthenticatedFetch).toHaveBeenCalledWith(
     "http://api.test/api/radiology/orders/order-1/images/asset-1/content/",
+    expect.objectContaining({ method: "GET" }),
+  );
+});
+
+it("loads completed radiology exam history through the grouped history endpoint", async () => {
+  vi.mocked(staffAuthenticatedFetch).mockResolvedValue(
+    new Response(JSON.stringify([]), { status: 200 }),
+  );
+
+  await expect(fetchRadiologyCompletedExams()).resolves.toEqual([]);
+
+  expect(staffAuthenticatedFetch).toHaveBeenCalledWith(
+    "http://api.test/api/radiology/completed-exams/",
     expect.objectContaining({ method: "GET" }),
   );
 });

@@ -136,7 +136,7 @@ export function RadiologyWorklist({
           </thead>
 
           <tbody>
-            {viewStatus === "loading" ? Array.from({ length: 10 }, (_, index) => (
+            {viewStatus === "loading" && items.length === 0 ? Array.from({ length: 10 }, (_, index) => (
               <tr key={index} aria-hidden="true" className="border-b border-slate-100 border-l-4 border-l-transparent motion-safe:animate-pulse">
                 {["w-14", "w-20", "w-12", "w-16"].map((width) => (
                   <td key={width} className="px-3 py-2.5">
@@ -219,7 +219,7 @@ export function RadiologyWorklist({
         />
       ) : null}
 
-      {viewStatus === "ready" && totalItems > 0 ? (
+      {(viewStatus === "ready" || (viewStatus === "loading" && totalItems > 0)) && totalItems > 0 ? (
         <nav
           aria-label="Worklist 페이지"
           className="flex items-center justify-center gap-1 border-t border-slate-200 px-4 py-3"

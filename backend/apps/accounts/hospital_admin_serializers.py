@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from .models import Department, DepartmentRole, HospitalAdmin, User
+from .models import Department, DepartmentRole, DoctorProfile, HospitalAdmin, User
 
 
 HOSPITAL_ADMIN_AUTHENTICATION_ERROR = "입력한 인증 정보를 확인해주세요."
@@ -101,8 +101,19 @@ class HospitalAdminStaffCreateSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=100)
     password = serializers.CharField(write_only=True, trim_whitespace=False)
     department_role_id = serializers.UUIDField()
+    # Only required for a DOCTOR department_role - enforced in the view once
+    # department_role is resolved, since the role isn't known here yet. When
+    # provided, a DoctorProfile is created together with the account so a
+    # doctor never has to fill this in themselves before e.g. uploading a
+    # profile photo.
+    license_number = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
     def validate_login_id(self, value):
         if User.objects.filter(login_id=value).exists():
             raise serializers.ValidationError("이미 사용 중인 로그인 식별값입니다.")
+        return value
+
+    def validate_license_number(self, value):
+        if value and DoctorProfile.objects.filter(license_number=value).exists():
+            raise serializers.ValidationError("이미 사용 중인 의사 면허번호입니다.")
         return value

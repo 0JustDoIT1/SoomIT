@@ -681,6 +681,12 @@ class PathologyWorkstationListAPIView(PathologyStaffAPIViewMixin, ListAPIView):
             seen_case_ids.add(work_item.case_id)
             representatives.append(work_item)
 
+        representatives = [
+            work_item
+            for work_item in representatives
+            if calculate_workflow_status(work_item) != PathologyWorkflowStatus.REVIEW_COMPLETED
+        ]
+
         if workflow_status_value:
             public_workflow_statuses = {
                 PathologyWorkflowStatus.SCHEDULED,
@@ -750,6 +756,82 @@ class PathologyCaseWorkflowAPIView(PathologyStaffAPIViewMixin, APIView):
                 },
                 "orders": PathologyWorkstationSerializer(work_items, many=True).data,
             }
+        )
+
+
+class PathologyCompletedExamHistoryAPIView(PathologyStaffAPIViewMixin, APIView):
+    def get(self, request):
+        work_items_by_order = {}
+        for work_item in _workstation_queryset(request):
+            order = _pathology_order(work_item)
+            if order is None or order.order_type not in {
+                ExaminationOrder.OrderType.PATHOLOGY_GENE,
+                ExaminationOrder.OrderType.PDL1,
+            }:
+                continue
+            current = work_items_by_order.get(order.id)
+            if current is None or (
+                current.task_type == PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW
+                and work_item.task_type != PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW
+            ):
+                work_items_by_order[order.id] = work_item
+
+        serializer = PathologyWorkstationSerializer()
+        histories_by_case = {}
+        for work_item in work_items_by_order.values():
+            item = serializer.to_representation(work_item)
+            if item["workflow_status"] != PathologyWorkflowStatus.REVIEW_COMPLETED:
+                continue
+
+            item["completed_at"] = self._completed_at(work_item)
+            history = histories_by_case.setdefault(
+                work_item.case_id,
+                {
+                    "patient": item["patient"],
+                    "case": item["case"],
+                    "completed_exams": [],
+                },
+            )
+            history["completed_exams"].append(item)
+
+        histories = list(histories_by_case.values())
+        for history in histories:
+            history["completed_exams"].sort(
+                key=lambda item: (
+                    item["completed_at"] is not None,
+                    item["completed_at"],
+                ),
+                reverse=True,
+            )
+        return Response(histories)
+
+    @staticmethod
+    def _completed_at(work_item):
+        order = _pathology_order(work_item)
+        confirmed_results = [
+            result
+            for result in getattr(work_item.case, "workstation_confirmed_results", [])
+            if order and PathologyWorkstationSerializer._clinical_result_order_id(result) == order.id
+        ]
+        confirmed_at = next(
+            (result.confirmed_at for result in confirmed_results if result.confirmed_at is not None),
+            None,
+        )
+        if confirmed_at is not None:
+            return confirmed_at
+
+        completed_reviews = [
+            item
+            for item in getattr(work_item.case, "workstation_review_items", [])
+            if (
+                order
+                and PathologyWorkstationSerializer._work_item_order_id(item) == order.id
+                and item.status == PathologyWorkItem.Status.COMPLETED
+            )
+        ]
+        return next(
+            (item.completed_at for item in completed_reviews if item.completed_at is not None),
+            None,
         )
 
 
