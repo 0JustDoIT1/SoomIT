@@ -5,7 +5,7 @@ export { API_BASE_URL };
 export type ExaminationOrderType = "XRAY" | "CT" | "PET_CT_TNM" | "PATHOLOGY_GENE" | "PDL1";
 export type ExaminationOrderPriority = "NORMAL" | "URGENT";
 export type ExaminationOrderStatus = "ORDERED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
-export type ExaminationOrder = { id: string; case_id: string; order_type: ExaminationOrderType; order_type_label: string; priority: ExaminationOrderPriority; status: ExaminationOrderStatus; purpose?: string; clinical_note?: string | null; pathology_work_item_id?: string | null; created_at: string };
+export type ExaminationOrder = { id: string; case_id: string; order_type: ExaminationOrderType; order_type_label: string; priority: ExaminationOrderPriority; status: ExaminationOrderStatus; purpose?: string; clinical_note?: string | null; pathology_work_item_id?: string | null; created_at: string; scheduled_at?: string | null; appointment_status?: "REQUESTED" | "CONFIRMED" | "CANCELLED" | null };
 export type ExaminationOrderRequest = { order_type: ExaminationOrderType; priority: ExaminationOrderPriority; purpose: string; clinical_note: string };
 export type ExaminationOrderUpdateRequest = Partial<Pick<ExaminationOrderRequest, "priority" | "purpose" | "clinical_note">>;
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;

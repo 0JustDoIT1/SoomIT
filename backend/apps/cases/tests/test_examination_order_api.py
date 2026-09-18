@@ -11,7 +11,7 @@ from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
 from apps.cases.models import CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult, XrayResult
 from apps.pathology.models import PathologyWorkItem
-from apps.patients.models import Patient
+from apps.patients.models import Appointment, Patient
 from apps.radiology.models import RadiologyReview
 
 
@@ -37,6 +37,32 @@ class DoctorExaminationOrderAPITests(TestCase):
 
     def post_order(self, order_type):
         return self.client.post(self.url, {"order_type": order_type, "priority": "NORMAL", "purpose": "Next examination", "clinical_note": ""}, format="json")
+
+    def test_order_list_includes_the_latest_active_appointment_time(self):
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.XRAY,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Chest X-ray",
+        )
+        scheduled_at = timezone.now().replace(microsecond=0)
+        Appointment.objects.create(
+            patient=self.case.patient,
+            case=self.case,
+            examination_order=order,
+            doctor=self.doctor,
+            scheduled_at=scheduled_at,
+            appointment_status=Appointment.AppointmentStatus.CONFIRMED,
+            visit_status=Appointment.VisitStatus.SCHEDULED,
+            created_by_type=Appointment.CreatedByType.DOCTOR_ORDER,
+        )
+
+        response = self.client.get(self.url)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["scheduled_at"], scheduled_at.isoformat().replace("+00:00", "Z"))
+        self.assertEqual(response.data[0]["appointment_status"], Appointment.AppointmentStatus.CONFIRMED)
 
     def test_requires_confirmed_predecessor_and_blocks_active_duplicate(self):
         self.assertEqual(self.post_order("CT").status_code, 400)

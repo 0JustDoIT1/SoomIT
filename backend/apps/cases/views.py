@@ -17,6 +17,7 @@ from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaf
 from apps.accounts.models import User
 from apps.notifications.services import create_in_app_staff_notifications
 from apps.pathology.models import PathologySpecimen, WholeSlideImage
+from apps.patients.models import Appointment
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
@@ -988,7 +989,17 @@ class DoctorExaminationOrderAPIView(APIView):
         case = self.get_case(request, case_id)
         if case is None:
             return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
-        orders = case.examination_orders.order_by("-created_at")
+        orders = list(case.examination_orders.order_by("-created_at"))
+        appointments_by_order_id = {}
+        for appointment in Appointment.objects.filter(
+            examination_order__in=orders,
+        ).exclude(
+            appointment_status=Appointment.AppointmentStatus.CANCELLED,
+        ).order_by("examination_order_id", "-scheduled_at"):
+            appointments_by_order_id.setdefault(
+                appointment.examination_order_id,
+                appointment,
+            )
         return Response([
             {
                 "id": order.id,
@@ -1000,6 +1011,8 @@ class DoctorExaminationOrderAPIView(APIView):
                 "purpose": order.purpose,
                 "clinical_note": order.clinical_note,
                 "created_at": order.created_at,
+                "scheduled_at": appointments_by_order_id[order.id].scheduled_at if order.id in appointments_by_order_id else None,
+                "appointment_status": appointments_by_order_id[order.id].appointment_status if order.id in appointments_by_order_id else None,
             }
             for order in orders
         ])
@@ -1028,6 +1041,8 @@ class DoctorExaminationOrderAPIView(APIView):
                 "status": order.status,
                 "pathology_work_item_id": work_item.id if work_item else None,
                 "created_at": order.created_at,
+                "scheduled_at": None,
+                "appointment_status": None,
             },
             status=status.HTTP_201_CREATED,
         )
@@ -1045,6 +1060,7 @@ class DoctorExaminationOrderDetailAPIView(DoctorExaminationOrderAPIView):
 
     @staticmethod
     def serialize_order(order):
+        appointment = DoctorExaminationOrderDetailAPIView._latest_active_appointment(order)
         return {
             "id": order.id,
             "case_id": order.case_id,
@@ -1055,7 +1071,15 @@ class DoctorExaminationOrderDetailAPIView(DoctorExaminationOrderAPIView):
             "purpose": order.purpose,
             "clinical_note": order.clinical_note,
             "created_at": order.created_at,
+            "scheduled_at": appointment.scheduled_at if appointment else None,
+            "appointment_status": appointment.appointment_status if appointment else None,
         }
+
+    @staticmethod
+    def _latest_active_appointment(order):
+        return order.appointments.exclude(
+            appointment_status=Appointment.AppointmentStatus.CANCELLED,
+        ).order_by("-scheduled_at").first()
 
     def patch(self, request, case_id, order_id):
         order, error_response = self.get_order(request, case_id, order_id)

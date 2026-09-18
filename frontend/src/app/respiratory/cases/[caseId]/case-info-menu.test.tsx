@@ -19,4 +19,18 @@ describe("CaseInfoMenu", () => {
     expect(screen.getByRole("button", { name: "PD-L1" }).getAttribute("aria-current")).toBe("page");
     expect(screen.getByRole("button", { name: "PET-CT / TNM 병기" }).getAttribute("aria-current")).toBeNull();
   });
+
+  it("locks future stages while leaving completed stages and the overview available", () => {
+    const onSelect = vi.fn();
+    render(<CaseInfoMenu selected="XRAY" currentStage="XRAY" onSelect={onSelect} />);
+
+    const ct = screen.getByRole("button", { name: "흉부 CT" });
+    expect(ct).toBeDisabled();
+    expect(ct.getAttribute("title")).toContain("이전 단계");
+    fireEvent.click(ct);
+    fireEvent.click(screen.getByRole("button", { name: "전체 요약" }));
+
+    expect(onSelect).toHaveBeenCalledTimes(1);
+    expect(onSelect).toHaveBeenCalledWith("OVERVIEW");
+  });
 });

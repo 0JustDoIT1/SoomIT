@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { useRespiratoryToast } from "../../_components/respiratory-toast-provider";
@@ -23,6 +23,7 @@ import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
+import { TreatmentDecisionPanel } from "./treatment-decision-panel";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
 import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
@@ -450,6 +451,7 @@ export default function RespiratoryCaseDetailPage() {
   const [stageOrderNotice, setStageOrderNotice] = useState("");
 
   const [searchText, setSearchText] = useState("");
+  const deferredSearchText = useDeferredValue(searchText);
 
   const [selectedMainMenu, setSelectedMainMenu] =
   useState<MainMenu>("AI");
@@ -527,13 +529,15 @@ export default function RespiratoryCaseDetailPage() {
   const refreshCaseResults = useCallback(async () => {
     setResultsSyncing(true);
     try {
-      const [aiResponse, clinicalResponse] = await Promise.all([
+      const [aiResponse, clinicalResponse, ordersResponse] = await Promise.all([
         authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`),
         authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`),
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`),
       ]);
-      const [aiPayload, clinicalPayload] = await Promise.all([
-        aiResponse.ok ? aiResponse.json() : Promise.resolve([]),
-        clinicalResponse.ok ? clinicalResponse.json() : Promise.resolve([]),
+      const [aiPayload, clinicalPayload, ordersPayload] = await Promise.all([
+        aiResponse.ok ? aiResponse.json() : Promise.resolve(null),
+        clinicalResponse.ok ? clinicalResponse.json() : Promise.resolve(null),
+        ordersResponse.ok ? ordersResponse.json() : Promise.resolve(null),
       ]);
       if (!canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) return;
       if (Array.isArray(aiPayload)) {
@@ -541,14 +545,20 @@ export default function RespiratoryCaseDetailPage() {
         setPdl1Results(selectPdl1Results(aiPayload));
       }
       if (Array.isArray(clinicalPayload)) setTnmClinicalResults(clinicalPayload as TnmClinicalResult[]);
-      const signature = `${caseId}:${resultSyncSignature(aiPayload)}:${resultSyncSignature(clinicalPayload)}`;
-      const previousSignature = resultSignatureRef.current;
-      if (previousSignature.startsWith(`${caseId}:`) && previousSignature !== signature) {
-        setResultSyncNotice("새 AI 또는 전문의 결과가 반영되었습니다.");
-        window.setTimeout(() => setResultSyncNotice(""), 6000);
+      if (Array.isArray(ordersPayload)) {
+        setCaseOrders(ordersPayload as ExaminationOrder[]);
+        setOrdersLoaded(true);
       }
-      resultSignatureRef.current = signature;
-      setLastResultSyncAt(new Date());
+      if (Array.isArray(aiPayload) && Array.isArray(clinicalPayload) && Array.isArray(ordersPayload)) {
+        const signature = `${caseId}:${resultSyncSignature(aiPayload)}:${resultSyncSignature(clinicalPayload)}:${orderSyncSignature(ordersPayload)}`;
+        const previousSignature = resultSignatureRef.current;
+        if (previousSignature.startsWith(`${caseId}:`) && previousSignature !== signature) {
+          setResultSyncNotice("새 결과 또는 검사 예약 정보가 반영되었습니다.");
+          window.setTimeout(() => setResultSyncNotice(""), 6000);
+        }
+        resultSignatureRef.current = signature;
+        setLastResultSyncAt(new Date());
+      }
     } finally {
       if (canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) setResultsSyncing(false);
     }
@@ -821,7 +831,7 @@ export default function RespiratoryCaseDetailPage() {
   }, [caseId, refreshCaseResults]);
 
   const filteredCases = cases.filter((item) => {
-    const keyword = searchText.trim().toLowerCase();
+    const keyword = deferredSearchText.trim().toLowerCase();
 
     if (!keyword) {
       return true;
@@ -996,6 +1006,9 @@ export default function RespiratoryCaseDetailPage() {
     (result) => result.workflow_stage === "PET_CT_TNM"
   );
   const currentStageClinicalResult = tnmClinicalResults.find((result) => result.workflow_stage === selectedCase?.current_stage && result.result_status === "CONFIRMED");
+  const selectedStageActiveOrder = caseOrders.find(
+    (order) => order.order_type === selectedInfoMenu && ["ORDERED", "SCHEDULED"].includes(order.status),
+  );
 
   const tnmClinical =
     tnmClinicalResult?.result_detail?.tnm;
@@ -1678,6 +1691,10 @@ export default function RespiratoryCaseDetailPage() {
           actions={currentActions}
           onNavigate={(href) => router.push(href)}
           onOpen={(action) => {
+            if (action.source !== "AI") {
+              handleInfoMenuSelect(action.target);
+              return;
+            }
             const analysisType = analysisTypeByActionTarget[action.target];
             if (!analysisType) {
               handleInfoMenuSelect(action.target);
@@ -1713,7 +1730,7 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{(selectedInfoMenu === "CT" || selectedInfoMenu === "PET_CT_TNM" || selectedInfoMenu === "PATHOLOGY_GENE") && <StageExaminationOrder caseId={caseId} orderType={NEXT_ORDER_BY_INFO_MENU[selectedInfoMenu]} onCreated={(orderType) => { const message = `${orderType === "CT" ? "흉부 CT" : orderType === "PET_CT_TNM" ? "PET-CT / TNM" : orderType === "PATHOLOGY_GENE" ? "조직/유전자" : "PD-L1"} 오더가 생성되었습니다.`; setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); showToast(message); }} />}{selectedCase && selectedCase.current_stage !== "XRAY" && selectedInfoMenu === selectedCase.current_stage && <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} confirmedResultId={currentStageClinicalResult?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />}</div>
+          <div className="flex shrink-0 items-center gap-2">{selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{(selectedInfoMenu === "CT" || selectedInfoMenu === "PET_CT_TNM" || selectedInfoMenu === "PATHOLOGY_GENE") && <StageExaminationOrder caseId={caseId} orderType={NEXT_ORDER_BY_INFO_MENU[selectedInfoMenu]} onCreated={(orderType) => { const message = `${orderType === "CT" ? "흉부 CT" : orderType === "PET_CT_TNM" ? "PET-CT / TNM" : orderType === "PATHOLOGY_GENE" ? "조직/유전자" : "PD-L1"} 오더가 생성되었습니다.`; setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); showToast(message); }} />}{selectedCase && selectedCase.current_stage !== "XRAY" && selectedInfoMenu === selectedCase.current_stage && <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} confirmedResultId={currentStageClinicalResult?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />}</div>
         </div>
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
@@ -2078,6 +2095,16 @@ export default function RespiratoryCaseDetailPage() {
           <PatientSafetyDataPanel key={caseId} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} />
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "FINAL_PLAN" ? (
+          <TreatmentDecisionPanel
+            caseId={caseId}
+            apiBaseUrl={API_BASE_URL}
+            authorizedFetch={authorizedFetch}
+            onTreatmentChanged={() => {
+              showToast("치료결정 정보가 저장되었습니다.");
+              setCaseRefreshVersion((current) => current + 1);
+            }}
+          />
+        ) : false ? (
           <TreatmentSection className="grid grid-cols-[minmax(280px,0.75fr)_minmax(0,1.25fr)] items-start gap-3">
             <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
               <div>
@@ -2233,8 +2260,8 @@ export default function RespiratoryCaseDetailPage() {
                     AI 추천 반영 여부
                   </span>
                   <span className="text-sm font-semibold text-emerald-700">
-                    {caseTreatmentDecision.ai_recommendation_action_label ??
-                      caseTreatmentDecision.ai_recommendation_action}
+                    {caseTreatmentDecision?.ai_recommendation_action_label ??
+                      caseTreatmentDecision?.ai_recommendation_action}
                   </span>
                 </div>
               )}
@@ -3114,11 +3141,28 @@ function formatBirthDate(value: string) {
   return `${year}.${month}.${day}`;
 }
 
+function formatActiveOrderSchedule(order: ExaminationOrder) {
+  const status = order.appointment_status === "CONFIRMED" ? "예약 확정" : order.appointment_status === "REQUESTED" ? "예약 요청" : "예약 미배정";
+  if (!order.scheduled_at) return status;
+  const date = new Date(order.scheduled_at);
+  const formattedDate = Number.isNaN(date.getTime()) ? order.scheduled_at : date.toLocaleString("ko-KR");
+  return `${status} · ${formattedDate}`;
+}
+
 function resultSyncSignature(value: unknown) {
   if (!Array.isArray(value)) return "";
   return value.map((item) => {
     if (!item || typeof item !== "object") return "";
     const record = item as Record<string, unknown>;
     return [record.id, record.status, record.result_status, record.completed_at, record.result_date].map((part) => String(part ?? "")).join(":");
+  }).sort().join("|");
+}
+
+function orderSyncSignature(value: unknown) {
+  if (!Array.isArray(value)) return "";
+  return value.map((item) => {
+    if (!item || typeof item !== "object") return "";
+    const order = item as Record<string, unknown>;
+    return [order.id, order.status, order.scheduled_at, order.appointment_status].map((part) => String(part ?? "")).join(":");
   }).sort().join("|");
 }

@@ -14,7 +14,7 @@ type ActionCase = { id: string; current_stage: string; case_status: string };
 type ActionClinicalResult = { id?: string; workflow_stage: string; result_status?: string; result_status_label?: string; result_detail?: unknown };
 type ActionAiResult = { id?: string; analysis_type: string; status?: string; status_label?: string };
 type ActionPrescription = { id: string; prescription_status: string; prescription_status_label?: string };
-type ActionOrder = { id: string; order_type: string; order_type_label?: string; status: string };
+type ActionOrder = { id: string; order_type: string; order_type_label?: string; status: string; scheduled_at?: string | null; appointment_status?: string | null };
 
 const STAGE_CONFIG: Record<string, { clinicalTitle: string; aiTitle: string; aiType: string; target: ActionTarget }> = {
   XRAY: { clinicalTitle: "흉부 X선 판독 결과 확인", aiTitle: "흉부 X선 AI 후보 확인", aiType: "XRAY_ANALYSIS", target: "XRAY" },
@@ -50,7 +50,7 @@ export function deriveCurrentActions(caseDetail: ActionCase, clinicalResults: Ac
         title: `${order.order_type_label || getOrderTypeLabel(order.order_type)} 오더 상태 확인`,
         source: "ORDER",
         sourceLabel: "검사 오더",
-        status: getOrderStatusLabel(order.status),
+        status: getOrderActionStatus(order),
         href: `/respiratory/cases/${caseDetail.id}`,
         target: orderConfig.target,
       });
@@ -83,6 +83,20 @@ function getOrderTypeLabel(orderType: string) {
 
 function getOrderStatusLabel(status: string) {
   return status === "ORDERED" ? "오더 요청됨" : status === "SCHEDULED" ? "예약됨" : status;
+}
+
+function getOrderActionStatus(order: ActionOrder) {
+  if (!order.scheduled_at) {
+    return order.appointment_status === "REQUESTED" ? "예약 요청 · 일시 미배정" : getOrderStatusLabel(order.status);
+  }
+  const appointmentLabel = order.appointment_status === "CONFIRMED"
+    ? "예약 확정"
+    : order.appointment_status === "REQUESTED"
+      ? "예약 요청"
+      : "예약 배정";
+  const date = new Date(order.scheduled_at);
+  const formattedDate = Number.isNaN(date.getTime()) ? order.scheduled_at : date.toLocaleString("ko-KR");
+  return `${appointmentLabel} · ${formattedDate}`;
 }
 
 function hasPdl1Detail(detail: unknown) {
