@@ -23,6 +23,20 @@ describe("CaseCoordinationPanels", () => {
     expect(screen.getByRole("button", { name: "결정 저장" })).toBeDisabled();
   });
 
+  it("refreshes orders so a patient-app appointment time appears without reopening the workspace", async () => {
+    vi.useFakeTimers();
+    try {
+      render(<CaseCoordinationPanels caseId="case-1" />);
+      expect(fetchOrdersMock).toHaveBeenCalledTimes(1);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(fetchOrdersMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reviews then creates a PET-CT/TNM order with the common API", async () => {
     const user = userEvent.setup(); render(<CaseCoordinationPanels caseId="case-1" />);
     await user.click(await screen.findByRole("button", { name: "오더 작성 시작" }));

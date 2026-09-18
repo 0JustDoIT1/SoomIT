@@ -15,6 +15,8 @@ export function CurrentActionQueue({ actions, onNavigate, onOpen }: { actions: C
 }
 
 function completionCondition(action: CurrentAction) {
+  if (action.source === "ORDER" && action.status.startsWith("예약 확정")) return "예약된 검사 완료 후 원본 영상 또는 결과가 연동";
+  if (action.source === "ORDER" && action.status.startsWith("예약 요청")) return "환자 예약 확정 및 검사 완료를 확인";
   if (action.source === "AI") return "AI 후보를 확인하고 전문의 소견을 입력";
   if (action.source === "SPECIALIST") return "확정 소견과 다음 진료 단계를 확인";
   if (action.source === "ORDER") return "검사 완료 후 원본 영상 또는 결과가 연결됨";

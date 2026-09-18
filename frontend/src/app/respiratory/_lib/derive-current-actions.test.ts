@@ -81,6 +81,20 @@ describe("deriveCurrentActions", () => {
     expect(actions[0]).toMatchObject({ source: "ORDER", target: "CT", status: "오더 요청됨" });
   });
 
+  it("includes confirmed appointment timing in active order work", () => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "CT" },
+      [],
+      [],
+      [],
+      [{ id: "ct-scheduled", order_type: "CT", order_type_label: "흉부 CT", status: "SCHEDULED", appointment_status: "CONFIRMED", scheduled_at: "2026-09-20T01:30:00Z" }],
+    );
+
+    expect(actions).toHaveLength(1);
+    expect(actions[0].status).toContain("예약 확정");
+    expect(actions[0].status).toContain("2026");
+  });
+
   it("does not create review work for AI analyses without a completed result", () => {
     for (const status of ["PENDING", "RUNNING", "FAILED"]) {
       expect(deriveCurrentActions(

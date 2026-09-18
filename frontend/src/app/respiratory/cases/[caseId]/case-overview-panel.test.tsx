@@ -80,6 +80,8 @@ describe("CaseOverviewPanel", () => {
           status: "ORDERED",
           priority: "NORMAL",
           created_at: "2026-09-15T03:00:00Z",
+          scheduled_at: "2026-09-20T01:30:00Z",
+          appointment_status: "CONFIRMED",
         }]}
         ordersLoaded
       />,
@@ -87,6 +89,9 @@ describe("CaseOverviewPanel", () => {
 
     expect(screen.getByText("오더 진행 중")).toBeTruthy();
     expect(screen.getByText("1건")).toBeTruthy();
+    expect(screen.getByText("진행 중 검사 예약")).toBeTruthy();
+    expect(screen.getByText(/예약 확정/)).toBeTruthy();
+    expect(screen.getByText(/2026\. 9\. 20\./)).toBeTruthy();
     expect(screen.queryByText("결과 조회됨")).toBeNull();
   });
 });

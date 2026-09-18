@@ -43,7 +43,7 @@ type CaseOverviewPanelProps = {
   clinicalResults: OverviewClinicalResult[];
   aiResults: OverviewAiResult[];
   prescriptions?: { id: string; prescription_status?: string }[];
-  orders?: { id: string; order_type: string; order_type_label: string; status: string; priority: string; purpose?: string; created_at: string }[];
+  orders?: { id: string; order_type: string; order_type_label: string; status: string; priority: string; purpose?: string; created_at: string; scheduled_at?: string | null; appointment_status?: string | null }[];
   ordersLoaded?: boolean;
 };
 
@@ -54,6 +54,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
     .sort((left, right) => toTimestamp(right.result_date) - toTimestamp(left.result_date));
   const flowItems = buildFlowItems(caseData.current_stage, clinicalResults, aiResults, prescriptions, orders);
   const activeOrderCount = orders.filter((order) => ["ORDERED", "SCHEDULED"].includes(order.status)).length;
+  const activeOrders = orders.filter((order) => ["ORDERED", "SCHEDULED"].includes(order.status)).slice(0, 3);
 
   return (
     <section className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -116,6 +117,10 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
           ) : (
             <EmptyState message="현재 기록된 호흡기내과 판단이 없습니다." />
           )}
+          <section className="mt-3 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2.5">
+            <p className="text-[10px] font-semibold text-blue-700">진행 중 검사 예약</p>
+            {activeOrders.length ? <div className="mt-2 space-y-1.5">{activeOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 text-[11px]"><span className="min-w-0 truncate font-semibold text-slate-700">{order.order_type_label}</span><span className="shrink-0 text-slate-500">{order.scheduled_at ? `${appointmentStatusLabel(order.appointment_status)} · ${formatDate(order.scheduled_at)}` : "예약 미배정"}</span></div>)}</div> : <p className="mt-2 text-[11px] text-slate-400">진행 중인 검사 오더가 없습니다.</p>}
+          </section>
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
             <p className="text-[10px] text-slate-400">Case 상태</p>
             <p className="mt-1 text-xs font-bold text-slate-700">{getCaseStatusLabel(caseData.case_status)}</p>
@@ -173,6 +178,12 @@ function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalR
     const state = stages.includes(currentStage) ? "current" : clinicalConfirmed ? "confirmed" : aiCompleted ? "ai" : hasActiveOrder(stages[0]) ? "ordered" : prescriptionRecorded ? "recorded" : "empty";
     return { label, state: state as FlowState };
   });
+}
+
+function appointmentStatusLabel(status?: string | null) {
+  if (status === "CONFIRMED") return "예약 확정";
+  if (status === "REQUESTED") return "예약 요청";
+  return "예약 배정";
 }
 
 function hasPdl1Detail(detail: unknown) {
