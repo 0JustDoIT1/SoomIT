@@ -25,8 +25,13 @@ export function AdminLoginInput({
   rightSlot,
 }: AdminLoginInputProps) {
   return (
-    <div className={styles.inputWrap}>
-      <span className={styles.inputIcon} aria-hidden="true">
+    <div className={styles.inputField}>
+      <label htmlFor={id} className={styles.inputLabel}>
+        {icon === "user" ? "아이디" : "비밀번호"}
+      </label>
+
+      <div className={styles.inputWrap}>
+        <span className={styles.inputIcon} aria-hidden="true">
         {icon === "user" ? (
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7">
             <circle cx="12" cy="8" r="3" />
@@ -38,9 +43,9 @@ export function AdminLoginInput({
             <path d="M8 10V7a4 4 0 0 1 8 0v3" />
           </svg>
         )}
-      </span>
+        </span>
 
-      <input
+        <input
         id={id}
         type={type}
         value={value}
@@ -48,9 +53,10 @@ export function AdminLoginInput({
         placeholder={placeholder}
         autoComplete={autoComplete}
         className={styles.input}
-      />
+        />
 
-      {rightSlot ? <span className={styles.inputRight}>{rightSlot}</span> : null}
+        {rightSlot ? <span className={styles.inputRight}>{rightSlot}</span> : null}
+      </div>
     </div>
   );
 }

@@ -1,11 +1,15 @@
 import Link from "next/link";
+import Image from "next/image";
 import { AdminLoginPanel } from "./admin-login-panel";
 import styles from "./admin-login.module.css";
 
 export default function AdminLoginPage() {
   return (
     <main className={styles.page}>
-      <div className={styles.overlay} />
+      <div className={styles.backgroundOrb} aria-hidden="true" />
+      <div className={styles.backgroundOrbSmall} aria-hidden="true" />
+      <div className={styles.backgroundWave} aria-hidden="true" />
+      <div className={styles.backgroundWaveSecondary} aria-hidden="true" />
 
       <header className={styles.header}>
         <div className={styles.brand}>
@@ -27,30 +31,38 @@ export default function AdminLoginPage() {
       </header>
 
       <section className={styles.loginArea}>
-        <div className={styles.loginContainer}>
-          <div className={styles.securityIcon} aria-hidden="true">
-            <svg
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-            >
-              <path d="M12 3 5 6v5c0 4.8 2.8 8 7 10 4.2-2 7-5.2 7-10V6l-7-3Z" />
-              <rect x="9" y="10" width="6" height="5" rx="1" />
-              <path d="M10.5 10V8.8a1.5 1.5 0 0 1 3 0V10" />
-            </svg>
+        <div className={styles.content}>
+          <div className={styles.brandHero}>
+            <Image
+              className={styles.brandImage}
+              src="/images/logo_full.png"
+              alt="숨-잇"
+              width={1254}
+              height={1254}
+              priority
+            />
+
+            <div className={styles.brandFooter}>
+              <strong>더 나은 진단, 더 건강한 내일</strong>
+              <span>LUNG CANCER CLINICAL DECISION SUPPORT SYSTEM</span>
+            </div>
           </div>
 
-          <h1 className={styles.title}>
-            <span>ADMIN</span> LOGIN
-          </h1>
+          <div className={styles.loginContainer}>
+            <h1 className={styles.title}>관리자 로그인</h1>
 
-          <div className={styles.description}>
-            <p>관리자 전용 페이지입니다.</p>
-            <p>승인된 계정으로만 접속할 수 있습니다.</p>
+            <div className={styles.description}>
+              <p>관리자 전용 페이지입니다.</p>
+              <p>승인된 계정으로만 접속할 수 있습니다.</p>
+            </div>
+
+            <AdminLoginPanel />
+
+            <div className={styles.securityNotice}>
+              <strong>이 서비스는 의료진 전용 서비스입니다.</strong>
+              <p>안전한 의료 데이터 보호를 위해 최선을 다하고 있습니다.</p>
+            </div>
           </div>
-
-          <AdminLoginPanel />
         </div>
       </section>
     </main>
