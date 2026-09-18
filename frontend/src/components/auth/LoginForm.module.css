@@ -1,111 +1,116 @@
 .page {
   min-height: 100vh;
   position: relative;
-
   display: flex;
   align-items: center;
   justify-content: center;
-
   overflow: hidden;
-  padding: 30px 20px;
-
+  padding: 56px 48px;
   background:
-    linear-gradient(
-      135deg,
-      #7fe4df 0%,
-      #4fd4d1 28%,
-      #baf2ee 52%,
-      #49cfcd 76%,
-      #82e5df 100%
-    );
+    radial-gradient(circle at 62% 24%, rgba(82, 175, 255, 0.16), transparent 31%),
+    radial-gradient(circle at 10% 70%, rgba(45, 212, 191, 0.13), transparent 31%),
+    radial-gradient(circle at 90% 88%, rgba(96, 165, 250, 0.1), transparent 26%),
+    linear-gradient(135deg, #fbfdff 0%, #f4f9fe 53%, #f9fcff 100%);
 }
 
 /* =========================
-   배경 스머징
+   은은한 원형 gradient 장식
 ========================= */
 
 .page::before {
   content: "";
   position: absolute;
 
-  inset: -220px;
+  top: -20%;
+  left: 40%;
+  width: 720px;
+  height: 720px;
 
-  background:
-    /* 중앙 흰색 번짐 */
-    radial-gradient(
-      ellipse at 50% 42%,
-      rgba(255, 255, 255, 0.98) 0%,
-      rgba(255, 255, 255, 0.82) 20%,
-      rgba(255, 255, 255, 0.5) 38%,
-      rgba(255, 255, 255, 0.18) 56%,
-      transparent 74%
-    ),
+  border-radius: 50%;
 
-    /* 왼쪽 청록 */
-    radial-gradient(
-      circle at 3% 30%,
-      rgba(0, 190, 188, 0.88) 0%,
-      rgba(0, 190, 188, 0.52) 24%,
-      rgba(0, 190, 188, 0.18) 48%,
-      transparent 72%
-    ),
-
-    /* 오른쪽 위 */
-    radial-gradient(
-      circle at 96% 20%,
-      rgba(0, 205, 197, 0.8) 0%,
-      rgba(0, 205, 197, 0.46) 25%,
-      rgba(0, 205, 197, 0.14) 50%,
-      transparent 74%
-    ),
-
-    /* 왼쪽 아래 */
-    radial-gradient(
-      circle at 18% 88%,
-      rgba(51, 220, 207, 0.62) 0%,
-      rgba(51, 220, 207, 0.32) 30%,
-      transparent 70%
-    ),
-
-    /* 오른쪽 아래 */
-    radial-gradient(
-      circle at 88% 84%,
-      rgba(0, 158, 170, 0.68) 0%,
-      rgba(0, 158, 170, 0.32) 30%,
-      transparent 70%
-    );
-
-  filter: blur(115px);
-
-  transform: scale(1.12);
+  background: radial-gradient(
+    circle,
+    rgba(83, 205, 224, 0.09) 0%,
+    rgba(75, 138, 246, 0.04) 44%,
+    transparent 70%
+  );
 
   pointer-events: none;
 }
 
-/* 중앙 안개층 */
 .page::after {
   content: "";
   position: absolute;
 
-  inset: -150px;
+  left: -12%;
+  bottom: -16%;
+  width: 80%;
+  height: 43%;
+  border: 1px solid rgba(56, 189, 248, 0.22);
+  border-radius: 44% 60% 0 0 / 50% 52% 0 0;
+  background: linear-gradient(112deg, rgba(45, 212, 191, 0.13), rgba(96, 165, 250, 0.12) 55%, rgba(255, 255, 255, 0.16));
+  transform: rotate(7deg);
 
-  background:
-    radial-gradient(
-      ellipse at 50% 43%,
-      rgba(255, 255, 255, 0.68) 0%,
-      rgba(255, 255, 255, 0.44) 32%,
-      rgba(255, 255, 255, 0.13) 56%,
-      transparent 78%
-    );
+  pointer-events: none;
+}
 
-  filter: blur(90px);
+.backgroundOrb {
+  position: absolute;
+  z-index: 0;
+  left: 40%;
+  bottom: 10%;
+  width: 92px;
+  height: 92px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(45, 212, 191, 0.38), rgba(96, 165, 250, 0.38));
+  opacity: 0.72;
+  pointer-events: none;
+}
 
+.backgroundOrbSmall {
+  position: absolute;
+  z-index: 0;
+  left: 43.5%;
+  top: 36%;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: linear-gradient(145deg, rgba(110, 231, 183, 0.4), rgba(96, 165, 250, 0.42));
+  opacity: 0.68;
+  pointer-events: none;
+}
+
+.backgroundWave {
+  position: absolute;
+  z-index: 0;
+  left: -18%;
+  bottom: -17%;
+  width: 86%;
+  height: 45%;
+  border: 1px solid rgba(45, 212, 191, 0.28);
+  border-radius: 48% 58% 0 0 / 54% 48% 0 0;
+  background: linear-gradient(100deg, rgba(255, 255, 255, 0.04), rgba(45, 212, 191, 0.07), rgba(59, 130, 246, 0.08));
+  transform: rotate(-5deg);
+  pointer-events: none;
+}
+
+.backgroundWaveSecondary {
+  position: absolute;
+  z-index: 0;
+  right: -23%;
+  bottom: -24%;
+  width: 85%;
+  height: 49%;
+  border: 1px solid rgba(96, 165, 250, 0.22);
+  border-radius: 57% 43% 0 0 / 50% 58% 0 0;
+  background: linear-gradient(120deg, rgba(96, 165, 250, 0.08), rgba(45, 212, 191, 0.07), transparent 70%);
+  transform: rotate(-10deg);
   pointer-events: none;
 }
 
 
 /* =========================
-   전체 로그인 영역
+   전체 로그인 영역 (데스크톱 2열)
 ========================= */
 
 .container {
@@ -113,41 +118,40 @@
   z-index: 1;
 
   width: 100%;
-  max-width: 470px;
+  max-width: 1180px;
+
+  display: grid;
+  grid-template-columns: minmax(380px, 1.05fr) minmax(440px, 0.95fr);
+  align-items: center;
+  gap: clamp(56px, 8vw, 112px);
 }
 
 
 /* =========================
-   상단 브랜드
+   좌측 브랜드
 ========================= */
 
 .brand {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   text-align: center;
-
-  margin-bottom: 34px;
 }
 
-.title {
-  margin: 0;
+.logoWrap {
+  width: min(100%, 470px);
+  filter: drop-shadow(0 14px 28px rgba(37, 99, 235, 0.09));
+}
 
-  font-family:
-    "Pretendard",
-    "Noto Sans KR",
-    "Apple SD Gothic Neo",
-    sans-serif;
-
-  font-size: 40px;
-  line-height: 1;
-
-  font-weight: 800;
-
-  letter-spacing: -2px;
-
-  color: #007f87;
+.logo {
+  display: block;
+  width: 100%;
+  height: auto;
+  mix-blend-mode: multiply;
 }
 
 .subtitle {
-  margin: 11px 0 0;
+  margin: -12px 0 0;
 
   font-family:
     "Inter",
@@ -155,74 +159,33 @@
     sans-serif;
 
   font-size: 12px;
-  font-weight: 500;
-
-  letter-spacing: 2px;
-
-  color: rgba(7, 80, 89, 0.64);
+  font-weight: 600;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: #7180a4;
 }
 
 
 /* =========================
-   로그인 외곽 박스
+   우측 로그인 카드
 ========================= */
 
 .card {
   position: relative;
 
   width: 100%;
+  max-width: 500px;
+  margin: 0 auto;
 
-  padding: 46px 32px 22px;
+  padding: 50px 48px 38px;
 
-  /* 배경과 자연스럽게 섞이도록 거의 투명 */
-  background: rgba(255, 255, 255, 0.025);
+  background: #ffffff;
 
-  border: 4px solid rgba(255, 255, 255, 0.95);
-  border-radius: 19px;
-
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  border-radius: 22px;
   box-shadow:
-    0 14px 34px rgba(0, 102, 108, 0.045),
-    inset 0 0 22px rgba(255, 255, 255, 0.025);
-
-  backdrop-filter: blur(1px);
-  -webkit-backdrop-filter: blur(1px);
-}
-
-
-/* =========================
-   사람 아이콘
-========================= */
-
-.card::before {
-  content: "";
-
-  position: absolute;
-
-  top: -39px;
-  left: 50%;
-
-  width: 72px;
-  height: 72px;
-
-  transform: translateX(-50%);
-
-  border: 5px solid rgba(255, 255, 255, 0.98);
-  border-radius: 50%;
-
-  background:
-    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='36' r='15' fill='none' stroke='white' stroke-width='4'/%3E%3Cpath d='M25 79c2-18 12-28 25-28s23 10 25 28' fill='none' stroke='white' stroke-width='4' stroke-linecap='round'/%3E%3C/svg%3E")
-      center / 61% 61% no-repeat,
-
-    linear-gradient(
-      145deg,
-      #2edbd3 0%,
-      #00b8bb 52%,
-      #00828c 100%
-    );
-
-  box-shadow:
-    0 8px 20px rgba(0, 127, 136, 0.18),
-    0 0 22px rgba(43, 222, 211, 0.24);
+    0 28px 70px rgba(30, 64, 175, 0.09),
+    0 8px 24px rgba(15, 23, 42, 0.04);
 }
 
 
@@ -231,39 +194,35 @@
 ========================= */
 
 .cardTitle {
-  margin: 0 0 5px;
-
-  text-align: center;
+  margin: 0 0 8px;
 
   font-family:
     "Pretendard",
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 24px;
+  font-size: 30px;
   line-height: 1.3;
 
   font-weight: 700;
 
   letter-spacing: -0.8px;
 
-  color: #07525d;
+  color: #172554;
 }
 
 .description {
-  margin: 0 0 16px;
-
-  text-align: center;
+  margin: 0 0 30px;
 
   font-family:
     "Pretendard",
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.5;
 
-  color: rgba(8, 78, 87, 0.64);
+  color: #64748b;
 }
 
 
@@ -276,7 +235,7 @@
 
   flex-direction: column;
 
-  gap: 10px;
+  gap: 17px;
 }
 
 .form label {
@@ -285,10 +244,34 @@
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 700;
+  color: #1e2f5f;
+}
 
-  color: #075963;
+.fieldWithIcon {
+  position: relative;
+}
+
+.fieldIcon {
+  position: absolute;
+  z-index: 1;
+  left: 16px;
+  bottom: 15px;
+  width: 21px;
+  height: 21px;
+  color: #6577a6;
+  pointer-events: none;
+}
+
+.fieldIcon svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 
@@ -297,25 +280,25 @@
 ========================= */
 
 .form input {
-  min-height: 42px;
+  min-height: 52px !important;
 
-  padding-left: 14px;
-  padding-right: 14px;
+  padding-left: 48px !important;
+  padding-right: 16px !important;
 
   font-family:
     "Pretendard",
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 12px;
+  font-size: 14px !important;
 
-  color: #164e57;
+  color: #172554;
 
-  background: rgba(255, 255, 255, 0.92);
+  background: #ffffff !important;
 
-  border: 1px solid rgba(164, 190, 193, 0.6);
+  border: 1px solid #cbd5e1 !important;
 
-  border-radius: 8px;
+  border-radius: 12px !important;
 
   outline: none;
 
@@ -326,21 +309,22 @@
 }
 
 .form input::placeholder {
-  color: #9bb4b7;
+  color: #94a3b8;
 }
 
 .form input:hover {
-  background: rgba(255, 255, 255, 0.97);
+  background: #ffffff !important;
+  border-color: rgba(59, 130, 246, 0.55) !important;
 }
 
 .form input:focus {
-  background: #ffffff;
+  background: #ffffff !important;
 
-  border-color: #13bdbd;
+  border-color: #3b82f6 !important;
 
   box-shadow:
-    0 0 0 3px rgba(0, 184, 181, 0.1),
-    0 4px 12px rgba(0, 128, 136, 0.06);
+    0 0 0 3px rgba(59, 130, 246, 0.13),
+    0 4px 12px rgba(14, 165, 233, 0.06);
 }
 
 
@@ -349,33 +333,31 @@
 ========================= */
 
 .form button {
-  min-height: 43px;
+  min-height: 52px !important;
 
-  margin-top: 1px;
+  margin-top: 4px;
 
-  border: none;
-  border-radius: 8px;
+  border: none !important;
+  border-radius: 12px !important;
 
   font-family:
     "Pretendard",
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 12px;
+  font-size: 15px !important;
   font-weight: 700;
 
   color: #ffffff;
 
-  background:
-    linear-gradient(
-      90deg,
-      #008e99 0%,
-      #00b5b7 52%,
-      #25d4cb 100%
-    );
+  background: linear-gradient(
+    90deg,
+    #2563eb 0%,
+    #168dd7 48%,
+    #20c8b8 100%
+  ) !important;
 
-  box-shadow:
-    0 7px 17px rgba(0, 139, 150, 0.16);
+  box-shadow: 0 10px 24px rgba(37, 99, 235, 0.22);
 
   transition:
     transform 160ms ease,
@@ -388,8 +370,7 @@
 
   filter: saturate(1.08);
 
-  box-shadow:
-    0 9px 20px rgba(0, 139, 150, 0.21);
+  box-shadow: 0 13px 28px rgba(37, 99, 235, 0.28);
 }
 
 .form button:active:not(:disabled) {
@@ -404,11 +385,13 @@
 
 
 /* =========================
-   하단 안내
+   하단 안내 (연한 blue/teal 정보 박스)
 ========================= */
 
 .notice {
-  margin: 1px 0 0;
+  margin: 4px 0 0;
+
+  padding: 13px 16px;
 
   text-align: center;
 
@@ -417,36 +400,43 @@
     "Noto Sans KR",
     sans-serif;
 
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
 
-  color: rgba(9, 78, 87, 0.5);
+  color: #0f7181;
+  background: linear-gradient(90deg, rgba(45, 212, 191, 0.09), rgba(59, 130, 246, 0.07));
+  border: 1px solid rgba(45, 212, 191, 0.1);
+  border-radius: 11px;
 }
 
 
 /* =========================
-   태블릿
+   태블릿 이하: 1열, 브랜드 축소
 ========================= */
 
-@media (max-width: 768px) {
+@media (max-width: 900px) {
   .page {
-    padding: 28px 20px;
+    padding: 40px 24px;
   }
 
   .container {
-    max-width: 450px;
+    grid-template-columns: 1fr;
+    max-width: 500px;
+    gap: 24px;
   }
 
   .brand {
-    margin-bottom: 42px;
+    margin-bottom: 4px;
   }
 
-  .title {
-    font-size: 38px;
+  .logoWrap {
+    width: 280px;
   }
 
-  .card {
-    padding: 48px 32px 24px;
+  .subtitle {
+    margin-top: -8px;
+    font-size: 10px;
+    letter-spacing: 1.5px;
   }
 }
 
@@ -457,7 +447,8 @@
 
 @media (max-width: 480px) {
   .page {
-    padding: 24px 16px;
+    min-height: 100svh;
+    padding: 28px 16px;
   }
 
   .container {
@@ -465,64 +456,59 @@
   }
 
   .brand {
-    margin-bottom: 40px;
+    display: none;
   }
 
-  .title {
-    font-size: 33px;
+  .backgroundOrbSmall {
+    left: 8%;
+    top: 10%;
+    width: 38px;
+    height: 38px;
   }
 
-  .subtitle {
-    margin-top: 9px;
-
-    font-size: 10px;
-
-    letter-spacing: 1.3px;
+  .backgroundOrb {
+    right: 5%;
+    left: auto;
+    bottom: 7%;
+    width: 62px;
+    height: 62px;
   }
 
   .card {
-    padding:
-      48px
-      20px
-      23px;
-
-    border-width: 3px;
-
-    border-radius: 17px;
-  }
-
-  .card::before {
-    width: 68px;
-    height: 68px;
-
-    top: -37px;
-
-    border-width: 4px;
+    max-width: none;
+    padding: 34px 22px 26px;
+    border-radius: 19px;
   }
 
   .cardTitle {
-    font-size: 23px;
+    font-size: 25px;
   }
 
   .description {
     margin-bottom: 18px;
 
-    font-size: 11px;
+    font-size: 12px;
   }
 
   .form {
-    gap: 9px;
+    gap: 12px;
   }
 
   .form input {
-    min-height: 41px;
+    min-height: 48px !important;
+  }
+
+  .fieldIcon {
+    bottom: 14px;
+    width: 20px;
+    height: 20px;
   }
 
   .form button {
-    min-height: 42px;
+    min-height: 48px !important;
   }
 
   .notice {
-    font-size: 10px;
+    font-size: 11px;
   }
 }

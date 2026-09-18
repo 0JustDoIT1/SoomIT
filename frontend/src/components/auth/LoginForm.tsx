@@ -131,41 +131,64 @@ export default function LoginForm() {
       onSubmit={handleSubmit}
       className={styles.form}
     >
-      <Input
-        id="hospital-code"
-        label="병원 코드"
-        type="text"
-        value={hospitalCode}
-        onChange={(event) =>
-          setHospitalCode(event.target.value)
-        }
-        autoComplete="organization"
-        placeholder="병원 코드를 입력해주세요"
-      />
+      <div className={styles.fieldWithIcon}>
+        <span className={styles.fieldIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <path d="M4 21h16M6 21V6.5L12 3l6 3.5V21M9 8h1m4 0h1M9 12h1m4 0h1M9 16h1m4 0h1" />
+          </svg>
+        </span>
+        <Input
+          id="hospital-code"
+          label="병원 코드"
+          type="text"
+          value={hospitalCode}
+          onChange={(event) =>
+            setHospitalCode(event.target.value)
+          }
+          autoComplete="organization"
+          placeholder="병원 코드를 입력해주세요"
+        />
+      </div>
 
-      <Input
-        id="username"
-        label="아이디"
-        type="text"
-        value={username}
-        onChange={(event) =>
-          setUsername(event.target.value)
-        }
-        autoComplete="username"
-        placeholder="아이디를 입력해주세요"
-      />
+      <div className={styles.fieldWithIcon}>
+        <span className={styles.fieldIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <circle cx="12" cy="8" r="3.5" />
+            <path d="M5.5 20c.6-4 2.8-6 6.5-6s5.9 2 6.5 6" />
+          </svg>
+        </span>
+        <Input
+          id="username"
+          label="아이디"
+          type="text"
+          value={username}
+          onChange={(event) =>
+            setUsername(event.target.value)
+          }
+          autoComplete="username"
+          placeholder="아이디를 입력해주세요"
+        />
+      </div>
 
-      <Input
-        id="password"
-        label="비밀번호"
-        type="password"
-        value={password}
-        onChange={(event) =>
-          setPassword(event.target.value)
-        }
-        autoComplete="current-password"
-        placeholder="비밀번호를 입력해주세요"
-      />
+      <div className={styles.fieldWithIcon}>
+        <span className={styles.fieldIcon} aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none">
+            <rect x="5" y="10" width="14" height="11" rx="2" />
+            <path d="M8 10V7a4 4 0 0 1 8 0v3" />
+          </svg>
+        </span>
+        <Input
+          id="password"
+          label="비밀번호"
+          type="password"
+          value={password}
+          onChange={(event) =>
+            setPassword(event.target.value)
+          }
+          autoComplete="current-password"
+          placeholder="비밀번호를 입력해주세요"
+        />
+      </div>
 
       <Alert message={error} />
 
