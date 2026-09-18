@@ -124,6 +124,8 @@ class DoctorProfile(models.Model):
     license_number = models.CharField(max_length=50, unique=True)
     birth_date = models.DateField(null=True, blank=True)
     gender = models.CharField(max_length=20, choices=Gender.choices, null=True, blank=True)
+    phone = models.CharField(max_length=20, null=True, blank=True)
+    email = models.EmailField(null=True, blank=True)
     profile_image_uri = models.CharField(max_length=500, null=True, blank=True)
     tags = ArrayField(models.CharField(max_length=50), default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

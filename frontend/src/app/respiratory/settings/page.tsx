@@ -1,9 +1,40 @@
 'use client';
 
-import { ChangeEvent, FormEvent, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  ChangeEvent,
+  FormEvent,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { useRespiratoryAuth } from '../_components/respiratory-auth-provider';
 
 const ALLOWED_PROFILE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Backend enum/values are unchanged (DoctorProfile.Gender still has
+// OTHER/UNSPECIFIED) - this UI just no longer offers them as choices.
+const GENDER_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: '', label: '미설정' },
+  { value: 'MALE', label: '남' },
+  { value: 'FEMALE', label: '여' },
+];
+const GENDER_LABELS: Record<string, string> = Object.fromEntries(
+  GENDER_OPTIONS.filter((option) => option.value).map((option) => [
+    option.value,
+    option.label,
+  ])
+);
+
+type DoctorProfileData = {
+  license_number?: string;
+  birth_date?: string | null;
+  gender?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  profile_image_uri?: string | null;
+  tags?: string[];
+};
 
 type Profile = {
   name: string;
@@ -11,14 +42,9 @@ type Profile = {
   department?: { name?: string };
   hospital?: { name?: string };
   role?: string;
-  doctor_profile?: {
-    license_number?: string;
-    birth_date?: string | null;
-    gender?: string | null;
-    profile_image_uri?: string | null;
-    tags?: string[];
-  } | null;
+  doctor_profile?: DoctorProfileData | null;
 };
+
 const apiBase = (
   process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
 ).replace(/\/+$/, '');
@@ -26,18 +52,37 @@ const apiBase = (
 export default function RespiratorySettingsPage() {
   const { authorizedFetch } = useRespiratoryAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [licenseNumber, setLicenseNumber] = useState('');
   const [birthDate, setBirthDate] = useState('');
   const [gender, setGender] = useState('');
-  const [tags, setTags] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
+  const [tags, setTags] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState('');
   const [message, setMessage] = useState('');
-  const [orderNotificationsEnabled, setOrderNotificationsEnabled] =
-    useState(true);
-  const [notificationSaving, setNotificationSaving] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Saved profile image (already committed to GCS/DB).
   const [profileImageSrc, setProfileImageSrc] = useState<string | null>(null);
-  const [profileImageUploading, setProfileImageUploading] = useState(false);
+  // Locally-selected file, previewed but not yet uploaded.
+  const [pendingImageFile, setPendingImageFile] = useState<File | null>(null);
+  const [pendingImagePreview, setPendingImagePreview] = useState<string | null>(
+    null
+  );
+  const [profileImageSaving, setProfileImageSaving] = useState(false);
   const [profileImageError, setProfileImageError] = useState('');
   const profileImageObjectUrlRef = useRef<string | null>(null);
+  const pendingImagePreviewRef = useRef<string | null>(null);
+
+  const applyDoctorProfileToForm = useCallback(
+    (doctor: DoctorProfileData | null | undefined) => {
+      setBirthDate(doctor?.birth_date || '');
+      setGender(doctor?.gender || '');
+      setPhone(doctor?.phone || '');
+      setEmail(doctor?.email || '');
+      setTags(doctor?.tags || []);
+    },
+    []
+  );
 
   // Profile images are private GCS objects proxied through an authenticated
   // endpoint, so a plain <img src="..."> can't load them directly - fetch the
@@ -71,10 +116,22 @@ export default function RespiratorySettingsPage() {
     [authorizedFetch]
   );
 
+  const clearPendingImage = useCallback(() => {
+    if (pendingImagePreviewRef.current) {
+      URL.revokeObjectURL(pendingImagePreviewRef.current);
+      pendingImagePreviewRef.current = null;
+    }
+    setPendingImageFile(null);
+    setPendingImagePreview(null);
+  }, []);
+
   useEffect(() => {
     return () => {
       if (profileImageObjectUrlRef.current) {
         URL.revokeObjectURL(profileImageObjectUrlRef.current);
+      }
+      if (pendingImagePreviewRef.current) {
+        URL.revokeObjectURL(pendingImagePreviewRef.current);
       }
     };
   }, []);
@@ -86,12 +143,8 @@ export default function RespiratorySettingsPage() {
         if (!response.ok)
           throw new Error(data.detail || '프로필을 불러오지 못했습니다.');
         setProfile(data);
-        const doctor = data.doctor_profile;
-        setLicenseNumber(doctor?.license_number || '');
-        setBirthDate(doctor?.birth_date || '');
-        setGender(doctor?.gender || '');
-        setTags((doctor?.tags || []).join(', '));
-        void loadProfileImage(Boolean(doctor?.profile_image_uri));
+        applyDoctorProfileToForm(data.doctor_profile);
+        void loadProfileImage(Boolean(data.doctor_profile?.profile_image_uri));
       })
       .catch((error) =>
         setMessage(
@@ -100,64 +153,96 @@ export default function RespiratorySettingsPage() {
             : '프로필을 불러오지 못했습니다.'
         )
       );
-  }, [authorizedFetch, loadProfileImage]);
-  useEffect(() => {
-    void authorizedFetch(`${apiBase}/api/notifications/me/settings/`)
-      .then(async (response) => {
-        const data = await response.json();
-        if (!response.ok)
-          throw new Error(data.detail || '알림 설정을 불러오지 못했습니다.');
-        setOrderNotificationsEnabled(data.enabled !== false);
-      })
-      .catch((error) =>
-        setMessage(
-          error instanceof Error
-            ? error.message
-            : '알림 설정을 불러오지 못했습니다.'
-        )
-      );
-  }, [authorizedFetch]);
+  }, [authorizedFetch, loadProfileImage, applyDoctorProfileToForm]);
+
+  // Independent from the profile-image endpoint below - this only ever
+  // touches birth_date/gender/phone/email/tags, so it never requires an
+  // image, and vice versa.
   const save = async (event: FormEvent) => {
     event.preventDefault();
-    const response = await authorizedFetch(
-      `${apiBase}/api/auth/staff/profile/`,
-      {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          license_number: licenseNumber,
-          birth_date: birthDate || null,
-          gender: gender || null,
-          tags: tags
-            .split(',')
-            .map((tag) => tag.trim())
-            .filter(Boolean),
-        }),
+    setSaving(true);
+    try {
+      const response = await authorizedFetch(
+        `${apiBase}/api/auth/staff/profile/`,
+        {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            birth_date: birthDate || null,
+            gender: gender || null,
+            phone: phone || null,
+            email: email || null,
+            tags,
+          }),
+        }
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setMessage(data.detail || '저장하지 못했습니다.');
+        return;
       }
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      setMessage(data.detail || '저장하지 못했습니다.');
+      setProfile(data);
+      applyDoctorProfileToForm(data.doctor_profile);
+      setMessage('프로필 설정을 저장했습니다.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleCancel = () => {
+    applyDoctorProfileToForm(profile?.doctor_profile);
+    setTagDraft('');
+    setMessage('');
+  };
+
+  const addTag = () => {
+    const trimmed = tagDraft.trim();
+    if (!trimmed || tags.includes(trimmed) || tags.length >= 10) {
+      setTagDraft('');
       return;
     }
-    setProfile(data);
-    setMessage('프로필 설정을 저장했습니다.');
+    setTags((current) => [...current, trimmed]);
+    setTagDraft('');
   };
-  const handleProfileImageSelect = async (
-    event: ChangeEvent<HTMLInputElement>
-  ) => {
+
+  const removeTag = (tag: string) => {
+    setTags((current) => current.filter((item) => item !== tag));
+  };
+
+  // File selection only stages a local preview - nothing is sent to the
+  // server until the user explicitly clicks "변경".
+  const handleProfileImageSelect = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
     if (!ALLOWED_PROFILE_IMAGE_TYPES.includes(file.type)) {
-      setProfileImageError('jpg, png, webp 형식의 이미지만 업로드할 수 있습니다.');
+      setProfileImageError(
+        'jpg, png, webp 형식의 이미지만 업로드할 수 있습니다.'
+      );
       return;
     }
     setProfileImageError('');
-    setProfileImageUploading(true);
+    if (pendingImagePreviewRef.current) {
+      URL.revokeObjectURL(pendingImagePreviewRef.current);
+    }
+    const previewUrl = URL.createObjectURL(file);
+    pendingImagePreviewRef.current = previewUrl;
+    setPendingImageFile(file);
+    setPendingImagePreview(previewUrl);
+  };
+
+  const handleCancelProfileImage = () => {
+    clearPendingImage();
+    setProfileImageError('');
+  };
+
+  const handleConfirmProfileImage = async () => {
+    if (!pendingImageFile) return;
+    setProfileImageError('');
+    setProfileImageSaving(true);
     try {
       const formData = new FormData();
-      formData.append('image', file);
+      formData.append('image', pendingImageFile);
       const response = await authorizedFetch(
         `${apiBase}/api/auth/staff/profile/image/`,
         { method: 'POST', body: formData }
@@ -165,8 +250,12 @@ export default function RespiratorySettingsPage() {
       const data = await response.json();
       if (!response.ok)
         throw new Error(data.detail || '이미지를 업로드하지 못했습니다.');
+      // Only now - after a confirmed successful upload - does the preview
+      // get replaced by the actual saved image; a failure leaves both the
+      // preview and the previously saved image untouched.
       setProfile(data);
       await loadProfileImage(Boolean(data.doctor_profile?.profile_image_uri));
+      clearPendingImage();
       setMessage('프로필 사진을 변경했습니다.');
     } catch (error) {
       setProfileImageError(
@@ -175,197 +264,579 @@ export default function RespiratorySettingsPage() {
           : '이미지를 업로드하지 못했습니다.'
       );
     } finally {
-      setProfileImageUploading(false);
+      setProfileImageSaving(false);
     }
   };
-  const saveOrderNotificationSetting = async () => {
-    setNotificationSaving(true);
-    try {
-      const response = await authorizedFetch(
-        `${apiBase}/api/notifications/me/settings/`,
-        {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            notification_type: 'EXAMINATION_ORDER',
-            enabled: orderNotificationsEnabled,
-          }),
-        }
-      );
-      const data = await response.json();
-      if (!response.ok)
-        throw new Error(data.detail || '알림 설정을 저장하지 못했습니다.');
-      setOrderNotificationsEnabled(data.enabled);
-      setMessage('검사 오더 알림 설정을 저장했습니다.');
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : '알림 설정을 저장하지 못했습니다.'
-      );
-    } finally {
-      setNotificationSaving(false);
-    }
-  };
-  return (
-    <div className="mx-auto h-full max-w-3xl overflow-y-auto p-6">
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-        <p className="text-xs font-semibold text-blue-600">의사 설정</p>
-        <h1 className="mt-1 text-xl font-bold text-slate-900">내 프로필</h1>
-        <p className="mt-2 text-sm text-slate-500">
-          진료과와 병원 소속 정보는 관리자 관리 항목입니다.
-        </p>
-        {!profile ? (
+
+  if (!profile) {
+    return (
+      <div className="h-full overflow-y-auto">
+        <div className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">
           <p className="py-12 text-sm text-slate-400">
             프로필을 불러오는 중입니다.
           </p>
-        ) : (
-          <>
-            <div className="mt-6 flex items-center gap-4">
-              <div className="h-20 w-20 shrink-0 overflow-hidden rounded-full border border-slate-200 bg-slate-100">
-                {profileImageSrc ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={profileImageSrc}
-                    alt="프로필 사진"
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center text-[10px] text-slate-400">
-                    사진 없음
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="inline-block cursor-pointer rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
-                  {profileImageUploading ? '업로드 중...' : '프로필 사진 변경'}
+        </div>
+      </div>
+    );
+  }
+
+  const departmentRoleLine = `${profile.department?.name || '-'} / ${profile.role || '-'}`;
+
+  return (
+    // This page manages its own vertical scroll (the shared respiratory
+    // layout's <main> is overflow-hidden by design, so each page provides
+    // its own single scroll container - matching the sibling cases page).
+    <div className="h-full overflow-y-auto">
+      <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4 xl:py-3">
+        <div className="grid grid-cols-1 gap-4 xl:gap-4 lg:grid-cols-[minmax(0,0.4fr)_minmax(0,0.6fr)]">
+        {/* 좌측: 내 프로필 */}
+        <section className="min-w-0 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm lg:p-6 xl:p-5">
+          <h1 className="text-lg font-bold text-slate-900">내 프로필</h1>
+
+          {/* Hero: 정보 자체를 강조하는 옅은 tint만 사용 (일러스트/그래픽 없음) */}
+          <div className="mt-4 min-w-0 rounded-2xl bg-gradient-to-br from-sky-50 via-blue-50/60 to-white p-4 sm:p-5 xl:p-4">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="relative h-28 w-28 shrink-0 sm:h-32 sm:w-32">
+                <div className="h-full w-full overflow-hidden rounded-full border border-white bg-slate-100 shadow-sm">
+                  {pendingImagePreview || profileImageSrc ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={pendingImagePreview || profileImageSrc || undefined}
+                      alt="프로필 사진"
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <DefaultAvatarIcon />
+                  )}
+                </div>
+                <label className="absolute bottom-0.5 right-0.5 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border-2 border-white bg-blue-600 text-white shadow-sm hover:bg-blue-700">
+                  <CameraIcon />
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
-                    onChange={(event) => void handleProfileImageSelect(event)}
-                    disabled={profileImageUploading}
+                    onChange={handleProfileImageSelect}
+                    disabled={profileImageSaving}
                     className="hidden"
                   />
                 </label>
-                {profileImageError && (
-                  <p className="mt-1.5 text-xs text-rose-600">
-                    {profileImageError}
-                  </p>
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xl font-bold text-slate-900">
+                  {profile.name}
+                </p>
+                <p className="mt-1 truncate text-sm text-slate-600">
+                  {departmentRoleLine}
+                </p>
+                {tags.length > 0 && (
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {tags.map((tag) => (
+                      <span
+                        key={tag}
+                        className="inline-block rounded-full bg-white/80 px-3 py-1 text-sm font-medium text-sky-700 ring-1 ring-sky-100"
+                      >
+                        {tag}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
-            <form onSubmit={save} className="mt-6 space-y-5">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <ReadField label="이름" value={profile.name} />
-                <ReadField label="로그인 ID" value={profile.username} />
-                <ReadField label="병원" value={profile.hospital?.name || '-'} />
-                <ReadField
-                  label="진료과 / 역할"
-                  value={`${profile.department?.name || '-'} / ${profile.role || '-'}`}
-                />
-                <label className="text-sm font-medium text-slate-700">
-                  의사 면허번호
-                  <input
-                    required
-                    value={licenseNumber}
-                    onChange={(event) => setLicenseNumber(event.target.value)}
-                    className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  생년월일
-                  <input
-                    type="date"
-                    value={birthDate}
-                    onChange={(event) => setBirthDate(event.target.value)}
-                    className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  />
-                </label>
-                <label className="text-sm font-medium text-slate-700">
-                  성별
-                  <select
-                    value={gender}
-                    onChange={(event) => setGender(event.target.value)}
-                    className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                  >
-                    <option value="">미기재</option>
-                    <option value="MALE">남성</option>
-                    <option value="FEMALE">여성</option>
-                    <option value="OTHER">기타</option>
-                  </select>
-                </label>
+
+            {pendingImageFile && (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleConfirmProfileImage()}
+                  disabled={profileImageSaving}
+                  className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white disabled:bg-blue-300"
+                >
+                  {profileImageSaving ? '변경 중...' : '변경'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCancelProfileImage}
+                  disabled={profileImageSaving}
+                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-50"
+                >
+                  취소
+                </button>
               </div>
-              <label className="block text-sm font-medium text-slate-700">
-                전문 분야 태그
-                <input
-                  value={tags}
-                  onChange={(event) => setTags(event.target.value)}
-                  placeholder="폐암, 흉부 CT, 기관지내시경"
-                  className="mt-1.5 block w-full rounded-lg border border-slate-200 px-3 py-2 text-sm"
-                />
-                <span className="mt-1 block text-xs text-slate-400">
-                  쉼표로 구분하며 최대 10개까지 저장할 수 있습니다.
-                </span>
-              </label>
-              <button
-                type="submit"
-                className="rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white"
-              >
-                저장
-              </button>
-            </form>
-            <section className="mt-6 border-t border-slate-200 pt-5">
-              <h2 className="text-base font-bold text-slate-900">알림 설정</h2>
-              <div className="mt-3 flex items-center justify-between gap-4 rounded-lg bg-slate-50 p-4">
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">
-                    검사 오더 알림
-                  </p>
-                  <p className="mt-1 text-xs text-slate-500">
-                    담당 부서로 전달된 새 검사 오더를 알립니다.
-                  </p>
-                </div>
-                <label className="flex shrink-0 items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={orderNotificationsEnabled}
-                    onChange={(event) =>
-                      setOrderNotificationsEnabled(event.target.checked)
-                    }
-                  />{' '}
-                  수신
-                </label>
-              </div>
-              <button
-                type="button"
-                disabled={notificationSaving}
-                onClick={() => void saveOrderNotificationSetting()}
-                className="mt-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm font-semibold text-blue-700 disabled:bg-slate-100"
-              >
-                {notificationSaving ? '저장 중...' : '알림 설정 저장'}
-              </button>
-            </section>
-            {message && (
-              <p className="mt-5 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
-                {message}
+            )}
+            {profileImageError && (
+              <p className="mt-1.5 text-xs text-rose-600">
+                {profileImageError}
               </p>
             )}
-          </>
-        )}
+          </div>
+
+          <div className="mt-4 divide-y divide-slate-100 overflow-hidden rounded-xl border border-slate-100">
+            <InfoRow
+              icon={<HospitalIcon />}
+              label="소속 병원"
+              value={profile.hospital?.name || '-'}
+            />
+            <InfoRow
+              icon={<DepartmentIcon />}
+              label="부서"
+              value={profile.department?.name || '-'}
+            />
+            <InfoRow
+              icon={<RoleIcon />}
+              label="역할"
+              value={profile.role || '-'}
+            />
+            <InfoRow
+              icon={<GenderIcon />}
+              label="성별"
+              value={gender ? GENDER_LABELS[gender] || gender : '-'}
+            />
+            <InfoRow icon={<PhoneIcon />} label="연락처" value={phone || '-'} />
+            <InfoRow icon={<MailIcon />} label="이메일" value={email || '-'} />
+            <InfoRow
+              icon={<CalendarIcon />}
+              label="생년월일"
+              value={birthDate || '-'}
+            />
+          </div>
+        </section>
+
+        {/* 우측: 기본 정보 설정 */}
+        <section className="min-w-0 rounded-[20px] border border-slate-200 bg-white p-5 shadow-sm lg:p-6 xl:p-5">
+          <h2 className="text-lg font-bold text-slate-900">기본 정보 설정</h2>
+
+          <form onSubmit={save} className="mt-4 min-w-0">
+            {/* 변경 불가능 정보: 현재 read-only 필드 그대로, 시각적으로만 그룹화 */}
+            <div className="min-w-0 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 sm:p-5 xl:p-4">
+              <div className="flex items-center gap-1.5 text-slate-500">
+                <LockIcon />
+                <h3 className="text-sm font-semibold text-slate-600">
+                  계정 및 소속 정보
+                </h3>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-400">
+                관리자 또는 시스템에서 관리되는 정보입니다.
+              </p>
+              <div className="mt-3 grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+                <ReadOnlyField label="이름" value={profile.name} />
+                <ReadOnlyField label="로그인 ID" value={profile.username} />
+                <ReadOnlyField
+                  label="소속 병원"
+                  value={profile.hospital?.name || '-'}
+                />
+                <ReadOnlyField
+                  label="부서"
+                  value={profile.department?.name || '-'}
+                />
+                <ReadOnlyField label="역할" value={profile.role || '-'} />
+              </div>
+            </div>
+
+            {/* 변경 가능한 정보: 현재 API에서 수정 가능한 필드 그대로 */}
+            <div className="mt-4 min-w-0">
+              <h3 className="text-sm font-semibold text-slate-700">
+                기본 정보
+              </h3>
+              <div className="mt-3 grid min-w-0 grid-cols-1 gap-x-5 gap-y-3 sm:grid-cols-2">
+                <TextField
+                  label="연락처"
+                  value={phone}
+                  // Strips anything but digits on every change - covers both
+                  // typing and paste, since a paste also fires onChange with
+                  // the full resulting value already inserted.
+                  onChange={(value) => setPhone(value.replace(/\D/g, ''))}
+                  placeholder="01000000000"
+                  icon={<PhoneIcon />}
+                  inputMode="numeric"
+                />
+                <TextField
+                  label="이메일"
+                  type="email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="doctor@hospital.com"
+                  icon={<MailIcon />}
+                />
+                <SelectField
+                  label="성별"
+                  value={gender}
+                  onChange={setGender}
+                  options={GENDER_OPTIONS}
+                />
+                <DateField
+                  label="생년월일"
+                  value={birthDate}
+                  onChange={setBirthDate}
+                />
+              </div>
+            </div>
+
+            <div className="mt-4 min-w-0 border-t border-slate-100 pt-4">
+              <span className="block text-sm font-medium text-slate-700">
+                분야 태그
+              </span>
+              {tags.length > 0 && (
+                <div className="mt-1.5 flex flex-wrap gap-1.5">
+                  {tags.map((tag) => (
+                    <span
+                      key={tag}
+                      className="inline-flex items-center gap-1 rounded-full bg-sky-50 px-2.5 py-1 text-xs font-medium text-sky-700"
+                    >
+                      {tag}
+                      <button
+                        type="button"
+                        onClick={() => removeTag(tag)}
+                        aria-label={`${tag} 태그 삭제`}
+                        className="text-sky-400 hover:text-sky-600"
+                      >
+                        ×
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <div className="mt-2 flex min-w-0 gap-2">
+                <input
+                  value={tagDraft}
+                  onChange={(event) => setTagDraft(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                      event.preventDefault();
+                      addTag();
+                    }
+                  }}
+                  placeholder="예: 흉부 CT"
+                  disabled={tags.length >= 10}
+                  className="block h-11 min-w-0 flex-1 rounded-xl border border-slate-200 px-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50"
+                />
+                <button
+                  type="button"
+                  onClick={addTag}
+                  disabled={tags.length >= 10}
+                  className="h-11 shrink-0 rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  추가
+                </button>
+              </div>
+              <span className="mt-1 block text-xs text-slate-400">
+                하나씩 입력 후 추가하며 최대 10개까지 저장할 수 있습니다.
+              </span>
+            </div>
+
+            <div className="mt-4 flex flex-wrap justify-end gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={handleCancel}
+                disabled={saving}
+                className="h-11 rounded-xl border border-slate-200 px-4 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                취소
+              </button>
+              <button
+                type="submit"
+                disabled={saving}
+                className="h-11 rounded-xl bg-blue-600 px-5 text-sm font-semibold text-white hover:bg-blue-700 disabled:bg-blue-300"
+              >
+                {saving ? '저장 중...' : '저장'}
+              </button>
+            </div>
+          </form>
+
+          {message && (
+            <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
+              {message}
+            </p>
+          )}
+        </section>
+        </div>
       </div>
     </div>
   );
 }
 
-function ReadField({ label, value }: { label: string; value: string }) {
+function InfoRow({
+  icon,
+  label,
+  value,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+}) {
   return (
-    <label className="text-sm font-medium text-slate-700">
+    <div className="grid min-w-0 grid-cols-[28px_88px_minmax(0,1fr)] items-center gap-3 px-3.5 py-2 text-sm even:bg-slate-50/60 sm:grid-cols-[28px_100px_minmax(0,1fr)]">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-white text-slate-400 ring-1 ring-slate-100">
+        {icon}
+      </span>
+      <span className="min-w-0 truncate text-slate-500">{label}</span>
+      <span className="min-w-0 truncate font-medium text-slate-800">
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string }) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
       {label}
-      <input
-        value={value}
-        readOnly
-        className="mt-1.5 block w-full rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500"
-      />
+      <div className="mt-1.5 flex h-11 items-center rounded-xl border border-slate-100 bg-slate-50 px-3 text-sm text-slate-600">
+        {value}
+      </div>
     </label>
+  );
+}
+
+function TextField({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = 'text',
+  icon,
+  inputMode,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  icon?: React.ReactNode;
+  inputMode?: React.HTMLAttributes<HTMLInputElement>['inputMode'];
+}) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      {label}
+      <div className="relative mt-1.5">
+        <input
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          inputMode={inputMode}
+          className="h-11 w-full rounded-xl border border-slate-200 px-3 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        />
+        {icon && (
+          <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-300">
+            {icon}
+          </span>
+        )}
+      </div>
+    </label>
+  );
+}
+
+function SelectField({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: Array<{ value: string; label: string }>;
+}) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      {label}
+      <div className="relative mt-1.5">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full appearance-none rounded-xl border border-slate-200 bg-white px-3 pr-9 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        >
+          {options.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <ChevronDownIcon />
+        </span>
+      </div>
+    </label>
+  );
+}
+
+function DateField({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block text-sm font-medium text-slate-700">
+      {label}
+      <div className="relative mt-1.5">
+        <input
+          type="date"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="h-11 w-full rounded-xl border border-slate-200 px-3 pr-9 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
+          <CalendarIcon />
+        </span>
+      </div>
+    </label>
+  );
+}
+
+// Neutral gray person-silhouette placeholder shown when no profile image is
+// set - avoids a broken/empty image without adding an icon library or asset.
+function DefaultAvatarIcon() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      className="h-full w-full text-slate-300"
+      aria-label="기본 프로필 아이콘"
+    >
+      <circle cx="12" cy="12" r="12" fill="currentColor" />
+      <circle cx="12" cy="9.5" r="3.5" fill="white" />
+      <path
+        d="M4.5 19.2C5.8 16.1 8.6 14.5 12 14.5c3.4 0 6.2 1.6 7.5 4.7A11.94 11.94 0 0 1 12 24a11.94 11.94 0 0 1-7.5-4.8Z"
+        fill="white"
+      />
+    </svg>
+  );
+}
+
+function LockIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-3.5 w-3.5"
+    >
+      <rect x="4.5" y="9" width="11" height="7.5" rx="1.6" />
+      <path d="M6.5 9V6.5a3.5 3.5 0 0 1 7 0V9" />
+    </svg>
+  );
+}
+
+function iconProps() {
+  return {
+    viewBox: '0 0 20 20',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.6,
+    strokeLinecap: 'round' as const,
+    strokeLinejoin: 'round' as const,
+    className: 'h-4 w-4',
+  };
+}
+
+function CameraIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.6}
+      className="h-3.5 w-3.5"
+    >
+      <path
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M4 7h2.5L8 5h4l1.5 2H16a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1Z"
+      />
+      <circle
+        cx="10"
+        cy="11"
+        r="2.3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function HospitalIcon() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M4 17.5V5.5A1.5 1.5 0 0 1 5.5 4h9A1.5 1.5 0 0 1 16 5.5v12" />
+      <path d="M2.5 17.5h15" />
+      <path d="M10 7.5v4M8 9.5h4" />
+      <path d="M6.5 12.5h1.2M12.3 12.5h1.2" />
+    </svg>
+  );
+}
+
+function DepartmentIcon() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M3 7.5 10 4l7 3.5-7 3.5-7-3.5Z" />
+      <path d="M3 7.5v6L10 17l7-3.5v-6" />
+    </svg>
+  );
+}
+
+function RoleIcon() {
+  return (
+    <svg {...iconProps()}>
+      <rect x="4" y="3.5" width="12" height="13" rx="2" />
+      <circle cx="10" cy="8.3" r="1.8" />
+      <path d="M6.8 13.5c.5-1.5 1.8-2.2 3.2-2.2s2.7.7 3.2 2.2" />
+    </svg>
+  );
+}
+
+function GenderIcon() {
+  return (
+    <svg {...iconProps()}>
+      <circle cx="10" cy="7" r="3" />
+      <path d="M5.5 17c.7-2.6 2.5-4 4.5-4s3.8 1.4 4.5 4" />
+    </svg>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M5 3.5h2.2l1 3.2-1.6 1.3a9 9 0 0 0 4.4 4.4l1.3-1.6 3.2 1v2.2a1.5 1.5 0 0 1-1.6 1.5A12.5 12.5 0 0 1 3.5 5.1 1.5 1.5 0 0 1 5 3.5Z" />
+    </svg>
+  );
+}
+
+function MailIcon() {
+  return (
+    <svg {...iconProps()}>
+      <rect x="3" y="5" width="14" height="10" rx="1.6" />
+      <path d="m4 6 6 5 6-5" />
+    </svg>
+  );
+}
+
+function CalendarIcon() {
+  return (
+    <svg {...iconProps()}>
+      <rect x="3.5" y="4.5" width="13" height="12" rx="1.6" />
+      <path d="M3.5 8.3h13M7 3v3M13 3v3" />
+    </svg>
+  );
+}
+
+function ChevronDownIcon() {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="h-4 w-4"
+    >
+      <path d="m5.5 8 4.5 4.5L14.5 8" />
+    </svg>
   );
 }

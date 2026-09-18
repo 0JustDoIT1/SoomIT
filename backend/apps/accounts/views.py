@@ -91,6 +91,10 @@ class StaffProfileAPIView(APIView):
                 return Response({"detail": "최초 프로필 생성에는 의사 면허번호가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
             DoctorProfile.objects.create(user=user, **serializer.validated_data)
         else:
+            # License numbers are now issued by the hospital admin at account
+            # creation time, not self-reported - an existing profile's value
+            # is never changed through this endpoint, even if a caller sends it.
+            serializer.validated_data.pop("license_number", None)
             serializer.save()
         return Response(StaffProfileSerializer(user).data)
 

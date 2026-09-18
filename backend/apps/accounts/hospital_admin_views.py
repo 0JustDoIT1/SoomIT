@@ -66,6 +66,8 @@ class HospitalAdminStaffListCreateAPIView(APIView):
             pk=serializer.validated_data["department_role_id"],
             department__hospital_id=request.hospital_admin.hospital_id,
         )
+        if department_role.role == DepartmentRole.Role.DOCTOR and not serializer.validated_data.get("license_number"):
+            raise ValidationError({"license_number": "의사 계정은 면허번호가 필요합니다."})
         user_data = {
             key: value
             for key, value in serializer.validated_data.items()
