@@ -61,7 +61,7 @@ class DoctorExaminationOrderAPITests(TestCase):
         response = self.client.get(self.url)
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data[0]["scheduled_at"], scheduled_at.isoformat().replace("+00:00", "Z"))
+        self.assertEqual(response.data[0]["scheduled_at"], scheduled_at)
         self.assertEqual(response.data[0]["appointment_status"], Appointment.AppointmentStatus.CONFIRMED)
 
     def test_requires_confirmed_predecessor_and_blocks_active_duplicate(self):

@@ -447,7 +447,10 @@ class RadiologyWorklistAPITestCase(APITestCase):
         )
         response = self.client.get(
             self.url,
-            {"date_from": expected.scheduled_at.date(), "date_to": expected.scheduled_at.date()},
+            {
+                "date_from": timezone.localtime(expected.scheduled_at).date(),
+                "date_to": timezone.localtime(expected.scheduled_at).date(),
+            },
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data), 1)
