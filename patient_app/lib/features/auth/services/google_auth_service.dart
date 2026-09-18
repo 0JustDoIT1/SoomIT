@@ -1,22 +1,12 @@
 import 'package:google_sign_in/google_sign_in.dart';
 
 class GoogleAuthService {
-  static const String _serverClientId = String.fromEnvironment(
-    'GOOGLE_SERVER_CLIENT_ID',
-  );
-
   final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
   Future<void>? _initialization;
 
   Future<void> _ensureInitialized() {
-    if (_serverClientId.isEmpty) {
-      throw Exception('Google Server Client ID가 설정되지 않았습니다.');
-    }
-
-    return _initialization ??= _googleSignIn.initialize(
-      serverClientId: _serverClientId,
-    );
+    return _initialization ??= _googleSignIn.initialize();
   }
 
   Future<String> signInAndGetIdToken() async {

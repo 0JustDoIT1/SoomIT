@@ -12,7 +12,20 @@
           "package_name": "com.soomit.patient"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "884846153419-p14kldu4otu94nn9jj9obajofuen37sg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.soomit.patient",
+            "certificate_hash": "c6ae02e8d2bc6664e278fcb3e7ccd4ecc0bf882e"
+          }
+        },
+        {
+          "client_id": "884846153419-ckuu7h509q56acdd2mj2i8enk1fcerle.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyB14_SsN45YR9EqDPZ3Ty52XB4h3SGhNHk"
@@ -20,7 +33,12 @@
       ],
       "services": {
         "appinvite_service": {
-          "other_platform_oauth_client": []
+          "other_platform_oauth_client": [
+            {
+              "client_id": "884846153419-c43oufu3f77i7fi7436534ng8vhpbdtp.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
         }
       }
     }
