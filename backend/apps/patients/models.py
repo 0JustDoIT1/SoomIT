@@ -40,6 +40,37 @@ class Patient(TimestampedUUIDModel):
         return f"{self.name}({self.patient_code})"
 
 
+class PatientQrToken(TimestampedUUIDModel):
+    patient_account = models.ForeignKey(
+        "PatientAccount",
+        on_delete=models.CASCADE,
+        related_name="qr_tokens",
+    )
+    token_hash = models.CharField(
+        max_length=64,
+        unique=True,
+        db_index=True,
+    )
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+
+    class Meta:
+        db_table = "patient_qr_tokens"
+        indexes = [
+            models.Index(
+                fields=["patient_account", "expires_at"],
+                name="idx_patient_qr_expiry",
+            ),
+        ]
+
+    @property
+    def is_used(self):
+        return self.used_at is not None
+
+
 # ── 2-2. patient_health_profiles ────────────────────────────────
 class PatientHealthProfile(models.Model):
     class SmokingStatus(models.TextChoices):
