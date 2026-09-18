@@ -169,7 +169,11 @@ jobs:
             git fetch origin production
             git checkout production
             git pull --ff-only origin production
-            echo \"\$(gcloud auth print-access-token)\" | sudo docker login -u oauth2accesstoken --password-stdin $REGISTRY
+            docker_config=\$(mktemp -d)
+            trap 'sudo rm -rf \"\$docker_config\"' EXIT
+            export DOCKER_CONFIG=\"\$docker_config\"
+            access_token=\$(curl -fsS -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import json,sys; print(json.load(sys.stdin)[\"access_token\"])')
+            echo \"\$access_token\" | sudo -E docker login -u oauth2accesstoken --password-stdin $REGISTRY
             export FRONTEND_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/frontend:${{ github.sha }}'
             export BACKEND_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/backend:${{ github.sha }}'
             export REALTIME_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/realtime:${{ github.sha }}'
