@@ -2022,10 +2022,10 @@ export default function PathologyDashboardPage() {
           ) : (
             <main className="flex min-h-0 flex-1 items-center justify-center bg-[#F7F8FC] p-6">
               <div className="flex -translate-y-8 flex-col items-center text-center">
-                <img src="/images/soomi.png" alt="" className="mb-5 h-auto w-48 object-contain" />
+                <img src="/images/soomi2.png" alt="" className="mb-5 h-auto w-44 object-contain" />
                 <h1 className="text-xl font-bold text-slate-900">환자를 선택해 주세요</h1>
                 <p className="mt-2 max-w-[340px] text-sm leading-6 text-slate-500">
-                  왼쪽 Worklist에서 환자를 선택하면 조직·유전자 / PD-L1 작업을 시작할 수 있습니다.
+                  왼쪽 Worklist에서 환자를 선택하면 병리 검사 및 AI 분석 작업을 시작할 수 있습니다.
                 </p>
                 <div className="mt-6 flex flex-wrap justify-center gap-3" aria-label="병리 검사 종류">
                   <div className="flex min-w-[154px] items-center justify-center gap-2 rounded-[10px] border border-[#ECE8FC] bg-[#F8F6FF] px-4 py-3 text-sm font-semibold text-[#25324B]">
