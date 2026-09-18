@@ -8,7 +8,9 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import AccessToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
+from apps.audit.models import AuditLog
 from apps.cases.models import LungCancerCase, WorkflowStage
+from apps.notifications.models import NotificationLog
 from apps.patients.models import Patient
 
 from .models import CaseChatMessage
@@ -271,6 +273,125 @@ class CaseChatMessageModelTestCase(TestCase):
             HTTP_X_SERVICE_TOKEN="test-realtime-service-token",
         )
         self.assertEqual(response.status_code, 400)
+
+    @override_settings(AI_SERVICE_TOKEN="test-realtime-service-token")
+    def test_private_message_is_visible_only_to_sender_and_selected_recipient(self):
+        self.authenticate(self.sender)
+        create_url = reverse("chat:internal-case-message-create", kwargs={"case_id": self.case.id})
+        with self.captureOnCommitCallbacks(execute=True):
+            created = self.client.post(
+                create_url,
+                {
+                    "client_message_id": str(uuid.uuid4()),
+                    "body": "영상 소견을 확인 부탁드립니다.",
+                    "is_private": True,
+                    "recipient_ids": [str(self.radiologist.id)],
+                },
+                format="json",
+                HTTP_X_SERVICE_TOKEN="test-realtime-service-token",
+            )
+        self.assertEqual(created.status_code, 201)
+        self.assertTrue(created.data["message"]["is_private"])
+        self.assertEqual(created.data["message"]["recipient_ids"], [str(self.radiologist.id)])
+        notification = NotificationLog.objects.get(recipient_user=self.radiologist, notification_type="CASE_CHAT")
+        self.assertEqual(notification.case_id, self.case.id)
+        self.assertNotIn("영상 소견을 확인", notification.message)
+        audit_log = AuditLog.objects.get(target_id=created.data["message"]["id"])
+        self.assertEqual(audit_log.metadata["event"], "PRIVATE_CASE_CHAT_MESSAGE_CREATED")
+        self.assertEqual(audit_log.metadata["recipient_count"], 1)
+        self.assertIsNone(audit_log.before_data)
+        self.assertIsNone(audit_log.after_data)
+
+        history_url = reverse("chat:case-message-list", kwargs={"case_id": self.case.id})
+        self.authenticate(self.radiologist)
+        recipient_history = self.client.get(history_url)
+        self.assertEqual(recipient_history.status_code, 200)
+        self.assertEqual(len(recipient_history.data["results"]), 1)
+
+        self.authenticate(self.pathology_technologist)
+        unrelated_history = self.client.get(history_url)
+        self.assertEqual(unrelated_history.status_code, 200)
+        self.assertEqual(unrelated_history.data["results"], [])
+
+    @override_settings(AI_SERVICE_TOKEN="test-realtime-service-token")
+    def test_private_message_requires_at_least_one_recipient(self):
+        self.authenticate(self.sender)
+        response = self.client.post(
+            reverse("chat:internal-case-message-create", kwargs={"case_id": self.case.id}),
+            {
+                "client_message_id": str(uuid.uuid4()),
+                "body": "수신자 없는 개인 메시지",
+                "is_private": True,
+            },
+            format="json",
+            HTTP_X_SERVICE_TOKEN="test-realtime-service-token",
+        )
+        self.assertEqual(response.status_code, 400)
+
+    @override_settings(AI_SERVICE_TOKEN="test-realtime-service-token")
+    def test_message_read_receipt_is_recorded_for_recipient_and_visible_to_sender(self):
+        message = CaseChatMessage.objects.create(
+            case=self.case,
+            sender=self.sender,
+            client_message_id=uuid.uuid4(),
+            body="판독 확인 부탁드립니다.",
+            is_private=True,
+        )
+        message.recipients.add(self.radiologist)
+        read_url = reverse("chat:case-message-read", kwargs={"case_id": self.case.id})
+        self.authenticate(self.radiologist)
+        marked = self.client.post(read_url, {"message_ids": [str(message.id)]}, format="json")
+        repeated = self.client.post(read_url, {"message_ids": [str(message.id)]}, format="json")
+        self.assertEqual(marked.status_code, 200)
+        self.assertEqual(marked.data["marked_count"], 1)
+        self.assertEqual(marked.data["read_messages"][0]["reader"]["id"], str(self.radiologist.id))
+        self.assertEqual(marked.data["read_messages"][0]["sender_id"], str(self.sender.id))
+        self.assertEqual(repeated.data["marked_count"], 0)
+
+        self.authenticate(self.sender)
+        history = self.client.get(reverse("chat:case-message-list", kwargs={"case_id": self.case.id}))
+        self.assertEqual(history.status_code, 200)
+        self.assertEqual(history.data["results"][0]["read_by"][0]["id"], str(self.radiologist.id))
+
+        self.authenticate(self.pathology_technologist)
+        unrelated_mark = self.client.post(read_url, {"message_ids": [str(message.id)]}, format="json")
+        self.assertEqual(unrelated_mark.status_code, 200)
+        self.assertEqual(unrelated_mark.data["marked_count"], 0)
+
+    def test_unread_count_includes_only_visible_unread_messages(self):
+        public_message = CaseChatMessage.objects.create(
+            case=self.case,
+            sender=self.sender,
+            client_message_id=uuid.uuid4(),
+            body="공용 메시지",
+        )
+        private_message = CaseChatMessage.objects.create(
+            case=self.case,
+            sender=self.sender,
+            client_message_id=uuid.uuid4(),
+            body="개인 메시지",
+            is_private=True,
+        )
+        private_message.recipients.add(self.radiologist)
+        count_url = reverse("chat:case-message-unread-count", kwargs={"case_id": self.case.id})
+
+        self.authenticate(self.radiologist)
+        before_read = self.client.get(count_url)
+        self.assertEqual(before_read.status_code, 200)
+        self.assertEqual(before_read.data["unread_count"], 2)
+
+        self.client.post(
+            reverse("chat:case-message-read", kwargs={"case_id": self.case.id}),
+            {"message_ids": [str(public_message.id)]},
+            format="json",
+        )
+        after_read = self.client.get(count_url)
+        self.assertEqual(after_read.data["unread_count"], 1)
+
+        self.authenticate(self.pathology_technologist)
+        unrelated_count = self.client.get(count_url)
+        self.assertEqual(unrelated_count.status_code, 200)
+        self.assertEqual(unrelated_count.data["unread_count"], 1)
 
     @override_settings(AI_SERVICE_TOKEN="test-realtime-service-token")
     def test_internal_create_requires_service_token(self):

@@ -3,10 +3,11 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { RespiratoryAuthProvider, useRespiratoryAuth } from "./_components/respiratory-auth-provider";
+import { RespiratoryToastProvider } from "./_components/respiratory-toast-provider";
 import { API_BASE_URL } from "@/lib/api";
 import { requestCaseNavigation } from "./_lib/case-navigation-guard";
 
-type StaffNotification = { id: string; title: string; message: string; case_id: string | null; case_code: string | null; created_at: string; read_at: string | null };
+type StaffNotification = { id: string; notification_type: string; title: string; message: string; payload: Record<string, unknown> | null; case_id: string | null; case_code: string | null; created_at: string; read_at: string | null };
 type NotificationResponse = { unread_count: number; results: StaffNotification[] };
 type SearchCase = { id: string; patient_name: string; patient_code: string; case_code: string };
 
@@ -15,7 +16,7 @@ export default function RespiratoryLayout({
 }: {
   children: ReactNode;
 }) {
-  return <RespiratoryAuthProvider><AuthenticatedLayout>{children}</AuthenticatedLayout></RespiratoryAuthProvider>;
+  return <RespiratoryAuthProvider><RespiratoryToastProvider><AuthenticatedLayout>{children}</AuthenticatedLayout></RespiratoryToastProvider></RespiratoryAuthProvider>;
 }
 
 function AuthenticatedLayout({ children }: { children: ReactNode }) {
@@ -28,6 +29,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   const [notificationError, setNotificationError] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchCase[]>([]);
+  const [caseSearchCache, setCaseSearchCache] = useState<SearchCase[]>([]);
   const [searchError, setSearchError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [clock, setClock] = useState("");
@@ -59,7 +61,8 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       }
     }
     setShowNotifications(false);
-    if (notification.case_id) router.push(`/respiratory/cases/${notification.case_id}`);
+    const chatMessageId = notification.notification_type === "CASE_CHAT" && typeof notification.payload?.chat_message_id === "string" ? notification.payload.chat_message_id : "";
+    if (notification.case_id) router.push(`/respiratory/cases/${notification.case_id}${notification.notification_type === "CASE_CHAT" ? `?openChat=1${chatMessageId ? `&chatMessage=${encodeURIComponent(chatMessageId)}` : ""}` : ""}`);
   }
 
   useEffect(() => {
@@ -99,6 +102,24 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   }, [isReady, isAuthenticated, loadNotifications]);
 
   useEffect(() => {
+    if (!isReady || !isAuthenticated) return;
+    const controller = new AbortController();
+    const loadSearchCache = async () => {
+      try {
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`, { signal: controller.signal });
+        if (!response.ok) return;
+        const payload: unknown = await response.json();
+        const cases = Array.isArray(payload) ? payload as SearchCase[] : payload && typeof payload === "object" && "results" in payload && Array.isArray(payload.results) ? payload.results as SearchCase[] : [];
+        if (!controller.signal.aborted) setCaseSearchCache(cases);
+      } catch {
+        // The server search remains available if the optional warm cache cannot load.
+      }
+    };
+    void loadSearchCache();
+    return () => controller.abort();
+  }, [authorizedFetch, isAuthenticated, isReady]);
+
+  useEffect(() => {
     const update = () => setClock(new Date().toLocaleString("ko-KR", { year: "numeric", month: "2-digit", day: "2-digit", weekday: "short", hour: "2-digit", minute: "2-digit" }));
     const initialTimer = window.setTimeout(update, 0);
     const timer = window.setInterval(update, 60_000);
@@ -107,26 +128,34 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const keyword = search.trim().toLowerCase();
-    if (keyword.length < 2 || !isAuthenticated) return;
+    if (!keyword || !isAuthenticated) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
-        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`, { signal: controller.signal });
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/?search=${encodeURIComponent(keyword)}`, { signal: controller.signal });
         if (!response.ok) throw new Error("담당 Case를 검색할 수 없습니다.");
         const payload: unknown = await response.json();
         const cases = Array.isArray(payload) ? payload as SearchCase[] : payload && typeof payload === "object" && "results" in payload && Array.isArray(payload.results) ? payload.results as SearchCase[] : [];
-        setSearchResults(cases.filter((item) => [item.patient_name, item.patient_code, item.case_code].some((value) => value?.toLowerCase().includes(keyword))).slice(0, 8));
+        setSearchResults(cases.slice(0, 8));
         setSearchError("");
       } catch (error) {
         if (!controller.signal.aborted) setSearchError(error instanceof Error ? error.message : "검색에 실패했습니다.");
       }
-    }, 300);
+    }, 180);
     return () => { window.clearTimeout(timer); controller.abort(); };
   }, [authorizedFetch, isAuthenticated, search]);
 
   function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (searchResults[0]) openSearchCase(searchResults[0].id);
+  }
+
+  function updateSearch(value: string) {
+    const keyword = value.trim().toLowerCase();
+    setSearch(value);
+    setSearchError("");
+    setSearchOpen(true);
+    setSearchResults(keyword ? caseSearchCache.filter((item) => [item.patient_name, item.patient_code, item.case_code].some((field) => field?.toLowerCase().includes(keyword))).slice(0, 8) : []);
   }
 
   function openSearchCase(id: string) {
@@ -194,10 +223,10 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
             <label htmlFor="respiratory-case-search" className="sr-only">담당 Case 검색</label>
             <div className="flex h-9 items-center gap-2 rounded-lg border border-blue-100 bg-[#f3f7fd] px-3 text-slate-500 focus-within:border-blue-400 focus-within:bg-white">
               <span aria-hidden="true">⌕</span>
-              <input id="respiratory-case-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setSearchResults([]); setSearchError(""); setSearchOpen(true); }} onFocus={() => setSearchOpen(true)} placeholder="환자명, 환자번호, Case 번호 검색" className="min-w-0 flex-1 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-500" />
+              <input id="respiratory-case-search" type="search" value={search} onChange={(event) => updateSearch(event.target.value)} onFocus={() => setSearchOpen(true)} placeholder="환자명, 환자번호, Case 번호 검색" className="min-w-0 flex-1 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-500" />
             </div>
           </form>
-          {searchOpen && search.trim().length >= 2 && <div className="absolute left-2 right-2 top-11 z-50 overflow-hidden rounded-xl border border-blue-100 bg-white shadow-xl">
+          {searchOpen && search.trim().length >= 1 && <div className="absolute left-2 right-2 top-11 z-50 overflow-hidden rounded-xl border border-blue-100 bg-white shadow-xl">
             {searchError ? <p role="alert" className="p-3 text-xs text-rose-700">{searchError}</p> : searchResults.length ? searchResults.map((item) => <button key={item.id} type="button" onClick={() => openSearchCase(item.id)} className="block w-full border-b border-slate-100 px-3 py-2.5 text-left text-xs hover:bg-blue-50"><span className="font-bold text-slate-800">{item.patient_name}</span><span className="ml-2 text-slate-500">{item.patient_code} · {item.case_code}</span></button>) : <p className="p-3 text-xs text-slate-500">일치하는 담당 Case가 없습니다.</p>}
           </div>}
         </div>

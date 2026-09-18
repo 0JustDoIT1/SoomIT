@@ -6,6 +6,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import User
 
 from ..models import NotificationLog
+from ..models import UserNotificationSetting
 
 
 class StaffNotificationAPITests(TestCase):
@@ -68,3 +69,22 @@ class StaffNotificationAPITests(TestCase):
         )
 
         self.assertEqual(response.status_code, 404)
+
+    def test_staff_can_get_and_update_case_chat_notification_setting(self):
+        settings_url = reverse("staff-notification-settings")
+        default_response = self.client.get(settings_url, {"notification_type": "CASE_CHAT"})
+        self.assertEqual(default_response.status_code, 200)
+        self.assertTrue(default_response.data["enabled"])
+
+        updated = self.client.patch(
+            settings_url,
+            {"notification_type": "CASE_CHAT", "enabled": False},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200)
+        self.assertFalse(updated.data["enabled"])
+        self.assertTrue(UserNotificationSetting.objects.filter(
+            user=self.recipient,
+            notification_type="CASE_CHAT",
+            enabled=False,
+        ).exists())

@@ -1,20 +1,22 @@
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
+import type { ReactNode } from "react";
 import { CaseImageEvidence } from "./case-image-evidence";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
 import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
 
 type ResultRecord = Record<string, unknown>;
 type ClinicalResult = { workflow_stage: string; exam_name?: string; result_status?: string; result_status_label?: string; result_date?: string | null; result_detail?: unknown };
-type AiResult = { id?: string; analysis_type: string; analysis_type_label?: string; status?: string; status_label?: string; model_name?: string; model_version_name?: string; completed_at?: string | null; result_detail?: unknown };
+type AiInputContext = { schema_version?: string | null; examination_order?: { id?: string; order_type?: string; order_type_label?: string } | null; source_asset?: { id?: string; workflow_stage?: string; image_type?: string; storage_type?: string; file_format?: string; study_instance_uid?: string | null; series_instance_uid?: string | null; acquired_at?: string | null } | null; metadata?: { wsi_id?: string; roi_layer?: string } };
+type AiResult = { id?: string; analysis_type: string; analysis_type_label?: string; status?: string; status_label?: string; model_name?: string; model_version_name?: string; model_components?: unknown; started_at?: string | null; completed_at?: string | null; error_message?: string | null; input_context?: AiInputContext; result_detail?: unknown };
 
 const STAGE_CONFIG: Record<string, { title: string; description: string; department: string }> = {
-  XRAY: { title: "흉부 X선 검사·결과", description: "영상의학과 판독 결과를 먼저 확인하고 AI 후보를 보조 근거로 검토합니다.", department: "영상의학과" },
+  XRAY: { title: "흉부 X선", description: "영상의학과 판독 결과를 먼저 확인하고 AI 후보를 보조 근거로 검토합니다.", department: "영상의학과" },
   CT: { title: "흉부 CT 검사·결과", description: "영상의학과 CT 판독 결과와 AI 분석 후보 및 원본 영상 근거를 확인합니다.", department: "영상의학과" },
   PATHOLOGY_GENE: { title: "병리 검사·결과", description: "병리과 확정 결과와 병리 AI 후보 및 원본 병리 근거를 확인합니다.", department: "병리과" },
   PDL1: { title: "PD-L1 검사·결과", description: "전문과 확정 PD-L1 결과와 AI 분석 후보를 서로 다른 출처로 확인합니다.", department: "병리과" },
 };
 
-export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi, showEvidence = true, showWorkspaceHeader = true, compactRail = false, lastSyncedAt, syncingResults = false, onRefreshResults, syncNotice = "", caseId, apiBaseUrl, authorizedFetch }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void; showEvidence?: boolean; showWorkspaceHeader?: boolean; compactRail?: boolean; lastSyncedAt?: Date | null; syncingResults?: boolean; onRefreshResults?: () => void; syncNotice?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> }) {
+export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi, showEvidence = true, showWorkspaceHeader = true, compactRail = false, lastSyncedAt, syncingResults = false, onRefreshResults, syncNotice = "", caseId, apiBaseUrl, authorizedFetch, specialistAction }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void; showEvidence?: boolean; showWorkspaceHeader?: boolean; compactRail?: boolean; lastSyncedAt?: Date | null; syncingResults?: boolean; onRefreshResults?: () => void; syncNotice?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; specialistAction?: ReactNode }) {
   const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
   const ctDetail = stage === "CT" ? asRecord(asRecord(aiResult?.result_detail)?.ct) : null;
@@ -22,7 +24,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const config = STAGE_CONFIG[stage] ?? { title: "검사·결과", description: "전문과 확정 결과와 AI 분석 후보를 구분해 확인합니다.", department: "전문과" };
   const isImageWorkspace = showEvidence && (stage === "XRAY" || stage === "CT");
   return (
-    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex h-full min-h-0 flex-col" : ""}`}>
+    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex min-h-[760px] flex-col" : ""}`}>
       {showWorkspaceHeader && <header className={`flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 ${isImageWorkspace ? "py-2" : "py-2.5"}`}>
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
@@ -30,8 +32,8 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
           {!isImageWorkspace && <p className="mt-1 text-xs text-slate-600">{config.description}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <StatusBadge label="전문과" value={clinicalResult?.result_status_label ?? clinicalResult?.result_status} tone="specialist" />
-          <StatusBadge label="AI" value={aiResult?.status_label ?? aiResult?.status} tone="ai" />
+          <StatusBadge label="전문과" value={clinicalResult?.result_status_label ?? clinicalResult?.result_status} status={clinicalResult?.result_status} tone="specialist" />
+          <StatusBadge label="AI" value={aiResult?.status_label ?? aiResult?.status} status={aiResult?.status} tone="ai" />
         </div>
       </header>}
 
@@ -45,15 +47,17 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
       </div>}
 
       <aside className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-y-auto border border-slate-200 bg-white p-2 [scrollbar-gutter:stable] [&>section:nth-of-type(1)]:order-2 [&>section:nth-of-type(2)]:order-1 [&>section:nth-of-type(3)]:order-3" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
-        <SourcePanel compact={isImageWorkspace} eyebrow={config.department} title="전문과 확정 결과" meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
-          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 전문과 확정 결과가 없습니다. 결과가 확정되면 판독과·판독자·확정 시각과 핵심 소견이 표시됩니다." />}
+        <SourcePanel compact={isImageWorkspace} eyebrow={stage === "XRAY" ? "호흡기내과" : config.department} title={stage === "XRAY" ? "호흡기내과 진료 결정" : "전문과 확정 결과"} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
+          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 전문과 확정 결과가 없습니다. 결과가 확정되면 판독과·판독자·확정 시각과 핵심 소견이 표시됩니다." nextAction="현재 단계: 전문과 판독 결과 대기 · 결과가 확정되면 검토합니다." />}
+          {specialistAction && !clinicalError && clinicalResult?.result_status !== "CONFIRMED" && <div className="flex justify-center px-3 pb-3">{specialistAction}</div>}
         </SourcePanel>
         <SourcePanel compact={isImageWorkspace} eyebrow="AI 분석" title="AI 분석 후보" meta={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
-          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." />}
+          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
         </SourcePanel>
         <AiTraceabilityCard aiResult={aiResult} />
-        <ReviewWorkflowRail aiStatus={aiResult?.status_label ?? aiResult?.status} clinicalStatus={clinicalResult?.result_status_label ?? clinicalResult?.result_status} />
-        {(onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
+        {!isImageWorkspace && <AiInputTraceabilityCard aiResult={aiResult} />}
+        <ReviewWorkflowRail aiStatus={aiResult?.status} aiStatusLabel={aiResult?.status_label} clinicalStatus={clinicalResult?.result_status} clinicalStatusLabel={clinicalResult?.result_status_label} />
+        {!isImageWorkspace && (onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
         {isImageWorkspace && <ResultStatusCard clinicalStatus={clinicalResult?.result_status_label ?? clinicalResult?.result_status} aiStatus={aiResult?.status_label ?? aiResult?.status} />}
       </aside>
       </div>
@@ -93,32 +97,60 @@ function ResultStatusCard({ clinicalStatus, aiStatus }: { clinicalStatus?: strin
 
 function AiTraceabilityCard({ aiResult }: { aiResult?: AiResult }) {
   const succeeded = aiResult?.status === "SUCCEEDED";
-  return <section className="shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="flex items-center justify-between gap-3"><p className="text-[10px] font-bold text-slate-700">AI 분석 정보</p><span className={`rounded px-2 py-1 text-[9px] font-semibold ${succeeded ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{aiResult?.status_label ?? aiResult?.status ?? "결과 없음"}</span></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]"><div><dt className="text-slate-400">모델</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">버전</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_version_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">분석 시각</dt><dd className="truncate font-medium text-slate-700">{formatDateTime(aiResult?.completed_at)}</dd></div><div><dt className="text-slate-400">입력 Series</dt><dd className="truncate font-medium text-slate-700">현재 API 미제공</dd></div></dl><p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-800">AI 결과는 확정 진단이 아닌 참고 자료입니다. 의료진 검토가 필요합니다.</p></section>;
+  const asset = aiResult?.input_context?.source_asset;
+  const inputSeries = asset?.series_instance_uid ? `Series ${asset.series_instance_uid}` : asset?.image_type ? `${asset.image_type} · Series 정보 없음` : "정보 없음";
+  const components = formatModelComponents(aiResult?.model_components);
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="flex items-center justify-between gap-3"><p className="text-[10px] font-bold text-slate-700">AI 분석 정보</p><span className={`rounded px-2 py-1 text-[9px] font-semibold ${succeeded ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{aiResult?.status_label ?? aiResult?.status ?? "결과 없음"}</span></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]"><div><dt className="text-slate-400">모델</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">버전</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_version_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">분석 시각</dt><dd className="truncate font-medium text-slate-700">{formatDateTime(aiResult?.completed_at)}</dd></div><div><dt className="text-slate-400">입력 Series</dt><dd className="truncate font-medium text-slate-700">{inputSeries}</dd></div>{components && <div className="col-span-2"><dt className="text-slate-400">모델 구성</dt><dd className="truncate font-medium text-slate-700">{components}</dd></div>}</dl><p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-800">AI 결과는 확정 진단이 아닌 참고 자료입니다. 의료진 검토가 필요합니다.</p></section>;
 }
 
-function ReviewWorkflowRail({ aiStatus, clinicalStatus }: { aiStatus?: string; clinicalStatus?: string }) {
+function formatModelComponents(value: unknown) {
+  if (Array.isArray(value)) return value.filter((item) => typeof item === "string" || typeof item === "number").map(String).join(" · ");
+  if (value && typeof value === "object") return Object.entries(value as Record<string, unknown>).map(([key, item]) => `${key}: ${typeof item === "string" || typeof item === "number" || typeof item === "boolean" ? String(item) : "configured"}`).join(" · ");
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
+}
+
+function AiInputTraceabilityCard({ aiResult }: { aiResult?: AiResult }) {
+  const context = aiResult?.input_context;
+  const order = context?.examination_order;
+  const asset = context?.source_asset;
+  const metadata = context?.metadata;
+  const orderLabel = [order?.order_type_label ?? order?.order_type, order?.id && `#${order.id.slice(0, 8)}`].filter(Boolean).join(" · ");
+  const assetLabel = [asset?.image_type, asset?.workflow_stage, asset?.series_instance_uid && `Series ${asset.series_instance_uid}`].filter(Boolean).join(" · ");
+  const metadataLabel = [metadata?.wsi_id && `WSI ${metadata.wsi_id}`, metadata?.roi_layer && `ROI ${metadata.roi_layer}`].filter(Boolean).join(" · ");
+  const hasContext = Boolean(orderLabel || assetLabel || metadataLabel || context?.schema_version);
+
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-bold text-slate-700">분석 입력 추적</p>{hasContext ? <dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]"><TraceItem label="검사 오더" value={orderLabel} /><TraceItem label="입력 영상" value={assetLabel} /><TraceItem label="Study UID" value={asset?.study_instance_uid} /><TraceItem label="입력 메타데이터" value={metadataLabel} /><TraceItem label="Schema" value={context?.schema_version} /><TraceItem label="획득 시각" value={formatDateTime(asset?.acquired_at)} /></dl> : <p className="mt-2 text-[10px] leading-4 text-slate-500">현재 분석에 연결된 입력 추적 정보가 없습니다.</p>}</section>;
+}
+
+function TraceItem({ label, value }: { label: string; value?: string | null }) { return <div><dt className="text-slate-400">{label}</dt><dd className="truncate font-medium text-slate-700">{value || "정보 없음"}</dd></div>; }
+
+function ReviewWorkflowRail({ aiStatus, aiStatusLabel, clinicalStatus, clinicalStatusLabel }: { aiStatus?: string; aiStatusLabel?: string; clinicalStatus?: string; clinicalStatusLabel?: string }) {
+  const aiCompleted = aiStatus === "SUCCEEDED";
+  const aiFailed = aiStatus === "FAILED" || aiStatus === "ERROR";
+  const clinicalCompleted = clinicalStatus === "CONFIRMED";
   const steps = [
-    { label: "AI 분석", status: aiStatus || "대기" },
-    { label: "전문과 검토", status: clinicalStatus || "검토 대기" },
-    { label: "호흡기내과 확정", status: clinicalStatus ? "다음 단계 확인" : "전문과 결과 대기" },
+    { label: "AI 분석", status: aiStatusLabel ?? aiStatus ?? "대기", completed: aiCompleted, failed: aiFailed },
+    { label: "전문과 검토", status: clinicalStatusLabel ?? clinicalStatus ?? "검토 대기", completed: clinicalCompleted, failed: false },
+    { label: "호흡기내과 확정", status: clinicalCompleted ? "다음 단계 확인" : "전문과 결과 대기", completed: false, failed: false },
   ];
-  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-bold text-slate-700">판독 상태 흐름</p><ol className="mt-2 space-y-2">{steps.map((step, index) => <li key={step.label} className="flex items-center gap-2 text-[10px]"><span className={`flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold ${index === 0 && aiStatus || index === 1 && clinicalStatus ? "bg-emerald-500 text-white" : "border border-slate-300 bg-white text-slate-400"}`}>{index + 1}</span><span className="font-medium text-slate-700">{step.label}</span><span className="ml-auto text-slate-500">{step.status}</span></li>)}</ol></section>;
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-bold text-slate-700">판독 상태 흐름</p><ol className="mt-2 space-y-2">{steps.map((step, index) => <li key={step.label} className="flex items-center gap-2 text-[10px]"><span data-workflow-state={step.completed ? "completed" : step.failed ? "failed" : "pending"} className={`flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold ${step.completed ? "bg-emerald-500 text-white" : step.failed ? "bg-rose-500 text-white" : "border border-slate-300 bg-white text-slate-400"}`}>{index + 1}</span><span className="font-medium text-slate-700">{step.label}</span><span className="ml-auto text-slate-500">{step.status}</span></li>)}</ol></section>;
 }
 
 export function ResultSyncStatus({ lastSyncedAt, syncing, onRefresh, notice = "" }: { lastSyncedAt?: Date | null; syncing: boolean; onRefresh?: () => void; notice?: string }) {
   return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold text-slate-700">결과 동기화</p><p className="mt-1 text-[10px] text-slate-500">{syncing ? "결과를 갱신하는 중입니다." : lastSyncedAt ? `마지막 갱신 ${lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "자동 갱신: 30초"}</p></div>{onRefresh && <button type="button" onClick={onRefresh} disabled={syncing} className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{syncing ? "갱신 중" : "지금 새로고침"}</button>}</div>{notice && <p role="status" className="mt-2 rounded bg-emerald-50 px-2 py-1.5 text-[10px] font-semibold text-emerald-700">{notice}</p>}</section>;
 }
 
-function StatusBadge({ label, value, tone }: { label: string; value?: string; tone: "specialist" | "ai" }) {
-  const available = Boolean(value);
-  const colors = available ? (tone === "specialist" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700") : "border-slate-200 bg-slate-50 text-slate-400";
+function StatusBadge({ label, value, status, tone }: { label: string; value?: string; status?: string; tone: "specialist" | "ai" }) {
+  const failed = status === "FAILED" || status === "ERROR";
+  const inProgress = status === "PENDING" || status === "QUEUED" || status === "RUNNING" || status === "REQUESTED";
+  const colors = failed ? "border-rose-200 bg-rose-50 text-rose-700" : inProgress ? "border-amber-200 bg-amber-50 text-amber-700" : value ? (tone === "specialist" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700") : "border-slate-200 bg-slate-50 text-slate-400";
   return <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold ${colors}`}>{label} · {value || "결과 없음"}</span>;
 }
 
 function ResultValues({ values, accent }: { values: [string, string][]; accent: "specialist" | "ai" }) {
   return <dl className="grid grid-cols-2 gap-2 p-4">{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border px-3 py-2.5 ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className="whitespace-nowrap text-[10px] text-slate-500">{label}</dt><dd className="mt-1 break-words text-xs font-semibold text-slate-800">{value}</dd></div>)}</dl>;
 }
-function EmptyResult({ title, text }: { title: string; text: string }) { return <div className="flex min-h-[130px] items-center justify-center px-5 text-center"><div><p className="text-sm font-semibold text-slate-700">{title}</p><p className="mt-1.5 max-w-md text-xs leading-5 text-slate-500">{text}</p></div></div>; }
+function EmptyResult({ title, text, nextAction }: { title: string; text: string; nextAction?: string }) { return <div className="flex min-h-[130px] items-center justify-center px-5 text-center"><div><p className="text-sm font-semibold text-slate-700">{title}</p><p className="mt-1.5 max-w-md text-xs leading-5 text-slate-500">{text}</p>{nextAction && <p className="mt-2 max-w-md rounded-md bg-slate-50 px-2.5 py-1.5 text-[10px] leading-4 text-slate-600">{nextAction}</p>}</div></div>; }
 function PanelError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry?: () => void }) { return <div role="alert" className="flex min-h-[190px] items-center justify-center bg-rose-50/50 px-5"><div className="text-center"><p className="text-xs text-rose-700">{message}</p>{onRetry && <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-700 disabled:opacity-50">{retrying ? "재시도 중" : "이 결과 다시 시도"}</button>}</div></div>; }
 
 function getSpecialistValues(stage: string, detail: unknown): [string, string][] {

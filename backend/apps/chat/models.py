@@ -18,6 +18,12 @@ class CaseChatMessage(CreatedOnlyUUIDModel):
     )
     client_message_id = models.UUIDField()
     body = models.CharField(max_length=2000)
+    is_private = models.BooleanField(default=False)
+    recipients = models.ManyToManyField(
+        settings.AUTH_USER_MODEL,
+        blank=True,
+        related_name="private_case_chat_messages",
+    )
 
     class Meta:
         db_table = "case_chat_messages"
@@ -33,5 +39,30 @@ class CaseChatMessage(CreatedOnlyUUIDModel):
                 fields=["case", "-created_at", "-id"],
                 name="idx_chat_case_cursor",
             ),
+        ]
+
+
+class CaseChatMessageReadReceipt(CreatedOnlyUUIDModel):
+    message = models.ForeignKey(
+        CaseChatMessage,
+        on_delete=models.CASCADE,
+        related_name="read_receipts",
+    )
+    reader = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="case_chat_read_receipts",
+    )
+
+    class Meta:
+        db_table = "case_chat_message_read_receipts"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "reader"],
+                name="uq_chat_message_reader_receipt",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["reader", "-created_at"], name="idx_chat_receipt_reader"),
         ]
 

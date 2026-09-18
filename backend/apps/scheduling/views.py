@@ -10,9 +10,12 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import User
 
-from .models import DoctorSchedule, DoctorSchedulingPreference, DoctorWeeklyAvailability
+from .models import DoctorSchedule, DoctorWeeklyAvailability
 from .permissions import IsPatientAppService
-from .serializers import DoctorSchedulingPreferenceSerializer, DoctorUnavailableSerializer, DoctorWeeklyAvailabilitySerializer
+from .serializers import DoctorUnavailableSerializer, DoctorWeeklyAvailabilitySerializer
+
+
+FIXED_SLOT_CAPACITY = 5
 
 
 class DoctorOwnedQuerysetMixin:
@@ -56,15 +59,13 @@ class DoctorUnavailableDetailAPIView(DoctorOwnedQuerysetMixin, RetrieveUpdateDes
 @extend_schema(tags=["Doctor scheduling"])
 class DoctorSchedulingPreferenceAPIView(DoctorOwnedQuerysetMixin, APIView):
     def get(self, request):
-        preference = DoctorSchedulingPreference.objects.filter(doctor=request.user).first()
-        return Response(DoctorSchedulingPreferenceSerializer(preference or DoctorSchedulingPreference(doctor=request.user)).data)
+        return Response({"slot_capacity": FIXED_SLOT_CAPACITY})
 
     def patch(self, request):
-        preference, _ = DoctorSchedulingPreference.objects.get_or_create(doctor=request.user)
-        serializer = DoctorSchedulingPreferenceSerializer(preference, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        return Response(
+            {"detail": "예약 슬롯 정원은 30분당 5명으로 고정되어 있습니다."},
+            status=405,
+        )
 
 
 @extend_schema(tags=["Appointment availability"])
@@ -100,10 +101,9 @@ class DoctorAppointmentAvailabilityAPIView(
                 end_at__gt=datetime.combine(start, time.min, tzinfo=start_at_tz(request)),
             )
 
-        preference = DoctorSchedulingPreference.objects.filter(doctor=doctor).first()
         return Response({
             "doctor_id": str(doctor.id),
-            "slot_capacity": preference.slot_capacity if preference else 5,
+            "slot_capacity": FIXED_SLOT_CAPACITY,
             "weekly_availability": DoctorWeeklyAvailabilitySerializer(
                 DoctorWeeklyAvailability.objects.filter(doctor=doctor, enabled=True), many=True
             ).data,

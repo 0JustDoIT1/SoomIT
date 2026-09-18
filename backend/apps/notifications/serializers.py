@@ -23,5 +23,5 @@ class StaffNotificationSerializer(serializers.ModelSerializer):
 
 
 class StaffNotificationSettingSerializer(serializers.Serializer):
-    notification_type = serializers.ChoiceField(choices=["EXAMINATION_ORDER"])
+    notification_type = serializers.ChoiceField(choices=["EXAMINATION_ORDER", "CASE_CHAT"])
     enabled = serializers.BooleanField()

@@ -49,6 +49,9 @@ const apiBase = (
   process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
 ).replace(/\/+$/, '');
 
+type NotificationType = 'EXAMINATION_ORDER' | 'CASE_CHAT';
+type NotificationSetting = { notification_type: NotificationType; enabled: boolean };
+
 export default function RespiratorySettingsPage() {
   const { authorizedFetch } = useRespiratoryAuth();
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -60,6 +63,9 @@ export default function RespiratorySettingsPage() {
   const [tagDraft, setTagDraft] = useState('');
   const [message, setMessage] = useState('');
   const [saving, setSaving] = useState(false);
+  const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(true);
+  const [caseChatNotificationsEnabled, setCaseChatNotificationsEnabled] = useState(true);
+  const [notificationSaving, setNotificationSaving] = useState(false);
 
   // Saved profile image (already committed to GCS/DB).
   const [profileImageSrc, setProfileImageSrc] = useState<string | null>(null);
@@ -155,6 +161,32 @@ export default function RespiratorySettingsPage() {
       );
   }, [authorizedFetch, loadProfileImage, applyDoctorProfileToForm]);
 
+  useEffect(() => {
+    void Promise.all(
+      (['EXAMINATION_ORDER', 'CASE_CHAT'] as NotificationType[]).map(
+        async (notificationType) => {
+          const response = await authorizedFetch(
+            `${apiBase}/api/notifications/me/settings/?notification_type=${notificationType}`
+          );
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || '알림 설정을 불러오지 못했습니다.');
+          }
+          return data as NotificationSetting;
+        }
+      )
+    )
+      .then(([orderSetting, chatSetting]) => {
+        setOrderNotificationsEnabled(orderSetting.enabled !== false);
+        setCaseChatNotificationsEnabled(chatSetting.enabled !== false);
+      })
+      .catch((error) =>
+        setMessage(
+          error instanceof Error ? error.message : '알림 설정을 불러오지 못했습니다.'
+        )
+      );
+  }, [authorizedFetch]);
+
   // Independent from the profile-image endpoint below - this only ever
   // touches birth_date/gender/phone/email/tags, so it never requires an
   // image, and vice versa.
@@ -193,6 +225,42 @@ export default function RespiratorySettingsPage() {
     applyDoctorProfileToForm(profile?.doctor_profile);
     setTagDraft('');
     setMessage('');
+  };
+
+  const saveNotificationSettings = async () => {
+    setNotificationSaving(true);
+    try {
+      const settings: NotificationSetting[] = [
+        { notification_type: 'EXAMINATION_ORDER', enabled: orderNotificationsEnabled },
+        { notification_type: 'CASE_CHAT', enabled: caseChatNotificationsEnabled },
+      ];
+      const responses = await Promise.all(
+        settings.map(async (setting) => {
+          const response = await authorizedFetch(
+            `${apiBase}/api/notifications/me/settings/`,
+            {
+              method: 'PATCH',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(setting),
+            }
+          );
+          const data = await response.json();
+          if (!response.ok) {
+            throw new Error(data.detail || '알림 설정을 저장하지 못했습니다.');
+          }
+          return data as NotificationSetting;
+        })
+      );
+      setOrderNotificationsEnabled(responses[0].enabled);
+      setCaseChatNotificationsEnabled(responses[1].enabled);
+      setMessage('알림 설정을 저장했습니다.');
+    } catch (error) {
+      setMessage(
+        error instanceof Error ? error.message : '알림 설정을 저장하지 못했습니다.'
+      );
+    } finally {
+      setNotificationSaving(false);
+    }
   };
 
   const addTag = () => {
@@ -541,6 +609,35 @@ export default function RespiratorySettingsPage() {
             </div>
           </form>
 
+          <section className="mt-5 border-t border-slate-100 pt-5">
+            <h3 className="text-sm font-semibold text-slate-700">알림 설정</h3>
+            <p className="mt-1 text-xs text-slate-400">
+              검사 오더와 나에게 수신된 개인 Case 메시지 알림을 관리합니다.
+            </p>
+            <div className="mt-3 space-y-2">
+              <NotificationToggle
+                title="검사 오더 알림"
+                description="내 담당 Case에 새 검사 오더가 생성되면 알립니다."
+                enabled={orderNotificationsEnabled}
+                onChange={setOrderNotificationsEnabled}
+              />
+              <NotificationToggle
+                title="개인 Case 메시지 알림"
+                description="나를 수신자로 지정한 개인 Case 메시지가 도착하면 알립니다."
+                enabled={caseChatNotificationsEnabled}
+                onChange={setCaseChatNotificationsEnabled}
+              />
+            </div>
+            <button
+              type="button"
+              disabled={notificationSaving}
+              onClick={() => void saveNotificationSettings()}
+              className="mt-3 h-10 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
+            >
+              {notificationSaving ? '저장 중...' : '알림 설정 저장'}
+            </button>
+          </section>
+
           {message && (
             <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">
               {message}
@@ -550,6 +647,33 @@ export default function RespiratorySettingsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+function NotificationToggle({
+  title,
+  description,
+  enabled,
+  onChange,
+}: {
+  title: string;
+  description: string;
+  enabled: boolean;
+  onChange: (enabled: boolean) => void;
+}) {
+  return (
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+      <span>
+        <span className="block text-sm font-medium text-slate-700">{title}</span>
+        <span className="mt-0.5 block text-xs text-slate-400">{description}</span>
+      </span>
+      <input
+        type="checkbox"
+        checked={enabled}
+        onChange={(event) => onChange(event.target.checked)}
+        className="h-4 w-4 shrink-0 accent-blue-600"
+      />
+    </label>
   );
 }
 

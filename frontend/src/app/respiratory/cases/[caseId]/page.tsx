@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
+import { useRespiratoryToast } from "../../_components/respiratory-toast-provider";
 import { API_BASE_URL, type ExaminationOrder } from "../../_lib/respiratory-api";
 import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-sections";
 import { CaseWorkspaceEmpty } from "./case-workspace-empty";
@@ -17,7 +18,6 @@ import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
 import { CasePatientSidebar } from "./case-patient-sidebar";
 import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
-import { CaseCoordinationPanels } from "./case-coordination-panels";
 import { Pdl1ResultPanel } from "./pdl1-imaging-workstation";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
@@ -32,6 +32,9 @@ import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { StageExaminationOrder } from "./stage-examination-order";
+import { CaseWorkflowDecision } from "./case-workflow-decision";
+import { XrayWorkflowDecision } from "./xray-workflow-decision";
+import { CaseConsultationRequest } from "./case-consultation-request";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
 import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
@@ -427,9 +430,11 @@ const NEXT_ORDER_BY_INFO_MENU = {
 void [mainMenus, resultSubMenus, aiSubMenus, treatmentSubMenus, prescriptionSubMenus];
 
 export default function RespiratoryCaseDetailPage() {
+  const searchParams = useSearchParams();
   const params = useParams();
   const router = useRouter();
   const { authorizedFetch } = useRespiratoryAuth();
+  const { showToast } = useRespiratoryToast();
 
   const caseId = params.caseId as string;
 
@@ -988,6 +993,7 @@ export default function RespiratoryCaseDetailPage() {
   const tnmClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PET_CT_TNM"
   );
+  const currentStageClinicalResult = tnmClinicalResults.find((result) => result.workflow_stage === selectedCase?.current_stage && result.result_status === "CONFIRMED");
 
   const tnmClinical =
     tnmClinicalResult?.result_detail?.tnm;
@@ -1430,17 +1436,13 @@ export default function RespiratoryCaseDetailPage() {
 
   return (
     <>
-      <section className="flex h-full min-h-0 items-center justify-center bg-[#f3f7fd] p-6 xl:hidden" aria-label="Case Workspace 최소 해상도 안내">
-        <div className="max-w-md rounded-2xl border border-blue-100 bg-white p-8 text-center shadow-sm">
-          <p className="text-sm font-bold text-slate-900">Case Workspace는 Desktop 환경에 맞춰 설계되었습니다.</p>
-          <p className="mt-3 text-sm leading-6 text-slate-500">영상과 판독 정보를 안전하게 함께 확인하려면 화면 너비 1280px 이상에서 열어 주세요.</p>
-        </div>
-      </section>
-      <div className="hidden h-full min-h-0 min-w-0 grid-cols-[minmax(210px,230px)_128px_minmax(0,1fr)] overflow-hidden bg-[#f3f7fd] xl:grid">
-      <CaseChatPanel caseId={caseId} authorizedFetch={authorizedFetch} />
+      <div className="h-full min-h-0 overflow-x-auto bg-[#f3f7fd] [scrollbar-gutter:stable]" aria-label="Case Workspace">
+      <div className="grid h-full min-h-0 min-w-[1180px] grid-cols-[minmax(190px,210px)_120px_minmax(0,1fr)] overflow-hidden bg-[#f3f7fd] xl:grid-cols-[minmax(210px,230px)_128px_minmax(0,1fr)]">
+      <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
+      <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
-      <CaseInfoMenu selected={selectedInfoMenu} onSelect={handleInfoMenuSelect} />
-      <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-hidden p-2">
+      <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} onSelect={handleInfoMenuSelect} />
+      <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto p-2 [scrollbar-gutter:stable]">
       <CaseSummaryHeader key={caseId} caseData={selectedCase} />
       <CaseWorkflowBar
         currentStage={selectedCase.current_stage}
@@ -1683,7 +1685,7 @@ export default function RespiratoryCaseDetailPage() {
             setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
       />
-      <main className={selectedInfoMenu === "CT" || selectedInfoMenu === "XRAY" ? "min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-blue-100 bg-white p-2 shadow-sm" : "min-h-0 min-w-0 flex-1 overflow-auto rounded-xl border border-blue-100 bg-white p-3 shadow-sm"}>
+      <main className={selectedInfoMenu === "CT" || selectedInfoMenu === "XRAY" ? "min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl border border-blue-100 bg-white p-2 shadow-sm [scrollbar-gutter:stable]" : "min-w-0 shrink-0 rounded-xl border border-blue-100 bg-white p-3 shadow-sm"}>
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
@@ -1709,7 +1711,7 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{(selectedInfoMenu === "XRAY" || selectedInfoMenu === "CT" || selectedInfoMenu === "PET_CT_TNM" || selectedInfoMenu === "PATHOLOGY_GENE") && <StageExaminationOrder caseId={caseId} orderType={NEXT_ORDER_BY_INFO_MENU[selectedInfoMenu]} onCreated={(orderType) => { setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(`${orderType === "CT" ? "흉부 CT" : orderType === "PET_CT_TNM" ? "PET-CT / TNM" : orderType === "PATHOLOGY_GENE" ? "조직/유전자" : "PD-L1"} 오더가 생성되었습니다.`); }} />}</div>
+          <div className="flex shrink-0 items-center gap-2">{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{(selectedInfoMenu === "CT" || selectedInfoMenu === "PET_CT_TNM" || selectedInfoMenu === "PATHOLOGY_GENE") && <StageExaminationOrder caseId={caseId} orderType={NEXT_ORDER_BY_INFO_MENU[selectedInfoMenu]} onCreated={(orderType) => { const message = `${orderType === "CT" ? "흉부 CT" : orderType === "PET_CT_TNM" ? "PET-CT / TNM" : orderType === "PATHOLOGY_GENE" ? "조직/유전자" : "PD-L1"} 오더가 생성되었습니다.`; setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); showToast(message); }} />}{selectedCase && selectedCase.current_stage !== "XRAY" && selectedInfoMenu === selectedCase.current_stage && <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} confirmedResultId={currentStageClinicalResult?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />}</div>
         </div>
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
@@ -1718,11 +1720,6 @@ export default function RespiratoryCaseDetailPage() {
 
         {selectedInfoMenu === "OVERVIEW" ? (
           <div>
-            <CaseCoordinationPanels
-              caseId={caseId}
-              decision={selectedCase.latest_clinician_decision}
-              onOrderCreated={() => setCaseRefreshVersion((current) => current + 1)}
-            />
             <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} orders={caseOrders} ordersLoaded={ordersLoaded} />
           </div>
         ) : selectedInfoMenu === "AI_SUMMARY" ? (
@@ -2445,6 +2442,8 @@ export default function RespiratoryCaseDetailPage() {
             key={caseId}
             aiTnm={tnmAnalysis}
             clinicalTnm={tnmClinical}
+            clinicalResultId={tnmClinicalResult?.id}
+            clinicalResultStatus={tnmClinicalResult?.result_status}
             modelName={tnmAnalysisResult?.model_name}
             modelVersion={tnmAnalysisResult?.model_version_name}
             caseId={caseId}
@@ -2672,6 +2671,7 @@ export default function RespiratoryCaseDetailPage() {
           syncingResults={resultsSyncing}
           onRefreshResults={() => { void refreshCaseResults(); }}
           syncNotice={resultSyncNotice}
+          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : undefined}
         />
         ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
         <PathologyGeneReviewPanel
@@ -2741,6 +2741,7 @@ export default function RespiratoryCaseDetailPage() {
         </main>
         </div>
         {pendingCaseId && <CaseChangeDialog onCancel={() => setPendingCaseId(null)} onDiscard={discardDraftAndMove} returnFocusRef={caseTriggerRef} />}
+      </div>
       </div>
     </>
     );

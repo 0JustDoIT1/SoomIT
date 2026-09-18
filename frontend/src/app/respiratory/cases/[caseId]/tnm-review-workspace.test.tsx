@@ -58,4 +58,25 @@ describe("TnmReviewWorkspace", () => {
     expect(compareTnmValues(null, "T1")).toBe("UNAVAILABLE");
     expect(compareTnmValues(null, null)).toBe("EMPTY");
   });
+
+  it("restores a saved TNM result and requires confirmation before Stage calculation", () => {
+    const { rerender } = render(
+      <TnmReviewWorkspace
+        clinicalResultId="tnm-result-1"
+        clinicalResultStatus="DRAFT"
+      />,
+    );
+
+    const stageButton = () => screen.getByRole("button", { name: "Calculate Stage candidate" });
+    expect(stageButton()).toBeDisabled();
+
+    rerender(
+      <TnmReviewWorkspace
+        clinicalResultId="tnm-result-1"
+        clinicalResultStatus="CONFIRMED"
+      />,
+    );
+
+    expect(stageButton()).toBeEnabled();
+  });
 });

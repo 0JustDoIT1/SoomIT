@@ -36,6 +36,8 @@ class DoctorAiAnalysisListAPIView(ListAPIView):
             .select_related(
                 "case",
                 "model_version",
+                "examination_order",
+                "source_image_asset",
                 "ai_result",
                 "ai_result__xray_detail",
                 "ai_result__ct_detail",

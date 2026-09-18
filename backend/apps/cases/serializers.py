@@ -77,6 +77,81 @@ class ExaminationOrderUpdateSerializer(serializers.Serializer):
         return attrs
 
 
+class DoctorCaseWorkflowDecisionSerializer(serializers.Serializer):
+    action = serializers.ChoiceField(
+        choices=[
+            ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
+            "RETRY",
+            ClinicianDecision.DecisionType.REFERRED_OUT,
+            "CASE_CLOSED",
+        ]
+    )
+    source_clinical_result_id = serializers.UUIDField()
+    target_stage = serializers.ChoiceField(
+        choices=WorkflowStage.choices,
+        required=False,
+        allow_null=True,
+    )
+    reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+    retry_priority = serializers.ChoiceField(choices=ExaminationOrder.Priority.choices, default=ExaminationOrder.Priority.NORMAL)
+    retry_purpose = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+    retry_clinical_note = serializers.CharField(max_length=5000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        action = attrs["action"]
+        target_stage = attrs.get("target_stage")
+        if action == ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE and not target_stage:
+            raise serializers.ValidationError({"target_stage": "다음 진료 단계를 선택하세요."})
+        if action == ClinicianDecision.DecisionType.CLOSE_CASE:
+            if target_stage:
+                raise serializers.ValidationError({"target_stage": "Case 종결에는 다음 단계를 지정할 수 없습니다."})
+            if not attrs.get("reason", "").strip():
+                raise serializers.ValidationError({"reason": "Case 종결 사유를 입력하세요."})
+        if action in {"RETRY", ClinicianDecision.DecisionType.REFERRED_OUT, "CASE_CLOSED"}:
+            if target_stage:
+                raise serializers.ValidationError({"target_stage": "이 결정에는 다음 단계를 지정할 수 없습니다."})
+            if not attrs.get("reason", "").strip():
+                raise serializers.ValidationError({"reason": "결정 사유를 입력하세요."})
+        if action == "RETRY" and not attrs.get("retry_purpose", "").strip():
+            raise serializers.ValidationError({"retry_purpose": "재검 오더 목적을 입력하세요."})
+        return attrs
+
+
+class DoctorXrayWorkflowSerializer(serializers.Serializer):
+    """Finalise an X-ray result and make its case decision atomically."""
+
+    assessment = serializers.ChoiceField(choices=["NEGATIVE", "SUSPICIOUS", "INDETERMINATE"])
+    finding_summary = serializers.CharField(max_length=5000, required=False, allow_blank=True, default="")
+    next_action = serializers.ChoiceField(choices=["ORDER_CT", "REFERRED_OUT", "CLOSE_CASE"])
+    priority = serializers.ChoiceField(choices=ExaminationOrder.Priority.choices, default=ExaminationOrder.Priority.NORMAL)
+    purpose = serializers.CharField(max_length=500, required=False, allow_blank=True, default="")
+    clinical_note = serializers.CharField(max_length=5000, required=False, allow_blank=True, default="")
+    closure_reason = serializers.CharField(max_length=2000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["next_action"] == "ORDER_CT" and not attrs.get("purpose", "").strip():
+            raise serializers.ValidationError({"purpose": "흉부 CT 오더 목적을 입력하세요."})
+        if attrs["next_action"] in {"REFERRED_OUT", "CLOSE_CASE"} and not attrs.get("closure_reason", "").strip():
+            raise serializers.ValidationError({"closure_reason": "검사 종료 사유를 입력하세요."})
+        return attrs
+
+
+class DoctorCaseConsultationRequestSerializer(serializers.Serializer):
+    recipient_user_id = serializers.UUIDField(required=False, allow_null=True)
+    question = serializers.CharField(max_length=5000)
+    priority = serializers.ChoiceField(choices=["NORMAL", "URGENT"], default="NORMAL")
+
+
+class DoctorCaseConsultationResponseSerializer(serializers.Serializer):
+    status = serializers.ChoiceField(choices=["ACKNOWLEDGED", "RESPONDED", "CANCELLED"])
+    response_note = serializers.CharField(max_length=5000, required=False, allow_blank=True, default="")
+
+    def validate(self, attrs):
+        if attrs["status"] == "RESPONDED" and not attrs.get("response_note", "").strip():
+            raise serializers.ValidationError({"response_note": "회신 내용을 입력하세요."})
+        return attrs
+
+
 class MedicalOpinionRequestSerializer(serializers.Serializer):
     instruction = serializers.CharField(
         required=False,

@@ -41,6 +41,7 @@ class UserNotificationSetting(UUIDModel):
         CLINICAL_REVIEW_REQUIRED = "CLINICAL_REVIEW_REQUIRED", "검토필요"
         APPOINTMENT = "APPOINTMENT", "예약"
         CASE_STAGE_CHANGED = "CASE_STAGE_CHANGED", "단계변경"
+        CASE_CHAT = "CASE_CHAT", "Case 채팅"
         SYSTEM = "SYSTEM", "시스템"
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notification_settings")

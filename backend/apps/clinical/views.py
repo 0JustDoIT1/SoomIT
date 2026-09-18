@@ -654,7 +654,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
 
         ClinicianDecision.objects.create(
             case=case,
-            source_workflow_stage="TREATMENT",
+            source_stage="TREATMENT",
             source_clinical_result=clinical_result,
             decision_type="PROCEED_NEXT_STAGE",
             target_stage="PRESCRIPTION",

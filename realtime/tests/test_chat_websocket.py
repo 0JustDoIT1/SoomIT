@@ -42,6 +42,66 @@ class FakeRedis:
         self.publish = AsyncMock(return_value=1)
 
 
+def test_private_message_is_broadcast_only_to_sender_and_recipients():
+    room_id = str(uuid4())
+    sender_id = str(uuid4())
+    recipient_id = str(uuid4())
+    non_recipient_id = str(uuid4())
+    sender_socket = FakeWebSocket()
+    recipient_socket = FakeWebSocket()
+    non_recipient_socket = FakeWebSocket()
+    event = json.dumps({
+        "type": "chat.message.created",
+        "message": {
+            "sender": {"id": sender_id},
+            "is_private": True,
+            "recipient_ids": [recipient_id],
+        },
+    })
+    main.manager.rooms[room_id] = {
+        sender_socket: sender_id,
+        recipient_socket: recipient_id,
+        non_recipient_socket: non_recipient_id,
+    }
+
+    asyncio.run(main.manager._broadcast(room_id, event))
+
+    assert sender_socket.sent_text == [event]
+    assert recipient_socket.sent_text == [event]
+    assert non_recipient_socket.sent_text == []
+    main.manager.rooms.clear()
+
+
+def test_read_event_is_broadcast_only_to_sender_and_reader():
+    room_id = str(uuid4())
+    sender_id = str(uuid4())
+    reader_id = str(uuid4())
+    other_id = str(uuid4())
+    sender_socket = FakeWebSocket()
+    reader_socket = FakeWebSocket()
+    other_socket = FakeWebSocket()
+    event = json.dumps({
+        "type": "chat.message.read",
+        "read": {
+            "message_id": str(uuid4()),
+            "sender_id": sender_id,
+            "reader": {"id": reader_id, "name": "Reader", "read_at": "2026-09-18T10:00:00+09:00"},
+        },
+    })
+    main.manager.rooms[room_id] = {
+        sender_socket: sender_id,
+        reader_socket: reader_id,
+        other_socket: other_id,
+    }
+
+    asyncio.run(main.manager._broadcast(room_id, event))
+
+    assert sender_socket.sent_text == [event]
+    assert reader_socket.sent_text == [event]
+    assert other_socket.sent_text == []
+    main.manager.rooms.clear()
+
+
 def test_missing_token_closes_with_4401():
     websocket = FakeWebSocket(token=None)
 
@@ -66,7 +126,7 @@ def test_django_access_rejection_preserves_websocket_close_code():
         websocket = FakeWebSocket()
         with (
             patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
-            patch.object(main, "_authorize_case", AsyncMock(return_value=expected_code)),
+            patch.object(main, "_authorize_case", AsyncMock(return_value=(expected_code, None))),
         ):
             asyncio.run(main.chat_endpoint(websocket, str(uuid4())))
         assert websocket.accepted is True
@@ -104,7 +164,7 @@ def test_new_message_is_stored_then_published():
 
     with (
         patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
-        patch.object(main, "_authorize_case", AsyncMock(return_value=0)),
+        patch.object(main, "_authorize_case", AsyncMock(return_value=(0, str(uuid4())))),
         patch.object(main, "_store_message", AsyncMock(return_value=response)) as store,
         patch.object(main, "redis_client", fake_redis),
         patch.object(main.manager, "connect", AsyncMock()),
@@ -150,7 +210,7 @@ def test_replayed_message_is_acknowledged_without_rebroadcast():
 
     with (
         patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
-        patch.object(main, "_authorize_case", AsyncMock(return_value=0)),
+        patch.object(main, "_authorize_case", AsyncMock(return_value=(0, str(uuid4())))),
         patch.object(main, "_store_message", AsyncMock(return_value=response)),
         patch.object(main, "redis_client", fake_redis),
         patch.object(main.manager, "connect", AsyncMock()),

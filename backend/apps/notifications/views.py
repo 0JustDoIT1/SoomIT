@@ -49,12 +49,15 @@ class MyNotificationSettingAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        notification_type = request.query_params.get("notification_type", "EXAMINATION_ORDER")
+        if notification_type not in {"EXAMINATION_ORDER", "CASE_CHAT"}:
+            return Response({"detail": "지원하지 않는 알림 유형입니다."}, status=400)
         setting = UserNotificationSetting.objects.filter(
             user=request.user,
-            notification_type="EXAMINATION_ORDER",
+            notification_type=notification_type,
         ).first()
         return Response({
-            "notification_type": "EXAMINATION_ORDER",
+            "notification_type": notification_type,
             "enabled": setting.enabled if setting else True,
         })
 

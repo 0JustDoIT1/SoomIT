@@ -39,6 +39,11 @@ from .views import (
     DoctorCaseCtSegmentationLabelmapAPIView,
     DoctorCaseCtVisualizationAPIView,
     DoctorFollowUpPathologyOrderAPIView,
+    DoctorCaseWorkflowDecisionAPIView,
+    DoctorXrayWorkflowAPIView,
+    DoctorCaseConsultationRequestAPIView,
+    DoctorCaseConsultationResponseAPIView,
+    DoctorMyConsultationRequestAPIView,
     DoctorExaminationOrderAPIView,
     DoctorExaminationOrderDetailAPIView,
     DoctorMedicalOpinionAPIView,
@@ -54,6 +59,7 @@ from apps.patients.views import (
 
 
 urlpatterns = [
+    path("consultations/me/", DoctorMyConsultationRequestAPIView.as_view(), name="doctor-my-consultation-list"),
     path("mfds-products/", DoctorMfdsProductSearchAPIView.as_view(), name="doctor-mfds-product-search"),
     path(
         "",
@@ -102,6 +108,14 @@ urlpatterns = [
         DoctorExaminationOrderAPIView.as_view(),
         name="doctor-examination-order-list-create",
     ),
+    path(
+        "<uuid:case_id>/workflow-decision/",
+        DoctorCaseWorkflowDecisionAPIView.as_view(),
+        name="doctor-case-workflow-decision",
+    ),
+    path("<uuid:case_id>/xray-workflow/", DoctorXrayWorkflowAPIView.as_view(), name="doctor-xray-workflow"),
+    path("<uuid:case_id>/consultations/", DoctorCaseConsultationRequestAPIView.as_view(), name="doctor-case-consultation-list-create"),
+    path("<uuid:case_id>/consultations/<uuid:consultation_id>/", DoctorCaseConsultationResponseAPIView.as_view(), name="doctor-case-consultation-response"),
     path(
         "<uuid:case_id>/orders/<uuid:order_id>/",
         DoctorExaminationOrderDetailAPIView.as_view(),

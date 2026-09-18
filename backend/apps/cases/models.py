@@ -70,6 +70,31 @@ class ClinicianDecision(UUIDModel):
         db_table = "clinician_decisions"
 
 
+class CaseConsultationRequest(TimestampedUUIDModel):
+    class Priority(models.TextChoices):
+        NORMAL = "NORMAL", "일반"
+        URGENT = "URGENT", "긴급"
+
+    class Status(models.TextChoices):
+        REQUESTED = "REQUESTED", "요청됨"
+        ACKNOWLEDGED = "ACKNOWLEDGED", "확인됨"
+        RESPONDED = "RESPONDED", "회신됨"
+        CANCELLED = "CANCELLED", "취소됨"
+
+    case = models.ForeignKey(LungCancerCase, on_delete=models.PROTECT, related_name="consultation_requests")
+    requested_by_user = models.ForeignKey(User, on_delete=models.PROTECT, related_name="requested_case_consultations")
+    recipient_user = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="received_case_consultations")
+    target_department_code = models.CharField(max_length=50)
+    question = models.TextField()
+    priority = models.CharField(max_length=10, choices=Priority.choices, default=Priority.NORMAL)
+    status = models.CharField(max_length=15, choices=Status.choices, default=Status.REQUESTED)
+    response_note = models.TextField(null=True, blank=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "case_consultation_requests"
+
+
 # ── 3-3. examination_orders ─────────────────────────────────────
 class ExaminationOrder(TimestampedUUIDModel):
     class OrderType(models.TextChoices):

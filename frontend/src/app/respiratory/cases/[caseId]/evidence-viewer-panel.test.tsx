@@ -51,4 +51,19 @@ describe("EvidenceViewerPanel", () => {
     expect(requestFullscreen).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("shows only high-confidence priority lesions until the user requests all lesions", () => {
+    render(<EvidenceViewerPanel assets={[{ id: "asset-1", image_type: "XRAY", file_format: "PNG", storage_uri: "https://example.test/xray.png" }]} detectionImageSize={{ width: 100, height: 100 }} detections={[
+      { class_name: "low", score: 0.42, bbox_xyxy: [1, 1, 10, 10] },
+      { class_name: "highest", score: 0.95, bbox_xyxy: [20, 20, 40, 40] },
+      { class_name: "high", score: 0.77, bbox_xyxy: [50, 50, 70, 70] },
+      { class_name: "medium", score: 0.61, bbox_xyxy: [75, 75, 90, 90] },
+    ]} />);
+
+    expect(screen.getByText("주요 병변 2/4")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /low/ })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "전체 보기" }));
+    expect(screen.getByText("전체 병변 4/4")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /low/ })).toHaveLength(2);
+  });
 });

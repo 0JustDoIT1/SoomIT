@@ -2,7 +2,7 @@ import asyncio
 import json
 import logging
 import os
-from typing import Dict, Set
+from typing import Dict
 from uuid import UUID
 
 import httpx
@@ -28,23 +28,23 @@ http_client: httpx.AsyncClient | None = None
 
 class ConnectionManager:
     def __init__(self):
-        self.rooms: Dict[str, Set[WebSocket]] = {}
+        self.rooms: Dict[str, Dict[WebSocket, str]] = {}
         self.listeners: Dict[str, asyncio.Task] = {}
         self.listener_ready: Dict[str, asyncio.Event] = {}
 
-    async def connect(self, room_id: str, websocket: WebSocket):
+    async def connect(self, room_id: str, websocket: WebSocket, user_id: str):
         if room_id not in self.listeners:
             ready = asyncio.Event()
             self.listener_ready[room_id] = ready
             self.listeners[room_id] = asyncio.create_task(self._subscribe(room_id, ready))
         await asyncio.wait_for(self.listener_ready[room_id].wait(), timeout=5)
         await websocket.accept()
-        self.rooms.setdefault(room_id, set()).add(websocket)
+        self.rooms.setdefault(room_id, {})[websocket] = user_id
 
     def disconnect(self, room_id: str, websocket: WebSocket):
         connections = self.rooms.get(room_id)
         if connections and websocket in connections:
-            connections.remove(websocket)
+            del connections[websocket]
         if connections is not None and not connections:
             del self.rooms[room_id]
             task = self.listeners.pop(room_id, None)
@@ -69,7 +69,21 @@ class ConnectionManager:
 
     async def _broadcast(self, room_id: str, data: str):
         dead = []
-        for websocket in list(self.rooms.get(room_id, ())):
+        try:
+            event = json.loads(data)
+            if event.get("type") == "chat.message.read":
+                read = event.get("read", {})
+                allowed_ids = {str(read.get("sender_id", "")), str(read.get("reader", {}).get("id", ""))}
+                is_private = True
+            else:
+                message = event.get("message", {})
+                allowed_ids = {str(message.get("sender", {}).get("id", "")), *map(str, message.get("recipient_ids", []))}
+                is_private = bool(message.get("is_private"))
+        except (TypeError, ValueError, AttributeError):
+            return
+        for websocket, user_id in list(self.rooms.get(room_id, {}).items()):
+            if is_private and user_id not in allowed_ids:
+                continue
             try:
                 await websocket.send_text(data)
             except Exception:
@@ -104,7 +118,7 @@ def _error_detail(response: httpx.Response, fallback: str) -> str:
     return detail if isinstance(detail, str) and detail else fallback
 
 
-async def _authorize_case(case_id: str, access_token: str) -> int:
+async def _authorize_case(case_id: str, access_token: str) -> tuple[int, str | None]:
     try:
         response = await http_client.get(
             f"{DJANGO_INTERNAL_BASE_URL}/api/chat/internal/cases/{case_id}/access/",
@@ -112,14 +126,15 @@ async def _authorize_case(case_id: str, access_token: str) -> int:
         )
     except httpx.HTTPError:
         logger.exception("Django chat access check failed")
-        return 1011
+        return 1011, None
     if response.status_code == 200:
-        return 0
+        user_id = response.json().get("user_id")
+        return (0, str(user_id)) if user_id else (1011, None)
     if response.status_code == 401:
-        return 4401
+        return 4401, None
     if response.status_code in (403, 404):
-        return 4403
-    return 1011
+        return 4403, None
+    return 1011, None
 
 
 async def _send_error(websocket: WebSocket, code: str, detail: str):
@@ -137,7 +152,20 @@ async def _store_message(case_id: str, access_token: str, payload: dict) -> http
     return await http_client.post(
         f"{DJANGO_INTERNAL_BASE_URL}/api/chat/internal/cases/{case_id}/messages/",
         headers=_django_headers(access_token),
-        json={"client_message_id": payload["client_message_id"], "body": payload["body"]},
+        json={
+            "client_message_id": payload["client_message_id"],
+            "body": payload["body"],
+            "is_private": bool(payload.get("is_private", False)),
+            "recipient_ids": payload.get("recipient_ids", []),
+        },
+    )
+
+
+async def _mark_message_read(case_id: str, access_token: str, message_id: str) -> httpx.Response:
+    return await http_client.post(
+        f"{DJANGO_INTERNAL_BASE_URL}/api/chat/cases/{case_id}/messages/read/",
+        headers=_django_headers(access_token),
+        json={"message_ids": [message_id]},
     )
 
 
@@ -181,12 +209,12 @@ async def chat_endpoint(websocket: WebSocket, case_id: str):
         await _reject_websocket(websocket, 4403)
         return
 
-    close_code = await _authorize_case(canonical_case_id, access_token)
+    close_code, user_id = await _authorize_case(canonical_case_id, access_token)
     if close_code:
         await _reject_websocket(websocket, close_code)
         return
     try:
-        await manager.connect(canonical_case_id, websocket)
+        await manager.connect(canonical_case_id, websocket, user_id)
     except Exception:
         logger.exception("WebSocket room initialization failed")
         await _reject_websocket(websocket, 1011)
@@ -200,7 +228,36 @@ async def chat_endpoint(websocket: WebSocket, case_id: str):
             except json.JSONDecodeError:
                 await _send_error(websocket, "VALIDATION_ERROR", "올바른 JSON 메시지가 아닙니다.")
                 continue
-            if not isinstance(payload, dict) or payload.get("type") != "chat.message.create":
+            if not isinstance(payload, dict):
+                await _send_error(websocket, "VALIDATION_ERROR", "지원하지 않는 메시지 형식입니다.")
+                continue
+            if payload.get("type") == "chat.message.read":
+                message_id = _canonical_uuid(payload.get("message_id"))
+                if not message_id:
+                    await _send_error(websocket, "VALIDATION_ERROR", "message_id가 올바르지 않습니다.")
+                    continue
+                try:
+                    response = await _mark_message_read(canonical_case_id, access_token, message_id)
+                except httpx.HTTPError:
+                    logger.exception("Django chat read-state storage failed")
+                    await _send_error(websocket, "SERVICE_UNAVAILABLE", "읽음 상태를 저장할 수 없습니다.")
+                    continue
+                if response.status_code == 200:
+                    for read in response.json().get("read_messages", []):
+                        await redis_client.publish(
+                            f"chat:{canonical_case_id}",
+                            json.dumps({"type": "chat.message.read", "read": read}, ensure_ascii=False),
+                        )
+                    continue
+                if response.status_code == 401:
+                    await websocket.close(code=4401)
+                    return
+                if response.status_code in (403, 404):
+                    await websocket.close(code=4403)
+                    return
+                await _send_error(websocket, "VALIDATION_ERROR", _error_detail(response, "읽음 상태를 처리할 수 없습니다."))
+                continue
+            if payload.get("type") != "chat.message.create":
                 await _send_error(websocket, "VALIDATION_ERROR", "지원하지 않는 메시지 형식입니다.")
                 continue
             if not _canonical_uuid(payload.get("client_message_id")):
