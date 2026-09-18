@@ -17,6 +17,7 @@ from apps.accounts.models import (
 from apps.patients.models import (
     Patient,
     PatientAccount,
+    PatientQuestionnaire,
     PatientQrToken,
 )
 from apps.patients.patient_tokens import issue_patient_tokens
@@ -196,6 +197,46 @@ class PatientQrTokenAPITests(APITestCase):
             response.status_code,
             status.HTTP_401_UNAUTHORIZED,
         )
+
+    def test_public_qr_resolve_returns_patient_and_latest_questionnaire(self):
+        PatientQuestionnaire.objects.create(
+            patient=self.patient,
+            questionnaire_type="PRE_VISIT",
+            questionnaire_version="1.0",
+            responses={"current_symptoms": "기침"},
+            is_completed=True,
+            completed_at=timezone.now(),
+        )
+        raw_token = self._create_qr()
+
+        self.client.credentials()
+        response = self.client.post(
+            "/api/patients/qr-token/public-resolve/",
+            {"token": raw_token},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response["Cache-Control"], "no-store")
+        self.assertEqual(response.data["patient"]["id"], str(self.patient.id))
+        self.assertNotIn("phone_number", response.data["patient"])
+        self.assertEqual(
+            response.data["questionnaire"]["responses"]["current_symptoms"],
+            "기침",
+        )
+
+    def test_public_qr_resolve_returns_null_when_no_questionnaire_exists(self):
+        raw_token = self._create_qr()
+
+        self.client.credentials()
+        response = self.client.post(
+            "/api/patients/qr-token/public-resolve/",
+            {"token": raw_token},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIsNone(response.data["questionnaire"])
 
     def test_qr_token_can_be_resolved_only_once(self):
         raw_token = self._create_qr()

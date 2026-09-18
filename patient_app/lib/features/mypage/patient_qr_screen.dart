@@ -311,7 +311,7 @@ class _PatientQrScreenState extends State<PatientQrScreen> {
     }
 
     return QrImageView(
-      data: _qrToken!.token,
+      data: PatientQrService.publicQrUrl(_qrToken!.token),
       version: QrVersions.auto,
       size: 220,
       errorCorrectionLevel: QrErrorCorrectLevel.M,

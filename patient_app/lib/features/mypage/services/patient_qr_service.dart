@@ -21,6 +21,15 @@ class PatientQrToken {
 }
 
 class PatientQrService {
+  static const String _publicQrPageUrl = String.fromEnvironment(
+    'PUBLIC_QR_PAGE_URL',
+    defaultValue: 'https://soomit.kro.kr/qr',
+  );
+
+  static String publicQrUrl(String token) {
+    return '${_publicQrPageUrl.replaceFirst(RegExp(r'/+$'), '')}#token=$token';
+  }
+
   Future<PatientQrToken> createQrToken() async {
     final response = await DioClient.instance.post(
       '/api/patients/qr-token/',

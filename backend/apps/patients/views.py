@@ -2143,3 +2143,94 @@ class PatientQrTokenResolveAPIView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
+
+
+class PatientPublicQrTokenResolveAPIView(APIView):
+    """Public, one-time QR lookup for the mobile reception page."""
+
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        raw_token = str(request.data.get("token", "")).strip()
+
+        if not raw_token:
+            return Response(
+                {"detail": "QR token이 필요합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token_hash = hashlib.sha256(raw_token.encode("utf-8")).hexdigest()
+
+        with transaction.atomic():
+            qr_token = (
+                PatientQrToken.objects.select_for_update(of=("self",))
+                .select_related("patient_account__patient__hospital")
+                .filter(token_hash=token_hash)
+                .first()
+            )
+
+            if qr_token is None:
+                return Response(
+                    {"detail": "유효하지 않은 QR입니다."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            if qr_token.used_at is not None:
+                return Response(
+                    {"detail": "이미 사용된 QR입니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            if qr_token.expires_at <= timezone.now():
+                return Response(
+                    {"detail": "만료된 QR입니다."},
+                    status=status.HTTP_410_GONE,
+                )
+
+            patient_account = qr_token.patient_account
+            if (
+                patient_account.link_status
+                != PatientAccount.LinkStatus.LINKED
+                or patient_account.patient_id is None
+            ):
+                return Response(
+                    {"detail": "환자 연결 정보가 유효하지 않습니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            patient = patient_account.patient
+            questionnaire = (
+                PatientQuestionnaire.objects.filter(
+                    patient=patient,
+                    is_completed=True,
+                )
+                .order_by("-completed_at", "-created_at")
+                .first()
+            )
+
+            qr_token.used_at = timezone.now()
+            qr_token.save(update_fields=["used_at", "updated_at"])
+
+            return Response(
+                {
+                    "patient": {
+                        "id": str(patient.id),
+                        "patient_code": patient.patient_code,
+                        "name": patient.name,
+                        "birth_date": patient.birth_date,
+                        "sex": patient.sex,
+                        "hospital": {
+                            "id": str(patient.hospital_id),
+                            "name": patient.hospital.name,
+                        },
+                    },
+                    "questionnaire": (
+                        PatientQuestionnaireSerializer(questionnaire).data
+                        if questionnaire is not None
+                        else None
+                    ),
+                },
+                status=status.HTTP_200_OK,
+                headers={"Cache-Control": "no-store"},
+            )

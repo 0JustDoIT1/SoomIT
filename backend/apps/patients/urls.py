@@ -37,11 +37,17 @@ from .views import (
     PatientAppointmentAvailabilityAPIView,
     PatientAppointmentDoctorListAPIView,
     PatientQrTokenCreateAPIView,
+    PatientPublicQrTokenResolveAPIView,
     PatientQrTokenResolveAPIView,
     )
 
 
 urlpatterns = [
+    path(
+        "qr-token/public-resolve/",
+        PatientPublicQrTokenResolveAPIView.as_view(),
+        name="patient-public-qr-token-resolve",
+    ),
     path(
         "qr-token/resolve/",
         PatientQrTokenResolveAPIView.as_view(),
