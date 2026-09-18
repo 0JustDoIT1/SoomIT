@@ -52,7 +52,7 @@ export default function AdminLoginPage() {
             <h1 className={styles.title}>관리자 로그인</h1>
 
             <div className={styles.description}>
-              <p>승인된 계정으로만 접속할 수 있습니다.</p>
+              <p>승인된 계정으로만 접속할 수 있습니다ㅏ.</p>
             </div>
 
             <AdminLoginPanel />
