@@ -34,6 +34,7 @@ import { CaseChangeDialog } from "./case-change-dialog";
 import { StageExaminationOrder } from "./stage-examination-order";
 import { CaseWorkflowDecision } from "./case-workflow-decision";
 import { XrayWorkflowDecision } from "./xray-workflow-decision";
+import { CtWorkflowDecision } from "./ct-workflow-decision";
 import { CaseConsultationRequest } from "./case-consultation-request";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
@@ -2711,6 +2712,7 @@ export default function RespiratoryCaseDetailPage() {
           syncingResults={resultsSyncing}
           onRefreshResults={() => { void refreshCaseResults(); }}
           syncNotice={resultSyncNotice}
+          specialistAction={selectedResultMenu === "CT" && selectedCase?.current_stage === "CT" ? <CtWorkflowDecision caseId={caseId} aiResultId={ctAnalysisResult?.id} clinicalResult={selectedClinicalResult as unknown as { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } }} authorizedFetch={authorizedFetch} onCompleted={() => { showToast("흉부 CT 결과가 확정되었습니다."); setCaseRefreshVersion((current) => current + 1); void retryClinicalResults(); }} /> : undefined}
         />
         ) : (
         <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
