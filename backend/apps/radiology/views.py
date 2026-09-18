@@ -753,6 +753,90 @@ class RadiologyOrderPetSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
         return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
 
 
+class RadiologyOrderPetTnmAnalysisResetAPIView(RadiologyPermissionMixin, APIView):
+    """Return a failed PET-CT/TNM order to the PET upload step without erasing history."""
+
+    @transaction.atomic
+    def post(self, request, order_id):
+        order = self.get_order(order_id, for_update=True)
+        if order is None:
+            return Response({"detail": "검사 오더를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        if order.order_type != ExaminationOrder.OrderType.PET_CT_TNM:
+            return Response(
+                {"detail": "PET-CT/TNM 오더에서만 실패 분석을 초기화할 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        analysis = (
+            AiAnalysis.objects.select_for_update()
+            .filter(
+                case=order.case,
+                source_image_asset__examination_order=order,
+                analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+            )
+            .select_related("source_image_asset")
+            .order_by("-created_at")
+            .first()
+        )
+        if analysis is None or analysis.status != AiAnalysis.Status.FAILED:
+            return Response(
+                {"detail": "실패한 PET-CT/TNM 분석에서만 업로드 단계로 되돌릴 수 있습니다."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        asset = analysis.source_image_asset
+        if (
+            asset is None
+            or asset.examination_order_id != order.id
+            or asset.image_type != CaseImageAsset.ImageType.PET
+            or asset.workflow_stage != WorkflowStage.PET_CT_TNM
+            or asset.status != CaseImageAsset.Status.READY
+        ):
+            return Response(
+                {"detail": "초기화할 READY PET 영상 자산을 찾을 수 없습니다."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        metadata = asset.metadata if isinstance(asset.metadata, dict) else {}
+        metadata = {
+            **metadata,
+            "pet_tnm_reset": {
+                "analysis_id": str(analysis.id),
+                "storage_uri": asset.storage_uri,
+                "series_instance_uid": asset.series_instance_uid,
+                "orthanc_study_id": asset.orthanc_study_id,
+                "orthanc_series_id": asset.orthanc_series_id,
+                "reset_at": timezone.now().isoformat(),
+            },
+        }
+        asset.status = CaseImageAsset.Status.INVALID
+        asset.storage_uri = f"reset://pet-tnm/{asset.id}"
+        asset.series_instance_uid = None
+        asset.orthanc_study_id = None
+        asset.orthanc_series_id = None
+        asset.metadata = metadata
+        asset.save(
+            update_fields=[
+                "status",
+                "storage_uri",
+                "series_instance_uid",
+                "orthanc_study_id",
+                "orthanc_series_id",
+                "metadata",
+                "updated_at",
+            ]
+        )
+
+        return Response(
+            {
+                "order_id": str(order.id),
+                "analysis_id": str(analysis.id),
+                "invalidated_asset_id": str(asset.id),
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
 class RadiologyOrderXrayImageContentAPIView(RadiologyPermissionMixin, APIView):
     """Return an authorized X-ray asset without exposing its gs:// URI to the browser."""
 

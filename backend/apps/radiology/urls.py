@@ -17,6 +17,7 @@ from .views import (
     RadiologyOrderCtDicomWebMetadataAPIView,
     RadiologyOrderCtSeriesUploadAPIView,
     RadiologyOrderPetSeriesUploadAPIView,
+    RadiologyOrderPetTnmAnalysisResetAPIView,
     RadiologyOrderImageCreateAPIView,
     RadiologyOrderXrayImageContentAPIView,
     RadiologyOrderXrayImageUploadAPIView,
@@ -54,6 +55,11 @@ urlpatterns = [
         "orders/<uuid:order_id>/images/pet-series/upload/",
         RadiologyOrderPetSeriesUploadAPIView.as_view(),
         name="order-pet-series-upload",
+    ),
+    path(
+        "orders/<uuid:order_id>/pet-tnm-analysis/reset/",
+        RadiologyOrderPetTnmAnalysisResetAPIView.as_view(),
+        name="order-pet-tnm-analysis-reset",
     ),
     path(
         "orders/<uuid:order_id>/images/<uuid:asset_id>/content/",

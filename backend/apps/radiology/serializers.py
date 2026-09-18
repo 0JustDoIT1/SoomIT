@@ -366,10 +366,10 @@ class RadiologyWorklistSerializer(serializers.Serializer):
         return appointment.scheduled_at
 
     def get_image_asset_count(self, obj):
-        return len(obj.worklist_image_assets)
+        return len(self._get_current_image_assets(obj))
 
     def get_latest_image_asset(self, obj):
-        assets = obj.worklist_image_assets
+        assets = self._get_current_image_assets(obj)
         if not assets:
             return None
         return RadiologyImageAssetSummarySerializer(assets[0]).data
@@ -391,7 +391,7 @@ class RadiologyWorklistSerializer(serializers.Serializer):
         if cached_status is None:
             cached_status = calculate_workflow_status(
                 obj,
-                obj.worklist_image_assets,
+                self._get_current_image_assets(obj),
                 self._get_latest_ai_analysis(obj),
             )
             obj._worklist_workflow_status = cached_status
@@ -404,7 +404,7 @@ class RadiologyWorklistSerializer(serializers.Serializer):
 
         analyses = [
             analysis
-            for asset in obj.worklist_image_assets
+            for asset in self._get_current_image_assets(obj)
             for analysis in asset.worklist_ai_analyses
         ]
         if not analyses:
@@ -413,3 +413,10 @@ class RadiologyWorklistSerializer(serializers.Serializer):
         cached_analysis = max(analyses, key=lambda analysis: analysis.created_at)
         obj._worklist_latest_ai_analysis = cached_analysis
         return cached_analysis
+
+    def _get_current_image_assets(self, obj):
+        return [
+            asset
+            for asset in obj.worklist_image_assets
+            if asset.status != CaseImageAsset.Status.INVALID
+        ]

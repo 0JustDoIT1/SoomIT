@@ -15,6 +15,7 @@ from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import (
     AiAnalysis,
     AiResult,
+    AnalysisType,
     CtAiResult,
     ModelVersion,
     NoduleAiResult,
@@ -183,6 +184,151 @@ class RadiologyWorklistAPITestCase(APITestCase):
             status=RadiologyReview.Status.COMPLETED,
         )
         return asset, analysis
+
+    def test_reset_failed_pet_tnm_analysis_returns_order_to_upload_state(self):
+        pet_order = self._create_order(
+            self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
+        pet_asset = self._create_asset(
+            pet_order,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
+            image_type=CaseImageAsset.ImageType.PET,
+            storage_uri="orthanc://series/pet-reset",
+            study_instance_uid="1.2.3.4",
+            series_instance_uid="1.2.3.4.5",
+            orthanc_study_id="pet-reset-study",
+            orthanc_series_id="pet-reset-series",
+        )
+        tnm_model = ModelVersion.objects.create(
+            model_name="tnm-reset-model",
+            version="1.0",
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+        )
+        failed_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=pet_order,
+            source_image_asset=pet_asset,
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+            model_version=tnm_model,
+            status=AiAnalysis.Status.FAILED,
+        )
+        partial_result = AiResult.objects.create(
+            ai_analysis=failed_analysis,
+            schema_version="1.0",
+            result_payload={"t": {"t_candidate": "T2"}},
+        )
+        TnmAiResult.objects.create(ai_result=partial_result)
+        ct_asset = self._create_asset(
+            self.order,
+            workflow_stage=WorkflowStage.CT,
+            image_type=CaseImageAsset.ImageType.CT,
+            storage_uri="orthanc://series/ct-remains",
+        )
+
+        response = self.client.post(
+            reverse("radiology:order-pet-tnm-analysis-reset", kwargs={"order_id": pet_order.id}),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        pet_asset.refresh_from_db()
+        failed_analysis.refresh_from_db()
+        ct_asset.refresh_from_db()
+        self.assertEqual(pet_asset.status, CaseImageAsset.Status.INVALID)
+        self.assertEqual(pet_asset.storage_uri, f"reset://pet-tnm/{pet_asset.id}")
+        self.assertIsNone(pet_asset.series_instance_uid)
+        self.assertIsNone(pet_asset.orthanc_study_id)
+        self.assertIsNone(pet_asset.orthanc_series_id)
+        self.assertEqual(pet_asset.metadata["pet_tnm_reset"]["analysis_id"], str(failed_analysis.id))
+        self.assertEqual(failed_analysis.status, AiAnalysis.Status.FAILED)
+        self.assertTrue(AiResult.objects.filter(id=partial_result.id, ai_analysis=failed_analysis).exists())
+        self.assertEqual(ct_asset.status, CaseImageAsset.Status.READY)
+        self.assertEqual(ct_asset.storage_uri, "orthanc://series/ct-remains")
+
+        worklist = self.client.get(self.url)
+        pet_item = next(
+            item for item in worklist.data
+            if item["examination_order"]["id"] == str(pet_order.id)
+        )
+        self.assertIsNone(pet_item["latest_image_asset"])
+        self.assertIsNone(pet_item["latest_ai_analysis"])
+        self.assertEqual(pet_item["workflow_status"], "EXAM_PENDING")
+
+    def test_reset_pet_tnm_analysis_rejects_non_failed_and_other_hospital_orders(self):
+        pet_order = self._create_order(
+            self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
+        asset = self._create_asset(
+            pet_order,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
+            image_type=CaseImageAsset.ImageType.PET,
+            storage_uri="orthanc://series/pet-succeeded",
+        )
+        model = ModelVersion.objects.create(
+            model_name="tnm-reset-reject-model",
+            version="1.0",
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+        )
+        AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=pet_order,
+            source_image_asset=asset,
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+
+        succeeded = self.client.post(
+            reverse("radiology:order-pet-tnm-analysis-reset", kwargs={"order_id": pet_order.id}),
+            {},
+            format="json",
+        )
+        other_hospital = self.client.post(
+            reverse("radiology:order-pet-tnm-analysis-reset", kwargs={"order_id": self.other_order.id}),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(succeeded.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(other_hospital.status_code, status.HTTP_404_NOT_FOUND)
+        asset.refresh_from_db()
+        self.assertEqual(asset.status, CaseImageAsset.Status.READY)
+
+        running_patient = self._create_patient(self.hospital, "P002")
+        running_case = self._create_case(running_patient, "CASE-002")
+        running_order = self._create_order(
+            running_case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
+        running_asset = self._create_asset(
+            running_order,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
+            image_type=CaseImageAsset.ImageType.PET,
+            storage_uri="orthanc://series/pet-running",
+        )
+        AiAnalysis.objects.create(
+            case=running_case,
+            examination_order=running_order,
+            source_image_asset=running_asset,
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+            model_version=model,
+            status=AiAnalysis.Status.RUNNING,
+        )
+        running = self.client.post(
+            reverse("radiology:order-pet-tnm-analysis-reset", kwargs={"order_id": running_order.id}),
+            {},
+            format="json",
+        )
+        wrong_order_type = self.client.post(
+            reverse("radiology:order-pet-tnm-analysis-reset", kwargs={"order_id": self.order.id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(running.status_code, status.HTTP_409_CONFLICT)
+        self.assertEqual(wrong_order_type.status_code, status.HTTP_400_BAD_REQUEST)
 
     def _authenticate(self, user, hospital, department_code="RADIOLOGY", role="TECHNOLOGIST"):
         token = AccessToken.for_user(user)

@@ -300,6 +300,8 @@ def _confirmed_histology(analysis):
             pathology_detail__isnull=False,
         )
     )
+    if not confirmed:
+        return "unknown"
     if len(confirmed) != 1:
         raise ValueError("Exactly one confirmed pathology result is required.")
     value = confirmed[0].pathology_detail.histologic_type

@@ -8,7 +8,7 @@ from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, CtAiResult, ModelVersion, NoduleAiResult
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.patients.models import Patient
-from apps.radiology.tasks import run_ct_analysis
+from apps.radiology.tasks import _confirmed_histology, run_ct_analysis
 
 
 PHASE1_PAYLOAD = {
@@ -132,6 +132,9 @@ class CtAnalysisTaskTestCase(TestCase):
             model_version=model_version,
             status=AiAnalysis.Status.PENDING,
         )
+
+    def test_missing_confirmed_pathology_uses_unknown_histology(self):
+        self.assertEqual(_confirmed_histology(self.analysis), "unknown")
 
     @patch("apps.radiology.tasks.request_ct_phase1_analysis", return_value=PHASE1_PAYLOAD)
     def test_success_persists_full_payload_and_nodules(self, infer):
