@@ -115,7 +115,9 @@ class HospitalAdminManagementAPITestCase(APITestCase):
         self.authenticate()
         response = self.client.delete(reverse("hospital-admin:staff-destroy", kwargs={"staff_id": self.employee.id}))
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
-        self.assertFalse(User.objects.filter(pk=self.employee.id).exists())
+        self.employee.refresh_from_db()
+        self.assertEqual(self.employee.account_status, User.AccountStatus.DISABLED)
+        self.assertNotContains(self.client.get(reverse("hospital-admin:staff-list-create")), "employee")
 
         other_employee = User.objects.get(login_id="other-employee")
         response = self.client.delete(reverse("hospital-admin:staff-destroy", kwargs={"staff_id": other_employee.id}))

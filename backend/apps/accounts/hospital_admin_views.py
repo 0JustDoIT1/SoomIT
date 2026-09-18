@@ -1,5 +1,4 @@
 from django.db import IntegrityError
-from django.db.models.deletion import ProtectedError
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
@@ -55,6 +54,7 @@ class HospitalAdminStaffListCreateAPIView(APIView):
     def get(self, request):
         staff = User.objects.filter(
             department_role__department__hospital_id=request.hospital_admin.hospital_id,
+            account_status=User.AccountStatus.ACTIVE,
         ).select_related("department_role__department", "doctor_profile").order_by("name", "login_id", "id")
         return Response(HospitalAdminStaffSerializer(staff, many=True).data)
 
@@ -92,11 +92,6 @@ class HospitalAdminStaffDestroyAPIView(APIView):
             pk=staff_id,
             department_role__department__hospital_id=request.hospital_admin.hospital_id,
         )
-        try:
-            user.delete()
-        except ProtectedError:
-            return Response(
-                {"detail": "진료나 검사 기록이 연결된 직원은 삭제할 수 없습니다."},
-                status=status.HTTP_409_CONFLICT,
-            )
+        user.account_status = User.AccountStatus.DISABLED
+        user.save(update_fields=["account_status", "updated_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
