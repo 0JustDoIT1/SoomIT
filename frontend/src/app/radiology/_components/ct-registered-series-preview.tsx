@@ -6,6 +6,10 @@ import { ensureCornerstoneInitialized } from "../_lib/cornerstone-init";
 import { loadCtDicomWebSeries } from "../_lib/cornerstone-dicomweb-loader";
 
 export function CtRegisteredSeriesPreview({ orderId, assetId }: { orderId: string; assetId: string }) {
+  return <CtRegisteredSeriesPreviewContent key={`${orderId}:${assetId}`} orderId={orderId} assetId={assetId} />;
+}
+
+function CtRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: string; assetId: string }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const reactId = useId();
   const [imageId, setImageId] = useState<string | null>(null);
@@ -13,7 +17,6 @@ export function CtRegisteredSeriesPreview({ orderId, assetId }: { orderId: strin
 
   useEffect(() => {
     let cancelled = false;
-    setStatus("loading");
     void loadCtDicomWebSeries(orderId, assetId)
       .then(({ imageIds }) => {
         if (!cancelled && imageIds.length > 0) {

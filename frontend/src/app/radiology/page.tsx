@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Image from "next/image";
 import { RecentPatients, useRecentPatients, type RecentPatient } from "@/components/workspace/recent-patients";
 
 import { StateMessage } from "@/components/workspace/state-message";
@@ -305,7 +306,7 @@ export default function RadiologyWorklistPage() {
             ) : (
               <main className="flex min-h-0 items-center justify-center overflow-y-auto rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex -translate-y-8 flex-col items-center text-center">
-                  <img src="/images/soomi.png" alt="" className="mb-5 h-auto w-44 object-contain" />
+                  <Image src="/images/soomi.png" alt="" width={176} height={176} className="mb-5 h-auto w-44 object-contain" />
                   <h2 className="text-xl font-bold text-slate-900">환자를 선택해 주세요</h2>
                   <p className="mt-2 max-w-[360px] text-sm leading-6 text-slate-500">
                     왼쪽 Worklist에서 환자를 선택하면 X-ray / CT / PET-CT·TNM 작업을 시작할 수 있습니다.

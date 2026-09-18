@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import Image from "next/image";
 import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
 
@@ -345,7 +346,7 @@ function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
     };
   }, [wsiId]);
 
-  return previewUrl ? <img src={previewUrl} alt="H&E 원본 조직영상 미리보기" className="absolute inset-0 h-full w-full object-contain" /> : null;
+  return previewUrl ? <Image src={previewUrl} alt="H&E 원본 조직영상 미리보기" fill unoptimized sizes="100vw" className="object-contain" /> : null;
 }
 
 function PathologyCompletedHistory() {
@@ -1972,9 +1973,11 @@ export default function PathologyDashboardPage() {
               aria-live="polite"
             >
               <div className="-translate-y-6 text-center">
-                <img
+                <Image
                   src="/images/soomi2.png"
                   alt=""
+                  width={176}
+                  height={176}
                   className="mx-auto h-[115px] w-auto object-contain"
                 />
                 <p className="mt-4 text-base font-semibold text-[#25324B]">
@@ -2022,7 +2025,7 @@ export default function PathologyDashboardPage() {
           ) : (
             <main className="flex min-h-0 flex-1 items-center justify-center bg-[#F7F8FC] p-6">
               <div className="flex -translate-y-8 flex-col items-center text-center">
-                <img src="/images/soomi2.png" alt="" className="mb-5 h-auto w-44 object-contain" />
+                <Image src="/images/soomi2.png" alt="" width={176} height={176} className="mb-5 h-auto w-44 object-contain" />
                 <h1 className="text-xl font-bold text-slate-900">환자를 선택해 주세요</h1>
                 <p className="mt-2 max-w-[340px] text-sm leading-6 text-slate-500">
                   왼쪽 Worklist에서 환자를 선택하면 병리 검사 및 AI 분석 작업을 시작할 수 있습니다.

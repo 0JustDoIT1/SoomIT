@@ -38,14 +38,16 @@ function valueOf(value: unknown) {
 }
 
 function XrayHistoryPreview({ orderId, assetId }: { orderId: string; assetId: string }) {
+  return <XrayHistoryPreviewContent key={`${orderId}:${assetId}`} orderId={orderId} assetId={assetId} />;
+}
+
+function XrayHistoryPreviewContent({ orderId, assetId }: { orderId: string; assetId: string }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | null = null;
-    setImageUrl(null);
-    setFailed(false);
     void fetchRadiologyXrayImage(orderId, assetId, controller.signal)
       .then((blob) => {
         if (controller.signal.aborted) return;
