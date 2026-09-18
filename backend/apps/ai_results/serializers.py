@@ -20,6 +20,11 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
         source="model_version.version",
         read_only=True,
     )
+    model_components = serializers.JSONField(
+        source="model_version.components",
+        read_only=True,
+    )
+    input_context = serializers.SerializerMethodField()
     result_detail = serializers.SerializerMethodField()
 
     class Meta:
@@ -32,12 +37,45 @@ class DoctorAiAnalysisSerializer(serializers.ModelSerializer):
             "status_label",
             "model_name",
             "model_version_name",
+            "model_components",
             "started_at",
             "completed_at",
             "error_message",
+            "input_context",
             "result_detail",
             "created_at",
         ]
+
+    def get_input_context(self, obj):
+        """Expose auditable input identifiers, never storage paths or URLs."""
+        order = obj.examination_order
+        asset = obj.source_image_asset
+        metadata = obj.input_metadata if isinstance(obj.input_metadata, dict) else {}
+        safe_metadata = {
+            key: metadata[key]
+            for key in ("wsi_id", "roi_layer")
+            if metadata.get(key) is not None
+        }
+
+        return {
+            "schema_version": getattr(getattr(obj, "ai_result", None), "schema_version", None),
+            "examination_order": None if order is None else {
+                "id": str(order.id),
+                "order_type": order.order_type,
+                "order_type_label": order.get_order_type_display(),
+            },
+            "source_asset": None if asset is None else {
+                "id": str(asset.id),
+                "workflow_stage": asset.workflow_stage,
+                "image_type": asset.image_type,
+                "storage_type": asset.storage_type,
+                "file_format": asset.file_format,
+                "study_instance_uid": asset.study_instance_uid,
+                "series_instance_uid": asset.series_instance_uid,
+                "acquired_at": asset.acquired_at,
+            },
+            "metadata": safe_metadata,
+        }
 
     def get_result_detail(self, obj):
         if not hasattr(obj, "ai_result"):

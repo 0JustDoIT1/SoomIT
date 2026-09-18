@@ -1,5 +1,7 @@
 import json
 
+from django.db import transaction
+from django.db.models import Q
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.http import HttpResponse
@@ -9,13 +11,16 @@ from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from django.utils import timezone
 
 from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff, get_token_hospital_id
+from apps.accounts.models import User
+from apps.notifications.services import create_in_app_staff_notifications
 from apps.pathology.models import PathologySpecimen, WholeSlideImage
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
-from apps.clinical.models import Prescription
+from apps.clinical.models import ClinicalResult, Prescription, XrayResult
 from apps.clinical.views import DoctorTreatmentEvidenceAPIView
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
 from apps.radiology.services.ct_cornerstone_storage import CtCornerstoneStorageError, download_ct_cornerstone_object
@@ -27,7 +32,7 @@ from apps.radiology.services.orthanc_dicomweb import (
     retrieve_instance,
 )
 
-from .models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
+from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.ai_results.models import AiAnalysis, AnalysisType
 from .serializers import (
     DoctorCaseImageAssetSerializer,
@@ -40,6 +45,10 @@ from .serializers import (
     FollowUpPathologyOrderCreateSerializer,
     ExaminationOrderCreateSerializer,
     ExaminationOrderUpdateSerializer,
+    DoctorCaseWorkflowDecisionSerializer,
+    DoctorXrayWorkflowSerializer,
+    DoctorCaseConsultationRequestSerializer,
+    DoctorCaseConsultationResponseSerializer,
 )
 from .services.examination_orders import (
     ExaminationOrderCreationError,
@@ -86,7 +95,7 @@ class DoctorLungCancerCaseListAPIView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return (
+        queryset = (
             LungCancerCase.objects
             .select_related("patient", "primary_doctor")
             .filter(
@@ -95,6 +104,14 @@ class DoctorLungCancerCaseListAPIView(ListAPIView):
             )
             .order_by("-updated_at")
         )
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            queryset = queryset.filter(
+                Q(patient__name__icontains=search)
+                | Q(patient__patient_code__icontains=search)
+                | Q(case_code__icontains=search)
+            )
+        return queryset
 
 # 호흡기내과 - 내 담당 Case 상세 조회
 class DoctorLungCancerCaseDetailAPIView(RetrieveAPIView):
@@ -618,6 +635,301 @@ class DoctorFollowUpPathologyOrderAPIView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+NEXT_WORKFLOW_STAGE = {
+    WorkflowStage.XRAY: WorkflowStage.CT,
+    WorkflowStage.CT: WorkflowStage.PET_CT_TNM,
+    WorkflowStage.PET_CT_TNM: WorkflowStage.PATHOLOGY_GENE,
+    WorkflowStage.PATHOLOGY_GENE: WorkflowStage.PDL1,
+    WorkflowStage.PDL1: WorkflowStage.TREATMENT,
+    WorkflowStage.TREATMENT: WorkflowStage.PRESCRIPTION,
+}
+
+
+class DoctorCaseWorkflowDecisionAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = LungCancerCase.objects.select_for_update().filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
+        if case is None:
+            return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = DoctorCaseWorkflowDecisionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        source_result = ClinicalResult.objects.select_for_update().filter(
+            id=values["source_clinical_result_id"],
+            case=case,
+            workflow_stage=case.current_stage,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).first()
+        if source_result is None:
+            return Response({"detail": "현재 단계의 확정된 전문의 결과가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+
+        action = values["action"]
+        target_stage = values.get("target_stage")
+        if action == ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE:
+            expected_stage = NEXT_WORKFLOW_STAGE.get(case.current_stage)
+            if expected_stage is None:
+                return Response({"detail": "현재 단계에서는 다음 진료 단계로 진행할 수 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+            if target_stage != expected_stage:
+                return Response({"detail": "현재 단계에서 허용되는 다음 진료 단계가 아닙니다."}, status=status.HTTP_400_BAD_REQUEST)
+            if target_stage in {
+                WorkflowStage.CT,
+                WorkflowStage.PET_CT_TNM,
+                WorkflowStage.PATHOLOGY_GENE,
+                WorkflowStage.PDL1,
+            } and not ExaminationOrder.objects.filter(
+                case=case,
+                order_type=target_stage,
+                status__in=[
+                    ExaminationOrder.Status.ORDERED,
+                    ExaminationOrder.Status.SCHEDULED,
+                    ExaminationOrder.Status.COMPLETED,
+                ],
+            ).exists():
+                return Response({"detail": "다음 단계로 진행하려면 해당 검사 오더가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
+            case.current_stage = target_stage
+            case.save(update_fields=["current_stage", "updated_at"])
+        elif action == "RETRY":
+            if case.current_stage != WorkflowStage.PATHOLOGY_GENE:
+                return Response({"detail": "재생검은 현재 조직/유전자 검사 단계에서만 요청할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+            try:
+                create_examination_order(
+                    case=case,
+                    requesting_doctor=request.user,
+                    order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+                    priority=values["retry_priority"],
+                    purpose=values["retry_purpose"].strip(),
+                    clinical_note=values["retry_clinical_note"].strip(),
+                )
+            except ExaminationOrderCreationError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+            action = ClinicianDecision.DecisionType.REPEAT_EXAMINATION
+            target_stage = None
+        elif action == ClinicianDecision.DecisionType.REFERRED_OUT:
+            case.case_status = LungCancerCase.CaseStatus.REFERRED_OUT
+            case.closed_at = timezone.now()
+            case.save(update_fields=["case_status", "closed_at", "updated_at"])
+            target_stage = None
+        else:  # CASE_CLOSED
+            case.case_status = LungCancerCase.CaseStatus.REFERRED_OUT if values["next_action"] == "REFERRED_OUT" else LungCancerCase.CaseStatus.CLOSED
+            case.closed_at = timezone.now()
+            case.save(update_fields=["case_status", "closed_at", "updated_at"])
+            target_stage = None
+            action = ClinicianDecision.DecisionType.CLOSE_CASE
+
+        decision = ClinicianDecision.objects.create(
+            case=case,
+            source_stage=source_result.workflow_stage,
+            source_clinical_result=source_result,
+            decision_type=action,
+            target_stage=target_stage,
+            reason=values.get("reason", "").strip() or None,
+            decided_by_user=request.user,
+            decided_at=timezone.now(),
+        )
+        return Response({
+            "case_id": str(case.id),
+            "current_stage": case.current_stage,
+            "case_status": case.case_status,
+            "closed_at": case.closed_at,
+            "decision": {
+                "id": str(decision.id),
+                "source_stage": decision.source_stage,
+                "decision_type": decision.decision_type,
+                "target_stage": decision.target_stage,
+                "reason": decision.reason,
+                "decided_at": decision.decided_at,
+            },
+        })
+
+
+class DoctorXrayWorkflowAPIView(APIView):
+    """Save/finalise X-ray and either order CT or close the case as one unit."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = LungCancerCase.objects.select_for_update().filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+            current_stage=WorkflowStage.XRAY,
+        ).first()
+        if case is None:
+            return Response({"detail": "X-ray 단계의 담당 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+
+        serializer = DoctorXrayWorkflowSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        result = ClinicalResult.objects.select_for_update().filter(
+            case=case,
+            workflow_stage=WorkflowStage.XRAY,
+        ).select_related("xray_detail").first()
+        if result is not None and result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "이미 확정된 X-ray 결과입니다."}, status=status.HTTP_409_CONFLICT)
+
+        if result is None:
+            result = ClinicalResult.objects.create(
+                case=case,
+                workflow_stage=WorkflowStage.XRAY,
+                result_status=ClinicalResult.ResultStatus.DRAFT,
+            )
+            XrayResult.objects.create(
+                clinical_result=result,
+                assessment=values["assessment"],
+                finding_summary=values["finding_summary"].strip() or None,
+                recommended_action=(XrayResult.RecommendedAction.CHEST_CT if values["next_action"] == "ORDER_CT" else XrayResult.RecommendedAction.NO_FURTHER_ACTION),
+            )
+        else:
+            detail = result.xray_detail
+            detail.assessment = values["assessment"]
+            detail.finding_summary = values["finding_summary"].strip() or None
+            detail.recommended_action = XrayResult.RecommendedAction.CHEST_CT if values["next_action"] == "ORDER_CT" else XrayResult.RecommendedAction.NO_FURTHER_ACTION
+            detail.save(update_fields=["assessment", "finding_summary", "recommended_action"])
+
+        result.result_status = ClinicalResult.ResultStatus.CONFIRMED
+        result.confirmed_by_user = request.user
+        result.confirmed_at = timezone.now()
+        result.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+
+        order = None
+        if values["next_action"] == "ORDER_CT":
+            try:
+                order, _ = create_examination_order(
+                    case=case,
+                    requesting_doctor=request.user,
+                    order_type=ExaminationOrder.OrderType.CT,
+                    priority=values["priority"],
+                    purpose=values["purpose"].strip(),
+                    clinical_note=values["clinical_note"].strip(),
+                )
+            except ExaminationOrderCreationError as exc:
+                raise serializers.ValidationError({"detail": str(exc)})
+            case.current_stage = WorkflowStage.CT
+            decision_type = ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE
+            target_stage = WorkflowStage.CT
+        else:
+            case.case_status = LungCancerCase.CaseStatus.CLOSED
+            case.closed_at = timezone.now()
+            decision_type = ClinicianDecision.DecisionType.REFERRED_OUT if values["next_action"] == "REFERRED_OUT" else ClinicianDecision.DecisionType.CLOSE_CASE
+            target_stage = None
+        case.save(update_fields=["current_stage", "case_status", "closed_at", "updated_at"])
+        decision = ClinicianDecision.objects.create(
+            case=case,
+            source_stage=WorkflowStage.XRAY,
+            source_clinical_result=result,
+            decision_type=decision_type,
+            target_stage=target_stage,
+            reason=(values["purpose"] if values["next_action"] == "ORDER_CT" else values["closure_reason"]).strip() or None,
+            decided_by_user=request.user,
+            decided_at=timezone.now(),
+        )
+        return Response({
+            "clinical_result_id": str(result.id),
+            "order_id": str(order.id) if order else None,
+            "current_stage": case.current_stage,
+            "case_status": case.case_status,
+            "closed_at": case.closed_at,
+            "decision_id": str(decision.id),
+        }, status=status.HTTP_201_CREATED)
+
+
+class DoctorCaseConsultationRequestAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def _case(self, request, case_id):
+        return LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user).first()
+
+    def get(self, request, case_id):
+        case = self._case(request, case_id)
+        if case is None:
+            return Response({"detail": "담당 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        requests = case.consultation_requests.select_related("requested_by_user", "recipient_user").order_by("-created_at")
+        return Response([{
+            "id": str(item.id), "target_department_code": item.target_department_code,
+            "recipient_user_id": str(item.recipient_user_id) if item.recipient_user_id else None,
+            "recipient_name": item.recipient_user.name if item.recipient_user else None,
+            "question": item.question, "priority": item.priority, "status": item.status,
+            "response_note": item.response_note, "responded_at": item.responded_at, "created_at": item.created_at,
+        } for item in requests])
+
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = LungCancerCase.objects.select_for_update().filter(id=case_id, primary_doctor=request.user, case_status=LungCancerCase.CaseStatus.ACTIVE).first()
+        if case is None:
+            return Response({"detail": "활성 담당 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        serializer = DoctorCaseConsultationRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        requester_hospital_id = request.user.department_role.department.hospital_id
+        target_department_code = "PULMONOLOGY"
+        recipients = User.objects.filter(account_status=User.AccountStatus.ACTIVE, department_role__department__hospital_id=requester_hospital_id, department_role__department__code=target_department_code).select_related("department_role__department")
+        recipient = None
+        if values.get("recipient_user_id"):
+            recipient = recipients.filter(id=values["recipient_user_id"]).first()
+            if recipient is None:
+                return Response({"detail": "같은 병원의 선택 진료과 활성 의료진만 지정할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+            recipients = [recipient]
+        else:
+            recipients = list(recipients)
+        consultation = CaseConsultationRequest.objects.create(case=case, requested_by_user=request.user, recipient_user=recipient, target_department_code=target_department_code, question=values["question"], priority=values["priority"])
+        transaction.on_commit(lambda: create_in_app_staff_notifications(recipients=recipients, case=case, notification_type="CONSULTATION_REQUEST", title="협진 요청", message=f"{case.case_code} 협진 요청이 도착했습니다.", payload={"consultation_request_id": str(consultation.id)}))
+        return Response({"id": str(consultation.id), "status": consultation.status, "target_department_code": consultation.target_department_code, "created_at": consultation.created_at}, status=status.HTTP_201_CREATED)
+
+
+class DoctorCaseConsultationResponseAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor]
+
+    @transaction.atomic
+    def patch(self, request, case_id, consultation_id):
+        consultation = CaseConsultationRequest.objects.select_for_update().select_related("recipient_user", "case", "requested_by_user").filter(id=consultation_id, case_id=case_id).first()
+        if consultation is None:
+            return Response({"detail": "협진 요청을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        department = getattr(getattr(request.user, "department_role", None), "department", None)
+        can_respond = consultation.recipient_user_id == request.user.id or (consultation.recipient_user_id is None and department is not None and department.code == consultation.target_department_code and department.hospital_id == consultation.case.patient.hospital_id)
+        if not can_respond:
+            return Response({"detail": "이 협진 요청에 회신할 권한이 없습니다."}, status=status.HTTP_403_FORBIDDEN)
+        serializer = DoctorCaseConsultationResponseSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        consultation.status = values["status"]
+        if values["status"] == CaseConsultationRequest.Status.RESPONDED:
+            consultation.response_note = values["response_note"].strip()
+            consultation.responded_at = timezone.now()
+        consultation.save(update_fields=["status", "response_note", "responded_at", "updated_at"])
+        return Response({"id": str(consultation.id), "status": consultation.status, "response_note": consultation.response_note, "responded_at": consultation.responded_at})
+
+
+class DoctorMyConsultationRequestAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor]
+
+    def get(self, request):
+        department = getattr(getattr(request.user, "department_role", None), "department", None)
+        if department is None:
+            return Response([])
+        requests = CaseConsultationRequest.objects.filter(
+            Q(recipient_user=request.user) | Q(recipient_user__isnull=True, target_department_code=department.code, case__patient__hospital_id=department.hospital_id)
+        ).select_related("case__patient", "requested_by_user").order_by("priority", "created_at")
+        return Response([{
+            "id": str(item.id), "case_id": str(item.case_id), "case_code": item.case.case_code,
+            "patient_name": item.case.patient.name, "requested_by": item.requested_by_user.name,
+            "question": item.question, "priority": item.priority, "status": item.status,
+            "created_at": item.created_at, "response_note": item.response_note,
+        } for item in requests])
 
 
 class DoctorExaminationOrderAPIView(APIView):

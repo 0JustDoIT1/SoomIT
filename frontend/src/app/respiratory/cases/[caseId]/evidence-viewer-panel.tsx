@@ -42,14 +42,15 @@ export function EvidenceViewerPanel({
   analysisStatus,
 }: EvidenceViewerPanelProps) {
   const [activeAssetId, setActiveAssetId] = useState(selectedAssetId ?? assets[0]?.id ?? "");
-  const [minimumDetectionScore, setMinimumDetectionScore] = useState(0.5);
+  const [showAllDetections, setShowAllDetections] = useState(false);
   const [selectedDetectionIndex, setSelectedDetectionIndex] = useState<number | null>(null);
   const [zoom, setZoom] = useState(1);
   const viewerRef = useRef<HTMLDivElement>(null);
-  const unavailableId = "tnm-reference-api-unavailable";
   const activeAsset = assets.find((asset) => asset.id === (selectedAssetId ?? activeAssetId)) ?? assets[0];
   const imageUrl = getBrowserImageUrl(activeAsset);
-  const visibleDetections = detections.filter((detection) => detection.score >= minimumDetectionScore);
+  const rankedDetections = [...detections].sort((left, right) => right.score - left.score);
+  const priorityDetections = rankedDetections.filter((detection) => detection.score >= 0.7).slice(0, 3);
+  const visibleDetections = showAllDetections ? rankedDetections : priorityDetections.length ? priorityDetections : rankedDetections.slice(0, 1);
 
   const openFullscreen = async () => {
     if (!imageUrl || !viewerRef.current?.requestFullscreen) return;
@@ -64,14 +65,13 @@ export function EvidenceViewerPanel({
   };
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[28px_48px_minmax(0,1fr)] overflow-hidden border border-slate-800 bg-slate-950">
+    <section className="grid h-full min-h-0 grid-rows-[26px_36px_minmax(0,1fr)] overflow-hidden border border-slate-800 bg-slate-950">
       <span className="sr-only">{activeAsset?.storage_type || "-"} · {activeAsset?.status || "-"}</span>
       <header className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-3 text-slate-100">
         <div className="flex min-w-0 items-center gap-2"><h3 className="whitespace-nowrap text-[11px] font-bold text-slate-100">영상 미리보기</h3><span title="Viewer에 포커스를 둔 뒤 사용할 수 있습니다." className="hidden whitespace-nowrap text-[9px] text-slate-400 sm:inline">⌨ F 전체 · +/− 확대 · R 초기화</span></div>
-        <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-medium text-amber-700">Annotation API 연동 대기</span>
       </header>
 
-      <div className="row-start-3 grid min-h-0 grid-cols-[minmax(0,1fr)_124px] bg-slate-950">
+      <div className="row-start-3 grid min-h-0 grid-cols-1 bg-slate-950">
         <div ref={viewerRef} tabIndex={0} onKeyDown={onViewerKeyDown} className="relative flex min-h-0 items-center justify-center overflow-hidden bg-slate-950 text-white outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="원본 영상 뷰어. F 전체화면, 더하기·빼기 확대·축소, R 초기화">
           {imageUrl && <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-3 text-[10px] text-slate-100"><span className="rounded bg-black/65 px-2 py-1">{activeAsset?.image_type || "IMAGE"} · {activeAsset?.file_format || "-"}</span><span className="rounded bg-black/65 px-2 py-1 text-right">{activeAsset?.acquired_at ? new Date(activeAsset.acquired_at).toLocaleString("ko-KR") : "Study date unavailable"}</span></div>}
           {loading ? (
@@ -103,7 +103,7 @@ export function EvidenceViewerPanel({
           {imageUrl && <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 text-[9px]">{activeAsset?.image_type || "영상"} · {activeAsset?.file_format || "형식 미상"}</span>}
         </div>
 
-        <aside className="min-h-0 overflow-y-auto border-l border-slate-200 bg-white p-2.5" aria-label="원본 영상 목록 및 촬영 정보">
+        <aside className="hidden" aria-label="원본 영상 목록 및 촬영 정보">
           <div className="mb-2 flex items-center justify-between gap-3">
             <p className="text-[10px] font-bold text-slate-800">영상 정보</p>
             <span className="text-[9px] text-slate-400">{assets.length}건</span>
@@ -131,13 +131,10 @@ export function EvidenceViewerPanel({
         </aside>
       </div>
 
-      <footer className={`row-start-2 relative flex min-w-0 items-center gap-1.5 overflow-x-auto border-y border-slate-800 bg-slate-900 px-3 py-1 ${activeAsset?.image_type === "XRAY" ? "[&>button:nth-of-type(n+2)]:hidden [&>span.absolute]:hidden" : ""}`}>
-        <button type="button" disabled={!imageUrl} onClick={openFullscreen} aria-describedby={!imageUrl ? unavailableId : undefined} className="whitespace-nowrap rounded border border-blue-300 px-2 py-1 text-[9px] font-semibold text-blue-700 disabled:border-slate-200 disabled:text-slate-400">크게 보기</button>
-        {activeAsset?.image_type === "XRAY" && detections.length > 0 && <span className="flex items-center gap-1"><span className="text-[9px] text-slate-500">AI 병변 {visibleDetections.length}/{detections.length}</span>{([0, 0.5, 0.7] as const).map((score) => <button key={score} type="button" onClick={() => setMinimumDetectionScore(score)} className={`rounded px-1.5 py-1 text-[9px] ${minimumDetectionScore === score ? "bg-rose-600 font-semibold text-white" : "bg-rose-50 text-rose-700"}`}>{score === 0 ? "전체" : `${Math.round(score * 100)}%+`}</button>)}</span>}
-        <button type="button" disabled aria-describedby={unavailableId} className="whitespace-nowrap rounded border border-slate-200 px-2 py-1 text-[9px] font-semibold text-slate-400">관심 위치 표시</button>
-        {["T 소견에 참조", "N 소견에 참조", "M 소견에 참조"].map((label) => <button key={label} type="button" disabled aria-describedby={unavailableId} className="whitespace-nowrap rounded bg-slate-100 px-2 py-1 text-[9px] text-slate-400">{label}</button>)}
-        <span id={unavailableId} className="ml-auto truncate text-[8px] text-slate-500">영상·Annotation API가 연결된 기능만 활성화됩니다.</span>
-        {activeAsset?.image_type === "XRAY" && <span className="absolute inset-y-0 right-0 flex items-center bg-white px-3 text-[9px] text-slate-500">X-ray는 AI 병변 박스와 판독 소견을 참고합니다.</span>}
+      <footer className="row-start-2 relative flex min-w-0 items-center gap-1.5 overflow-x-auto border-y border-slate-800 bg-slate-900 px-3 py-1">
+        <button type="button" disabled={!imageUrl} onClick={openFullscreen} className="whitespace-nowrap rounded border border-blue-300 px-2 py-1 text-[9px] font-semibold text-blue-700 disabled:border-slate-200 disabled:text-slate-400">크게 보기</button>
+        {activeAsset?.image_type === "XRAY" && detections.length > 0 && <span className="flex items-center gap-1"><span className="text-[9px] text-slate-500">{showAllDetections ? "전체 병변" : "주요 병변"} {visibleDetections.length}/{detections.length}</span><button type="button" onClick={() => setShowAllDetections((current) => !current)} className="rounded bg-rose-50 px-1.5 py-1 text-[9px] font-semibold text-rose-700">{showAllDetections ? "주요만" : "전체 보기"}</button></span>}
+        {activeAsset?.image_type === "XRAY" && <span className="ml-auto whitespace-nowrap text-[9px] text-slate-400">AI 병변을 클릭해 영상에서 강조할 수 있습니다.</span>}
       </footer>
     </section>
   );

@@ -6,8 +6,16 @@ export type Pdl1Result = {
   status_label?: string;
   model_name?: string;
   model_version_name?: string;
+  model_components?: unknown;
+  started_at?: string | null;
   completed_at?: string | null;
   error_message?: string | null;
+  input_context?: {
+    schema_version?: string | null;
+    examination_order?: { id?: string; order_type?: string; order_type_label?: string } | null;
+    source_asset?: { image_type?: string; workflow_stage?: string; study_instance_uid?: string | null; series_instance_uid?: string | null; acquired_at?: string | null } | null;
+    metadata?: { wsi_id?: string; roi_layer?: string };
+  };
   result_detail: {
     pdl1: {
       predicted_class?: number;

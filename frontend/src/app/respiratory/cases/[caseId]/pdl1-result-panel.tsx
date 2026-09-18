@@ -5,7 +5,16 @@ type Pdl1AiResult = {
   status_label?: string;
   model_name?: string;
   model_version_name?: string;
+  model_components?: unknown;
+  started_at?: string | null;
   completed_at?: string | null;
+  error_message?: string | null;
+  input_context?: {
+    schema_version?: string | null;
+    examination_order?: { id?: string; order_type?: string; order_type_label?: string } | null;
+    source_asset?: { image_type?: string; workflow_stage?: string; study_instance_uid?: string | null; series_instance_uid?: string | null; acquired_at?: string | null } | null;
+    metadata?: { wsi_id?: string; roi_layer?: string };
+  };
   result_detail: {
     pdl1: {
       predicted_tps_range_label?: string;
@@ -103,8 +112,16 @@ export function Pdl1ResultPanel({
           <Detail label="전문과 판독 소견" value={clinical?.note ?? "-"} />
           <Detail label="결과일" value={clinicalResult?.result_date ?? "-"} />
           <Detail label="AI 모델" value={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" ") || "-"} />
+          <Detail label="모델 구성" value={formatModelComponents(aiResult?.model_components) || "-"} />
           <Detail label="AI 분석 완료일" value={aiResult?.completed_at ?? "-"} />
         </dl>
+
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-xs">
+          <p className="font-semibold text-slate-700">분석 입력 추적</p>
+          <dl className="mt-2 space-y-2"><Detail label="입력 검사" value={formatPdl1Input(aiResult?.input_context).order} /><Detail label="입력 영상" value={formatPdl1Input(aiResult?.input_context).asset} /><Detail label="Study UID" value={aiResult?.input_context?.source_asset?.study_instance_uid ?? "-"} /><Detail label="WSI / ROI" value={formatPdl1Input(aiResult?.input_context).metadata} /><Detail label="Schema" value={aiResult?.input_context?.schema_version ?? "-"} /></dl>
+        </div>
+
+        {aiResult?.error_message && <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{aiResult.error_message}</p>}
 
         <p className="mt-3 text-[11px] leading-5 text-amber-700">
           AI 결과는 TPS 예측 구간이며 전문과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.
@@ -131,4 +148,21 @@ function ProbabilityCard({ label, value }: { label: string; value: number | null
 
 function Detail({ label, value }: { label: string; value: string }) {
   return <div className="flex justify-between gap-3"><dt className="text-slate-400">{label}</dt><dd className="min-w-0 break-words text-right font-medium text-slate-600">{value}</dd></div>;
+}
+
+function formatPdl1Input(context: Pdl1AiResult["input_context"]) {
+  const order = context?.examination_order;
+  const asset = context?.source_asset;
+  const metadata = context?.metadata;
+  return {
+    order: [order?.order_type_label ?? order?.order_type, order?.id && `#${order.id.slice(0, 8)}`].filter(Boolean).join(" · ") || "-",
+    asset: [asset?.image_type, asset?.workflow_stage, asset?.series_instance_uid && `Series ${asset.series_instance_uid}`].filter(Boolean).join(" · ") || "-",
+    metadata: [metadata?.wsi_id && `WSI ${metadata.wsi_id}`, metadata?.roi_layer && `ROI ${metadata.roi_layer}`].filter(Boolean).join(" · ") || "-",
+  };
+}
+
+function formatModelComponents(value: unknown) {
+  if (Array.isArray(value)) return value.filter((item) => typeof item === "string" || typeof item === "number").map(String).join(" · ");
+  if (value && typeof value === "object") return Object.entries(value as Record<string, unknown>).map(([key, item]) => `${key}: ${typeof item === "string" || typeof item === "number" || typeof item === "boolean" ? String(item) : "configured"}`).join(" · ");
+  return typeof value === "string" || typeof value === "number" ? String(value) : "";
 }

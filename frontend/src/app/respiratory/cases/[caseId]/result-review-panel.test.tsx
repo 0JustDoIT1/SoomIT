@@ -16,7 +16,9 @@ describe("ResultReviewPanel", () => {
     render(<ResultReviewPanel stage="CT" />);
     expect(screen.getByText(/확인 가능한 전문과 확정 결과가 없습니다/)).toBeTruthy();
     expect(screen.getByText("현재 검사에 연결된 AI 분석 후보가 없습니다.")).toBeTruthy();
-    expect(screen.getByText("Annotation API 연동 대기")).toBeTruthy();
+    expect(screen.getByText(/원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요/)).toBeTruthy();
+    expect(screen.getByText(/전문과 판독 결과 대기/)).toBeTruthy();
+    expect(screen.queryByText("Annotation API 연동 대기")).toBeNull();
     expect(screen.getByText("연결된 영상이 없습니다.")).toBeTruthy();
   });
 
@@ -70,6 +72,31 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText("양성 · L858R")).toBeTruthy();
     expect(screen.getByText("ALK")).toBeTruthy();
     expect(screen.getByText("음성 예측 · 93.21%")).toBeTruthy();
+  });
+
+  it("shows safe analysis input traceability without a storage URI", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", model_components: { detector: "v2", classifier: "v1" }, input_context: { schema_version: "ct-phase1-v1", examination_order: { id: "order-12345678", order_type_label: "CT" }, source_asset: { image_type: "CT", workflow_stage: "CT", study_instance_uid: "study-1", series_instance_uid: "series-1" } } }} />);
+
+    expect(screen.getByText("분석 입력 추적")).toBeTruthy();
+    expect(screen.getByText("CT · #order-12")).toBeTruthy();
+    expect(screen.getByText("CT · CT · Series series-1")).toBeTruthy();
+    expect(screen.getByText("Series series-1")).toBeTruthy();
+    expect(screen.getByText("detector: v2 · classifier: v1")).toBeTruthy();
+    expect(screen.getByText("study-1")).toBeTruthy();
+    expect(screen.getByText("ct-phase1-v1")).toBeTruthy();
+    expect(screen.queryByText(/gs:\/\//)).toBeNull();
+  });
+
+  it("does not mark failed AI or unconfirmed specialist results as completed", () => {
+    const { container } = render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "FAILED", status_label: "실패", result_detail: {} }} clinicalResult={{ workflow_stage: "CT", result_status: "DRAFT", result_status_label: "작성 중", result_detail: {} }} />);
+
+    expect(container.querySelectorAll('[data-workflow-state="completed"]')).toHaveLength(0);
+    expect(container.querySelectorAll('[data-workflow-state="failed"]')).toHaveLength(1);
+  });
+
+  it("uses an error tone only for failed AI status", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "FAILED", status_label: "실패", result_detail: {} }} />);
+    expect(screen.getByText("AI · 실패").className).toContain("text-rose-700");
   });
 
   it("renders repeated result labels without relying on duplicate React keys", () => {

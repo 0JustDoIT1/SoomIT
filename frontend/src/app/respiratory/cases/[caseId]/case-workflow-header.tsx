@@ -39,7 +39,7 @@ export function CaseWorkflowBar({ currentStage, hasPdl1Result = false }: { curre
   const currentIndex = CASE_STAGES.findIndex((stage) => (stage.sourceStages as readonly string[]).includes(currentStage));
 
   return (
-    <section className="shrink-0 rounded-xl border border-blue-100 bg-white px-4 py-1.5 shadow-sm">
+    <section className="sticky top-[64px] z-10 shrink-0 rounded-xl border border-blue-100 bg-white px-4 py-1.5 shadow-sm">
       <div className="overflow-x-auto">
         <div className="flex min-w-[760px] items-start justify-between">
           {CASE_STAGES.map((stage, index) => {

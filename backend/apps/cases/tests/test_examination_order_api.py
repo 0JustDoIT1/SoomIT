@@ -6,8 +6,8 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
-from apps.cases.models import ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult
+from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.clinical.models import ClinicalResult, XrayResult
 from apps.pathology.models import PathologyWorkItem
 from apps.patients.models import Patient
 
@@ -95,3 +95,105 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(response.status_code, 400)
         order.refresh_from_db()
         self.assertEqual(order.status, ExaminationOrder.Status.ORDERED)
+
+    def test_case_list_searches_assigned_cases_by_name_patient_code_or_case_code(self):
+        additional_patient = Patient.objects.create(
+            hospital=self.case.patient.hospital,
+            patient_code="SEARCH-PATIENT",
+            name="Searchable Patient",
+            birth_date=date(1975, 2, 2),
+            sex=Patient.Sex.MALE,
+            phone_number="010-0000-0001",
+            phone_number_hash="search-api",
+        )
+        LungCancerCase.objects.create(
+            patient=additional_patient,
+            case_code="SEARCH-CASE",
+            primary_doctor=self.doctor,
+            current_stage=WorkflowStage.CT,
+        )
+        list_url = reverse("doctor-case-list")
+
+        for search in ("Searchable", "SEARCH-PATIENT", "SEARCH-CASE"):
+            response = self.client.get(list_url, {"search": search})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual([item["case_code"] for item in response.data], ["SEARCH-CASE"])
+
+    def test_confirmed_result_and_next_order_advance_the_case_with_an_audit_decision(self):
+        result = self.confirm(WorkflowStage.XRAY)
+        self.post_order("CT")
+        url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
+
+        response = self.client.post(url, {
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": "CT",
+            "reason": "X-ray result confirmed",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.CT)
+        decision = ClinicianDecision.objects.get(case=self.case)
+        self.assertEqual(decision.decision_type, ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE)
+        self.assertEqual(decision.source_clinical_result, result)
+        self.assertEqual(decision.target_stage, WorkflowStage.CT)
+
+    def test_workflow_requires_next_order_and_records_case_closure_reason(self):
+        result = self.confirm(WorkflowStage.XRAY)
+        url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
+
+        missing_order = self.client.post(url, {
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": "CT",
+        }, format="json")
+        self.assertEqual(missing_order.status_code, 400)
+
+        closed = self.client.post(url, {
+            "action": "CASE_CLOSED",
+            "source_clinical_result_id": str(result.id),
+            "reason": "No further examination required",
+        }, format="json")
+        self.assertEqual(closed.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.CLOSED)
+        self.assertIsNotNone(self.case.closed_at)
+        self.assertEqual(ClinicianDecision.objects.get(case=self.case).decision_type, ClinicianDecision.DecisionType.CLOSE_CASE)
+
+    def test_xray_workflow_confirms_result_orders_ct_and_advances_atomically(self):
+        url = reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id})
+        response = self.client.post(url, {
+            "assessment": "SUSPICIOUS",
+            "finding_summary": "Suspicious opacity",
+            "next_action": "ORDER_CT",
+            "priority": "URGENT",
+            "purpose": "Characterize X-ray finding",
+            "clinical_note": "Please assess lesion.",
+        }, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.case.refresh_from_db()
+        result = ClinicalResult.objects.get(case=self.case, workflow_stage=WorkflowStage.XRAY)
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(result.xray_detail.assessment, XrayResult.Assessment.SUSPICIOUS)
+        self.assertEqual(self.case.current_stage, WorkflowStage.CT)
+        self.assertTrue(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())
+        self.assertEqual(ClinicianDecision.objects.get(case=self.case).decision_type, ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE)
+
+    def test_xray_workflow_requires_ct_purpose_without_persisting_a_result(self):
+        url = reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id})
+        response = self.client.post(url, {"assessment": "SUSPICIOUS", "next_action": "ORDER_CT", "purpose": ""}, format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ClinicalResult.objects.filter(case=self.case, workflow_stage=WorkflowStage.XRAY).exists())
+        self.assertFalse(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())
+
+    def test_xray_workflow_closes_case_without_creating_a_next_order(self):
+        url = reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id})
+        response = self.client.post(url, {"assessment": "NEGATIVE", "next_action": "CLOSE_CASE", "closure_reason": "No additional examination needed."}, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.CLOSED)
+        self.assertFalse(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())

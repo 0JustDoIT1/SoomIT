@@ -68,6 +68,8 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
         </span>
       </header>
 
+      {decision && ["REPEAT_EXAMINATION", "REFERRED_OUT", "CLOSE_CASE"].includes(decision.decision_type) && <section className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-xs ${decision.decision_type === "REPEAT_EXAMINATION" ? "border-amber-200 bg-amber-50 text-amber-800" : decision.decision_type === "REFERRED_OUT" ? "border-violet-200 bg-violet-50 text-violet-800" : "border-slate-300 bg-slate-50 text-slate-700"}`}><div><p className="font-bold">{decision.decision_type === "REPEAT_EXAMINATION" ? "재생검 요청" : decision.decision_type === "REFERRED_OUT" ? "의뢰·전원 처리" : "Case 종료"}</p><p className="mt-0.5 text-[10px] opacity-80">{decision.reason || "결정 사유가 기록되었습니다."}</p></div><span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[10px] font-semibold">{formatDate(decision.decided_at)}</span></section>}
+
       <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50/70 md:grid-cols-4">
         <Metric label="현재 단계" value={getStageLabel(caseData.current_stage)} accent />
         <Metric label="Case 상태" value={getCaseStatusLabel(caseData.case_status)} />
