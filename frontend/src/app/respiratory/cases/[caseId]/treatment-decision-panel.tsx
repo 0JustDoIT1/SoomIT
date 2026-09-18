@@ -39,7 +39,10 @@ export function TreatmentDecisionPanel({ caseId, apiBaseUrl, authorizedFetch, on
     finally { setLoading(false); }
   }, [apiBaseUrl, authorizedFetch, caseId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void load(); }, 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
   const save = async (confirm = false) => {
     setBusy(true); setError("");
     try {

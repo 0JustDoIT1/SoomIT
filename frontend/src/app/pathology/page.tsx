@@ -531,20 +531,26 @@ function WorkArea({
   );
 
   useEffect(() => {
-    try {
-      const user = JSON.parse(sessionStorage.getItem("user") ?? "null") as { role?: string; department?: { code?: string } } | null;
-      setIsPathologyDoctor(user?.role === "DOCTOR" && user.department?.code === "PATHOLOGY");
-    } catch {
-      setIsPathologyDoctor(false);
-    }
+    const timer = window.setTimeout(() => {
+      try {
+        const user = JSON.parse(sessionStorage.getItem("user") ?? "null") as { role?: string; department?: { code?: string } } | null;
+        setIsPathologyDoctor(user?.role === "DOCTOR" && user.department?.code === "PATHOLOGY");
+      } catch {
+        setIsPathologyDoctor(false);
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    if (item.order_type !== "PDL1" || !item.clinical_result || typeof item.clinical_result !== "object") return;
-    const result = item.clinical_result as { result_status?: string; confirmed_at?: string; pdl1?: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string } };
-    if (result.result_status === "CONFIRMED" && result.confirmed_at && result.pdl1) {
-      setPdl1Confirmation({ result_status: result.result_status, confirmed_at: result.confirmed_at, pdl1: result.pdl1 });
-    }
+    const timer = window.setTimeout(() => {
+      if (item.order_type !== "PDL1" || !item.clinical_result || typeof item.clinical_result !== "object") return;
+      const result = item.clinical_result as { result_status?: string; confirmed_at?: string; pdl1?: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string } };
+      if (result.result_status === "CONFIRMED" && result.confirmed_at && result.pdl1) {
+        setPdl1Confirmation({ result_status: result.result_status, confirmed_at: result.confirmed_at, pdl1: result.pdl1 });
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [item.clinical_result, item.order_type]);
   const pathologyGeneIsLuad =
     pathologyResult?.predicted_subtype === "LUAD" ||
