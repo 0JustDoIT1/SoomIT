@@ -18,6 +18,7 @@ from .hospital_admin_serializers import (
 )
 from .models import Department, DepartmentRole, User
 from .permissions import IsHospitalAdmin
+from .services.hospital_monitoring import build_hospital_monitoring_snapshot
 from .services.staff_provisioning import provision_staff
 
 
@@ -95,3 +96,20 @@ class HospitalAdminStaffDestroyAPIView(APIView):
         user.account_status = User.AccountStatus.DISABLED
         user.save(update_fields=["account_status", "updated_at"])
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class HospitalAdminMonitoringAPIView(APIView):
+    """Aggregate, read-only snapshot for the hospital-admin operations dashboard.
+
+    One endpoint for the whole page rather than one per section - everything
+    is scoped to request.hospital_admin.hospital_id, so no other hospital's
+    data can ever be returned.
+    """
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsHospitalAdmin]
+
+    @extend_schema(tags=["병원 관리자"])
+    def get(self, request):
+        snapshot = build_hospital_monitoring_snapshot(request.hospital_admin.hospital)
+        return Response(snapshot, status=status.HTTP_200_OK)

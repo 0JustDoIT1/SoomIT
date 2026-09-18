@@ -130,6 +130,58 @@ def select_component(mask_path: Path, component_id: int) -> None:
     nib.save(output, str(mask_path))
 
 
+def select_primary_component(
+    mask_path: Path,
+    labels: np.ndarray,
+    candidates: list[dict],
+    metadata: dict,
+    target_mask_path: Path | None,
+) -> tuple[int, dict]:
+    """Choose a deterministic T component in original CT geometry."""
+    image = nib.load(str(mask_path))
+    target_mask = None
+    if target_mask_path is not None:
+        target_image = nib.load(str(target_mask_path))
+        if target_image.shape != image.shape or not np.allclose(target_image.affine, image.affine, atol=1e-5):
+            raise ValueError("Target nodule mask geometry does not match restored T mask")
+        target_mask = np.asarray(target_image.dataobj) > 0
+
+    target_centroid_xyz = metadata.get("target_centroid_xyz")
+    target_centroid_mm = None
+    if isinstance(target_centroid_xyz, list) and len(target_centroid_xyz) == 3:
+        target_centroid_mm = nib.affines.apply_affine(image.affine, np.asarray(target_centroid_xyz, dtype=float))
+
+    ranked = []
+    for candidate in candidates:
+        component_id = int(candidate["component_id"])
+        component = labels == component_id
+        intersection = int(np.logical_and(component, target_mask).sum()) if target_mask is not None else 0
+        union = int(np.logical_or(component, target_mask).sum()) if target_mask is not None else 0
+        overlap_iou = float(intersection / union) if union else 0.0
+        centroid_distance_mm = float("inf")
+        if target_centroid_mm is not None:
+            centroid_distance_mm = float(np.linalg.norm(
+                np.asarray(candidate["centroid"]["mm"], dtype=float) - target_centroid_mm
+            ))
+        ranked.append({
+            "component_id": component_id,
+            "overlap_iou": overlap_iou,
+            "centroid_distance_mm": centroid_distance_mm,
+            "volume_ml": float(candidate["volume_ml"]),
+        })
+
+    selected = min(
+        ranked,
+        key=lambda item: (
+            -item["overlap_iou"],
+            item["centroid_distance_mm"],
+            -item["volume_ml"],
+            item["component_id"],
+        ),
+    )
+    return int(selected["component_id"]), selected
+
+
 def restore_to_original_geometry(crop_mask_path: Path, metadata_path: Path, output_path: Path) -> Path:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     crop_image = nib.load(str(crop_mask_path))
@@ -195,6 +247,11 @@ def predict(body: TRequest) -> dict:
             input_path = download_file(body.t_input_uri, input_dir / f"{body.case_id}_0000.nii.gz")
             metadata_uri = body.crop_metadata_uri or body.t_input_uri.rsplit("/", 1)[0] + "/crop_metadata.json"
             metadata_path = download_file(metadata_uri, input_dir / "crop_metadata.json")
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            target_mask_path = None
+            target_mask_uri = metadata.get("target_mask_uri")
+            if isinstance(target_mask_uri, str) and target_mask_uri.startswith("gs://"):
+                target_mask_path = download_file(target_mask_uri, input_dir / "target_nodule_mask.nii.gz")
             log_latency("download", stage_started)
             output_dir.mkdir(parents=True)
             if nnunet_predictor is None:
@@ -208,19 +265,18 @@ def predict(body: TRequest) -> dict:
                 raise FileNotFoundError("nnU-Net did not create the expected tumor mask")
             stage_started = time.perf_counter()
             restored_mask_path = restore_to_original_geometry(mask_path, metadata_path, root / "restored" / "tumor_mask.nii.gz")
-            _, prediction_component_count, components = component_candidates(restored_mask_path)
-            if prediction_component_count > 1 and body.primary_component_id is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail={
-                        "code": "PRIMARY_TUMOR_SELECTION_REQUIRED",
-                        "message": "T prediction contains multiple components",
-                        "component_count": prediction_component_count,
-                        "components": components,
-                    },
-                )
+            labels, prediction_component_count, components = component_candidates(restored_mask_path)
+            if prediction_component_count == 0:
+                raise ValueError("T prediction contains no connected component")
             if body.primary_component_id is not None:
-                select_component(restored_mask_path, body.primary_component_id)
+                primary_component_id = body.primary_component_id
+                primary_component_selection = {"component_id": primary_component_id, "method": "request_override"}
+            else:
+                primary_component_id, primary_component_selection = select_primary_component(
+                    restored_mask_path, labels, components, metadata, target_mask_path
+                )
+                primary_component_selection["method"] = "auto-primary-v1"
+            select_component(restored_mask_path, primary_component_id)
             metrics = quantify(restored_mask_path)
             metrics["prediction_component_count"] = prediction_component_count
             log_latency("postprocessing", stage_started)
@@ -231,6 +287,10 @@ def predict(body: TRequest) -> dict:
                 "status": "completed", "case_id": body.case_id, "model_revision": MODEL_REVISION,
                 "model_sha256": model_hashes["checkpoint_best.pth"], "tumor_mask_uri": destination,
                 "mask_geometry": "original_ct",
+                "target_nodule_id": metadata.get("target_nodule_id"),
+                "primary_component_id": primary_component_id,
+                "selection_rule_version": metadata.get("selection_rule_version", "auto-primary-v1"),
+                "primary_component_selection": primary_component_selection,
                 **metrics,
                 "t_candidate": None,
                 "size_only_t_candidate": size_category(metrics["mask_bbox_diagonal_mm"]),

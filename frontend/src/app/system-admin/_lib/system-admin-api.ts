@@ -30,6 +30,50 @@ export type SystemAdminLoginResponse = {
   access: string; refresh: string; user: SystemAdminUser;
 };
 
+export type PlatformKpi = {
+  total_hospitals: number;
+  active_users_total: number;
+  ai_requests_today: number;
+  ai_running_now: number;
+  ai_failed_today: number;
+};
+export type HospitalOverviewRow = {
+  id: string; name: string; code: string;
+  active_users: number; recent_requests: number; failed_count: number; status: string;
+};
+export type AiQueueByTypeRow = {
+  analysis_type: string; analysis_type_display: string;
+  queue_depth: number; running: number; failed: number; avg_duration_seconds: number | null;
+};
+export type ServiceStatus = { name: string; status: string; detail: string };
+export type RecentErrorRow = {
+  id: string; case_id: string; at: string; queued_at: string; started_at: string | null;
+  elapsed_seconds: number | null; service: string; hospital_name: string;
+  message_summary: string; error_message: string | null; retry_count: string; cloud_run_service: string;
+};
+export type SystemAuditLogRow = {
+  id: string; actor_name: string; action_type_display: string; target_table: string; created_at: string;
+};
+export type ModelVersionRow = {
+  id: string; model_name: string; version: string; analysis_type_display: string; applied_scope: string; updated_at: string;
+};
+export type DeployVersionRow = {
+  name: string; commit_sha: string; full_commit_sha: string | null; deployed_at: string | null; status: string;
+};
+export type SystemMonitoringSnapshot = {
+  kpi: PlatformKpi;
+  hospitals_overview: HospitalOverviewRow[];
+  ai_queue_by_type: AiQueueByTypeRow[];
+  ai_service_status: ServiceStatus[];
+  infra_status: ServiceStatus[];
+  cloud_run_status: ServiceStatus[];
+  cloud_run_note: string;
+  recent_errors: RecentErrorRow[];
+  audit_log: SystemAuditLogRow[];
+  deploy_versions: DeployVersionRow[];
+  model_versions: ModelVersionRow[];
+};
+
 export class SystemAdminApiError extends Error {
   constructor(message: string, public status: number | null = null) {
     super(message); this.name = "SystemAdminApiError";
@@ -89,3 +133,5 @@ export const createHospitalAdmin = (token: string, data: HospitalAdminCreateRequ
   request<HospitalAdmin>("/api/system-admin/hospital-admins/", {
     method: "POST", headers: jsonHeaders(token), body: JSON.stringify(data),
   });
+export const fetchSystemMonitoring = (token: string, signal?: AbortSignal) =>
+  request<SystemMonitoringSnapshot>("/api/system-admin/monitoring/", { headers: authHeaders(token), signal });

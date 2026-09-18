@@ -1,11 +1,16 @@
 import argparse
 import json
 import logging
+import math
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+import nibabel as nib
+import numpy as np
+from scipy import ndimage
 
 
 THIS_FILE = Path(__file__).resolve()
@@ -134,6 +139,82 @@ def save_json(data, path):
             indent=2,
             ensure_ascii=False,
         )
+
+
+def _number(value, default=0.0):
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        try:
+            return float(default)
+        except (TypeError, ValueError):
+            return 0.0
+
+
+def select_target_nodule(nodule_results):
+    """Select one Phase 1 nodule with a stable, auditable ordering."""
+    if not nodule_results:
+        raise RuntimeError("No Phase 1 nodule candidate is available for T input")
+
+    def ranking(nodule):
+        quantification = nodule["quantification"]
+        malignancy = nodule.get("malignancy", {}).get("prediction", {})
+        morphology = nodule.get("morphology", {}).get("prediction", {})
+        maximum_diameter = _number(
+            quantification.get("maximum_3d_diameter_mm"),
+            quantification.get("equivalent_diameter_mm"),
+        )
+        solid_diameter = _number(
+            morphology.get("solid_component_maximum_3d_diameter_mm"),
+            maximum_diameter,
+        )
+        return (
+            -_number(malignancy.get("malignancy_score")),
+            -solid_diameter,
+            -_number(quantification.get("volume_mm3")),
+            str(nodule["nodule_id"]),
+        )
+
+    selected = min(nodule_results, key=ranking)
+    quantification = selected["quantification"]
+    return {
+        "target_nodule_id": selected["nodule_id"],
+        "target_centroid_xyz": quantification["centroid_voxel_xyz"],
+        "target_bbox_xyz": [
+            quantification["bbox_voxel_xyz"][:3],
+            quantification["bbox_voxel_xyz"][3:],
+        ],
+        "selection_rule_version": "auto-primary-v1",
+    }
+
+
+def write_target_nodule_mask(segmentation_path, target_nodule_id, output_path):
+    """Persist the Phase 1 component using the existing N001 ordering policy."""
+    image = nib.load(str(segmentation_path))
+    mask = np.asarray(image.dataobj) > 0
+    labels, count = ndimage.label(mask, structure=np.ones((3, 3, 3), dtype=np.uint8))
+    spacing = np.asarray(image.header.get_zooms()[:3], dtype=float)
+    components = []
+    for source_label in range(1, int(count) + 1):
+        component = labels == source_label
+        voxel_count = int(component.sum())
+        volume_mm3 = voxel_count * float(np.prod(spacing))
+        equivalent_diameter = (6.0 * volume_mm3 / math.pi) ** (1.0 / 3.0) if volume_mm3 > 0 else 0.0
+        if equivalent_diameter >= 3.0:
+            components.append((source_label, volume_mm3, component))
+    components.sort(key=lambda item: (-item[1], item[0]))
+    expected_ids = [f"N{index:03d}" for index in range(1, len(components) + 1)]
+    try:
+        component = components[expected_ids.index(target_nodule_id)][2]
+    except ValueError as exc:
+        raise RuntimeError(f"Target nodule {target_nodule_id} is not present in the segmentation") from exc
+
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    target_image = nib.Nifti1Image(component.astype(np.uint8), image.affine, header=image.header.copy())
+    target_image.set_data_dtype(np.uint8)
+    nib.save(target_image, str(output_path))
+    return output_path
 
 
 def phase1(
@@ -448,6 +529,8 @@ def phase1(
                 patch,
         })
 
+    target_selection = select_target_nodule(nodule_results)
+
     # ==================================================
     # 4. Thoracic anatomy
     #
@@ -541,6 +624,18 @@ def phase1(
         t_input_dir
         / "crop_metadata.json"
     )
+
+    target_mask_path = write_target_nodule_mask(
+        seg_mask,
+        target_selection["target_nodule_id"],
+        t_input_dir / "target_nodule_mask.nii.gz",
+    )
+    t_metadata = load_json(t_metadata_path)
+    t_metadata.update({
+        **target_selection,
+        "target_mask": str(target_mask_path),
+    })
+    save_json(t_metadata, t_metadata_path)
 
     # ==================================================
     # 6.5 Prune intermediate anatomy masks
@@ -639,6 +734,7 @@ def phase1(
         },
         "nodules":
             nodule_results,
+        "target_nodule_id": target_selection["target_nodule_id"],
         "quantification": {
             "json":
                 str(quant_json),
@@ -674,6 +770,11 @@ def phase1(
                 str(t_metadata_path),
             "status":
                 "READY_FOR_T_MODEL",
+            "target_nodule_id": target_selection["target_nodule_id"],
+            "target_centroid_xyz": target_selection["target_centroid_xyz"],
+            "target_bbox_xyz": target_selection["target_bbox_xyz"],
+            "target_mask": str(target_mask_path),
+            "selection_rule_version": target_selection["selection_rule_version"],
         },
         "n_input": {
             "status":

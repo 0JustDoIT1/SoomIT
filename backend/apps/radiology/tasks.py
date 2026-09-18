@@ -1,5 +1,4 @@
 import re
-import logging
 from decimal import Decimal, InvalidOperation
 
 from celery import shared_task
@@ -27,9 +26,6 @@ from .services.tnm_t_inference import request_tnm_t_analysis
 from .services.ct_phase2_inference import request_ct_phase2_analysis
 from .services.tnm_n_inference import load_n_input, request_tnm_n_analysis
 from apps.clinical.models import ClinicalResult
-
-
-logger = logging.getLogger(__name__)
 
 
 def _mark_failed(analysis_id, *, error_message="AI analysis failed."):
@@ -231,6 +227,10 @@ def run_ct_analysis(analysis_id):
                 {"type": "phase1_result", "uri": payload["phase1_result_uri"]},
                 {"type": "t_input", "uri": payload["t_input_uri"]},
             ] + (
+                [{"type": "target_nodule_mask", "uri": payload["target_mask_uri"]}]
+                if isinstance(payload.get("target_mask_uri"), str) and payload["target_mask_uri"].startswith("gs://")
+                else []
+            ) + (
                 [{"type": "visualization_manifest", "uri": payload["visualization_manifest_uri"]}]
                 if payload.get("visualization_manifest_uri")
                 else []
@@ -346,7 +346,6 @@ def run_tnm_analysis(analysis_id):
     )
     if analysis is None:
         return "invalid_analysis"
-    logger.info("[TNM] analysis started analysis_id=%s case_id=%s", analysis.id, analysis.case_id)
     if analysis.status not in [AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING] or AiResult.objects.filter(ai_analysis=analysis).exists():
         return "already_completed"
     analysis.status = AiAnalysis.Status.RUNNING
@@ -358,18 +357,9 @@ def run_tnm_analysis(analysis_id):
     prefix = None
     try:
         t_input_uri, phase1_artifact_uri = _single_confirmed_ct(analysis)
-        logger.info("[TNM] confirmed CT loaded analysis_id=%s", analysis.id)
         age, gender = _patient_phase2_inputs(analysis)
-        logger.info("[TNM] patient inputs ready analysis_id=%s", analysis.id)
         histology = _confirmed_histology(analysis)
-        logger.info("[TNM] histology resolved analysis_id=%s histology=%s", analysis.id, histology)
-        logger.info(
-            "[TNM] calling T service analysis_id=%s t_input_uri=%s",
-            analysis.id,
-            t_input_uri[:160],
-        )
         t_payload = request_tnm_t_analysis(case_id=analysis.case_id, t_input_uri=t_input_uri)
-        logger.info("[TNM] TNM T response received analysis_id=%s", analysis.id)
         phase2_payload = request_ct_phase2_analysis(
             case_id=str(analysis.case_id), patient_id=str(analysis.case.patient_id), age=age,
             gender=gender, histology=histology, phase1_artifact_uri=phase1_artifact_uri,
@@ -402,7 +392,6 @@ def run_tnm_analysis(analysis_id):
             locked.save(update_fields=["status", "completed_at", "error_message"])
         return "succeeded"
     except Exception:
-        logger.exception("[TNM] analysis failed analysis_id=%s case_id=%s", analysis.id, analysis.case_id)
         _mark_failed(analysis.id, error_message="PET-CT TNM analysis failed.")
         return "failed"
     finally:

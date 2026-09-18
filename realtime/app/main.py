@@ -190,11 +190,19 @@ async def shutdown():
 
 @app.get("/health")
 async def health():
+    # GIT_COMMIT_SHA/DEPLOYED_AT are set by infra/docker-compose.yml at
+    # deploy time (same commit SHA already used as the Docker image tag),
+    # so the system-admin monitoring dashboard can show this service's
+    # currently-running version without a separate version-tracking system.
+    version = {
+        "commit_sha": os.environ.get("GIT_COMMIT_SHA", "local"),
+        "deployed_at": os.environ.get("DEPLOYED_AT"),
+    }
     try:
         await redis_client.ping()
-        return {"status": "ok"}
+        return {"status": "ok", **version}
     except Exception:
-        return {"status": "error"}
+        return {"status": "error", **version}
 
 
 @app.websocket("/ws/chat/{case_id}")

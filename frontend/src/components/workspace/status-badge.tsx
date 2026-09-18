@@ -23,6 +23,10 @@ const statusStyles: Record<string, string> = {
   AI_READY: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   IMAGE_PENDING: "bg-amber-50 text-amber-700 ring-amber-200",
   EXAM_PENDING: "bg-slate-100 text-slate-700 ring-slate-200",
+  HEALTHY: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  WARNING: "bg-amber-50 text-amber-700 ring-amber-200",
+  ERROR: "bg-red-50 text-red-700 ring-red-200",
+  UNKNOWN: "bg-slate-100 text-slate-500 ring-slate-200",
 };
 
 export function StatusBadge({ status, label }: StatusBadgeProps) {

@@ -9,6 +9,13 @@ x-django-base: &django-base
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
     GOOGLE_APPLICATION_CREDENTIALS: /app/gcs-key.json
+    # Same commit SHA already used as this deploy's Docker image tag (see
+    # .github/workflows/deploy-vm.yml) - surfaced here so the system-admin
+    # monitoring dashboard can show it without a separate version system.
+    GIT_COMMIT_SHA: ${GIT_COMMIT_SHA:-local}
+    DEPLOYED_AT: ${DEPLOYED_AT:-}
+    FRONTEND_INTERNAL_URL: http://nextjs:3000
+    REALTIME_INTERNAL_URL: http://realtime:8001
   depends_on:
     redis:
       condition: service_healthy
@@ -68,6 +75,8 @@ services:
       args:
         NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:?Set NEXT_PUBLIC_API_BASE_URL}
         NEXT_PUBLIC_REALTIME_WS_URL: ${NEXT_PUBLIC_REALTIME_WS_URL:?Set NEXT_PUBLIC_REALTIME_WS_URL}
+        NEXT_PUBLIC_GIT_COMMIT_SHA: ${GIT_COMMIT_SHA:-local}
+        NEXT_PUBLIC_DEPLOYED_AT: ${DEPLOYED_AT:-}
     image: ${FRONTEND_IMAGE:-soomit-frontend:local}
     container_name: soomit-infra-nextjs
     restart: unless-stopped
@@ -85,6 +94,8 @@ services:
       DJANGO_INTERNAL_BASE_URL: http://django:8000
       DJANGO_SERVICE_TOKEN: ${AI_SERVICE_TOKEN:?Set AI_SERVICE_TOKEN}
       REALTIME_ALLOWED_ORIGINS: ${REALTIME_ALLOWED_ORIGINS:-https://soomit.kro.kr,http://localhost:3000,http://127.0.0.1:3000}
+      GIT_COMMIT_SHA: ${GIT_COMMIT_SHA:-local}
+      DEPLOYED_AT: ${DEPLOYED_AT:-}
     depends_on:
       redis:
         condition: service_healthy

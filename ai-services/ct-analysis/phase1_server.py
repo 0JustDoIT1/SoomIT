@@ -76,6 +76,27 @@ def output_uri(case_id: str, requested: str | None) -> str:
     return (requested or f"{OUTPUT_GCS_PREFIX}/{case_id}").rstrip("/")
 
 
+def finalize_target_selection_metadata(result: dict, phase1_dir: Path, destination: str) -> dict:
+    t_input = result.get("t_input")
+    if not isinstance(t_input, dict) or not isinstance(t_input.get("target_nodule_id"), str):
+        raise RuntimeError("Phase 1 did not produce a target nodule for T input")
+
+    target_mask_uri = f"{destination.rstrip('/')}/phase1/t_input/target_nodule_mask.nii.gz"
+    metadata_path = phase1_dir / "t_input" / "crop_metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["target_mask_uri"] = target_mask_uri
+    metadata.pop("target_mask", None)
+    metadata_path.write_text(json.dumps(metadata, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    t_input["target_mask_uri"] = target_mask_uri
+    t_input.pop("target_mask", None)
+    result["target_nodule_id"] = t_input["target_nodule_id"]
+    result["selection_rule_version"] = t_input["selection_rule_version"]
+    result_path = phase1_dir / "phase1_result.json"
+    result_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+    return result
+
+
 def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -> dict:
     total_started = time.perf_counter()
     phase1_dir = work_root / "phase1"
@@ -91,6 +112,7 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
             nodule_models=nodule_models,
         )
     log_latency("pipeline", stage_started)
+    result = finalize_target_selection_metadata(result, phase1_dir, destination)
     stage_started = time.perf_counter()
     artifact_uri = upload_tree(work_root, destination)
     log_latency("upload", stage_started)
@@ -119,6 +141,9 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
         "artifact_uri": artifact_uri,
         "phase1_result_uri": f"{artifact_uri}phase1/phase1_result.json",
         "t_input_uri": f"{artifact_uri}phase1/t_input/{case_id}_0000.nii.gz",
+        "target_nodule_id": result["target_nodule_id"],
+        "primary_component_selection_rule_version": result["selection_rule_version"],
+        "target_mask_uri": result["t_input"]["target_mask_uri"],
         "visualization_manifest_uri": f"{visualization_prefix}visualization_manifest.json",
         "visualization": visualization,
         "cornerstone_manifest_uri": f"{cornerstone_prefix}cornerstone_manifest.json",

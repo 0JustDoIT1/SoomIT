@@ -13,6 +13,7 @@ from .models import Department, Hospital, HospitalAdmin
 from .permissions import IsSystemAdmin
 from .services.hospital_admin_provisioning import provision_hospital_admin
 from .services.hospital_provisioning import provision_hospital
+from .services.system_monitoring import build_system_monitoring_snapshot
 from .services.kakao_local import (
     KakaoAddressNotFoundError,
     KakaoGeocodingConfigurationError,
@@ -174,3 +175,17 @@ class SystemAdminHospitalAdminCreateAPIView(APIView):
         hospital_admin = HospitalAdmin.objects.select_related("user", "hospital").get(user=user)
         data = HospitalAdminProvisioningResponseSerializer(hospital_admin).data
         return Response(data, status=status.HTTP_201_CREATED)
+
+
+class SystemAdminMonitoringAPIView(APIView):
+    """Aggregate, read-only snapshot for the system-admin "전체 플랫폼 관제" dashboard.
+
+    One endpoint for the whole page, platform-wide (no hospital scoping).
+    """
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
+
+    @extend_schema(tags=["시스템 관리자"])
+    def get(self, request):
+        return Response(build_system_monitoring_snapshot(), status=status.HTTP_200_OK)

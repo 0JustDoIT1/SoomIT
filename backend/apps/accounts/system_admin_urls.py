@@ -4,6 +4,7 @@ from .system_admin_views import (
     SystemAdminHospitalAdminCreateAPIView,
     SystemAdminHospitalCreateAPIView,
     SystemAdminHospitalDetailAPIView,
+    SystemAdminMonitoringAPIView,
 )
 
 
@@ -21,4 +22,5 @@ urlpatterns = [
         SystemAdminHospitalAdminCreateAPIView.as_view(),
         name="hospital-admin-create",
     ),
+    path("monitoring/", SystemAdminMonitoringAPIView.as_view(), name="monitoring"),
 ]

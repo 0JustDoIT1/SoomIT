@@ -10,6 +10,94 @@ export type Staff = {
 export type StaffCreateRequest = { login_id: string; name: string; password: string; department_role_id: string; license_number?: string };
 export type HospitalAdminLoginResponse = { access: string; refresh: string; user: HospitalAdminUser };
 
+export type MonitoringKpi = {
+  ai_queued: number;
+  ai_running: number;
+  ai_succeeded_today: number;
+  ai_failed_today: number;
+  exams_today: number;
+  active_staff: number;
+};
+export type AiRequestRow = {
+  id: string;
+  case_code: string;
+  patient_name: string;
+  analysis_type: string;
+  analysis_type_display: string;
+  requested_at: string;
+  status: string;
+  wait_seconds: number | null;
+  duration_seconds: number | null;
+};
+export type ExamSummaryRow = {
+  order_type: string;
+  order_type_display: string;
+  ordered: number;
+  scheduled: number;
+  completed: number;
+  cancelled: number;
+};
+export type FailedRequestRow = {
+  id: string;
+  case_id: string;
+  case_code: string;
+  analysis_type: string;
+  analysis_type_display: string;
+  queued_at: string;
+  started_at: string | null;
+  failed_at: string;
+  elapsed_seconds: number | null;
+  error_summary: string;
+  error_message: string | null;
+  retry_count: string;
+  cloud_run_service: string;
+  retry_available: boolean;
+};
+export type ActivityLogRow = {
+  id: string;
+  actor_name: string;
+  action_type: string;
+  action_type_display: string;
+  target_table: string;
+  created_at: string;
+};
+export type StaffRow = {
+  id: string;
+  name: string;
+  department_name: string;
+  role_display_name: string;
+  account_status: string;
+};
+export type StaffOverview = {
+  total_staff: number;
+  active_staff: number;
+  department_count: number;
+  last_login_at: string | null;
+};
+export type IntegrationStatus = { name: string; status: string; detail: string };
+export type PerformanceSummary = {
+  ai_avg_duration_seconds: number | null;
+  ai_avg_wait_seconds: number | null;
+  sample_size: number;
+  by_type: Array<{ analysis_type: string; analysis_type_display: string; avg_duration_seconds: number | null; sample_size: number }>;
+};
+export type RecentEvent = { label: string; detail: string; at: string };
+
+export type HospitalMonitoringSnapshot = {
+  hospital: { id: string; name: string; code: string };
+  kpi: MonitoringKpi;
+  ai_queue_summary: Record<string, number>;
+  recent_ai_requests: AiRequestRow[];
+  exam_summary: ExamSummaryRow[];
+  failed_requests: FailedRequestRow[];
+  activity_log: ActivityLogRow[];
+  staff_overview: StaffOverview;
+  staff: StaffRow[];
+  integrations: IntegrationStatus[];
+  performance: PerformanceSummary;
+  recent_events: RecentEvent[];
+};
+
 export class HospitalAdminApiError extends Error {
   constructor(message: string, public status: number | null = null) { super(message); this.name = "HospitalAdminApiError"; }
 }
@@ -50,3 +138,4 @@ export const fetchDepartments = (token: string, signal?: AbortSignal) => request
 export const fetchStaff = (token: string, signal?: AbortSignal) => request<Staff[]>("/api/hospital-admin/staff/", { headers: authHeaders(token), signal });
 export const createStaff = (token: string, data: StaffCreateRequest) => request<Staff>("/api/hospital-admin/staff/", { method: "POST", headers: jsonHeaders(token), body: JSON.stringify(data) });
 export const deleteStaff = (token: string, staffId: string) => request<void>(`/api/hospital-admin/staff/${staffId}/`, { method: "DELETE", headers: authHeaders(token) });
+export const fetchHospitalMonitoring = (token: string, signal?: AbortSignal) => request<HospitalMonitoringSnapshot>("/api/hospital-admin/monitoring/", { headers: authHeaders(token), signal });

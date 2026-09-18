@@ -12,6 +12,14 @@ load_dotenv(BASE_DIR / ".env")
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+
+# Set by infra/docker-compose.yml at deploy time to the same commit SHA
+# already used as this deploy's Docker image tag - read by the system-admin
+# monitoring dashboard, not a new version-tracking system.
+GIT_COMMIT_SHA = os.environ.get("GIT_COMMIT_SHA", "local")
+DEPLOYED_AT = os.environ.get("DEPLOYED_AT", "") or None
+FRONTEND_INTERNAL_URL = os.environ.get("FRONTEND_INTERNAL_URL", "").rstrip("/")
+REALTIME_INTERNAL_URL = os.environ.get("REALTIME_INTERNAL_URL", "").rstrip("/")
 # Firebase 인증 파일 경로
 # 상대경로는 Backend 폴더(BASE_DIR)를 기준으로 해석합니다.
 FIREBASE_CREDENTIALS_PATH = (

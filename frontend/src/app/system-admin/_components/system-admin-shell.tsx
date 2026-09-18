@@ -7,7 +7,7 @@ import { clearSystemAdminSession, getSystemAdminAccessToken, getSystemAdminUser 
 
 const icon = "h-5 w-5";
 const navigation: RailItem[] = [
-  { label: "대시보드", href: "/system-admin", icon: <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" className={icon}><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" /></svg> },
+  { label: "대시보드", href: "/system-admin", icon: <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" className={icon}><path d="M3 12h4l3 8 4-16 3 8h4" /></svg> },
   { label: "병원 관리", href: "/system-admin/hospitals", matchPrefix: true, icon: <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" className={icon}><path d="M4 21V5h16v16M8 9h2M14 9h2M8 13h2M14 13h2M10 21v-4h4v4" /></svg> },
   { label: "병원 관리자 관리", href: "/system-admin/hospital-admins", icon: <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" className={icon}><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8ZM5 21a7 7 0 0 1 14 0" /></svg> },
 ];
