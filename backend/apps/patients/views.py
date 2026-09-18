@@ -33,7 +33,8 @@ from apps.accounts.permissions import (
     IsAdministrationStaff,
     IsMedicalStaff,
 )
-from apps.cases.models import LungCancerCase, WorkflowStage
+from apps.cases.models import ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.cases.services.examination_orders import create_examination_order
 from apps.notifications.models import PatientNotificationSetting
 
 from .models import (
@@ -177,7 +178,7 @@ class PatientListAPIView(ListCreateAPIView):
             case_code = f"RADPT{sequence:04d}"
             try:
                 with transaction.atomic():
-                    LungCancerCase.objects.create(
+                    case = LungCancerCase.objects.create(
                         patient=patient,
                         case_code=case_code,
                         primary_doctor=primary_doctor,
@@ -188,6 +189,14 @@ class PatientListAPIView(ListCreateAPIView):
                 continue
         else:
             raise ValidationError({"case_code": "새 Case 번호를 생성할 수 없습니다."})
+
+        create_examination_order(
+            case=case,
+            requesting_doctor=primary_doctor,
+            order_type=ExaminationOrder.OrderType.XRAY,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="초기 흉부 X-ray 검사",
+        )
 
         if patient_account is not None:
             patient_account.patient = patient

@@ -21,6 +21,7 @@ from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_w
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
 from apps.clinical.models import ClinicalResult, Prescription, XrayResult
+from apps.radiology.models import RadiologyReview
 from apps.clinical.views import DoctorTreatmentEvidenceAPIView
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
 from apps.radiology.services.ct_cornerstone_storage import CtCornerstoneStorageError, download_ct_cornerstone_object
@@ -772,6 +773,18 @@ class DoctorXrayWorkflowAPIView(APIView):
         serializer = DoctorXrayWorkflowSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
+        submitted_review = (
+            RadiologyReview.objects.select_for_update()
+            .filter(
+                case=case,
+                examination_order__order_type=ExaminationOrder.OrderType.XRAY,
+                assigned_doctor=request.user,
+                status__in=[RadiologyReview.Status.PENDING, RadiologyReview.Status.IN_PROGRESS],
+                ai_analysis__status=AiAnalysis.Status.SUCCEEDED,
+            )
+            .order_by("-submitted_at")
+            .first()
+        )
         result = ClinicalResult.objects.select_for_update().filter(
             case=case,
             workflow_stage=WorkflowStage.XRAY,
@@ -782,7 +795,18 @@ class DoctorXrayWorkflowAPIView(APIView):
         if result is None:
             result = ClinicalResult.objects.create(
                 case=case,
+                examination_order=(
+                    submitted_review.examination_order if submitted_review else None
+                ),
                 workflow_stage=WorkflowStage.XRAY,
+                source_image_asset=(
+                    submitted_review.ai_analysis.source_image_asset
+                    if submitted_review
+                    else None
+                ),
+                reviewed_ai_result=(
+                    submitted_review.ai_analysis.ai_result if submitted_review else None
+                ),
                 result_status=ClinicalResult.ResultStatus.DRAFT,
             )
             XrayResult.objects.create(
@@ -798,10 +822,27 @@ class DoctorXrayWorkflowAPIView(APIView):
             detail.recommended_action = XrayResult.RecommendedAction.CHEST_CT if values["next_action"] == "ORDER_CT" else XrayResult.RecommendedAction.NO_FURTHER_ACTION
             detail.save(update_fields=["assessment", "finding_summary", "recommended_action"])
 
+        if submitted_review:
+            result.examination_order = submitted_review.examination_order
+            result.source_image_asset = submitted_review.ai_analysis.source_image_asset
+            result.reviewed_ai_result = submitted_review.ai_analysis.ai_result
         result.result_status = ClinicalResult.ResultStatus.CONFIRMED
         result.confirmed_by_user = request.user
         result.confirmed_at = timezone.now()
-        result.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+        result.save(
+            update_fields=[
+                "examination_order",
+                "source_image_asset",
+                "reviewed_ai_result",
+                "result_status",
+                "confirmed_by_user",
+                "confirmed_at",
+                "updated_at",
+            ]
+        )
+        if submitted_review:
+            submitted_review.status = RadiologyReview.Status.COMPLETED
+            submitted_review.save(update_fields=["status", "updated_at"])
 
         order = None
         if values["next_action"] == "ORDER_CT":

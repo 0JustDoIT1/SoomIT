@@ -2,15 +2,17 @@ from datetime import date
 
 from django.test import TestCase
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
-from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.cases.models import CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult, XrayResult
 from apps.pathology.models import PathologyWorkItem
 from apps.patients.models import Patient
+from apps.radiology.models import RadiologyReview
 
 
 class DoctorExaminationOrderAPITests(TestCase):
@@ -181,6 +183,71 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(self.case.current_stage, WorkflowStage.CT)
         self.assertTrue(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())
         self.assertEqual(ClinicianDecision.objects.get(case=self.case).decision_type, ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE)
+
+    def test_xray_workflow_confirms_the_submitted_radiology_review(self):
+        xray_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.XRAY,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Chest X-ray",
+        )
+        asset = CaseImageAsset.objects.create(
+            case=self.case,
+            examination_order=xray_order,
+            workflow_stage=WorkflowStage.XRAY,
+            image_type=CaseImageAsset.ImageType.XRAY,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gs://test/xray-review-handoff.png",
+            file_format="PNG",
+            status=CaseImageAsset.Status.READY,
+        )
+        model = ModelVersion.objects.create(
+            model_name="xray-review-handoff-model",
+            version="1.0",
+            analysis_type="XRAY_ANALYSIS",
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=xray_order,
+            source_image_asset=asset,
+            analysis_type="XRAY_ANALYSIS",
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        ai_result = AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="1.0",
+            result_payload={},
+        )
+        review = RadiologyReview.objects.create(
+            case=self.case,
+            examination_order=xray_order,
+            ai_analysis=analysis,
+            assigned_doctor=self.doctor,
+            submitted_by=self.doctor,
+            submitted_at=timezone.now(),
+            status=RadiologyReview.Status.PENDING,
+        )
+
+        response = self.client.post(
+            reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id}),
+            {
+                "assessment": "SUSPICIOUS",
+                "next_action": "ORDER_CT",
+                "priority": "NORMAL",
+                "purpose": "Characterize X-ray finding",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        result = ClinicalResult.objects.get(case=self.case, workflow_stage=WorkflowStage.XRAY)
+        review.refresh_from_db()
+        self.assertEqual(result.examination_order, xray_order)
+        self.assertEqual(result.source_image_asset, asset)
+        self.assertEqual(result.reviewed_ai_result, ai_result)
+        self.assertEqual(review.status, RadiologyReview.Status.COMPLETED)
 
     def test_xray_workflow_requires_ct_purpose_without_persisting_a_result(self):
         url = reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id})
