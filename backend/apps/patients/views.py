@@ -1,4 +1,5 @@
 import hashlib
+import secrets
 from datetime import datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,7 @@ from apps.cases.models import LungCancerCase, WorkflowStage
 from apps.notifications.models import PatientNotificationSetting
 
 from .models import (
+    PatientQrToken,
     Patient,
     PatientAccount,
     Appointment,
@@ -1982,3 +1984,153 @@ class PatientDeviceTokenAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+class PatientQrTokenCreateAPIView(APIView):
+    authentication_classes = [PatientJWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request):
+        patient_account = request.user.patient_account
+
+        if (
+            patient_account.link_status
+            != PatientAccount.LinkStatus.LINKED
+            or patient_account.patient_id is None
+        ):
+            return Response(
+                {
+                    "detail": "병원 환자정보가 연결된 계정에서만 QR을 사용할 수 있습니다."
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        now = timezone.now()
+
+        PatientQrToken.objects.filter(
+            patient_account=patient_account,
+            used_at__isnull=True,
+            expires_at__gt=now,
+        ).update(
+            expires_at=now,
+        )
+
+        raw_token = secrets.token_urlsafe(32)
+        token_hash = hashlib.sha256(
+            raw_token.encode("utf-8")
+        ).hexdigest()
+
+        expires_at = now + timedelta(minutes=2)
+
+        PatientQrToken.objects.create(
+            patient_account=patient_account,
+            token_hash=token_hash,
+            expires_at=expires_at,
+        )
+
+        return Response(
+            {
+                "token": raw_token,
+                "expires_at": expires_at,
+                "expires_in_seconds": 120,
+            },
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PatientQrTokenResolveAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [
+        IsAuthenticated,
+        IsActiveStaff,
+        IsAdministrationStaff,
+        IsMedicalStaff,
+    ]
+
+    def post(self, request):
+        raw_token = str(
+            request.data.get("token", "")
+        ).strip()
+
+        if not raw_token:
+            return Response(
+                {"detail": "QR token이 필요합니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        token_hash = hashlib.sha256(
+            raw_token.encode("utf-8")
+        ).hexdigest()
+
+        with transaction.atomic():
+            qr_token = (
+                PatientQrToken.objects
+                .select_for_update()
+                .filter(token_hash=token_hash)
+                .first()
+            )
+
+            if qr_token is None:
+                return Response(
+                    {"detail": "유효하지 않은 QR입니다."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            if qr_token.used_at is not None:
+                return Response(
+                    {"detail": "이미 사용된 QR입니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            if qr_token.expires_at <= timezone.now():
+                return Response(
+                    {"detail": "만료된 QR입니다."},
+                    status=status.HTTP_410_GONE,
+                )
+
+            patient_account = qr_token.patient_account
+
+            if (
+                patient_account.link_status
+                != PatientAccount.LinkStatus.LINKED
+                or patient_account.patient_id is None
+            ):
+                return Response(
+                    {"detail": "환자 연결 정보가 유효하지 않습니다."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
+            patient = patient_account.patient
+
+            staff_hospital_id = (
+                request.user.department_role.department.hospital_id
+            )
+
+            if patient.hospital_id != staff_hospital_id:
+                return Response(
+                    {"detail": "환자를 찾을 수 없습니다."},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            qr_token.used_at = timezone.now()
+            qr_token.save(
+                update_fields=["used_at", "updated_at"]
+            )
+
+            return Response(
+                {
+                    "patient": {
+                        "id": str(patient.id),
+                        "patient_code": patient.patient_code,
+                        "name": patient.name,
+                        "birth_date": patient.birth_date,
+                        "sex": patient.sex,
+                        "hospital": {
+                            "id": str(patient.hospital_id),
+                            "name": patient.hospital.name,
+                        },
+                    }
+                },
+                status=status.HTTP_200_OK,
+            )

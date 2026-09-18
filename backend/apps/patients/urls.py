@@ -36,10 +36,24 @@ from .views import (
     PatientDeviceTokenAPIView,
     PatientAppointmentAvailabilityAPIView,
     PatientAppointmentDoctorListAPIView,
+    PatientQrTokenCreateAPIView,
+    PatientQrTokenResolveAPIView,
     )
 
 
 urlpatterns = [
+    path(
+        "qr-token/resolve/",
+        PatientQrTokenResolveAPIView.as_view(),
+        name="patient-qr-token-resolve",
+    ),
+
+    path(
+        "qr-token/",
+        PatientQrTokenCreateAPIView.as_view(),
+        name="patient-qr-token-create",
+    ),
+
         # 환자앱 Google 소셜 로그인
     path(
         "auth/google/",
