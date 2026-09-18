@@ -62,7 +62,7 @@ class DoctorTnmDraftSerializer(serializers.Serializer):
 class DoctorCtResultWriteSerializer(serializers.Serializer):
     reviewed_ai_result_id = serializers.UUIDField()
     overall_assessment = serializers.ChoiceField(choices=CtResult.OverallAssessment.choices)
-    overall_malignancy_risk = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=0, max_value=100, required=False, allow_null=True)
+    overall_malignancy_risk = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), required=False, allow_null=True)
     finding_summary = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     def validate(self, attrs):

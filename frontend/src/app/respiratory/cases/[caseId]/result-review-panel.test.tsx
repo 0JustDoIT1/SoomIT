@@ -40,7 +40,7 @@ describe("ResultReviewPanel", () => {
   });
 
   it.each([
-    ["XRAY", "흉부 X선 검사·결과"],
+    ["XRAY", "흉부 X선"],
     ["CT", "흉부 CT 검사·결과"],
     ["PATHOLOGY_GENE", "병리 검사·결과"],
   ])("uses the shared result layout for %s", (stage, heading) => {

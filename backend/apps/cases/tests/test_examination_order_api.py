@@ -6,6 +6,7 @@ from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
+from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
 from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult, XrayResult
 from apps.pathology.models import PathologyWorkItem
@@ -197,3 +198,71 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.case.refresh_from_db()
         self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.CLOSED)
         self.assertFalse(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())
+
+    def test_ct_result_confirmation_then_pet_ct_order_advances_the_case(self):
+        self.confirm(WorkflowStage.XRAY)
+        ct_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Chest CT",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        model = ModelVersion.objects.create(
+            model_name="ct-workflow-model",
+            version="1.0",
+            analysis_type="CT_ANALYSIS",
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=ct_order,
+            analysis_type="CT_ANALYSIS",
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        ai_result = AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="ct-v1",
+            result_payload={},
+            result_files=[],
+        )
+        result_url = reverse("doctor-ct-result", kwargs={"case_id": self.case.id})
+
+        draft_response = self.client.post(result_url, {
+            "reviewed_ai_result_id": str(ai_result.id),
+            "overall_assessment": "NODULE_DETECTED",
+            "overall_malignancy_risk": "82.5",
+            "finding_summary": "Right upper lobe nodule",
+        }, format="json")
+
+        self.assertEqual(draft_response.status_code, 201)
+        result = ClinicalResult.objects.get(id=draft_response.data["id"])
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(result.ct_detail.overall_assessment, "NODULE_DETECTED")
+        confirm_url = reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id})
+        self.assertEqual(self.client.post(confirm_url, {}, format="json").status_code, 200)
+        result.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+
+        pet_order = self.post_order("PET_CT_TNM")
+        self.assertEqual(pet_order.status_code, 201)
+        decision_url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
+        decision_response = self.client.post(decision_url, {
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": "PET_CT_TNM",
+            "reason": "CT result confirmed",
+        }, format="json")
+
+        self.assertEqual(decision_response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.PET_CT_TNM)
+        self.assertTrue(ClinicianDecision.objects.filter(
+            case=self.case,
+            source_clinical_result=result,
+            decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
+            target_stage=WorkflowStage.PET_CT_TNM,
+        ).exists())

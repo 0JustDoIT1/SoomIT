@@ -1437,8 +1437,8 @@ export default function RespiratoryCaseDetailPage() {
 
   return (
     <>
-      <div className="h-full min-h-0 overflow-x-auto bg-[#f3f7fd] [scrollbar-gutter:stable]" aria-label="Case Workspace">
-      <div className="grid h-full min-h-0 min-w-[1180px] grid-cols-[minmax(190px,210px)_120px_minmax(0,1fr)] overflow-hidden bg-[#f3f7fd] xl:grid-cols-[minmax(210px,230px)_128px_minmax(0,1fr)]">
+      <div className="h-full min-h-0 overflow-auto bg-[#f3f7fd] [scrollbar-gutter:stable]" aria-label="Case Workspace">
+      <div className="grid min-h-full min-w-[1180px] grid-cols-[minmax(190px,210px)_120px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(210px,230px)_128px_minmax(0,1fr)]">
       <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
@@ -1686,7 +1686,7 @@ export default function RespiratoryCaseDetailPage() {
             setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
       />
-      <main className={selectedInfoMenu === "CT" || selectedInfoMenu === "XRAY" ? "min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl border border-blue-100 bg-white p-2 shadow-sm [scrollbar-gutter:stable]" : "min-w-0 shrink-0 rounded-xl border border-blue-100 bg-white p-3 shadow-sm"}>
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3 shadow-sm [scrollbar-gutter:stable]">
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
@@ -2696,7 +2696,7 @@ export default function RespiratoryCaseDetailPage() {
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
-          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : undefined}
+          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : selectedResultMenu === "CT" && selectedCase?.current_stage === "CT" ? <CtWorkflowDecision caseId={caseId} aiResultId={ctAnalysisResult?.id} clinicalResult={selectedClinicalResult as unknown as { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } }} authorizedFetch={authorizedFetch} onCompleted={() => { showToast("흉부 CT 결과가 확정되었습니다."); setCaseRefreshVersion((current) => current + 1); void retryClinicalResults(); }} /> : undefined}
           caseId={caseId}
           apiBaseUrl={API_BASE_URL}
           authorizedFetch={authorizedFetch}
@@ -2712,7 +2712,6 @@ export default function RespiratoryCaseDetailPage() {
           syncingResults={resultsSyncing}
           onRefreshResults={() => { void refreshCaseResults(); }}
           syncNotice={resultSyncNotice}
-          specialistAction={selectedResultMenu === "CT" && selectedCase?.current_stage === "CT" ? <CtWorkflowDecision caseId={caseId} aiResultId={ctAnalysisResult?.id} clinicalResult={selectedClinicalResult as unknown as { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } }} authorizedFetch={authorizedFetch} onCompleted={() => { showToast("흉부 CT 결과가 확정되었습니다."); setCaseRefreshVersion((current) => current + 1); void retryClinicalResults(); }} /> : undefined}
         />
         ) : (
         <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">

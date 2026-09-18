@@ -18,7 +18,7 @@ from apps.patients.patient_authentication import PatientJWTAuthentication
 
 from .dur_client import DurClient, OPERATIONS
 from apps.radiology.services.tnm_stage_inference import TnmStageInferenceError, request_tnm_stage
-from .models import ClinicalResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TnmResult, TreatmentDecision, TreatmentRule
+from .models import ClinicalResult, CtResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TnmResult, TreatmentDecision, TreatmentRule
 from .serializers import (
     DoctorClinicalResultSerializer,
     DoctorPrescriptionSerializer,

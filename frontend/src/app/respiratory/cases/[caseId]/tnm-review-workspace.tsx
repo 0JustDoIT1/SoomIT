@@ -44,8 +44,8 @@ export function TnmReviewWorkspace({ aiTnm, clinicalTnm, clinicalResultId, clini
   };
 
   return (
-    <section className="h-full min-h-0 overflow-x-auto overflow-y-hidden rounded-lg border border-slate-200 bg-white">
-      <div className="grid h-full min-w-[820px] grid-rows-[40px_minmax(0,1fr)]">
+    <section className="min-h-[780px] overflow-auto rounded-lg border border-slate-200 bg-white [scrollbar-gutter:stable]">
+      <div className="grid min-h-[740px] min-w-[820px] grid-rows-[40px_minmax(0,1fr)]">
         <header className="flex items-center justify-between border-b border-slate-200 px-3"><div className="flex items-center gap-2"><h1 className="whitespace-nowrap text-sm font-bold text-slate-900">PET-CT 기반 TNM 병기 검토</h1><span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700">TNM 개별 소견 저장 API 연동 대기</span></div><p className="truncate text-[10px] text-slate-500">PET-CT 근거 · AI 병기 후보 · 전문과 확정 근거 · 호흡기내과 결정을 구분해 검토합니다.</p></header>
         <div className="grid min-h-0 grid-cols-[minmax(560px,1fr)_260px]">
           <main className="grid min-h-0 grid-rows-[34px_360px_minmax(130px,1fr)_28px] border-r border-slate-200">
