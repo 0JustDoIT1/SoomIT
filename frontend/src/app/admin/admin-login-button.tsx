@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import type { ButtonHTMLAttributes, ReactNode } from "react";
-import styles from "./admin-login.module.css";
+import type { ButtonHTMLAttributes, ReactNode } from 'react';
+import styles from './admin-login.module.css';
 
 type AdminLoginButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
   loading?: boolean;
@@ -20,8 +20,7 @@ export function AdminLoginButton({
       disabled={disabled || loading}
       className={styles.loginButton}
     >
-      <span>{loading ? "로그인 중..." : children}</span>
-      {!loading && <span className={styles.loginArrow}>→</span>}
+      <span>{loading ? '로그인 중...' : children}</span>
     </button>
   );
 }
