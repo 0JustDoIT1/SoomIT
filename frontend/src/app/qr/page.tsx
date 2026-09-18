@@ -48,7 +48,7 @@ function formatDateTime(value: string | null) {
 }
 
 export default function PublicQrPage() {
-  const [token] = useState(() => new URLSearchParams(window.location.hash.slice(1)).get("token"));
+  const [token, setToken] = useState<string | null | undefined>(undefined);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<PublicQrResult | null>(null);
@@ -81,13 +81,21 @@ export default function PublicQrPage() {
   }, []);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setToken(new URLSearchParams(window.location.hash.slice(1)).get("token"));
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (token === undefined) return;
     if (!token) return;
     window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}`);
     const timer = window.setTimeout(() => void resolveToken(token), 0);
     return () => window.clearTimeout(timer);
   }, [resolveToken, token]);
 
-  const displayError = error || (!token ? "유효한 QR 코드로 접속해주세요." : "");
+  const displayError = error || (token === null ? "유효한 QR 코드로 접속해주세요." : "");
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-sky-50 via-white to-teal-50 px-4 py-8 text-slate-800 sm:px-6">
