@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     StaffLoginAPIView,
     StaffProfileAPIView,
+    StaffProfileImageAPIView,
     StaffTokenRefreshAPIView,
 )
 from .system_admin_views import SystemAdminLoginAPIView
@@ -24,6 +25,7 @@ urlpatterns = [
     ),
     path("staff/login/", StaffLoginAPIView.as_view(), name="staff-login"),
     path("staff/profile/", StaffProfileAPIView.as_view(), name="staff-profile"),
+    path("staff/profile/image/", StaffProfileImageAPIView.as_view(), name="staff-profile-image"),
     path(
         "staff/token/refresh/",
         StaffTokenRefreshAPIView.as_view(),
