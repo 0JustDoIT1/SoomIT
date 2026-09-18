@@ -8,6 +8,8 @@ import { API_BASE_URL } from "../_lib/respiratory-api";
 import { getCaseListFetchError, getCaseListHttpError } from "./case-list-errors";
 import { getCaseListEmptyState } from "./case-list-empty-state";
 import { CASES_PER_PAGE, getVisiblePageNumbers, paginateCases } from "./case-pagination";
+import { isSameLocalCalendarDay, sortByUpdatedAtDesc } from "./case-date";
+import { filterWorklistCases, type WorklistFilter } from "./case-worklist-filter";
 
 type CaseItem = {
   id: string;
@@ -59,13 +61,28 @@ export default function RespiratoryCasesPage() {
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
+  const [worklistFilter, setWorklistFilter] = useState<WorklistFilter>("ALL");
   const [notifications, setNotifications] = useState<NotificationResponse>({ unread_count: 0, results: [] });
   const [lastCasesSyncAt, setLastCasesSyncAt] = useState<Date | null>(null);
   const [casesSyncing, setCasesSyncing] = useState(false);
+  const [lastCaseId, setLastCaseId] = useState("");
+
+  const openCase = useCallback((id: string) => {
+    window.localStorage.setItem("respiratory-last-case-id", id);
+    setLastCaseId(id);
+    router.push(`/respiratory/cases/${id}`);
+  }, [router]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setLastCaseId(window.localStorage.getItem("respiratory-last-case-id") ?? "");
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, []);
 
   const fetchNotifications = useCallback(async (signal?: AbortSignal) => {
     try {
-      const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/?limit=5`, { signal });
+      const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/?limit=100`, { signal });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) return;
       setNotifications({
@@ -121,58 +138,101 @@ export default function RespiratoryCasesPage() {
   }, [fetchCases]);
 
   useEffect(() => {
-    const interval = window.setInterval(() => void fetchCases(undefined, true), 30_000);
-    return () => window.clearInterval(interval);
+    let disposed = false;
+    let polling = false;
+    const pollCases = async () => {
+      if (disposed || polling || document.hidden) return;
+      polling = true;
+      try {
+        await fetchCases(undefined, true);
+      } finally {
+        polling = false;
+      }
+    };
+    const interval = window.setInterval(() => void pollCases(), 30_000);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void pollCases();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [fetchCases]);
 
   useEffect(() => {
     const controller = new AbortController();
     const requestTimer = window.setTimeout(() => void fetchNotifications(controller.signal), 0);
-    const interval = window.setInterval(() => void fetchNotifications(), 30_000);
+    let disposed = false;
+    let polling = false;
+    const pollNotifications = async () => {
+      if (disposed || polling || document.hidden) return;
+      polling = true;
+      try {
+        await fetchNotifications();
+      } finally {
+        polling = false;
+      }
+    };
+    const interval = window.setInterval(() => void pollNotifications(), 30_000);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void pollNotifications();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
+      disposed = true;
       window.clearTimeout(requestTimer);
       window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
       controller.abort();
     };
   }, [fetchNotifications]);
 
   const openNotification = useCallback(async (notification: StaffNotification) => {
     if (!notification.read_at) {
-      const response = await authorizedFetch(
-        `${API_BASE_URL}/api/notifications/me/${notification.id}/read/`,
-        { method: "PATCH" },
-      );
-      if (response.ok) {
-        setNotifications((current) => ({
-          unread_count: Math.max(current.unread_count - 1, 0),
-          results: current.results.map((item) => item.id === notification.id
-            ? { ...item, read_at: new Date().toISOString() }
-            : item),
-        }));
+      try {
+        const response = await authorizedFetch(
+          `${API_BASE_URL}/api/notifications/me/${notification.id}/read/`,
+          { method: "PATCH" },
+        );
+        if (response.ok) {
+          setNotifications((current) => ({
+            unread_count: Math.max(current.unread_count - 1, 0),
+            results: current.results.map((item) => item.id === notification.id
+              ? { ...item, read_at: new Date().toISOString() }
+              : item),
+          }));
+        }
+      } catch {
+        // Preserve access to the referenced Case even if the read receipt is offline.
       }
     }
-    if (notification.case_id) router.push(`/respiratory/cases/${notification.case_id}`);
-  }, [authorizedFetch, router]);
+    if (notification.case_id) openCase(notification.case_id);
+  }, [authorizedFetch, openCase]);
+
+  const unreadNotificationCaseIds = useMemo(() => new Set(notifications.results.filter((item) => !item.read_at && item.case_id).map((item) => item.case_id as string)), [notifications.results]);
 
   const filteredCases = useMemo(() => {
     const keyword = search.trim().toLowerCase();
-    if (!keyword) return cases;
-
-    return cases.filter((item) =>
+    const searchedCases = keyword ? cases.filter((item) =>
       [item.patient_name, item.patient_code, item.case_code].some((value) =>
         value?.toLowerCase().includes(keyword),
       ),
-    );
-  }, [cases, search]);
+    ) : cases;
+
+    return filterWorklistCases(searchedCases, worklistFilter, unreadNotificationCaseIds);
+  }, [cases, search, unreadNotificationCaseIds, worklistFilter]);
 
   const pagination = useMemo(() => paginateCases(filteredCases, currentPage), [filteredCases, currentPage]);
   const visiblePages = getVisiblePageNumbers(pagination.page, pagination.pageCount);
-  const emptyState = getCaseListEmptyState(search);
+  const emptyState = getCaseListEmptyState(search, worklistFilter);
   const activeCases = cases.filter((item) => item.case_status === "ACTIVE");
-  const today = new Date().toLocaleDateString("en-CA");
-  const updatedToday = cases.filter((item) => item.updated_at && new Date(item.updated_at).toLocaleDateString("en-CA") === today).length;
-  const currentStageCount = cases.filter((item) => item.current_stage === "XRAY" || item.current_stage === "CT").length;
-  const recentCases = [...filteredCases].sort((left, right) => Date.parse(right.updated_at || "") - Date.parse(left.updated_at || ""));
+  const updatedToday = cases.filter((item) => isSameLocalCalendarDay(item.updated_at)).length;
+  const currentStageCount = filterWorklistCases(cases, "IMAGING").length;
+  const recentCases = sortByUpdatedAtDesc(filteredCases);
+  const lastWorkedCase = cases.find((item) => item.id === lastCaseId);
+  const visibleNotifications = notifications.results.filter((item) => !item.read_at).slice(0, 5);
 
   return (
     <div className="h-full overflow-auto bg-slate-50 px-6 py-5">
@@ -205,10 +265,10 @@ export default function RespiratoryCasesPage() {
 
           <section className="mb-5 grid grid-cols-[minmax(0,1fr)_280px] gap-4">
             <div className="rounded-xl border border-blue-100 bg-white shadow-sm">
-              <div className="flex items-center justify-between border-b border-blue-100 px-5 py-4"><div><h2 className="font-bold text-slate-900">지금 확인할 일</h2><p className="mt-1 text-xs text-slate-500">새 알림과 우선 확인이 필요한 업무입니다.</p></div><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{notifications.unread_count}건</span></div>
-              {notifications.results.length ? <div className="divide-y divide-slate-100">{notifications.results.map((notification) => <button key={notification.id} type="button" onClick={() => void openNotification(notification)} className={`flex w-full items-center justify-between gap-4 px-5 py-3 text-left transition hover:bg-blue-50 ${notification.read_at ? "" : "bg-blue-50/40"}`}><div><p className="text-sm font-semibold text-slate-800">{notification.title}</p><p className="mt-1 text-xs text-slate-500">{notification.message}</p></div><span className="shrink-0 text-xs font-semibold text-blue-700">{notification.case_id ? "Case 확인 →" : "읽음 처리"}</span></button>)}</div> : <p className="px-5 py-7 text-center text-sm text-slate-400">새로 확인할 알림이 없습니다.</p>}
+              <div className="flex items-center justify-between gap-4 border-b border-blue-100 px-5 py-4"><div><h2 className="font-bold text-slate-900">지금 확인할 일</h2><p className="mt-1 text-xs text-slate-500">새 알림과 우선 확인이 필요한 업무입니다.</p></div><div className="flex shrink-0 items-center gap-2"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{notifications.unread_count}건</span>{unreadNotificationCaseIds.size > 0 && <button type="button" onClick={() => { setWorklistFilter("NOTIFIED"); setCurrentPage(1); }} className="text-xs font-semibold text-blue-700 hover:text-blue-900">Case 보기 →</button>}</div></div>
+              {visibleNotifications.length ? <div className="divide-y divide-slate-100">{visibleNotifications.map((notification) => <button key={notification.id} type="button" onClick={() => void openNotification(notification)} className="flex w-full items-center justify-between gap-4 bg-blue-50/40 px-5 py-3 text-left transition hover:bg-blue-50"><div><p className="text-sm font-semibold text-slate-800">{notification.title}</p><p className="mt-1 text-xs text-slate-500">{notification.message}</p></div><span className="shrink-0 text-xs font-semibold text-blue-700">{notification.case_id ? "Case 확인 →" : "읽음 처리"}</span></button>)}</div> : <p className="px-5 py-7 text-center text-sm text-slate-400">새로 확인할 알림이 없습니다.</p>}
             </div>
-            <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">빠른 이동</h2><div className="mt-3 space-y-2"><button type="button" onClick={() => router.push("/respiratory/schedules")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">진료 일정 관리</button><button type="button" onClick={() => router.push("/respiratory/settings")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">내 프로필·알림 설정</button></div></aside>
+            <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">빠른 이동</h2><div className="mt-3 space-y-2">{lastWorkedCase && <button type="button" onClick={() => openCase(lastWorkedCase.id)} className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-left text-sm font-semibold text-blue-800 hover:bg-blue-100"><span className="block text-[11px] font-medium text-blue-600">최근 작업 Case 재개</span><span className="mt-1 block truncate">{lastWorkedCase.patient_name || lastWorkedCase.patient_code} · {lastWorkedCase.case_code}</span></button>}<button type="button" onClick={() => router.push("/respiratory/schedules")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">진료 일정 관리</button><button type="button" onClick={() => router.push("/respiratory/settings")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">내 프로필·알림 설정</button></div></aside>
           </section>
         </>}
 
@@ -226,6 +286,14 @@ export default function RespiratoryCasesPage() {
               aria-label="담당 Case 검색"
               className="w-80 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
             />
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3" aria-label="업무함 필터">
+            <WorklistFilterButton active={worklistFilter === "ALL"} onClick={() => { setWorklistFilter("ALL"); setCurrentPage(1); }}>전체 {cases.length}</WorklistFilterButton>
+            <WorklistFilterButton active={worklistFilter === "ACTIVE"} onClick={() => { setWorklistFilter("ACTIVE"); setCurrentPage(1); }}>진행 중 {activeCases.length}</WorklistFilterButton>
+            <WorklistFilterButton active={worklistFilter === "IMAGING"} onClick={() => { setWorklistFilter("IMAGING"); setCurrentPage(1); }}>X-ray · CT {currentStageCount}</WorklistFilterButton>
+            <WorklistFilterButton active={worklistFilter === "NOTIFIED"} onClick={() => { setWorklistFilter("NOTIFIED"); setCurrentPage(1); }}>새 알림 {unreadNotificationCaseIds.size}</WorklistFilterButton>
+            <p className="ml-auto text-xs text-slate-500">현재 API의 Case 상태·검사 단계·미읽음 알림을 기준으로 표시합니다.</p>
           </div>
 
           {loading ? (
@@ -258,7 +326,7 @@ export default function RespiratoryCasesPage() {
                     <tr
                       key={caseItem.id}
                       className="cursor-pointer transition hover:bg-blue-50/60"
-                      onClick={() => router.push(`/respiratory/cases/${caseItem.id}`)}
+                      onClick={() => openCase(caseItem.id)}
                     >
                       <td className="px-5 py-4">
                         <p className="truncate text-sm font-semibold text-slate-800">{caseItem.patient_name || "-"}</p>
@@ -273,7 +341,7 @@ export default function RespiratoryCasesPage() {
                           type="button"
                           onClick={(event) => {
                             event.stopPropagation();
-                            router.push(`/respiratory/cases/${caseItem.id}`);
+                            openCase(caseItem.id);
                           }}
                           className="whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700"
                         >
@@ -283,7 +351,7 @@ export default function RespiratoryCasesPage() {
                     </tr>
                   ))}
                   {filteredCases.length === 0 && (
-                    <tr><td colSpan={6}><EmptyState title={emptyState.title} description={emptyState.description} /></td></tr>
+                    <tr><td colSpan={6}><EmptyState title={emptyState.title} description={emptyState.description}>{worklistFilter !== "ALL" && <button type="button" onClick={() => { setWorklistFilter("ALL"); setCurrentPage(1); }} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">전체 Case 보기</button>}</EmptyState></td></tr>
                   )}
                 </tbody>
               </table>
@@ -312,6 +380,10 @@ export default function RespiratoryCasesPage() {
 function Badge({ label, tone }: { label: string; tone: "blue" | "slate" }) {
   const color = tone === "blue" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-700";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${color}`}>{label}</span>;
+}
+
+function WorklistFilterButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
+  return <button type="button" aria-pressed={active} onClick={onClick} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"}`}>{children}</button>;
 }
 
 function DashboardMetric({ label, value, description, tone = "slate" }: { label: string; value: number; description: string; tone?: "slate" | "blue" | "amber" | "emerald" }) {

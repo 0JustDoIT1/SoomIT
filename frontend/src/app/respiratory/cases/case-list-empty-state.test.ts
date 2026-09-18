@@ -13,4 +13,10 @@ describe("getCaseListEmptyState", () => {
   it("distinguishes an empty search result from an empty assignment", () => {
     expect(getCaseListEmptyState("강테스트").title).toBe("검색 조건에 맞는 Case가 없습니다.");
   });
+
+  it("explains which actual Case status filter produced an empty list", () => {
+    expect(getCaseListEmptyState("", "ACTIVE").title).toBe("진행 중인 담당 Case가 없습니다.");
+    expect(getCaseListEmptyState("", "IMAGING").title).toBe("진행 중인 X-ray 또는 흉부 CT Case가 없습니다.");
+    expect(getCaseListEmptyState("", "NOTIFIED").title).toBe("새 알림이 연결된 담당 Case가 없습니다.");
+  });
 });

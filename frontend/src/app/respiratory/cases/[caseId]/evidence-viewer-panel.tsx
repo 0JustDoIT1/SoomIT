@@ -67,7 +67,7 @@ export function EvidenceViewerPanel({
     <section className="grid h-full min-h-0 grid-rows-[28px_48px_minmax(0,1fr)] overflow-hidden border border-slate-800 bg-slate-950">
       <span className="sr-only">{activeAsset?.storage_type || "-"} · {activeAsset?.status || "-"}</span>
       <header className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-3 text-slate-100">
-        <h3 className="whitespace-nowrap text-[11px] font-bold text-slate-900">영상 미리보기</h3>
+        <div className="flex min-w-0 items-center gap-2"><h3 className="whitespace-nowrap text-[11px] font-bold text-slate-100">영상 미리보기</h3><span title="Viewer에 포커스를 둔 뒤 사용할 수 있습니다." className="hidden whitespace-nowrap text-[9px] text-slate-400 sm:inline">⌨ F 전체 · +/− 확대 · R 초기화</span></div>
         <span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-medium text-amber-700">Annotation API 연동 대기</span>
       </header>
 

@@ -31,6 +31,7 @@ import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
+import { StageExaminationOrder } from "./stage-examination-order";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
 import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
@@ -416,6 +417,12 @@ const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
 const workspacePrescriptionSubMenus: typeof prescriptionSubMenus = [
   { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "SAFETY_CHECK", label: "안전성 검사" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
 ];
+const NEXT_ORDER_BY_INFO_MENU = {
+  XRAY: "CT",
+  CT: "PET_CT_TNM",
+  PET_CT_TNM: "PATHOLOGY_GENE",
+  PATHOLOGY_GENE: "PDL1",
+} as const;
 // 기존 메뉴 상수는 기존 화면 동작과 타입 호환성을 위해 보존합니다.
 void [mainMenus, resultSubMenus, aiSubMenus, treatmentSubMenus, prescriptionSubMenus];
 
@@ -433,6 +440,7 @@ export default function RespiratoryCaseDetailPage() {
   const [lastResultSyncAt, setLastResultSyncAt] = useState<Date | null>(null);
   const [resultsSyncing, setResultsSyncing] = useState(false);
   const [resultSyncNotice, setResultSyncNotice] = useState("");
+  const [stageOrderNotice, setStageOrderNotice] = useState("");
 
   const [searchText, setSearchText] = useState("");
 
@@ -1679,7 +1687,7 @@ export default function RespiratoryCaseDetailPage() {
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
-        <div className={selectedInfoMenu === "PET_CT_TNM" ? "hidden" : "mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1"}>
+        <div className="mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1">
           <div className="flex min-w-0 items-center gap-3">
             <span className="h-5 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
             <div className="min-w-0">
@@ -1701,6 +1709,7 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
+          <div className="flex shrink-0 items-center gap-2">{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{(selectedInfoMenu === "XRAY" || selectedInfoMenu === "CT" || selectedInfoMenu === "PET_CT_TNM" || selectedInfoMenu === "PATHOLOGY_GENE") && <StageExaminationOrder caseId={caseId} orderType={NEXT_ORDER_BY_INFO_MENU[selectedInfoMenu]} onCreated={(orderType) => { setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(`${orderType === "CT" ? "흉부 CT" : orderType === "PET_CT_TNM" ? "PET-CT / TNM" : orderType === "PATHOLOGY_GENE" ? "조직/유전자" : "PD-L1"} 오더가 생성되었습니다.`); }} />}</div>
         </div>
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (

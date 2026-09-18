@@ -32,7 +32,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
   const [clock, setClock] = useState("");
 
-  const loadNotifications = useCallback(async () => {
+  const loadNotifications = useCallback(async (silent = false) => {
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/?limit=20`);
       const data = await response.json().catch(() => ({}));
@@ -40,18 +40,23 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       setNotifications({ unread_count: Number(data.unread_count) || 0, results: Array.isArray(data.results) ? data.results : [] });
       setNotificationError("");
     } catch (error) {
-      setNotificationError(error instanceof Error ? error.message : "알림을 불러오지 못했습니다.");
+      // Preserve the last known notification state on a transient background failure.
+      if (!silent) setNotificationError(error instanceof Error ? error.message : "알림을 불러오지 못했습니다.");
     }
   }, [authorizedFetch]);
 
   async function openNotification(notification: StaffNotification) {
     if (notification.case_id && !requestCaseNavigation(notification.case_id)) return;
     if (!notification.read_at) {
-      const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/${notification.id}/read/`, { method: "PATCH" });
-      if (response.ok) setNotifications((current) => ({
-        unread_count: Math.max(current.unread_count - 1, 0),
-        results: current.results.map((item) => item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item),
-      }));
+      try {
+        const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/${notification.id}/read/`, { method: "PATCH" });
+        if (response.ok) setNotifications((current) => ({
+          unread_count: Math.max(current.unread_count - 1, 0),
+          results: current.results.map((item) => item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item),
+        }));
+      } catch {
+        // Reading a notification must not prevent the clinician opening its Case.
+      }
     }
     setShowNotifications(false);
     if (notification.case_id) router.push(`/respiratory/cases/${notification.case_id}`);
@@ -69,10 +74,27 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
     const initialTimer = window.setTimeout(() => void loadNotifications(), 0);
-    const timer = window.setInterval(() => void loadNotifications(), 30_000);
+    let disposed = false;
+    let polling = false;
+    const pollNotifications = async () => {
+      if (disposed || polling || document.hidden) return;
+      polling = true;
+      try {
+        await loadNotifications(true);
+      } finally {
+        polling = false;
+      }
+    };
+    const timer = window.setInterval(() => void pollNotifications(), 30_000);
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void pollNotifications();
+    };
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
+      disposed = true;
       window.clearTimeout(initialTimer);
       window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
   }, [isReady, isAuthenticated, loadNotifications]);
 
@@ -146,7 +168,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="respiratory-app flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
-      <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#19283a] py-3 text-white lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
+      <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
         <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/cases" || pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/cases")} />
         <ShellNavButton icon="case" label="Case" active={pathname.startsWith("/respiratory/cases/")} onClick={() => void openCaseWorkspace()} />
         <ShellNavButton icon="calendar" label="일정" active={pathname.startsWith("/respiratory/schedules")} onClick={() => router.push("/respiratory/schedules")} />
@@ -227,7 +249,7 @@ function ShellNavButton({ icon, label, active, onClick, count }: { icon: "home" 
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`${icon === "bell" ? "hidden" : "relative mb-1 flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-[11px] transition lg:w-14"} ${active ? "bg-teal-500 font-bold text-white shadow-sm shadow-teal-950/30" : "text-teal-50/80 hover:bg-white/10 hover:text-white"}`}
+      className={`${icon === "bell" ? "hidden" : "relative mb-1 flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-[11px] transition lg:w-14"} ${active ? "bg-[#14b8a6] font-bold text-white shadow-sm shadow-slate-950/30" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
         {icon === "home" && <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>}

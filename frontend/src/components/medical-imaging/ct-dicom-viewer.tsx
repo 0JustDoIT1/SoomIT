@@ -351,6 +351,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   return (
     <div ref={workspaceRef} tabIndex={0} onKeyDown={onWorkspaceKeyDown} className="grid h-full min-h-0 overflow-hidden bg-slate-950 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동">
       <div className="relative min-h-0">
+        <span title="CT Viewer에 포커스를 둔 뒤 사용할 수 있습니다." className="absolute bottom-2 right-2 z-20 rounded bg-black/60 px-2 py-1 text-[9px] text-slate-300">⌨ F 전체 · R 초기화 · 휠 슬라이스</span>
         {focusedView && (
           <button
             type="button"
