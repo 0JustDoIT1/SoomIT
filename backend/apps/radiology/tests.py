@@ -159,11 +159,20 @@ class RadiologyWorklistAPITestCase(APITestCase):
             AiAnalysis.Status.SUCCEEDED,
             analysis_type=analysis_type,
         )
-        AiResult.objects.create(
+        ai_result = AiResult.objects.create(
             ai_analysis=analysis,
             schema_version="1.0",
             result_payload={},
         )
+        if analysis_type == "XRAY_ANALYSIS":
+            XrayAiResult.objects.create(
+                ai_result=ai_result,
+                assessment=XrayAiResult.Assessment.NEGATIVE,
+            )
+        elif analysis_type == "CT_ANALYSIS":
+            CtAiResult.objects.create(ai_result=ai_result)
+        elif analysis_type == "PET_CT_TNM_ANALYSIS":
+            TnmAiResult.objects.create(ai_result=ai_result)
         RadiologyReview.objects.create(
             case=order.case,
             examination_order=order,

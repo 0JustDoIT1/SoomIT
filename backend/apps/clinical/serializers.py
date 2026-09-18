@@ -34,10 +34,9 @@ class DoctorTnmDraftSerializer(serializers.Serializer):
                 analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
                 status=AiAnalysis.Status.SUCCEEDED,
             )
-            .values_list("ai_result_id", flat=True)
-            .first()
+            .exists()
         )
-        if result is None:
+        if not result:
             raise serializers.ValidationError("A succeeded PET-CT TNM AI result for this order is required.")
         return value
 
@@ -70,7 +69,7 @@ class DoctorCtResultWriteSerializer(serializers.Serializer):
         order = self.context["order"]
         from apps.ai_results.models import AiAnalysis, AnalysisType
         result = AiAnalysis.objects.filter(
-            ai_result_id=attrs["reviewed_ai_result_id"], case=case,
+            ai_result__id=attrs["reviewed_ai_result_id"], case=case,
             examination_order=order, analysis_type=AnalysisType.CT_ANALYSIS,
             status=AiAnalysis.Status.SUCCEEDED,
         ).exists()

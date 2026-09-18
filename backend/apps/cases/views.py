@@ -720,7 +720,7 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
             case.save(update_fields=["case_status", "closed_at", "updated_at"])
             target_stage = None
         else:  # CASE_CLOSED
-            case.case_status = LungCancerCase.CaseStatus.REFERRED_OUT if values["next_action"] == "REFERRED_OUT" else LungCancerCase.CaseStatus.CLOSED
+            case.case_status = LungCancerCase.CaseStatus.CLOSED
             case.closed_at = timezone.now()
             case.save(update_fields=["case_status", "closed_at", "updated_at"])
             target_stage = None
@@ -775,7 +775,7 @@ class DoctorXrayWorkflowAPIView(APIView):
         result = ClinicalResult.objects.select_for_update().filter(
             case=case,
             workflow_stage=WorkflowStage.XRAY,
-        ).select_related("xray_detail").first()
+        ).first()
         if result is not None and result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
             return Response({"detail": "이미 확정된 X-ray 결과입니다."}, status=status.HTTP_409_CONFLICT)
 

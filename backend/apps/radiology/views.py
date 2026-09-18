@@ -337,7 +337,7 @@ def _completed_at_for_analysis(analysis):
         return None
 
     confirmed_results = getattr(analysis.ai_result, "workflow_confirmed_results", [])
-    return next(
+    confirmed_at = next(
         (
             result.confirmed_at
             for result in confirmed_results
@@ -345,6 +345,7 @@ def _completed_at_for_analysis(analysis):
         ),
         None,
     )
+    return confirmed_at.isoformat().replace("+00:00", "Z") if confirmed_at else None
 
 
 def _filter_radiology_orders(queryset, filters):
