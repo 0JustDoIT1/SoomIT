@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import tempfile
+import time
 import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -29,6 +30,14 @@ MAX_WSI_BYTES = int(os.getenv("PATHOLOGY_MAX_WSI_BYTES", str(10 * 1024**3)))
 MAX_PATCHES = int(os.getenv("PATHOLOGY_MAX_PATCHES", "10000"))
 BATCH_SIZE = int(os.getenv("PATHOLOGY_UNI2H_BATCH_SIZE", "32"))
 logger = logging.getLogger(__name__)
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=pathology_analysis stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 @asynccontextmanager
@@ -84,11 +93,15 @@ def predict(body: PredictRequest) -> dict:
         raise HTTPException(status_code=422, detail="invalid case_id")
     if body.include_heatmap:
         raise HTTPException(status_code=422, detail="attention heatmap generation is not enabled")
+    total_started = time.perf_counter()
     try:
         with tempfile.TemporaryDirectory(prefix="pathology-analysis-") as temporary:
+            stage_started = time.perf_counter()
             slide_path = download_wsi(
                 body.wsi_gcs_uri, Path(temporary) / "source.svs", MAX_WSI_BYTES
             )
+            log_latency("download", stage_started)
+            stage_started = time.perf_counter()
             result = app.state.pipeline.predict_wsi(
                 slide_path,
                 max_patches=MAX_PATCHES,
@@ -98,7 +111,9 @@ def predict(body: PredictRequest) -> dict:
                 thumbnail_size=2000,
                 seed=42,
             )
+            log_latency("wsi_open_patch_embed_and_predict", stage_started)
             preview_uri = None
+            stage_started = time.perf_counter()
             try:
                 preview_uri = upload_wsi_preview(
                     wsi_uri=body.wsi_gcs_uri,
@@ -106,6 +121,8 @@ def predict(body: PredictRequest) -> dict:
                 )
             except Exception:
                 logger.exception("Failed to generate pathology WSI preview")
+            log_latency("preview", stage_started)
+        log_latency("total", total_started)
         return {
             "status": "ok",
             "model_revision": MODEL_REVISION,

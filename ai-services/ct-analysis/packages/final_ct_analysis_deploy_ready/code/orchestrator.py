@@ -6,6 +6,7 @@ import os
 import subprocess
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import nibabel as nib
@@ -875,37 +876,43 @@ def phase2(
 
     # ==================================================
     # 1. Tumor features
-    # ==================================================
-
-    run([
-        python_executable,
-        N_ROOT / "code/extract_tumor_features.py",
-        "--ct",
-        ct_path,
-        "--tumor-mask",
-        tumor_mask,
-        "--output",
-        tumor_features,
-    ])
-
-    # ==================================================
     # 2. Anatomy features
+    #
+    # Both are independent CPU-bound subprocesses: anatomy features are
+    # derived from thoracic_total/canonical_anatomy (Phase 1 outputs) plus the
+    # tumor mask, and never read tumor_features.json. Each writes its own
+    # output file, so running them concurrently (this stage has no GPU, and
+    # Cloud Run gives it multiple vCPUs) only overlaps their wall-clock time -
+    # step 3 below still waits for both before combining them.
     # ==================================================
 
-    run([
-        python_executable,
-        N_ROOT / "code/extract_anatomy_features.py",
-        "--ct",
-        ct_path,
-        "--tumor-mask",
-        tumor_mask,
-        "--thoracic-total-dir",
-        anatomy_dir / "thoracic_total",
-        "--canonical-anatomy-dir",
-        canonical_dir,
-        "--output",
-        anatomy_features,
-    ])
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        tumor_future = executor.submit(run, [
+            python_executable,
+            N_ROOT / "code/extract_tumor_features.py",
+            "--ct",
+            ct_path,
+            "--tumor-mask",
+            tumor_mask,
+            "--output",
+            tumor_features,
+        ])
+        anatomy_future = executor.submit(run, [
+            python_executable,
+            N_ROOT / "code/extract_anatomy_features.py",
+            "--ct",
+            ct_path,
+            "--tumor-mask",
+            tumor_mask,
+            "--thoracic-total-dir",
+            anatomy_dir / "thoracic_total",
+            "--canonical-anatomy-dir",
+            canonical_dir,
+            "--output",
+            anatomy_features,
+        ])
+        tumor_future.result()
+        anatomy_future.result()
 
     # ==================================================
     # 3. Canonical 34-feature N payload
