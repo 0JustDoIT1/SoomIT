@@ -64,7 +64,7 @@ export default function CoordinatorLayout({
       {/* 상단 고정 영역 */}
       <header className="sticky top-0 z-50 bg-white">
         {/* 1. Header */}
-        <div className="relative overflow-hidden border-b border-slate-200/15 bg-gradient-to-r from-[#131D38] to-[#17223F]">
+        <div className="relative overflow-hidden border-b border-white/15 bg-gradient-to-r from-[#2B426B] to-[#30466F]">
           <span aria-hidden="true" className="pointer-events-none absolute right-8 top-5 h-[2px] w-[2px] rounded-full bg-slate-100/15" />
           <span aria-hidden="true" className="pointer-events-none absolute right-16 top-11 h-[1px] w-[1px] rounded-full bg-slate-100/10" />
           <span aria-hidden="true" className="pointer-events-none absolute right-28 top-7 h-[2px] w-[2px] rounded-full bg-slate-100/10" />
@@ -138,8 +138,8 @@ export default function CoordinatorLayout({
                   href={tab.href}
                   className={`relative flex h-full items-center px-0.5 text-sm font-semibold transition ${
                     active
-                      ? "text-slate-900"
-                      : "text-slate-500 hover:text-slate-800"
+                      ? "text-[#2B426B]"
+                      : "text-[#6B7280] hover:text-[#2B426B]"
                   }`}
                 >
                   {tab.label}

@@ -199,6 +199,32 @@ export async function fetchPathologyWsiPreview(wsiId: string, signal?: AbortSign
   return blob;
 }
 
+export async function fetchPathologyWsiTissueHeatmap(
+  wsiId: string,
+  signal?: AbortSignal,
+): Promise<Blob | null> {
+  const response = await staffAuthenticatedFetch(
+    url(`/api/pathology/wsis/${encodeURIComponent(wsiId)}/tissue-heatmap/`),
+    { signal, headers: { Accept: "image/jpeg" } },
+  );
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    try {
+      await readJson<never>(response);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("WSI tissue heatmap is not available yet.")) {
+        return null;
+      }
+      throw error;
+    }
+  }
+  const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (contentType !== "image/jpeg") {
+    throw new Error(`WSI tissue heatmap response is not JPEG (${contentType ?? "missing content-type"})`);
+  }
+  return response.blob();
+}
+
 export async function uploadPdl1Input(
   orderId: string,
   wsiFile: File,

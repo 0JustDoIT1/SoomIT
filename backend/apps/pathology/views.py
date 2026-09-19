@@ -58,6 +58,7 @@ from .services.pathology_storage import (
     PathologyStorageError,
     create_and_upload_wsi_preview,
     download_pathology_wsi_preview,
+    download_pathology_wsi_tissue_heatmap,
     read_svs_mpp,
     upload_pathology_wsi,
 )
@@ -1284,6 +1285,26 @@ class WholeSlideImagePreviewAPIView(PathologyReadAPIViewMixin, APIView):
         )
         try:
             content, content_type = download_pathology_wsi_preview(
+                wsi.image_asset.storage_uri,
+            )
+        except PathologyStorageError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        response = HttpResponse(content, content_type=content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class WholeSlideImageTissueHeatmapAPIView(PathologyReadAPIViewMixin, APIView):
+    content_negotiation_class = _PassthroughContentNegotiation
+
+    def get(self, request, wsi_id):
+        wsi = get_object_or_404(
+            WholeSlideImage.objects.select_related("image_asset"),
+            id=wsi_id,
+            specimen__case__patient__hospital_id=pathology_hospital_id(request),
+        )
+        try:
+            content, content_type = download_pathology_wsi_tissue_heatmap(
                 wsi.image_asset.storage_uri,
             )
         except PathologyStorageError as exc:

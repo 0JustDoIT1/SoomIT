@@ -12,6 +12,7 @@ import {
   fetchPathologyCompletedExams,
   fetchPathologyGeneAnalyses,
   fetchPathologyWsiPreview,
+  fetchPathologyWsiTissueHeatmap,
   fetchPathologyWorkstation,
   fetchPdl1Analyses,
   runPathologyGeneAnalysis,
@@ -503,6 +504,52 @@ function PathologyWsiPreview({ wsiId, alt = "H&E 원본 조직영상 미리보�
       {previewState.unavailable && isCurrentWsi ? <p role="status" className="absolute inset-0 z-10 grid place-items-center text-xs text-slate-400">미리보기 준비 중</p> : null}
       {previewError ? <p role="status" className="absolute inset-0 z-10 grid place-items-center px-4 text-center text-xs text-slate-400">미리보기 준비 중</p> : null}
     </>
+  );
+}
+
+function PathologyTissueHeatmap({
+  wsiId,
+  emptyMessage = "AI Heatmap을 사용할 수 없습니다.",
+}: {
+  wsiId: string;
+  emptyMessage?: string;
+}) {
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    setLoading(true);
+    void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
+      .then((blob) => {
+        if (!controller.signal.aborted && blob?.size) {
+          objectUrl = URL.createObjectURL(blob);
+          setImageUrl(objectUrl);
+        } else if (!controller.signal.aborted) {
+          setImageUrl(null);
+        }
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setImageUrl(null);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [wsiId]);
+
+  return (
+    <div className="relative flex min-h-56 w-full flex-1 items-center justify-center px-5 py-6 text-center text-sm text-slate-500">
+      {imageUrl ? (
+        <Image src={imageUrl} alt="Tissue CLAM attention heatmap" fill unoptimized sizes="100vw" className="object-contain" />
+      ) : (
+        loading ? "AI Heatmap 불러오는 중입니다." : emptyMessage
+      )}
+    </div>
   );
 }
 
@@ -1254,7 +1301,12 @@ function WorkArea({
                   {pathologyGeneAnalysis?.status === "PENDING" || pathologyGeneAnalysis?.status === "RUNNING" ? (
                     <p>AI 분석 중입니다. 완료 후 Heatmap이 표시됩니다.</p>
                   ) : pathologyGeneAnalysis?.status === "SUCCEEDED" ? (
-                    <p>분석 결과에 Heatmap 이미지가 포함되어 있지 않습니다.</p>
+                    item.latest_wsi && pathologyGeneAnalysis.source_image_asset_id === item.latest_wsi.image_asset_id ? (
+                      <PathologyTissueHeatmap
+                        wsiId={item.latest_wsi.id}
+                        emptyMessage="분석 결과에 Heatmap 이미지가 포함되어 있지 않습니다."
+                      />
+                    ) : <p>분석 결과에 Heatmap 이미지가 포함되어 있지 않습니다.</p>
                   ) : pathologyGeneAnalysis?.status === "FAILED" ? (
                     <p>AI 분석 결과를 확인할 수 없습니다.</p>
                   ) : (
@@ -1684,8 +1736,13 @@ function WorkArea({
                             : "연결된 WSI가 없습니다."}
                         </p>
                       </div>
-                      <div className="flex min-h-64 items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 text-sm font-semibold text-slate-500">
-                        AI Heatmap 연결 예정
+                      <div className="relative flex min-h-64 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
+                        {item.latest_wsi && pathologyGeneAnalysis?.source_image_asset_id === item.latest_wsi.image_asset_id ? (
+                          <PathologyTissueHeatmap
+                            wsiId={item.latest_wsi.id}
+                            emptyMessage="AI Heatmap 연결 예정"
+                          />
+                        ) : <p className="text-sm font-semibold text-slate-500">AI Heatmap 연결 예정</p>}
                       </div>
                     </div>
                   </>

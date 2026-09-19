@@ -11,7 +11,7 @@ import numpy as np
 import openslide
 import timm
 import torch
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFilter
 from timm.data import create_transform, resolve_data_config
 
 
@@ -56,6 +56,64 @@ def create_preview(slide_path: Path, max_size: int = 1200) -> bytes:
         thumbnail = slide.get_thumbnail((max_size, max_size)).convert("RGB")
         output = BytesIO()
         thumbnail.save(output, format="JPEG", quality=85, optimize=True)
+        return output.getvalue()
+    finally:
+        slide.close()
+
+
+def create_tissue_attention_heatmap(
+    slide_path: Path,
+    coordinates: list[tuple[int, int, int]],
+    attention: list[float],
+    *,
+    tile_size: int,
+    max_size: int = 1200,
+) -> bytes:
+    """Render tissue CLAM attention over a bounded H&E thumbnail."""
+    if len(coordinates) != len(attention) or not coordinates:
+        raise ValueError("attention and patch coordinates must have equal nonzero lengths")
+
+    slide = openslide.OpenSlide(str(slide_path))
+    try:
+        preview = slide.get_thumbnail((max_size, max_size)).convert("RGB")
+        preview_width, preview_height = preview.size
+        base_width, base_height = slide.dimensions
+        scale_x = preview_width / base_width
+        scale_y = preview_height / base_height
+
+        scores = np.asarray(attention, dtype=np.float32)
+        low, high = np.percentile(scores, (5, 99))
+        if not np.isfinite(low) or not np.isfinite(high):
+            raise ValueError("attention scores are not finite")
+        if high <= low:
+            normalized = np.zeros_like(scores)
+        else:
+            normalized = np.clip((scores - low) / (high - low), 0.0, 1.0)
+
+        intensity = Image.new("L", preview.size, 0)
+        draw = ImageDraw.Draw(intensity)
+        for (base_x, base_y, level), score in zip(coordinates, normalized, strict=True):
+            downsample = float(slide.level_downsamples[level])
+            patch_width = tile_size * downsample * scale_x
+            patch_height = tile_size * downsample * scale_y
+            x1 = max(0, min(preview_width, int(base_x * scale_x)))
+            y1 = max(0, min(preview_height, int(base_y * scale_y)))
+            x2 = max(x1, min(preview_width, int(np.ceil(base_x * scale_x + patch_width))))
+            y2 = max(y1, min(preview_height, int(np.ceil(base_y * scale_y + patch_height))))
+            strength = int(float(score) * 255)
+            if x2 > x1 and y2 > y1:
+                draw.rectangle((x1, y1, x2 - 1, y2 - 1), fill=strength)
+
+        blur_radius = max(1.0, min(preview.size) / 700)
+        intensity = intensity.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        # Suppress low attention and make high attention visible while retaining
+        # the underlying H&E morphology.
+        intensity = intensity.point(lambda value: 0 if value < 48 else min(170, int(((value - 48) / 207) ** 1.35 * 170)))
+        red_overlay = Image.new("RGBA", preview.size, (230, 35, 70, 0))
+        red_overlay.putalpha(intensity)
+        composed = Image.alpha_composite(preview.convert("RGBA"), red_overlay).convert("RGB")
+        output = BytesIO()
+        composed.save(output, format="JPEG", quality=88, optimize=True)
         return output.getvalue()
     finally:
         slide.close()

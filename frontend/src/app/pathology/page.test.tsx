@@ -70,6 +70,7 @@ it("loads completed pathology exams from the dedicated read-only endpoint", asyn
 vi.mock("./_lib/pathology-workstation-api", () => ({
   fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyCompletedExams: vi.fn(), fetchPathologyWorkstation: vi.fn(),
   fetchPathologyWsiPreview: vi.fn().mockResolvedValue(new Blob(["preview"], { type: "image/jpeg" })),
+  fetchPathologyWsiTissueHeatmap: vi.fn().mockResolvedValue(null),
   fetchPdl1Analyses: vi.fn(),
   runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), savePdl1Draft: vi.fn(), submitPathologyForReview: vi.fn(),
 }));

@@ -60,20 +60,30 @@ def read_svs_mpp(uploaded_file):
 
 
 def download_pathology_wsi_preview(wsi_uri):
+    return _download_pathology_wsi_artifact(wsi_uri, ".preview.jpg", "WSI preview")
+
+
+def download_pathology_wsi_tissue_heatmap(wsi_uri):
+    return _download_pathology_wsi_artifact(
+        wsi_uri, ".tissue-heatmap.jpg", "WSI tissue heatmap"
+    )
+
+
+def _download_pathology_wsi_artifact(wsi_uri, suffix, label):
     if not wsi_uri.startswith("gs://"):
         raise PathologyStorageError("Pathology WSI must be stored in GCS.")
     bucket_name, separator, object_name = wsi_uri[5:].partition("/")
     if not bucket_name or not separator or not object_name:
         raise PathologyStorageError("Invalid pathology WSI storage URI.")
     try:
-        blob = storage.Client().bucket(bucket_name).blob(_preview_object_name(object_name))
+        blob = storage.Client().bucket(bucket_name).blob(f"{object_name}{suffix}")
         if not blob.exists():
-            raise PathologyStorageError("WSI preview is not available yet.")
+            raise PathologyStorageError(f"{label} is not available yet.")
         return blob.download_as_bytes(), "image/jpeg"
     except PathologyStorageError:
         raise
     except Exception as exc:
-        raise PathologyStorageError("Failed to download pathology WSI preview.") from exc
+        raise PathologyStorageError(f"Failed to download pathology {label.lower()}.") from exc
 
 
 def _preview_object_name(object_name):

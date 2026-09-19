@@ -81,7 +81,7 @@ def request_pathology_prediction(*, case_id, patient_id, wsi_id, wsi_gcs_uri):
             "patient_id": str(patient_id),
             "wsi_id": str(wsi_id),
             "wsi_gcs_uri": wsi_gcs_uri,
-            "include_heatmap": False,
+            "include_heatmap": True,
         }).encode("utf-8"),
         headers=headers,
         method="POST",

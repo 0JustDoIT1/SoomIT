@@ -30,3 +30,22 @@ it("posts the WSI, HALO annotation, and ROI as multipart input", async () => {
   expect(init?.headers).toBeUndefined();
 });
 
+it("fetches the tissue heatmap through the authenticated WSI endpoint", async () => {
+  const image = new Blob(["heatmap"], { type: "image/jpeg" });
+  vi.mocked(staffAuthenticatedFetch).mockResolvedValue(
+    new Response(image, { status: 200, headers: { "Content-Type": "image/jpeg" } }),
+  );
+  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://api.test");
+  const { fetchPathologyWsiTissueHeatmap } = await import("./pathology-workstation-api");
+
+  const result = await fetchPathologyWsiTissueHeatmap("wsi-1");
+
+  expect(staffAuthenticatedFetch).toHaveBeenCalledWith(
+    "http://api.test/api/pathology/wsis/wsi-1/tissue-heatmap/",
+    expect.objectContaining({ headers: { Accept: "image/jpeg" } }),
+  );
+  expect(result).toBeTruthy();
+  expect(result?.size).toBeGreaterThan(0);
+  expect(result?.type).toBe("image/jpeg");
+});
+

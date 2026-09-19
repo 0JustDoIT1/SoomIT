@@ -14,8 +14,8 @@ from pydantic import BaseModel, Field
 
 from .artifacts import ensure_artifact
 from .pipeline import PathologyPipeline
-from .storage import download_wsi, upload_wsi_preview
-from .wsi import create_preview
+from .storage import download_wsi, upload_tissue_heatmap, upload_wsi_preview
+from .wsi import create_preview, create_tissue_attention_heatmap
 
 
 CASE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -91,8 +91,6 @@ def health() -> dict:
 def predict(body: PredictRequest) -> dict:
     if not CASE_PATTERN.fullmatch(body.case_id):
         raise HTTPException(status_code=422, detail="invalid case_id")
-    if body.include_heatmap:
-        raise HTTPException(status_code=422, detail="attention heatmap generation is not enabled")
     total_started = time.perf_counter()
     try:
         with tempfile.TemporaryDirectory(prefix="pathology-analysis-") as temporary:
@@ -102,7 +100,7 @@ def predict(body: PredictRequest) -> dict:
             )
             log_latency("download", stage_started)
             stage_started = time.perf_counter()
-            result = app.state.pipeline.predict_wsi(
+            result, coordinates, tissue_attention = app.state.pipeline.predict_wsi(
                 slide_path,
                 max_patches=MAX_PATCHES,
                 tile_size=256,
@@ -112,6 +110,23 @@ def predict(body: PredictRequest) -> dict:
                 seed=42,
             )
             log_latency("wsi_open_patch_embed_and_predict", stage_started)
+            heatmap_uri = None
+            if body.include_heatmap:
+                try:
+                    if len(coordinates) != len(tissue_attention):
+                        raise ValueError("attention and patch coordinate counts do not match")
+                    heatmap_uri = upload_tissue_heatmap(
+                        wsi_uri=body.wsi_gcs_uri,
+                        content=create_tissue_attention_heatmap(
+                            slide_path,
+                            coordinates,
+                            tissue_attention,
+                            tile_size=256,
+                            max_size=1200,
+                        ),
+                    )
+                except Exception:
+                    logger.exception("Failed to generate or upload tissue attention heatmap")
             preview_uri = None
             stage_started = time.perf_counter()
             try:
@@ -130,6 +145,7 @@ def predict(body: PredictRequest) -> dict:
             "patient_id": body.patient_id,
             "wsi_id": body.wsi_id,
             "preview": {"gcs_uri": preview_uri} if preview_uri else None,
+            **({"heatmap": {"gcs_uri": heatmap_uri, "type": "tissue_attention"}} if heatmap_uri else {}),
             **result,
         }
     except (ValueError, OSError, RuntimeError) as exc:

@@ -24,6 +24,7 @@ from .views import (
     SpecimenWholeSlideImageListAPIView,
     WholeSlideImagePyramidAPIView,
     WholeSlideImagePreviewAPIView,
+    WholeSlideImageTissueHeatmapAPIView,
     WholeSlideImageTileAPIView,
 )
 
@@ -119,6 +120,11 @@ urlpatterns = [
         "wsis/<uuid:wsi_id>/preview/",
         WholeSlideImagePreviewAPIView.as_view(),
         name="wsi-preview",
+    ),
+    path(
+        "wsis/<uuid:wsi_id>/tissue-heatmap/",
+        WholeSlideImageTissueHeatmapAPIView.as_view(),
+        name="wsi-tissue-heatmap",
     ),
     path(
         "cases/<uuid:case_id>/diagnoses/",

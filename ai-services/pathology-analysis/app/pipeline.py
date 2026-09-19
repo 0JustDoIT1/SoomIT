@@ -40,11 +40,13 @@ class PathologyPipeline:
         return "HIGH" if abs(probability - 0.5) >= 0.15 else "LOW"
 
     @torch.inference_mode()
-    def predict_embedding(self, embedding: torch.Tensor) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _predict_embedding(
+        self, embedding: torch.Tensor
+    ) -> tuple[dict[str, Any], dict[str, Any], torch.Tensor]:
         if embedding.ndim != 2 or embedding.shape[1] != 1536 or embedding.shape[0] < 1:
             raise ValueError("UNI2-h embedding must have shape [N, 1536]")
         bag = embedding.float().to(self.device)
-        tissue_logits, _ = self.tissue_model(bag)
+        tissue_logits, tissue_attention = self.tissue_model(bag)
         probabilities = torch.softmax(tissue_logits, dim=0).cpu()
         predicted_class = int(probabilities.argmax())
         confidence = float(probabilities[predicted_class])
@@ -65,7 +67,7 @@ class PathologyPipeline:
                 "model": "CLAM",
                 "scope": "LUAD_ONLY",
                 "predictions": None,
-            }
+            }, tissue_attention.detach().float().cpu()
         gene_logits, _ = self.gene_model(bag)
         gene_probabilities = torch.sigmoid(gene_logits).cpu()
         predictions = {}
@@ -85,13 +87,19 @@ class PathologyPipeline:
             "model": "CLAM",
             "scope": "LUAD_ONLY",
             "predictions": predictions,
-        }
+        }, tissue_attention.detach().float().cpu()
 
-    def predict_wsi(self, slide_path: Path, **embedding_options: Any) -> dict[str, Any]:
+    def predict_embedding(self, embedding: torch.Tensor) -> tuple[dict[str, Any], dict[str, Any]]:
+        tissue, gene, _ = self._predict_embedding(embedding)
+        return tissue, gene
+
+    def predict_wsi(
+        self, slide_path: Path, **embedding_options: Any
+    ) -> tuple[dict[str, Any], list[tuple[int, int, int]], list[float]]:
         with self.lock:
-            embedding, _, level = self.embedder.embed(slide_path, **embedding_options)
-            tissue, gene = self.predict_embedding(embedding)
-        return {
+            embedding, coordinates, level = self.embedder.embed(slide_path, **embedding_options)
+            tissue, gene, tissue_attention = self._predict_embedding(embedding)
+        result = {
             "embedding": {
                 "backbone": "UNI2-h",
                 "dimension": 1536,
@@ -101,3 +109,4 @@ class PathologyPipeline:
             "tissue": tissue,
             "gene": gene,
         }
+        return result, coordinates, tissue_attention.tolist()
