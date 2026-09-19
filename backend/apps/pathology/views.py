@@ -1,4 +1,6 @@
-﻿from django.db import transaction
+﻿import logging
+
+from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Prefetch, Q, When
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
@@ -54,10 +56,13 @@ from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
 from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
 from .services.pathology_storage import (
     PathologyStorageError,
+    create_and_upload_wsi_preview,
     download_pathology_wsi_preview,
     read_svs_mpp,
     upload_pathology_wsi,
 )
+
+logger = logging.getLogger(__name__)
 
 PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
 
@@ -314,6 +319,10 @@ class PathologyOrderPathologyGeneInputUploadAPIView(PathologyStaffAPIViewMixin, 
                 order_id=order.id,
                 uploaded_file=wsi_file,
             )
+            try:
+                create_and_upload_wsi_preview(wsi_uri=wsi_uri, wsi_source=wsi_file)
+            except PathologyStorageError:
+                logger.exception("Failed to create pathology gene WSI preview: wsi_uri=%s", wsi_uri)
 
             wsi_file.seek(0)
             file_sha256 = sha256(wsi_file.read()).hexdigest()
@@ -540,6 +549,10 @@ class PathologyOrderPDL1InputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
                 data=annotation_bytes, hospital_id=hospital_id, case_id=case_id, order_id=order.id,
                 kind="annotation", filename=annotation_file.name, content_type=annotation_file.content_type,
             )
+            try:
+                create_and_upload_wsi_preview(wsi_uri=wsi_uri, wsi_source=wsi_bytes)
+            except PathologyStorageError:
+                logger.exception("Failed to create PD-L1 WSI preview: wsi_uri=%s", wsi_uri)
         except PDL1StorageError:
             if wsi_uri:
                 delete_pdl1_input(wsi_uri)

@@ -172,15 +172,31 @@ export async function fetchPathologyGeneAnalyses(caseId: string) {
   return readJson<PathologyAiAnalysis[]>(response);
 }
 
-export async function fetchPathologyWsiPreview(wsiId: string, signal?: AbortSignal) {
+export async function fetchPathologyWsiPreview(wsiId: string, signal?: AbortSignal): Promise<Blob | null> {
   const response = await staffAuthenticatedFetch(
     url(`/api/pathology/wsis/${encodeURIComponent(wsiId)}/preview/`),
     { signal, headers: { Accept: "image/jpeg,image/png" } },
   );
+  if (response.status === 404) return null;
   if (!response.ok) {
-    await readJson<never>(response);
+    try {
+      await readJson<never>(response);
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("WSI preview is not available yet.")) {
+        return null;
+      }
+      throw error;
+    }
   }
-  return response.blob();
+  const contentType = response.headers.get("content-type")?.split(";")[0].trim().toLowerCase();
+  if (contentType !== "image/jpeg" && contentType !== "image/png") {
+    throw new Error(`WSI 미리보기 응답 형식이 이미지가 아닙니다. (${contentType ?? "content-type 없음"})`);
+  }
+  const blob = await response.blob();
+  if (blob.size === 0) {
+    throw new Error("WSI 미리보기 응답이 비어 있습니다.");
+  }
+  return blob;
 }
 
 export async function uploadPdl1Input(

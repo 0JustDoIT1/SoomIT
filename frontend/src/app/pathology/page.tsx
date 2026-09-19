@@ -443,8 +443,18 @@ function SelectedCaseOverview({
   );
 }
 
-function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+function PathologyWsiPreview({ wsiId, alt = "H&E 원본 조직영상 미리보기" }: { wsiId: string; alt?: string }) {
+  const [previewState, setPreviewState] = useState<{
+    wsiId: string;
+    previewUrl: string | null;
+    error: string;
+    unavailable: boolean;
+    loading: boolean;
+  }>({ wsiId, previewUrl: null, error: "", unavailable: false, loading: true });
+  const isCurrentWsi = previewState.wsiId === wsiId;
+  const previewUrl = isCurrentWsi ? previewState.previewUrl : null;
+  const previewError = isCurrentWsi ? previewState.error : "";
+  const loading = !isCurrentWsi || previewState.loading;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -452,18 +462,133 @@ function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
     void fetchPathologyWsiPreview(wsiId, controller.signal)
       .then((blob) => {
         if (!controller.signal.aborted) {
+          if (!blob) {
+            setPreviewState({ wsiId, previewUrl: null, error: "", unavailable: true, loading: false });
+            return;
+          }
           objectUrl = URL.createObjectURL(blob);
-          setPreviewUrl(objectUrl);
+          setPreviewState({ wsiId, previewUrl: objectUrl, error: "", unavailable: false, loading: false });
         }
       })
-      .catch(() => undefined);
+      .catch((reason: unknown) => {
+        if (controller.signal.aborted) return;
+        const message = reason instanceof Error ? reason.message : "알 수 없는 미리보기 오류";
+        console.error(`[PathologyWsiPreview] WSI ${wsiId} preview failed: ${message}`, reason);
+        setPreviewState({ wsiId, previewUrl: null, error: message, unavailable: false, loading: false });
+      });
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [wsiId]);
 
-  return previewUrl ? <Image src={previewUrl} alt="H&E 원본 조직영상 미리보기" fill unoptimized sizes="100vw" className="object-contain" /> : null;
+  return (
+    <>
+      {previewUrl ? (
+        <Image
+          src={previewUrl}
+          alt={alt}
+          fill
+          unoptimized
+          sizes="100vw"
+          className="object-contain"
+          onError={() => {
+            const message = "미리보기 이미지를 표시하지 못했습니다.";
+            console.error(`[PathologyWsiPreview] WSI ${wsiId} image decode failed`);
+            setPreviewState({ wsiId, previewUrl: null, error: message, unavailable: false, loading: false });
+          }}
+        />
+      ) : null}
+      {loading ? <p role="status" className="absolute inset-0 z-10 grid place-items-center bg-slate-950/70 text-sm text-slate-200">미리보기 불러오는 중...</p> : null}
+      {previewState.unavailable && isCurrentWsi ? <p role="status" className="absolute inset-0 z-10 grid place-items-center text-xs text-slate-400">미리보기 준비 중</p> : null}
+      {previewError ? <p role="status" className="absolute inset-0 z-10 grid place-items-center px-4 text-center text-xs text-slate-400">미리보기 준비 중</p> : null}
+    </>
+  );
+}
+
+function Pdl1AnalysisResults({
+  result,
+  analysis,
+  modelRevision,
+}: {
+  result: NonNullable<NonNullable<PathologyAiAnalysis["result_detail"]>["pdl1"]>;
+  analysis: PathologyAiAnalysis;
+  modelRevision: string;
+}) {
+  const probabilityEntries = [
+    { key: "class_0", label: "Class 0", value: result.probabilities.class_0 },
+    { key: "class_1", label: "Class 1", value: result.probabilities.class_1 },
+    { key: "class_2", label: "Class 2", value: result.probabilities.class_2 },
+  ];
+  const comparableValues = probabilityEntries.map(({ value }) => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return null;
+    return numericValue >= 0 && numericValue <= 1 ? numericValue * 100 : numericValue;
+  });
+  const maximumProbability = Math.max(...comparableValues.filter((value): value is number => value !== null));
+  const highestProbabilityIndexes = new Set(
+    comparableValues.flatMap((value, index) => value === maximumProbability ? [index] : []),
+  );
+
+  return (
+    <div className="mt-4 space-y-5">
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-[#C9D0F2] bg-[#F1F3FF] px-4 py-4">
+          <dt className="text-xs font-semibold text-[#5364C7]">TPS 예측 구간</dt>
+          <dd className="mt-2 text-2xl font-bold tracking-tight text-[#29366F]">
+            {result.predicted_tps_range_label ?? "-"}
+          </dd>
+        </div>
+        <div className="rounded-xl border border-[#DDE2F7] bg-white px-4 py-4">
+          <dt className="text-xs font-semibold text-slate-500">Confidence</dt>
+          <dd className="mt-2 text-2xl font-bold tracking-tight text-slate-800">
+            {percent(result.confidence)}
+          </dd>
+        </div>
+      </dl>
+
+      <section>
+        <h4 className="text-xs font-semibold text-slate-700">Class별 확률</h4>
+        <dl className="mt-2 grid grid-cols-3 gap-2 sm:gap-3">
+          {probabilityEntries.map(({ key, label, value }, index) => {
+            const isHighest = highestProbabilityIndexes.has(index);
+            return (
+              <div
+                key={key}
+                className={`rounded-lg border px-3 py-3 ${isHighest ? "border-[#AEB8EB] bg-[#F1F3FF]" : "border-slate-200 bg-white"}`}
+              >
+                <dt className={`text-xs ${isHighest ? "font-semibold text-[#5364C7]" : "text-slate-500"}`}>
+                  {label}
+                </dt>
+                <dd className={`mt-1.5 text-base ${isHighest ? "font-bold text-[#3446B8]" : "font-medium text-slate-700"}`}>
+                  {percent(value)}
+                </dd>
+                {isHighest ? <p className="mt-1 text-[10px] font-medium text-[#5364C7]">최고 확률</p> : null}
+              </div>
+            );
+          })}
+        </dl>
+      </section>
+
+      <section className="border-t border-slate-100 pt-3">
+        <h4 className="text-[11px] font-semibold text-slate-500">모델 정보</h4>
+        <dl className="mt-2 grid gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+          <div>
+            <dt className="text-slate-400">모델명</dt>
+            <dd className="mt-0.5 break-all font-medium text-slate-700">{analysis.model_name || "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-400">모델 버전</dt>
+            <dd className="mt-0.5 break-all font-medium text-slate-700">{analysis.model_version_name || "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-400">실행 revision</dt>
+            <dd className="mt-0.5 break-all font-medium text-slate-700">{modelRevision || "-"}</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  );
 }
 
 function PathologyCompletedHistory() {
@@ -518,8 +643,8 @@ function PathologyCompletedHistory() {
                   </summary>
                   <div className="grid gap-5 border-t border-[#EEF0F8] px-5 py-4 lg:grid-cols-[180px_minmax(0,1fr)]">
                     <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border border-[#E2E5F2] bg-[#F7F8FC] text-xs text-slate-400">
-                      <span>대표 영상 미리보기</span>
                       {item.latest_wsi ? <PathologyWsiPreview wsiId={item.latest_wsi.id} /> : null}
+                      {!item.latest_wsi ? <span>대표 영상 미리보기</span> : null}
                     </div>
                     <div className="space-y-4 text-sm">
                       <dl className="grid gap-3 text-xs sm:grid-cols-3">
@@ -576,10 +701,12 @@ function WorkArea({
   item,
   sectionNumber,
   onGeneWsiUploaded,
+  onPdl1WsiUploaded,
 }: {
   item: PathologyWorkstationItem;
   sectionNumber: number;
   onGeneWsiUploaded: () => void;
+  onPdl1WsiUploaded: () => void;
 }) {
   const [pdl1Analyses, setPdl1Analyses] = useState<
     PathologyAiAnalysis[]
@@ -774,6 +901,7 @@ function WorkArea({
     try {
       const result = await uploadPdl1Input(item.examination_order.id, pdl1WsiFile, pdl1AnnotationFile, pdl1RoiLayer);
       setPdl1InputReady(result.upload_ready);
+      onPdl1WsiUploaded();
       showToast.success("PD-L1 파일 업로드가 완료되었습니다.");
     } catch (reason) {
       console.error(reason);
@@ -1118,14 +1246,7 @@ function WorkArea({
               <div className="mt-3 grid gap-3 md:grid-cols-2">
               <div className="relative flex min-h-96 flex-col items-center justify-center rounded-lg border border-[#C7CBE5] bg-slate-950 text-slate-200 shadow-inner">
                 <p className="absolute left-3 top-3 z-10 rounded bg-slate-950/75 px-3 py-2 text-xs font-semibold text-white">원본 H&amp;E</p>
-                <PathologyWsiPreview wsiId={item.latest_wsi.id} />
-                <p className="font-semibold">
-                  조직영상 미리보기
-                </p>
-
-                <p className="mt-2 text-xs text-slate-400">
-                  WSI Viewer 연결 준비 중
-                </p>
+                <PathologyWsiPreview wsiId={item.latest_wsi.id} alt="원본 H&E 조직영상 미리보기" />
               </div>
               <section className="flex min-h-96 flex-col rounded-lg border border-[#DDE2F7] bg-[#F8F8FF] text-slate-600">
                 <p className="border-b border-[#E2E5F2] bg-white px-3 py-2 text-xs font-semibold text-slate-700">AI Heatmap</p>
@@ -1284,6 +1405,22 @@ function WorkArea({
                 <p className="mt-2 text-[11px] text-slate-500">클릭하거나 여기에 파일을 끌어다 놓으세요</p>
                 <input ref={pdl1WsiInputRef} type="file" accept=".svs,.tif,.tiff" disabled={uploadingPdl1Input || pdl1InputReady} className="sr-only" onChange={(event) => handlePdl1WsiSelection(event.target.files?.[0] ?? null)} />
               </div>
+              {item.latest_wsi?.id ? (
+                <div className="overflow-hidden rounded-lg border border-[#DDE2F7] bg-white">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E8EAF5] px-3 py-2">
+                    <p className="min-w-0 truncate text-xs font-semibold text-slate-700" title={item.latest_wsi.original_filename}>
+                      {item.latest_wsi.original_filename}
+                    </p>
+                    <p className="shrink-0 text-[11px] text-slate-500">
+                      {item.latest_wsi.slide_code} · {item.latest_wsi.stain}
+                      {item.latest_wsi.mpp == null ? "" : ` · ${item.latest_wsi.mpp} μm/px`}
+                    </p>
+                  </div>
+                  <div className="relative min-h-56 bg-slate-950">
+                    <PathologyWsiPreview wsiId={item.latest_wsi.id} alt="PD-L1 원본 WSI 미리보기" />
+                  </div>
+                </div>
+              ) : null}
               <div
                 role="button"
                 tabIndex={0}
@@ -1379,26 +1516,7 @@ function WorkArea({
             ) : null}
 
             {currentAnalysis?.status === "SUCCEEDED" && isPdl1 && pdl1Result ? (
-              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
-                {[
-                  ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
-                  ["Confidence", percent(pdl1Result.confidence)],
-                  ["Class 0 확률", percent(pdl1Result.probabilities.class_0)],
-                  ["Class 1 확률", percent(pdl1Result.probabilities.class_1)],
-                  ["Class 2 확률", percent(pdl1Result.probabilities.class_2)],
-                  ["Model revision", pdl1ModelRevision],
-                  ["모델명", pdl1?.model_name ?? "-"],
-                  ["모델 버전", pdl1?.model_version_name ?? "-"],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
-                  >
-                    <dt className="text-xs text-slate-500">{label}</dt>
-                    <dd className="mt-2 font-bold text-slate-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <Pdl1AnalysisResults result={pdl1Result} analysis={currentAnalysis} modelRevision={pdl1ModelRevision} />
             ) : null}
 
             {isPdl1 && currentAnalysis?.status === "SUCCEEDED" ? (
@@ -1581,21 +1699,7 @@ function WorkArea({
 
               {isPdl1 ? (
                 pdl1Result ? (
-                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                    {[
-                      ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
-                      ["Confidence", percent(pdl1Result.confidence)],
-                      ["Model revision", pdl1ModelRevision],
-                      ["Class 0 확률", percent(pdl1Result.probabilities?.class_0)],
-                      ["Class 1 확률", percent(pdl1Result.probabilities?.class_1)],
-                      ["Class 2 확률", percent(pdl1Result.probabilities?.class_2)],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
-                        <dt className="text-slate-500">{label}</dt>
-                        <dd className="mt-1 font-bold text-slate-900">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
+                  pdl1 ? <Pdl1AnalysisResults result={pdl1Result} analysis={pdl1} modelRevision={pdl1ModelRevision} /> : null
                 ) : (
                   <StateMessage variant="empty" title="저장된 AI 결과 상세가 없습니다." />
                 )
@@ -2263,6 +2367,7 @@ export default function PathologyDashboardPage() {
                   item={currentWorkflowOrder}
                   sectionNumber={1}
                   onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                  onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
                 />
               ) : selectedWorkflow.orders.length === 0 ? (
                 <StateMessage

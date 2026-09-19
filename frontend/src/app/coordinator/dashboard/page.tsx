@@ -1,9 +1,9 @@
 "use client";
 
-import { API_BASE_URL } from "@/lib/api";
-import Image from "next/image";
+import { API_BASE_URL, staffAuthenticatedFetch } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 
 type Patient = {
   id: string;
@@ -19,7 +19,6 @@ type ExaminationFlow = {
   patient_name: string;
   current_stage: string;
   case_status: string;
-  created_at: string;
   updated_at: string;
 };
 
@@ -35,368 +34,432 @@ type Appointment = {
   created_at: string;
 };
 
-type DashboardFilter =
-  | "REQUEST_ALL"
-  | "CONSULTATION_REQUEST"
-  | "EXAM_REQUEST"
-  | "TODAY_CONFIRMED"
-  | "CHANGE_REQUEST";
-
-type PatientFlowItem = {
-  patient: Patient;
-  appointment: Appointment;
-  examination: ExaminationFlow | null;
+type AppointmentRequest = {
+  id: string;
+  appointment: string;
+  patient_code: string;
+  patient_name: string;
+  request_type: "CHANGE" | "CANCEL";
+  status: "PENDING" | "APPROVED" | "REJECTED";
+  original_scheduled_at: string;
+  requested_scheduled_at: string | null;
+  requested_at: string;
 };
 
+type ExaminationOrder = {
+  id: string;
+  patient_code: string;
+  patient_name: string;
+  requesting_doctor_name: string;
+  order_type: "XRAY" | "CT" | "PET_CT_TNM" | "PATHOLOGY_GENE" | "PDL1";
+  status: "ORDERED" | "SCHEDULED" | "COMPLETED" | "CANCELLED";
+  created_at: string;
+};
 
-function FilterButton({
-  label,
-  count,
-  active,
-  onClick,
-}: {
-  label: string;
-  count: number;
-  active: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`relative flex h-10 items-center gap-2 whitespace-nowrap rounded-lg border px-3.5 text-sm transition ${
-        active
-          ? "border-pink-200 bg-pink-50 font-semibold text-pink-600"
-          : "border-transparent bg-white font-medium text-slate-500 hover:border-slate-200 hover:bg-slate-50 hover:text-slate-800"
-      }`}
-    >
-      {label}
+type RequestRow = {
+  id: string;
+  createdAt: string;
+  patientCode: string;
+  patientName: string;
+  doctorName: string | null;
+  requestType: "NEW" | "CHANGE" | "CANCEL";
+  originalScheduledAt: string | null;
+  requestedScheduledAt: string | null;
+  status: string;
+};
 
-      <span
-        className={`text-xs ${
-          active ? "font-bold text-pink-600" : "font-semibold text-slate-400"
-        }`}
-      >
-        {count}
-      </span>
+const FLOW_STAGES = [
+  "XRAY",
+  "CT",
+  "PET_CT_TNM",
+  "PATHOLOGY_GENE",
+  "PDL1",
+  "TREATMENT",
+  "PRESCRIPTION",
+];
 
-    </button>
-  );
-}
+const STAGE_LABELS: Record<string, string> = {
+  CONSULTATION: "진료",
+  XRAY: "X-ray",
+  CT: "CT",
+  PET_CT_TNM: "PET-CT / TNM",
+  PATHOLOGY_GENE: "병리·유전자 검사",
+  PDL1: "PD-L1 검사",
+  TREATMENT: "치료",
+  PRESCRIPTION: "처방",
+};
 
+const ORDER_LABELS: Record<ExaminationOrder["order_type"], string> = {
+  XRAY: "X-ray",
+  CT: "CT",
+  PET_CT_TNM: "PET-CT / TNM",
+  PATHOLOGY_GENE: "병리·유전자 검사",
+  PDL1: "PD-L1 검사",
+};
+
+const RECENT_ACTIVITY_LIMIT = 6;
+
+type ActivityItem = {
+  id: string;
+  occurredAt: string;
+  title: string;
+  patientName: string;
+  patientCode: string;
+  category: "APPOINTMENT" | "ORDER" | "PATIENT";
+};
 
 export default function CoordinatorDashboardPage() {
   const router = useRouter();
-
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [examinations, setExaminations] = useState<ExaminationFlow[]>([]);
+  const [cases, setCases] = useState<ExaminationFlow[]>([]);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-
-  const [selectedFilter, setSelectedFilter] =
-   useState<DashboardFilter>("REQUEST_ALL");
-
+  const [appointmentRequests, setAppointmentRequests] = useState<AppointmentRequest[]>([]);
+  const [examinationOrders, setExaminationOrders] = useState<ExaminationOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    let active = true;
+
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
         setError("");
-
-        const [
-          patientsResponse,
-          examinationsResponse,
-          appointmentsResponse,
-        ] = await Promise.all([
-          fetch(`${API_BASE_URL}/api/patients/`),
-          fetch(`${API_BASE_URL}/api/cases/`),
-          fetch(`${API_BASE_URL}/api/appointments/`),
-        ]);
-
-        if (
-          !patientsResponse.ok ||
-          !examinationsResponse.ok ||
-          !appointmentsResponse.ok
-        ) {
-          throw new Error("대시보드 정보를 불러오지 못했습니다.");
-        }
-
-        const [patientData, examinationData, appointmentData] =
-          await Promise.all([
-            patientsResponse.json(),
-            examinationsResponse.json(),
-            appointmentsResponse.json(),
-          ]);
-
-        setPatients(patientData);
-        setExaminations(examinationData);
-        setAppointments(appointmentData);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "대시보드 조회 중 오류가 발생했습니다."
+        const paths = [
+          "/api/patients/",
+          "/api/cases/",
+          "/api/appointments/",
+          "/api/appointments/requests/?status=PENDING",
+          "/api/appointments/coordinator/examination-orders/",
+        ];
+        const responses = await Promise.all(
+          paths.map((path) => staffAuthenticatedFetch(`${API_BASE_URL}${path}`)),
         );
+        const failedResponse = responses.find((response) => !response.ok);
+        if (failedResponse) {
+          throw new Error(`대시보드 정보를 불러오지 못했습니다. (${failedResponse.status})`);
+        }
+        const [patientData, caseData, appointmentData, requestData, orderData] =
+          await Promise.all(responses.map((response) => response.json()));
+
+        if (!active) return;
+        setPatients(patientData as Patient[]);
+        setCases(caseData as ExaminationFlow[]);
+        setAppointments(appointmentData as Appointment[]);
+        setAppointmentRequests(requestData as AppointmentRequest[]);
+        setExaminationOrders(orderData as ExaminationOrder[]);
+      } catch (fetchError) {
+        if (active) {
+          setError(
+            fetchError instanceof Error
+              ? fetchError.message
+              : "대시보드 조회 중 오류가 발생했습니다.",
+          );
+        }
       } finally {
-        setLoading(false);
+        if (active) setLoading(false);
       }
     };
 
-    fetchDashboardData();
+    void fetchDashboardData();
+    return () => {
+      active = false;
+    };
   }, []);
 
-
-  
-
-  /*
-   * 원무과 대시보드는 전체 환자가 아니라
-   * 예약이 존재하는 환자를 기준으로 보여줍니다.
-   */
-  const patientFlows = useMemo<PatientFlowItem[]>(() => {
-    const result: PatientFlowItem[] = [];
-
-    for (const appointment of appointments) {
-      const patient = patients.find(
-        (item) => item.patient_code === appointment.patient_code
-      );
-
-      /*
-       * 예약에 연결된 환자를 현재 환자 목록에서 찾지 못한 경우
-       * 화면에는 표시하지 않습니다.
-       */
-      if (!patient) {
-        continue;
-      }
-
-      const patientExaminations = examinations
-        .filter(
-          (examination) =>
-            examination.patient_code === patient.patient_code
-        )
-        .sort(
-          (a, b) =>
-            new Date(b.updated_at).getTime() -
-            new Date(a.updated_at).getTime()
-        );
-
-      result.push({
-        patient,
-        appointment,
-        examination: patientExaminations[0] ?? null,
+  const pendingRequests = useMemo(() => {
+    const appointmentsById = new Map(appointments.map((appointment) => [appointment.id, appointment]));
+    const newRequests: RequestRow[] = appointments
+      .filter((appointment) => appointment.appointment_status === "REQUESTED")
+      .map((appointment) => ({
+        id: `new-${appointment.id}`,
+        createdAt: appointment.created_at,
+        patientCode: appointment.patient_code,
+        patientName: appointment.patient_name,
+        doctorName: appointment.doctor_name,
+        requestType: "NEW",
+        originalScheduledAt: null,
+        requestedScheduledAt: appointment.scheduled_at,
+        status: appointment.appointment_status,
+      }));
+    const changeOrCancelRequests: RequestRow[] = appointmentRequests
+      .filter((request) => request.status === "PENDING")
+      .map((request) => {
+        const appointment = appointmentsById.get(request.appointment);
+        return {
+          id: request.id,
+          createdAt: request.requested_at,
+          patientCode: request.patient_code,
+          patientName: request.patient_name,
+          doctorName: appointment?.doctor_name ?? null,
+          requestType: request.request_type,
+          originalScheduledAt: request.original_scheduled_at,
+          requestedScheduledAt: request.requested_scheduled_at,
+          status: request.status,
+        };
       });
+    return [...newRequests, ...changeOrCancelRequests].sort(
+      (first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime(),
+    );
+  }, [appointments, appointmentRequests]);
+
+  const todayAppointments = useMemo(() => {
+    const patientsByCode = new Map(patients.map((patient) => [patient.patient_code, patient]));
+    const casesByPatient = new Map<string, ExaminationFlow>();
+    for (const caseItem of [...cases].sort(
+      (first, second) => new Date(second.updated_at).getTime() - new Date(first.updated_at).getTime(),
+    )) {
+      if (!casesByPatient.has(caseItem.patient_code)) {
+        casesByPatient.set(caseItem.patient_code, caseItem);
+      }
     }
+    return appointments
+      .filter(
+        (appointment) =>
+          appointment.appointment_status === "CONFIRMED" && isToday(appointment.scheduled_at),
+      )
+      .sort((first, second) => new Date(first.scheduled_at).getTime() - new Date(second.scheduled_at).getTime())
+      .map((appointment) => ({
+        appointment,
+        patient: patientsByCode.get(appointment.patient_code) ?? null,
+        examination: casesByPatient.get(appointment.patient_code) ?? null,
+      }));
+  }, [appointments, cases, patients]);
 
-    return result.sort(
-      (a, b) =>
-        new Date(a.appointment.scheduled_at).getTime() -
-        new Date(b.appointment.scheduled_at).getTime()
-    );
-  }, [patients, appointments, examinations]);
+  const recentActivities = useMemo<ActivityItem[]>(() => {
+    const appointmentActivities: ActivityItem[] = appointments
+      .filter((appointment) => appointment.appointment_status === "REQUESTED")
+      .map((appointment) => ({
+        id: `appointment-${appointment.id}`,
+        occurredAt: appointment.created_at,
+        title: "신규 예약 요청",
+        patientName: appointment.patient_name,
+        patientCode: appointment.patient_code,
+        category: "APPOINTMENT",
+      }));
+    const changeOrCancelActivities: ActivityItem[] = appointmentRequests.map((request) => ({
+      id: `appointment-request-${request.id}`,
+      occurredAt: request.requested_at,
+      title: request.request_type === "CHANGE" ? "예약 변경 요청" : "예약 취소 요청",
+      patientName: request.patient_name,
+      patientCode: request.patient_code,
+      category: "APPOINTMENT",
+    }));
+    const patientActivities: ActivityItem[] = patients.map((patient) => ({
+      id: `patient-${patient.id}`,
+      occurredAt: patient.created_at,
+      title: "신규 환자 등록",
+      patientName: patient.name,
+      patientCode: patient.patient_code,
+      category: "PATIENT",
+    }));
+    const orderActivities: ActivityItem[] = examinationOrders.map((order) => ({
+      id: `order-${order.id}`,
+      occurredAt: order.created_at,
+      title: `${ORDER_LABELS[order.order_type]} 오더 생성`,
+      patientName: order.patient_name,
+      patientCode: order.patient_code,
+      category: "ORDER",
+    }));
 
-  const filterCounts = useMemo(() => {
-    const consultationRequests = patientFlows.filter(
-      (item) =>
-        item.appointment.appointment_status === "REQUESTED" &&
-        !item.examination
-    );
+    return [...appointmentActivities, ...changeOrCancelActivities, ...patientActivities, ...orderActivities]
+      .sort((first, second) => new Date(second.occurredAt).getTime() - new Date(first.occurredAt).getTime())
+      .slice(0, RECENT_ACTIVITY_LIMIT);
+  }, [appointments, appointmentRequests, examinationOrders, patients]);
 
-    const examRequests = patientFlows.filter(
-      (item) =>
-        item.appointment.appointment_status === "REQUESTED" &&
-        Boolean(item.examination)
-    );
-
-    const todayConfirmed = patientFlows.filter(
-      (item) =>
-        item.appointment.appointment_status === "CONFIRMED" &&
-        isToday(item.appointment.scheduled_at)
-    );
-
-    return {
-      REQUEST_ALL:
-        consultationRequests.length + examRequests.length,
-
-      CONSULTATION_REQUEST: consultationRequests.length,
-
-      EXAM_REQUEST: examRequests.length,
-
-      TODAY_CONFIRMED: todayConfirmed.length,
-
-      CHANGE_REQUEST: 0,
-    };
-  }, [patientFlows]);
-
-  const filteredFlows = useMemo(() => {
-    switch (selectedFilter) {
-      case "REQUEST_ALL":
-        return patientFlows.filter(
-          (item) =>
-            item.appointment.appointment_status === "REQUESTED"
-        );
-
-      case "CONSULTATION_REQUEST":
-        return patientFlows.filter(
-          (item) =>
-            item.appointment.appointment_status === "REQUESTED" &&
-            !item.examination
-        );
-
-      case "EXAM_REQUEST":
-        return patientFlows.filter(
-          (item) =>
-            item.appointment.appointment_status === "REQUESTED" &&
-            Boolean(item.examination)
-        );
-
-      case "TODAY_CONFIRMED":
-        return patientFlows.filter(
-          (item) =>
-            item.appointment.appointment_status === "CONFIRMED" &&
-            isToday(item.appointment.scheduled_at)
-        );
-
-      case "CHANGE_REQUEST":
-        return [];
-
-      default:
-        return patientFlows.filter(
-          (item) =>
-            item.appointment.appointment_status === "REQUESTED"
-        );
-    }
-  }, [patientFlows, selectedFilter]);
+  const summary = [
+    {
+      label: "오늘 예약",
+      count: appointments.filter(
+        (appointment) =>
+          appointment.appointment_status === "CONFIRMED" && isToday(appointment.scheduled_at),
+      ).length,
+    },
+    {
+      label: "신규 예약 요청",
+      count: appointments.filter((appointment) => appointment.appointment_status === "REQUESTED").length,
+    },
+    {
+      label: "변경 요청",
+      count: appointmentRequests.filter(
+        (request) => request.request_type === "CHANGE" && request.status === "PENDING",
+      ).length,
+    },
+    {
+      label: "취소 요청",
+      count: appointmentRequests.filter(
+        (request) => request.request_type === "CANCEL" && request.status === "PENDING",
+      ).length,
+    },
+    { label: "신규 환자", count: patients.filter((patient) => isToday(patient.created_at)).length },
+  ];
 
   if (loading) {
-    return (
-      <div className="rounded-2xl border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500 shadow-sm">
-        대시보드 정보를 불러오는 중입니다.
-      </div>
-    );
+    return <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500">대시보드 정보를 불러오는 중입니다.</div>;
   }
 
   if (error) {
-    return (
-      <div className="rounded-2xl border border-red-100 bg-red-50/70 px-6 py-5 text-sm text-red-600">
-        {error}
-      </div>
-    );
+    return <div role="alert" className="rounded-xl border border-rose-100 bg-white px-6 py-5 text-sm text-rose-700">{error}</div>;
   }
 
   return (
-    <div>
-      {/* 페이지 제목 */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-800">
-          대시보드
-        </h1>
+    <div className="space-y-5">
+      <header>
+        <h1 className="text-2xl font-bold text-slate-900">대시보드</h1>
+        <p className="mt-1 text-sm text-slate-500">오늘 예약과 처리 대기 업무를 확인합니다.</p>
+      </header>
 
-        <p className="mt-2 text-sm text-slate-500">
-          오늘 예정된 상담과 검사 흐름을 환자별로 확인합니다.
-        </p>
-      </div>
-
-      {/* 상단 업무 필터 */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-2 shadow-sm">
-        <div className="flex min-w-max items-center gap-2 overflow-x-auto">
-          <span className="mr-1 px-2 text-sm font-semibold text-slate-500">
-            예약 요청 :
-          </span>
-
-          <FilterButton
-            label="전체"
-            count={filterCounts.REQUEST_ALL}
-            active={selectedFilter === "REQUEST_ALL"}
-            onClick={() => setSelectedFilter("REQUEST_ALL")}
-          />
-
-          <FilterButton
-            label="상담 예약"
-            count={filterCounts.CONSULTATION_REQUEST}
-            active={selectedFilter === "CONSULTATION_REQUEST"}
-            onClick={() =>
-              setSelectedFilter("CONSULTATION_REQUEST")
-            }
-          />
-
-          <FilterButton
-            label="검사 예약"
-            count={filterCounts.EXAM_REQUEST}
-            active={selectedFilter === "EXAM_REQUEST"}
-            onClick={() =>
-              setSelectedFilter("EXAM_REQUEST")
-            }
-          />
-
-          <div className="mx-1 h-5 w-px bg-slate-200" />
-
-          <FilterButton
-            label="오늘 예약"
-            count={filterCounts.TODAY_CONFIRMED}
-            active={selectedFilter === "TODAY_CONFIRMED"}
-            onClick={() =>
-              setSelectedFilter("TODAY_CONFIRMED")
-            }
-          />
-
-          <div className="mx-1 h-5 w-px bg-slate-200" />
-
-          <FilterButton
-            label="일정 변경"
-            count={filterCounts.CHANGE_REQUEST}
-            active={selectedFilter === "CHANGE_REQUEST"}
-            onClick={() =>
-              setSelectedFilter("CHANGE_REQUEST")
-            }
-          />
-        </div>
-      </div>
-
-      {/* 환자 흐름 */}
-      <section className="mt-8">
-        <div className="mb-4 flex items-end justify-between gap-4">
-          <div>
-            <h2 className="text-xl font-bold tracking-tight text-slate-800">
-              오늘 환자 흐름
-            </h2>
-
-            <p className="mt-1 text-xs text-slate-400">
-              예약부터 상담, 검사 진행까지 한 번에 확인할 수 있습니다.
-            </p>
-          </div>
-
-          <span className="rounded-full bg-pink-50 px-3 py-1 text-xs font-semibold text-pink-600">
-            {filteredFlows.length}명
-          </span>
-        </div>
-        
-
-
-
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          {filteredFlows.map((item) => (
-            <PatientFlowRow
-              key={item.appointment.id}
-              item={item}
-              onOpenAppointment={() =>
-                router.push("/coordinator/appointments")
-              }
-              onOpenPatient={() =>
-                router.push("/coordinator/patients")
-              }
-            />
-          ))}
-
-          {filteredFlows.length === 0 && (
-            <div className="flex flex-col items-center py-12 text-center">
-              <Image src="/images/soomi-search.png" alt="" width={128} height={128} className="mb-3 h-32 w-32 object-contain" />
-              <p className="text-base font-semibold text-slate-700">
-                예약된 환자가 없습니다
-              </p>
-              <p className="mt-1 text-sm text-slate-400">
-                해당 조건의 예약 환자가 없습니다.
-              </p>
+      <section aria-label="상단 업무 요약" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-5">
+          {summary.map((item) => (
+            <div key={item.label} className="px-4 py-3 sm:px-5">
+              <p className="text-xs font-medium text-slate-500">{item.label}</p>
+              <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-violet-700" : "text-slate-700"}`}>{item.count}</p>
             </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(240px,1fr)]">
+      <section className="min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
+        <div className="flex h-12 items-center justify-between gap-3 border-b border-slate-100 px-4">
+          <h2 className="text-base font-semibold text-slate-900">처리 필요한 예약 요청</h2>
+          <CountBadge count={pendingRequests.length} />
+        </div>
+          {pendingRequests.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[570px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2.5">환자</th>
+                    <th className="px-3 py-2.5">유형</th>
+                    <th className="px-3 py-2.5">담당의</th>
+                    <th className="px-3 py-2.5">요청/예약 시간</th>
+                    <th className="px-3 py-2.5">상태</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {pendingRequests.map((request) => (
+                    <tr
+                      key={request.id}
+                      className="text-slate-700 transition hover:bg-violet-50/40"
+                    >
+                      <td className="px-3 py-2.5">
+                        <p className="font-semibold text-slate-800">{request.patientName}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{request.patientCode}</p>
+                      </td>
+                      <td className="px-3 py-2"><RequestTypeBadge type={request.requestType} /></td>
+                      <td className="px-3 py-2.5 text-sm text-slate-600">{request.doctorName || "미지정"}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 tabular-nums">
+                        {request.originalScheduledAt && <span className="block text-xs text-slate-500">기존 {formatDateTime(request.originalScheduledAt)}</span>}
+                        <span className="block text-sm text-slate-700">{request.requestedScheduledAt ? formatDateTime(request.requestedScheduledAt) : "—"}</span>
+                        <span className="mt-0.5 block text-[11px] text-slate-400">접수 {formatDateTime(request.createdAt)}</span>
+                      </td>
+                      <td className="px-3 py-2.5"><ApprovalBadge /></td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState>처리할 예약 요청이 없습니다.</EmptyState>
+          )}
+          <div className="border-t border-slate-100 px-4 py-2.5 text-right">
+            <button type="button" onClick={() => router.push("/coordinator/appointments")} className="text-xs font-medium text-violet-700 hover:text-violet-900">
+              전체 요청 보기 <span aria-hidden="true">→</span>
+            </button>
+          </div>
+      </section>
+
+      <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+        <div className="flex h-12 items-center justify-between gap-3 border-b border-slate-100 px-4">
+          <h2 className="text-base font-semibold text-slate-800">검사 오더 현황</h2>
+          <CountBadge count={examinationOrders.length} />
+        </div>
+          {examinationOrders.length ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[540px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                  <tr>
+                    <th className="px-3 py-2.5">환자</th>
+                    <th className="px-3 py-2.5">검사 종류</th>
+                    <th className="px-3 py-2.5">담당의</th>
+                    <th className="px-3 py-2.5">오더 생성일</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {examinationOrders.slice(0, 7).map((order) => (
+                    <tr key={order.id} className="text-slate-700 transition hover:bg-slate-50/70">
+                      <td className="px-3 py-2.5">
+                        <p className="font-semibold text-slate-800">{order.patient_name}</p>
+                        <p className="mt-0.5 text-xs text-slate-500">{order.patient_code}</p>
+                      </td>
+                      <td className="px-3 py-2"><OrderTypeLabel type={order.order_type} /></td>
+                      <td className="px-3 py-2.5 text-sm text-slate-500">{order.requesting_doctor_name}</td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs tabular-nums text-slate-500">{formatDateTime(order.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <EmptyState>표시할 검사 오더가 없습니다.</EmptyState>
+          )}
+          {examinationOrders.length > 7 && (
+            <div className="border-t border-slate-100 px-4 py-2 text-right text-xs text-slate-500">
+              최근 7건 표시 · 전체 {examinationOrders.length}건
+            </div>
+          )}
+      </section>
+      <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50/40 shadow-sm lg:col-span-2 2xl:col-span-1">
+        <div className="flex h-12 items-center justify-between gap-3 border-b border-slate-100/80 px-3">
+          <h2 className="text-base font-medium text-slate-700">최근 활동</h2>
+          <CountBadge count={recentActivities.length} muted />
+        </div>
+        {recentActivities.length ? (
+          <ol className="divide-y divide-slate-100/80">
+            {recentActivities.map((activity) => (
+              <li key={activity.id} className="px-3 py-2">
+                <time dateTime={activity.occurredAt} className="text-[11px] tabular-nums text-slate-400">
+                  {formatDateTime(activity.occurredAt)}
+                </time>
+                <p className="mt-0.5 text-sm font-medium text-slate-700">
+                  {activity.title}
+                </p>
+                <p className="mt-0.5 truncate text-xs text-slate-500">{activity.patientName} · {activity.patientCode}</p>
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="px-4 py-5 text-sm text-slate-500">최근 활동이 없습니다.</p>
+        )}
+      </section>
+      </div>
+
+      <section>
+        <SectionHeading title="오늘 진료 진행 현황" count={todayAppointments.length} />
+        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+          {todayAppointments.length ? (
+            <div className="divide-y divide-slate-100">
+              {todayAppointments.map(({ appointment, patient, examination }) => (
+                <button
+                  key={appointment.id}
+                  type="button"
+                  onClick={() => router.push("/coordinator/appointments")}
+                  className="grid w-full grid-cols-1 items-center gap-3 px-4 py-3 text-left transition hover:bg-violet-50/40 sm:grid-cols-[minmax(150px,1.2fr)_100px_minmax(120px,1fr)_minmax(160px,1.5fr)] sm:px-5"
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate font-semibold text-slate-800">{patient?.name ?? appointment.patient_name}</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">{patient?.patient_code ?? appointment.patient_code}</span>
+                  </span>
+                  <span className="text-sm font-semibold tabular-nums text-slate-700">{formatTime(appointment.scheduled_at)}</span>
+                  <span className="text-sm text-slate-600">{appointment.doctor_name || "담당의 미정"}</span>
+                  <FlowProgress stage={examination?.current_stage ?? null} />
+                </button>
+              ))}
+            </div>
+          ) : (
+            <EmptyState>오늘 확정된 진료 예약이 없습니다.</EmptyState>
           )}
         </div>
       </section>
@@ -404,466 +467,88 @@ export default function CoordinatorDashboardPage() {
   );
 }
 
-function PatientFlowRow({
-  item,
-  onOpenAppointment,
-  onOpenPatient,
-}: {
-  item: PatientFlowItem;
-  onOpenAppointment: () => void;
-  onOpenPatient: () => void;
-}) {
-  const { patient, appointment, examination } = item;
-
-  const steps = getFlowSteps(
-    appointment,
-    examination
-  );
-
+function SectionHeading({ title, count }: { title: string; count: number }) {
   return (
-    <div className="group relative border-b border-slate-100 px-5 py-5 last:border-b-0 transition hover:z-10 hover:bg-pink-50/20">
-      <div className="grid grid-cols-[190px_145px_170px_minmax(420px,1fr)_130px] items-center gap-5">
-        {/* 환자 */}
-        <div className="min-w-0">
-          <p className="truncate text-[15px] font-bold text-slate-800">
-            {patient.name}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-400">
-            {patient.patient_code}
-          </p>
-        </div>
-
-        {/* 예약 */}
-        <div>
-          <p className="text-sm font-semibold text-slate-700">
-            {formatAppointmentDate(
-              appointment.scheduled_at
-            )}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-400">
-            {getAppointmentStatusLabel(
-              appointment.appointment_status
-            )}
-          </p>
-        </div>
-
-        {/* 담당 의사 */}
-        <div>
-          <p className="text-sm font-semibold text-slate-700">
-            {appointment.doctor_name ??
-              "담당 의사 미정"}
-          </p>
-
-          <p className="mt-1 text-xs text-slate-400">
-            호흡기내과
-          </p>
-        </div>
-
-        {/* 진행 흐름 */}
-        <FlowStepper steps={steps} />
-
-        {/* 현재 상태 */}
-        <div className="flex justify-end">
-          <CurrentStatusBadge
-            appointment={appointment}
-            examination={examination}
-          />
-        </div>
-      </div>
-
-      {/* 행 Hover 버튼 */}
-      <div className="pointer-events-none absolute right-5 top-1/2 flex -translate-y-1/2 translate-x-2 items-center gap-2 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:translate-x-0 group-hover:opacity-100">
-        <button
-          type="button"
-          onClick={onOpenAppointment}
-          className="rounded-lg border border-pink-200 bg-white px-3 py-2 text-xs font-semibold text-pink-500 shadow-sm transition hover:bg-pink-50"
-        >
-          예약 관리
-        </button>
-
-        {examination && (
-          <button
-            type="button"
-            onClick={onOpenAppointment}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
-          >
-            검사 일정 잡기
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={onOpenPatient}
-          className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:bg-slate-50"
-        >
-          상세보기
-        </button>
-      </div>
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-lg font-bold text-slate-900">{title}</h2>
+      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">{count}</span>
     </div>
   );
 }
 
-function FlowStepper({
-  steps,
-}: {
-  steps: {
-    label: string;
-    state: "DONE" | "CURRENT" | "WAITING";
-    description?: string;
-  }[];
-}) {
-  return (
-    <div className="flex min-w-0 items-start">
-      {steps.map((step, index) => {
-        const done = step.state === "DONE";
-        const current =
-          step.state === "CURRENT";
-
-        return (
-          <div
-            key={step.label}
-            className="group/step relative flex flex-1 items-start"
-          >
-            <div className="flex w-full flex-col items-center">
-              <div className="flex w-full items-center">
-                {index > 0 && (
-                  <div
-                    className={`h-px flex-1 ${
-                      done || current
-                        ? "bg-pink-300"
-                        : "bg-slate-200"
-                    }`}
-                  />
-                )}
-
-                <div
-                  className={`relative flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full border ${
-                    done
-                      ? "border-pink-400 bg-pink-400"
-                      : current
-                      ? "border-pink-400 bg-white"
-                      : "border-slate-300 bg-white"
-                  }`}
-                >
-                  {done && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-white" />
-                  )}
-
-                  {current && (
-                    <span className="h-1.5 w-1.5 rounded-full bg-pink-400" />
-                  )}
-                </div>
-
-                {index < steps.length - 1 && (
-                  <div
-                    className={`h-px flex-1 ${
-                      done
-                        ? "bg-pink-300"
-                        : "bg-slate-200"
-                    }`}
-                  />
-                )}
-              </div>
-
-              <span
-                className={`mt-2 whitespace-nowrap text-[11px] ${
-                  current
-                    ? "font-semibold text-pink-500"
-                    : done
-                    ? "font-medium text-slate-600"
-                    : "text-slate-400"
-                }`}
-              >
-                {step.label}
-              </span>
-            </div>
-
-            {/* 단계 Hover */}
-            {step.description && (
-              <div className="pointer-events-none absolute bottom-[48px] left-1/2 z-30 hidden w-[180px] -translate-x-1/2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left shadow-lg group-hover/step:block">
-                <p className="text-xs font-semibold text-slate-700">
-                  {step.label}
-                </p>
-
-                <p className="mt-1 text-[11px] leading-4 text-slate-400">
-                  {step.description}
-                </p>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
+function EmptyState({ children }: { children: ReactNode }) {
+  return <p className="px-4 py-8 text-center text-sm text-slate-500">{children}</p>;
 }
 
-function CurrentStatusBadge({
-  appointment,
-  examination,
-}: {
-  appointment: Appointment;
-  examination: ExaminationFlow | null;
-}) {
-  if (
-    appointment.appointment_status ===
-    "REQUESTED"
-  ) {
-    return (
-      <span className="rounded-full bg-pink-50 px-3 py-1.5 text-xs font-semibold text-pink-500">
-        승인 대기
-      </span>
-    );
-  }
-
-  if (
-    appointment.appointment_status ===
-    "CANCELLED"
-  ) {
-    return (
-      <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-500">
-        예약 취소
-      </span>
-    );
-  }
-
-  if (!examination) {
-    return (
-      <span className="rounded-full bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-600">
-        상담 예정
-      </span>
-    );
-  }
-
+function CountBadge({ count, muted = false }: { count: number; muted?: boolean }) {
   return (
-    <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-600">
-      {getStageLabel(
-        examination.current_stage
-      )}
+    <span className={`inline-flex h-5 items-center rounded-md border px-2 text-[11px] font-medium tabular-nums ${muted ? "border-slate-200/80 bg-white/70 text-slate-500" : "border-slate-200 bg-slate-50 text-slate-600"}`}>
+      {count}건
     </span>
   );
 }
 
-function getFlowSteps(
-  appointment: Appointment,
-  examination: ExaminationFlow | null
-) {
-  const currentStage =
-    examination?.current_stage ?? "CONSULTATION";
-
-  const stages = [
-    {
-      key: "CONSULTATION",
-      label: "상담",
-    },
-    {
-      key: "XRAY",
-      label: "X-ray",
-    },
-    {
-      key: "CT",
-      label: "CT",
-    },
-    {
-      key: "PET_CT_TNM",
-      label: "PET-CT / TNM",
-    },
-    {
-      key: "PATHOLOGY_GENE",
-      label: "조직·유전자 검사",
-    },
-    {
-      key: "TREATMENT",
-      label: "치료/처방",
-    },
-  ];
-
-  const currentIndex =
-    getClinicalStageIndex(currentStage);
-
-  return stages.map((stage, index) => {
-    let state:
-      | "DONE"
-      | "CURRENT"
-      | "WAITING" = "WAITING";
-
-    if (index < currentIndex) {
-      state = "DONE";
-    }
-
-    if (index === currentIndex) {
-      state = "CURRENT";
-    }
-
-    return {
-      label: stage.label,
-      state,
-      description:
-        state === "CURRENT"
-          ? getClinicalStageDescription(
-              stage.key,
-              appointment,
-              examination
-            )
-          : undefined,
-    };
-  });
+function RequestTypeBadge({ type }: { type: RequestRow["requestType"] }) {
+  const labels: Record<RequestRow["requestType"], string> = {
+    NEW: "신규 예약",
+    CHANGE: "예약 변경",
+    CANCEL: "예약 취소",
+  };
+  const tone: Record<RequestRow["requestType"], string> = {
+    NEW: "border-violet-400 text-violet-700",
+    CHANGE: "border-indigo-300 text-indigo-700",
+    CANCEL: "border-slate-300 text-slate-600",
+  };
+  return <span className={`inline-flex whitespace-nowrap border-l-2 py-0.5 pl-2 text-xs font-medium ${tone[type]}`}>{labels[type]}</span>;
 }
 
-
-function getClinicalStageIndex(
-  stage: string
-) {
-  if (stage === "CONSULTATION") return 0;
-  if (stage === "XRAY") return 1;
-  if (stage === "CT") return 2;
-  if (stage === "PET_CT_TNM") return 3;
-  if (stage === "PATHOLOGY_GENE" || stage === "PDL1") return 4;
-
-  if (
-    stage === "TREATMENT" ||
-    stage === "PRESCRIPTION"
-  ) {
-    return 5;
-  }
-
-  return 0;
+function ApprovalBadge() {
+  return <span className="inline-flex whitespace-nowrap rounded border border-violet-200 bg-violet-50 px-1.5 py-0.5 text-[11px] font-medium text-violet-800">승인 대기</span>;
 }
 
-function getClinicalStageDescription(
-  stage: string,
-  appointment: Appointment,
-  examination: ExaminationFlow | null
-) {
-  if (stage === "CONSULTATION") {
-    return appointment.doctor_name
-      ? `${appointment.doctor_name} 상담 단계`
-      : "호흡기내과 상담 단계";
-  }
-
-  if (stage === "XRAY") {
-    return "흉부 X-ray 검사 단계";
-  }
-
-  if (stage === "CT") {
-    return "CT 검사 단계";
-  }
-
-  if (stage === "PET_CT_TNM") {
-    return "PET-CT 및 TNM 병기 평가 단계";
-  }
-
-  if (stage === "PATHOLOGY_GENE") {
-    return "조직·유전자 검사 단계";
-  }
-
-  if (stage === "PDL1") {
-    return "PD-L1 검사 단계";
-  }
-
-  if (stage === "TREATMENT") {
-    return "치료 및 처방 결정 단계";
-  }
-
-  return examination
-    ? getStageLabel(
-        examination.current_stage
-      )
-    : "상담 단계";
+function OrderTypeLabel({ type }: { type: ExaminationOrder["order_type"] }) {
+  const pathology = type === "PATHOLOGY_GENE" || type === "PDL1";
+  return <span className={`inline-flex border-l-2 pl-2 text-sm font-medium ${pathology ? "border-violet-300 text-violet-800" : "border-slate-300 text-slate-800"}`}>{ORDER_LABELS[type]}</span>;
 }
 
-function getStageLabel(stage: string) {
-  if (stage === "XRAY") {
-    return "X-ray";
+function FlowProgress({ stage }: { stage: string | null }) {
+  if (!stage) {
+    return <span className="text-xs text-slate-500">Case 단계 정보 없음</span>;
   }
-
-  if (stage === "CT") {
-    return "CT";
-  }
-
-  if (stage === "PET_CT_TNM") {
-    return "PET-CT 및 TNM 병기 평가";
-  }
-
-  if (stage === "PATHOLOGY_GENE") {
-    return "조직·유전자 검사";
-  }
-
-  if (stage === "PDL1") {
-    return "PD-L1 검사";
-  }
-
-  if (stage === "TREATMENT") {
-    return "치료 결정";
-  }
-
-  if (stage === "PRESCRIPTION") {
-    return "처방";
-  }
-
-  return "검사 진행";
-}
-
-function getAppointmentStatusLabel(
-  status: string
-) {
-  if (status === "REQUESTED") {
-    return "예약 신청";
-  }
-
-  if (status === "CONFIRMED") {
-    return "예약 확정";
-  }
-
-  if (status === "CANCELLED") {
-    return "예약 취소";
-  }
-
-  return status;
+  const currentIndex = FLOW_STAGES.indexOf(stage);
+  return (
+    <span className="flex min-w-0 items-center gap-2" aria-label={`현재 진료 단계: ${STAGE_LABELS[stage] ?? stage}`}>
+      <span className="flex shrink-0 items-center gap-1" aria-hidden="true">
+        {FLOW_STAGES.map((flowStage, index) => (
+          <span
+            key={flowStage}
+            className={`h-1.5 w-3 rounded-full ${index === currentIndex ? "bg-violet-600" : "bg-slate-200"}`}
+          />
+        ))}
+      </span>
+      <span className="truncate text-xs font-semibold text-slate-700">{STAGE_LABELS[stage] ?? stage}</span>
+    </span>
+  );
 }
 
 function isToday(value: string) {
   const date = new Date(value);
   const today = new Date();
-
-  return (
-    date.getFullYear() ===
-      today.getFullYear() &&
-    date.getMonth() ===
-      today.getMonth() &&
-    date.getDate() ===
-      today.getDate()
-  );
+  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
 }
 
-function formatAppointmentDate(
-  value: string
-) {
+function formatDateTime(value: string) {
   const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${month}.${day} ${hour}:${minute}`;
+}
 
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-
-  const time = date.toLocaleTimeString(
-    "ko-KR",
-    {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }
-  );
-
-  if (isToday(value)) {
-    return `오늘 ${time}`;
-  }
-
-  const day =
-    date.toLocaleDateString("ko-KR", {
-      month: "2-digit",
-      day: "2-digit",
-    });
-
-  return `${day} ${time}`;
+function formatTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", hour12: false });
 }

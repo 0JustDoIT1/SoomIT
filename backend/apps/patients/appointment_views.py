@@ -1,16 +1,22 @@
 from django.db import transaction
 from django.utils import timezone
+from django.db.models import Q
 
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from apps.accounts.permissions import IsActiveStaff, IsAdministrationStaff
+from apps.cases.models import ExaminationOrder
 from .appointment_serializers import (
     AppointmentCancelSerializer,
     AppointmentRequestRejectSerializer,
     AppointmentRequestSerializer,
     AppointmentSerializer,
+    CoordinatorExaminationOrderSerializer,
 )
 from .models import Appointment, AppointmentRequest
 
@@ -176,6 +182,27 @@ class AppointmentRequestListAPIView(ListAPIView):
         if request_status:
             queryset = queryset.filter(status=request_status)
         return queryset
+
+
+class CoordinatorExaminationOrderListAPIView(ListAPIView):
+    """Read-only examination orders visible to staff in the patient's hospital."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsAdministrationStaff]
+    serializer_class = CoordinatorExaminationOrderSerializer
+
+    def get_queryset(self):
+        hospital_id = self.request.user.department_role.department.hospital_id
+        today_start = timezone.localtime().replace(hour=0, minute=0, second=0, microsecond=0)
+        return (
+            ExaminationOrder.objects.filter(case__patient__hospital_id=hospital_id)
+            .filter(
+                Q(status__in=[ExaminationOrder.Status.ORDERED, ExaminationOrder.Status.SCHEDULED])
+                | Q(created_at__gte=today_start)
+            )
+            .select_related("case__patient", "requesting_doctor")
+            .order_by("-created_at")[:50]
+        )
 
 
 class AppointmentRequestDetailAPIView(RetrieveAPIView):

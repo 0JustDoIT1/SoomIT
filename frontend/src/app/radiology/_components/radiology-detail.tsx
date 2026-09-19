@@ -148,7 +148,7 @@ export function RadiologyWorkflowBadge({ status, label }: { status: string; labe
 }
 
 function getAnalysisLabel(item: RadiologyWorklistItem) {
-  if (item.examination_order.order_type_label === "PET-CT") return "TNM AI 분석";
+  if (item.examination_order.order_type === "PET_CT_TNM") return "PET-CT AI 분석";
   return item.examination_order.order_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
 }
 
