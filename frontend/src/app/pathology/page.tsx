@@ -514,27 +514,25 @@ function PathologyTissueHeatmap({
   wsiId: string;
   emptyMessage?: string;
 }) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [heatmap, setHeatmap] = useState({ wsiId, imageUrl: null as string | null, loaded: false });
+  const isCurrentWsi = heatmap.wsiId === wsiId;
+  const imageUrl = isCurrentWsi ? heatmap.imageUrl : null;
+  const loading = !isCurrentWsi || !heatmap.loaded;
 
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | null = null;
-    setLoading(true);
     void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
       .then((blob) => {
         if (!controller.signal.aborted && blob?.size) {
           objectUrl = URL.createObjectURL(blob);
-          setImageUrl(objectUrl);
+          setHeatmap({ wsiId, imageUrl: objectUrl, loaded: true });
         } else if (!controller.signal.aborted) {
-          setImageUrl(null);
+          setHeatmap({ wsiId, imageUrl: null, loaded: true });
         }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setImageUrl(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) setHeatmap({ wsiId, imageUrl: null, loaded: true });
       });
     return () => {
       controller.abort();
