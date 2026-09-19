@@ -3,7 +3,7 @@ from django.db import transaction
 from apps.clinical.models import ClinicalResult
 from apps.pathology.models import PathologyWorkItem
 
-from ..models import ExaminationOrder, LungCancerCase
+from ..models import ExaminationOrder, LungCancerCase, WorkflowStage
 
 
 class PathologyOrderCreationError(Exception):
@@ -26,6 +26,26 @@ def has_confirmed_pathology_gene_result(case):
     ).exists()
 
 
+def has_submitted_pathology_gene_review(case):
+    """A diagnostic review work item is created by the pathologist submit action."""
+    return PathologyWorkItem.objects.filter(
+        case=case,
+        examination_order__case=case,
+        examination_order__order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+        task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        status__in=[
+            PathologyWorkItem.Status.PENDING,
+            PathologyWorkItem.Status.IN_PROGRESS,
+            PathologyWorkItem.Status.BLOCKED,
+            PathologyWorkItem.Status.COMPLETED,
+        ],
+    ).exists()
+
+
+def has_pathology_gene_review_completed(case):
+    return has_confirmed_pathology_gene_result(case) or has_submitted_pathology_gene_review(case)
+
+
 def has_active_pathology_order(case, order_type):
     return ExaminationOrder.objects.filter(
         case=case,
@@ -46,10 +66,13 @@ def create_follow_up_pathology_order(
         else ExaminationOrder.OrderType.PATHOLOGY_GENE
     )
 
-    if order_type == ExaminationOrder.OrderType.PDL1 and not has_confirmed_pathology_gene_result(locked_case):
-        raise PathologyOrderCreationError(
-            "조직·유전자 판독이 완료된 후 PD-L1 검사를 처방할 수 있습니다."
-        )
+    if order_type == ExaminationOrder.OrderType.PDL1:
+        if locked_case.current_stage != WorkflowStage.PATHOLOGY_GENE:
+            raise PathologyOrderCreationError("현재 진료 단계에서는 PD-L1 오더를 생성할 수 없습니다.")
+        if not has_pathology_gene_review_completed(locked_case):
+            raise PathologyOrderCreationError(
+                "조직·유전자 검사 결과를 병리사가 의사에게 제출한 뒤 PD-L1 검사를 처방할 수 있습니다."
+            )
 
     if has_active_pathology_order(locked_case, order_type):
         raise PathologyOrderCreationError(

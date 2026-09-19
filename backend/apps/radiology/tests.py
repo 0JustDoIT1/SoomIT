@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from django.db import connection
@@ -782,6 +783,150 @@ class RadiologyWorklistAPITestCase(APITestCase):
         asset = CaseImageAsset.objects.get(id=response.data["id"])
         self.assertEqual(asset.image_type, CaseImageAsset.ImageType.CT)
         self.assertEqual(asset.workflow_stage, WorkflowStage.CT)
+
+    @patch("apps.radiology.views.upload_ct_series")
+    @patch("apps.radiology.views.validate_ct_series")
+    @patch("apps.radiology.views.parse_ct_headers")
+    def test_ct_series_upload_allows_same_data_for_multiple_cases_and_reupload(
+        self, parse_headers, validate_series, upload_series,
+    ):
+        self.order.order_type = ExaminationOrder.OrderType.CT
+        self.order.save(update_fields=["order_type", "updated_at"])
+        second_patient = self._create_patient(self.hospital, "P-CT-SECOND")
+        second_case = self._create_case(second_patient, "CASE-CT-SECOND")
+        second_order = self._create_order(
+            second_case,
+            order_type=ExaminationOrder.OrderType.CT,
+        )
+        parse_headers.return_value = [SimpleNamespace(dicom_bytes=b"same-dicom", study_instance_uid="1.2.3")]
+        upload_series.return_value = SimpleNamespace(
+            orthanc_study_id="same-orthanc-study",
+            orthanc_series_id="same-orthanc-series",
+        )
+        responses = []
+        for order in (self.order, second_order, self.order):
+            responses.append(self.client.post(
+                reverse("radiology:order-ct-series-upload", kwargs={"order_id": order.id}),
+                {
+                    "files": [SimpleUploadedFile("same.dcm", b"same-dicom", content_type="application/dicom")],
+                    "series_instance_uid": "1.2.3.4.5",
+                },
+                format="multipart",
+            ))
+
+        self.assertEqual([response.status_code for response in responses], [201, 201, 201])
+        assets = [CaseImageAsset.objects.get(id=response.data["id"]) for response in responses]
+        self.assertEqual(len({asset.id for asset in assets}), 3)
+        self.assertEqual([asset.case_id for asset in assets], [self.case.id, second_case.id, self.case.id])
+        self.assertEqual([asset.examination_order_id for asset in assets], [self.order.id, second_order.id, self.order.id])
+        self.assertTrue(all(asset.status == CaseImageAsset.Status.READY for asset in assets))
+        self.assertEqual({asset.storage_uri for asset in assets}, {"orthanc://series/same-orthanc-series"})
+
+        ct_model = ModelVersion.objects.create(
+            model_name="ct-isolation-model",
+            version="1.0",
+            analysis_type=AnalysisType.CT_ANALYSIS,
+        )
+        analyses = [AiAnalysis.objects.create(
+            case=asset.case,
+            examination_order=asset.examination_order,
+            source_image_asset=asset,
+            analysis_type=AnalysisType.CT_ANALYSIS,
+            model_version=ct_model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        ) for asset in assets]
+        results = [AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="1.0",
+            result_payload={"asset_id": str(analysis.source_image_asset_id)},
+        ) for analysis in analyses]
+        self.assertEqual(len({analysis.id for analysis in analyses}), 3)
+        self.assertEqual(len({result.id for result in results}), 3)
+        self.assertEqual([analysis.source_image_asset_id for analysis in analyses], [asset.id for asset in assets])
+        self.assertEqual(upload_series.call_count, 3)
+        validate_series.assert_called()
+
+    @patch("apps.radiology.views.upload_ct_series")
+    @patch("apps.radiology.views.validate_pet_series")
+    @patch("apps.radiology.views.parse_ct_headers")
+    def test_pet_series_upload_creates_independent_assets_for_reuploads(
+        self, parse_headers, validate_series, upload_series,
+    ):
+        first_order = self._create_order(
+            self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
+        second_patient = self._create_patient(self.hospital, "P-PET-SECOND")
+        second_case = self._create_case(second_patient, "CASE-PET-SECOND")
+        second_order = self._create_order(
+            second_case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        )
+        parse_headers.return_value = [SimpleNamespace(dicom_bytes=b"same-pet-dicom", study_instance_uid="1.2.3")]
+        upload_series.return_value = SimpleNamespace(
+            orthanc_study_id="same-pet-orthanc-study",
+            orthanc_series_id="same-pet-orthanc-series",
+        )
+
+        responses = []
+        for order in (first_order, first_order, second_order):
+            responses.append(self.client.post(
+                reverse("radiology:order-pet-series-upload", kwargs={"order_id": order.id}),
+                {
+                    "files": [SimpleUploadedFile("same-pet.dcm", b"same-pet-dicom", content_type="application/dicom")],
+                    "series_instance_uid": "1.2.3.4.6",
+                },
+                format="multipart",
+            ))
+
+        self.assertEqual([response.status_code for response in responses], [201, 201, 201])
+        assets = [CaseImageAsset.objects.get(id=response.data["id"]) for response in responses]
+        self.assertEqual(len({asset.id for asset in assets}), 3)
+        self.assertEqual([asset.case_id for asset in assets], [self.case.id, self.case.id, second_case.id])
+        self.assertEqual([asset.examination_order_id for asset in assets], [first_order.id, first_order.id, second_order.id])
+        self.assertTrue(all(asset.image_type == CaseImageAsset.ImageType.PET for asset in assets))
+        self.assertTrue(all(asset.status == CaseImageAsset.Status.READY for asset in assets))
+        self.assertEqual({asset.storage_uri for asset in assets}, {"orthanc://series/same-pet-orthanc-series"})
+        self.assertEqual({asset.orthanc_series_id for asset in assets}, {"same-pet-orthanc-series"})
+
+        with patch("apps.radiology.views.CaseImageAsset.objects.create", side_effect=RuntimeError("asset write failed")), patch(
+            "apps.radiology.views.delete_orthanc_series"
+        ) as delete_series:
+            with self.assertRaises(RuntimeError):
+                self.client.post(
+                    reverse("radiology:order-pet-series-upload", kwargs={"order_id": first_order.id}),
+                    {
+                        "files": [SimpleUploadedFile("same-pet.dcm", b"same-pet-dicom", content_type="application/dicom")],
+                        "series_instance_uid": "1.2.3.4.6",
+                    },
+                    format="multipart",
+                )
+            delete_series.assert_not_called()
+
+        tnm_model = ModelVersion.objects.create(
+            model_name="pet-tnm-isolation-model",
+            version="1.0",
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+        )
+        analyses = [AiAnalysis.objects.create(
+            case=asset.case,
+            examination_order=asset.examination_order,
+            source_image_asset=asset,
+            analysis_type=AnalysisType.PET_CT_TNM_ANALYSIS,
+            model_version=tnm_model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        ) for asset in assets]
+        results = [AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="1.0",
+            result_payload={"source_asset_id": str(analysis.source_image_asset_id)},
+        ) for analysis in analyses]
+        [TnmAiResult.objects.create(ai_result=result) for result in results]
+        self.assertEqual(len({analysis.id for analysis in analyses}), 3)
+        self.assertEqual(len({result.id for result in results}), 3)
+        self.assertEqual([analysis.source_image_asset_id for analysis in analyses], [asset.id for asset in assets])
+        self.assertEqual(upload_series.call_count, 4)
+        self.assertEqual(validate_series.call_count, 4)
 
     def test_create_image_rejects_duplicate_and_other_hospital_order(self):
         payload = self._image_payload()

@@ -179,7 +179,7 @@ class CaseImageAsset(TimestampedUUIDModel):
     )
     storage_uri = models.CharField(
         max_length=1000,
-        unique=True,
+        db_index=True,
     )
     file_format = models.CharField(max_length=20)
 
@@ -196,7 +196,7 @@ class CaseImageAsset(TimestampedUUIDModel):
         max_length=128,
         null=True,
         blank=True,
-        unique=True,
+        db_index=True,
     )
 
     # Orthanc 내부 Study ID입니다.
@@ -212,7 +212,7 @@ class CaseImageAsset(TimestampedUUIDModel):
         max_length=64,
         null=True,
         blank=True,
-        unique=True,
+        db_index=True,
     )
 
     acquired_at = models.DateTimeField(
@@ -231,3 +231,20 @@ class CaseImageAsset(TimestampedUUIDModel):
 
     class Meta:
         db_table = "case_image_assets"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["storage_uri"],
+                condition=~Q(image_type__in=["CT", "PET"]),
+                name="uq_caseimageasset_storage_uri_non_ct",
+            ),
+            models.UniqueConstraint(
+                fields=["series_instance_uid"],
+                condition=~Q(image_type__in=["CT", "PET"]),
+                name="uq_caseimageasset_series_uid_non_ct",
+            ),
+            models.UniqueConstraint(
+                fields=["orthanc_series_id"],
+                condition=~Q(image_type__in=["CT", "PET"]),
+                name="uq_caseimageasset_orthanc_series_non_ct",
+            ),
+        ]

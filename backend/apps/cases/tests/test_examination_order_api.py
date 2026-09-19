@@ -131,6 +131,48 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(work_item.examination_order, order)
         self.assertEqual(work_item.task_type, PathologyWorkItem.TaskType.WSI_UPLOAD)
 
+    def prepare_pathology_gene_submission(self):
+        self.case.current_stage = WorkflowStage.PATHOLOGY_GENE
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        pathology_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            requesting_doctor=self.doctor,
+            purpose="Pathology review",
+        )
+        return PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pathology_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+
+    def test_pdl1_requires_pathologist_submission(self):
+        self.case.current_stage = WorkflowStage.PATHOLOGY_GENE
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        response = self.post_order("PDL1")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(ExaminationOrder.objects.filter(
+            case=self.case, order_type=ExaminationOrder.OrderType.PDL1,
+        ).exists())
+
+    def test_submitted_pathology_gene_result_allows_pdl1_order_and_blocks_duplicate(self):
+        review_item = self.prepare_pathology_gene_submission()
+
+        created = self.post_order("PDL1")
+
+        self.assertEqual(created.status_code, 201)
+        pdl1_order = ExaminationOrder.objects.get(id=created.data["id"])
+        pdl1_work_item = PathologyWorkItem.objects.get(id=created.data["pathology_work_item_id"])
+        self.assertEqual(pdl1_order.order_type, ExaminationOrder.OrderType.PDL1)
+        self.assertNotEqual(pdl1_order.id, review_item.examination_order_id)
+        self.assertEqual(pdl1_work_item.examination_order, pdl1_order)
+        self.assertEqual(pdl1_work_item.task_type, PathologyWorkItem.TaskType.WSI_UPLOAD)
+        self.assertEqual(pdl1_work_item.status, PathologyWorkItem.Status.PENDING)
+        self.assertEqual(self.post_order("PDL1").status_code, 400)
+
     def test_requesting_doctor_can_update_only_ordered_order(self):
         created = self.post_order("XRAY")
         order = ExaminationOrder.objects.get(id=created.data["id"])

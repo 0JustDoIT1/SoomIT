@@ -4,6 +4,7 @@ from apps.accounts.constants import PATHOLOGY_DEPARTMENT_CODE, RADIOLOGY_DEPARTM
 from apps.accounts.models import User
 from apps.clinical.models import ClinicalResult
 from apps.notifications.services import create_in_app_staff_notifications
+from .pathology_orders import has_submitted_pathology_gene_review
 
 from ..models import ExaminationOrder, WorkflowStage
 
@@ -81,11 +82,20 @@ def create_examination_order(
     if order_type not in PREREQUISITE_STAGE:
         raise ExaminationOrderCreationError("지원하지 않는 검사 오더 유형입니다.")
     if prerequisite is not None:
-        if not ClinicalResult.objects.filter(
+        has_confirmed_result = ClinicalResult.objects.filter(
             case=locked_case,
             workflow_stage=prerequisite,
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
-        ).exists():
+        ).exists()
+        has_submitted_pathology_review = (
+            order_type == ExaminationOrder.OrderType.PDL1
+            and has_submitted_pathology_gene_review(locked_case)
+        )
+        if not has_confirmed_result and not has_submitted_pathology_review:
+            if order_type == ExaminationOrder.OrderType.PDL1:
+                raise ExaminationOrderCreationError(
+                    "조직·유전자 검사 결과를 병리사가 의사에게 제출해야 합니다."
+                )
             raise ExaminationOrderCreationError("선행 검사의 전문의 확정 결과가 필요합니다.")
         is_pathology_repeat = (
             allow_repeat_current_stage

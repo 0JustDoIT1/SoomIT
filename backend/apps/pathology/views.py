@@ -689,22 +689,25 @@ class PathologyWorkstationListAPIView(PathologyReadAPIViewMixin, ListAPIView):
                 )
             ).distinct()
 
-        representatives = []
-        seen_case_ids = set()
         ordered_work_items = sorted(
             queryset,
             key=lambda item: (
                 _pathology_order(item).created_at
                 if _pathology_order(item) is not None
                 else item.created_at,
-                item.updated_at,
+                item.created_at,
+                str(item.pk),
             ),
             reverse=True,
         )
+        representatives = []
+        seen_order_ids = set()
         for work_item in ordered_work_items:
-            if work_item.case_id in seen_case_ids:
-                continue
-            seen_case_ids.add(work_item.case_id)
+            order = _pathology_order(work_item)
+            if order is not None:
+                if order.id in seen_order_ids:
+                    continue
+                seen_order_ids.add(order.id)
             representatives.append(work_item)
 
         representatives = [

@@ -66,6 +66,7 @@ from .services.pathology_orders import (
     create_follow_up_pathology_order,
     has_active_pathology_order,
     has_confirmed_pathology_gene_result,
+    has_pathology_gene_review_completed,
 )
 
 
@@ -589,7 +590,7 @@ class DoctorFollowUpPathologyOrderAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        pathology_gene_completed = has_confirmed_pathology_gene_result(case)
+        pathology_gene_completed = has_pathology_gene_review_completed(case)
         return Response(
             {
                 "pathology_gene_review_completed": pathology_gene_completed,
