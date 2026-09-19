@@ -13,6 +13,24 @@ it.each(["NODULE_DETECTED", "INDETERMINATE"])("separates browsing from action el
 });
 
 describe("CaseInfoMenu", () => {
+  it("derives the pathology to PD-L1 states from confirmed results and orders", () => {
+    const pathologyDraft = [{ workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT" }];
+    const pathologyConfirmed = [{ workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED" }];
+    const pdl1Confirmed = [...pathologyConfirmed, { workflow_stage: "PDL1", result_status: "CONFIRMED" }];
+
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PATHOLOGY_GENE", clinicalResults: pathologyDraft })).toMatchObject({ state: "WAITING" });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PATHOLOGY_GENE", clinicalResults: pathologyConfirmed })).toMatchObject({ state: "ACTIONABLE" });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "ORDERED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("오더 요청됨") });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "SCHEDULED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("예약됨") });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("검사/분석 진행 중") });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }], aiResults: [{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("병리과 판독") });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pdl1Confirmed })).toMatchObject({ state: "COMPLETED" });
+    expect(getCaseInfoAccessState({ key: "TREATMENT", currentStage: "PDL1", clinicalResults: pdl1Confirmed })).toMatchObject({ state: "ACTIONABLE" });
+    for (const status of ["COMPLETED", "CANCELLED"]) {
+      expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PATHOLOGY_GENE", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status }] })).toMatchObject({ state: "ACTIONABLE" });
+    }
+  });
+
   it("opens every respiratory workspace from the flat information menu", () => {
     const onSelect = vi.fn();
     render(<CaseInfoMenu selected="PET_CT_TNM" onSelect={onSelect} />);

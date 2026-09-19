@@ -67,16 +67,17 @@ class PulmonologyWritePermissionMixin:
 
 class DoctorTnmDraftAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     def _case_and_order(self, request, case_id):
-        case = LungCancerCase.objects.filter(
+        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
             id=case_id, primary_doctor=request.user, case_status="ACTIVE",
         ).first()
         if case is None:
             return None, None
-        order = ExaminationOrder.objects.filter(
-            case=case, order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        order = ExaminationOrder.objects.select_for_update(of=("self",)).filter(
+            case=case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
         ).order_by("-created_at").first()
         return case, order
 
@@ -92,10 +93,9 @@ class DoctorTnmDraftAPIView(APIView):
         values = serializer.validated_data
         ai_result_id = values["reviewed_ai_result_id"]
         draft = (
-            ClinicalResult.objects.select_for_update()
+            ClinicalResult.objects.select_for_update(of=("self",))
             .filter(
                 case=case, examination_order=order, workflow_stage="PET_CT_TNM",
-                reviewed_ai_result_id=ai_result_id,
             )
             .first()
         )
@@ -116,6 +116,8 @@ class DoctorTnmDraftAPIView(APIView):
                 stage_group="", evidence=values.get("evidence"), note=values.get("note"),
             )
         else:
+            draft.reviewed_ai_result_id = ai_result_id
+            draft.save(update_fields=["reviewed_ai_result", "updated_at"])
             detail = draft.tnm_detail
             detail.t_category = values["t_category"]
             detail.n_category = values["n_category"]
@@ -130,13 +132,18 @@ class DoctorTnmDraftAPIView(APIView):
 
 class DoctorCtResultAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     def _context(self, request, case_id):
-        case = LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user, case_status="ACTIVE").first()
+        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
+            id=case_id, primary_doctor=request.user, case_status="ACTIVE",
+        ).first()
         if case is None:
             return None, None
-        order = ExaminationOrder.objects.filter(case=case, order_type=ExaminationOrder.OrderType.CT).order_by("-created_at").first()
+        order = ExaminationOrder.objects.select_for_update(of=("self",)).filter(
+            case=case,
+            order_type=ExaminationOrder.OrderType.CT,
+        ).order_by("-created_at").first()
         return case, order
 
     @transaction.atomic
@@ -147,7 +154,9 @@ class DoctorCtResultAPIView(APIView):
         serializer = DoctorCtResultWriteSerializer(data=request.data, context={"case": case, "order": order})
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
-        result = ClinicalResult.objects.filter(case=case, examination_order=order, workflow_stage="CT").select_related("ct_detail").first()
+        result = ClinicalResult.objects.select_for_update(of=("self",)).filter(
+            case=case, examination_order=order, workflow_stage="CT",
+        ).first()
         if result is not None and result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
             return Response({"detail": "A confirmed CT result cannot be modified."}, status=409)
         from apps.ai_results.models import AiResult
@@ -169,11 +178,20 @@ class DoctorCtResultAPIView(APIView):
 
 class DoctorCtResultConfirmAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @transaction.atomic
     def post(self, request, case_id, result_id):
-        result = ClinicalResult.objects.select_for_update().filter(id=result_id, case_id=case_id, workflow_stage="CT", case__primary_doctor=request.user, case__case_status="ACTIVE").first()
+        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
+        result = ClinicalResult.objects.select_for_update(of=("self",)).filter(
+            id=result_id,
+            case=case,
+            workflow_stage=WorkflowStage.CT,
+        ).first() if case is not None else None
         if result is None:
             return Response({"detail": "CT result was not found."}, status=404)
         if result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
@@ -216,18 +234,22 @@ class DoctorCtResultConfirmAPIView(APIView):
 
 class DoctorTnmConfirmAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @transaction.atomic
     def post(self, request, case_id, result_id):
+        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
         diagnosis = (
-            ClinicalResult.objects.select_for_update()
+            ClinicalResult.objects.select_for_update(of=("self",))
             .filter(
-                id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
-                case__primary_doctor=request.user,
+                id=result_id, case=case, workflow_stage=WorkflowStage.PET_CT_TNM,
             )
             .first()
-        )
+        ) if case is not None else None
         if diagnosis is None:
             return Response({"detail": "TNM draft was not found."}, status=404)
         if diagnosis.result_status == ClinicalResult.ResultStatus.CONFIRMED:
@@ -244,17 +266,22 @@ class DoctorTnmConfirmAPIView(APIView):
 
 class DoctorTnmStageAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @transaction.atomic
     def post(self, request, case_id, result_id):
+        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
         diagnosis = (
-            ClinicalResult.objects.select_for_update()
-            .filter(id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
+            ClinicalResult.objects.select_for_update(of=("self",))
+            .filter(id=result_id, case=case, workflow_stage=WorkflowStage.PET_CT_TNM,
                     result_status=ClinicalResult.ResultStatus.CONFIRMED,
-                    case__primary_doctor=request.user)
+                    )
             .first()
-        )
+        ) if case is not None else None
         if diagnosis is None:
             return Response({"detail": "A confirmed TNM result was not found."}, status=404)
         detail = diagnosis.tnm_detail
@@ -276,17 +303,22 @@ class DoctorTnmStageAPIView(APIView):
 
 class DoctorTnmStageConfirmAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @transaction.atomic
     def post(self, request, case_id, result_id):
+        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
         diagnosis = (
-            ClinicalResult.objects.select_for_update()
-            .filter(id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
+            ClinicalResult.objects.select_for_update(of=("self",))
+            .filter(id=result_id, case=case, workflow_stage=WorkflowStage.PET_CT_TNM,
                     result_status=ClinicalResult.ResultStatus.CONFIRMED,
-                    case__primary_doctor=request.user)
+                    )
             .first()
-        )
+        ) if case is not None else None
         if diagnosis is None:
             return Response({"detail": "A confirmed TNM result was not found."}, status=404)
         detail = diagnosis.tnm_detail

@@ -61,6 +61,7 @@ from .services.examination_orders import (
 )
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
 from .services.pathology_orders import (
+    ACTIVE_ORDER_STATUSES,
     PathologyOrderCreationError,
     create_follow_up_pathology_order,
     has_active_pathology_order,
@@ -703,11 +704,7 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
             } and not ExaminationOrder.objects.filter(
                 case=case,
                 order_type=target_stage,
-                status__in=[
-                    ExaminationOrder.Status.ORDERED,
-                    ExaminationOrder.Status.SCHEDULED,
-                    ExaminationOrder.Status.COMPLETED,
-                ],
+                status__in=ACTIVE_ORDER_STATUSES,
             ).exists():
                 try:
                     create_examination_order(
@@ -728,11 +725,7 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
             } and not ExaminationOrder.objects.filter(
                 case=case,
                 order_type=target_stage,
-                status__in=[
-                    ExaminationOrder.Status.ORDERED,
-                    ExaminationOrder.Status.SCHEDULED,
-                    ExaminationOrder.Status.COMPLETED,
-                ],
+                status__in=ACTIVE_ORDER_STATUSES,
             ).exists():
                 return Response({"detail": "다음 단계로 진행하려면 해당 검사 오더가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
             case.current_stage = target_stage
@@ -983,11 +976,15 @@ class DoctorCaseConsultationResponseAPIView(APIView):
 
     @transaction.atomic
     def patch(self, request, case_id, consultation_id):
-        consultation = CaseConsultationRequest.objects.select_for_update().select_related("recipient_user", "case", "requested_by_user").filter(id=consultation_id, case_id=case_id).first()
+        consultation = CaseConsultationRequest.objects.select_for_update(of=("self",)).filter(
+            id=consultation_id,
+            case_id=case_id,
+        ).first()
         if consultation is None:
             return Response({"detail": "협진 요청을 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        consultation_case = LungCancerCase.objects.select_related("patient").get(id=consultation.case_id)
         department = getattr(getattr(request.user, "department_role", None), "department", None)
-        can_respond = consultation.recipient_user_id == request.user.id or (consultation.recipient_user_id is None and department is not None and department.code == consultation.target_department_code and department.hospital_id == consultation.case.patient.hospital_id)
+        can_respond = consultation.recipient_user_id == request.user.id or (consultation.recipient_user_id is None and department is not None and department.code == consultation.target_department_code and department.hospital_id == consultation_case.patient.hospital_id)
         if not can_respond:
             return Response({"detail": "이 협진 요청에 회신할 권한이 없습니다."}, status=status.HTTP_403_FORBIDDEN)
         serializer = DoctorCaseConsultationResponseSerializer(data=request.data)

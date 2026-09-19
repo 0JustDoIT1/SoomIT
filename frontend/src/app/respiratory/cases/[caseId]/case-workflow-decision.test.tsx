@@ -19,7 +19,7 @@ it("keeps a failed PD-L1 decision open and retries without a biopsy option", asy
   fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
   expect(screen.queryByRole("option", { name: "재생검" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "치료결정으로 진행" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("선행 결과 확인 필요");
+  expect(await screen.findByRole("alert")).toHaveTextContent("다음 단계 전환에 실패했습니다.");
   expect(onCompleted).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "치료결정으로 진행" }));
   await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledOnce());

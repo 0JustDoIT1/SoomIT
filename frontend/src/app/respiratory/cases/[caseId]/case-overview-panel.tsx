@@ -160,7 +160,6 @@ function FlowItem({ label, state }: { label: string; state: FlowState }) {
 function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalResult[], aiResults: OverviewAiResult[], prescriptions: { id: string; prescription_status?: string }[], orders: { order_type: string; status: string }[]) {
   const hasClinical = (types: string[]) => clinicalResults.some((result) => types.includes(result.workflow_stage) && result.result_status === "CONFIRMED");
   const hasAi = (types: string[]) => aiResults.some((result) => types.includes(result.analysis_type) && result.status === "SUCCEEDED");
-  const hasPdl1Clinical = clinicalResults.some((result) => (result.workflow_stage === "PDL1" || hasPdl1Detail(result.result_detail)) && result.result_status === "CONFIRMED");
   const hasActiveOrder = (type: string) => orders.some((order) => order.order_type === type && ["ORDERED", "SCHEDULED"].includes(order.status));
   const configs = [
     { label: "흉부 X선", stages: ["XRAY"], aiTypes: ["XRAY_ANALYSIS"] },
@@ -172,7 +171,7 @@ function buildFlowItems(currentStage: string, clinicalResults: OverviewClinicalR
     { label: "처방", stages: ["PRESCRIPTION"], aiTypes: [] },
   ];
   return configs.map(({ label, stages, aiTypes }) => {
-    const clinicalConfirmed = hasClinical(stages) || (stages[0] === "PDL1" && hasPdl1Clinical);
+    const clinicalConfirmed = hasClinical(stages);
     const aiCompleted = hasAi(aiTypes);
     const prescriptionRecorded = stages[0] === "PRESCRIPTION" && prescriptions.some((item) => Boolean(item.prescription_status));
     const state = stages.includes(currentStage) ? "current" : clinicalConfirmed ? "confirmed" : aiCompleted ? "ai" : hasActiveOrder(stages[0]) ? "ordered" : prescriptionRecorded ? "recorded" : "empty";
@@ -184,10 +183,6 @@ function appointmentStatusLabel(status?: string | null) {
   if (status === "CONFIRMED") return "예약 확정";
   if (status === "REQUESTED") return "예약 요청";
   return "예약 배정";
-}
-
-function hasPdl1Detail(detail: unknown) {
-  return Boolean(detail && typeof detail === "object" && !Array.isArray(detail) && "pdl1" in detail && (detail as { pdl1?: unknown }).pdl1);
 }
 
 function getClinicalResultLabel(examType: string) {

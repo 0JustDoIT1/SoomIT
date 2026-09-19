@@ -130,7 +130,7 @@ it("does not confirm when saving dirty TNM values fails", async () => {
   render(<TnmReviewWorkspace {...apiProps} authorizedFetch={authorizedFetch} clinicalResultId="saved" clinicalResultStatus="DRAFT" clinicalTnm={{ t_category: "T1", n_category: "N0", m_category: "M0" }} />);
   fireEvent.change(screen.getByLabelText("최종 T 선택"), { target: { value: "T2" } });
   fireEvent.click(screen.getByRole("button", { name: "TNM 결과 확정" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+  expect(await screen.findByRole("alert")).toHaveTextContent("TNM 결과 처리에 실패했습니다.");
   expect(authorizedFetch).toHaveBeenCalledTimes(1);
   expect(authorizedFetch.mock.calls[0][0]).toBe("http://test/api/doctor/cases/case-1/clinical-results/tnm/");
   expect(screen.getByLabelText("최종 T 선택")).toHaveValue("T2");

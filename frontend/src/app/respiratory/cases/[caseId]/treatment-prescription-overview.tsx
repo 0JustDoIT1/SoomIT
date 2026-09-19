@@ -47,7 +47,7 @@ function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: 
   const tnmClinical = confirmed("PET_CT_TNM");
   const pathology = confirmed("PATHOLOGY_GENE");
   const gene = confirmed("PATHOLOGY_GENE");
-  const pdl1Clinical = clinicalResults.find((result) => result.result_status === "CONFIRMED" && getNestedRecord(result.result_detail, "pdl1"));
+  const pdl1Clinical = clinicalResults.find((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED" && getNestedRecord(result.result_detail, "pdl1"));
   const pdl1Ai = completedAi("PDL1_ANALYSIS");
   const tps = getNestedRecord(pdl1Clinical?.result_detail, "pdl1")?.tps_percent;
   const predictedRange = getNestedRecord(pdl1Ai?.result_detail, "pdl1")?.predicted_tps_range_label;

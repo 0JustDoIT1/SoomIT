@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { createExaminationOrder, type ExaminationOrderRequest, type ExaminationOrderType } from "../../_lib/respiratory-api";
+import { showToast } from "@/components/ui/toast/toast";
 
 const ORDER_LABELS: Record<ExaminationOrderType, string> = {
   XRAY: "흉부 X-ray",
@@ -22,6 +23,7 @@ export function StageExaminationOrder({ caseId, orderType, onCreated }: { caseId
   const [order, setOrder] = useState<Omit<ExaminationOrderRequest, "order_type">>({ priority: "NORMAL", purpose: "", clinical_note: "" });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const creatingRef = useRef(false);
   const label = ORDER_LABELS[orderType];
 
   const close = () => {
@@ -55,13 +57,18 @@ export function StageExaminationOrder({ caseId, orderType, onCreated }: { caseId
   }, [creating, open]);
 
   const submit = async () => {
+    if (creatingRef.current) return;
     if (!order.purpose.trim()) {
       setError("검사 목적을 입력해 주세요.");
+      showToast.warning("검사 목적을 입력해 주세요.");
       setReviewing(false);
       return;
     }
+    const toastId = `case-order-${caseId}-${orderType}`;
+    creatingRef.current = true;
     setCreating(true);
     setError("");
+    showToast.info("검사 오더를 처리하고 있습니다.", { id: toastId });
     try {
       await createExaminationOrder(authorizedFetch, caseId, {
         order_type: orderType,
@@ -71,11 +78,15 @@ export function StageExaminationOrder({ caseId, orderType, onCreated }: { caseId
       });
       setOpen(false);
       setReviewing(false);
+      showToast.success(`${label} 검사 오더가 생성되었습니다.`, { id: toastId });
       onCreated?.(orderType);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "검사 오더 생성에 실패했습니다.");
+      console.error(reason);
+      setError("검사 오더 생성에 실패했습니다.");
+      showToast.error("검사 오더 생성에 실패했습니다.", { id: toastId });
       setReviewing(false);
     } finally {
+      creatingRef.current = false;
       setCreating(false);
     }
   };

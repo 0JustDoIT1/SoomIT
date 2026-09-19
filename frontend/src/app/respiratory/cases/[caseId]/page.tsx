@@ -3,7 +3,7 @@
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
-import { useRespiratoryToast } from "../../_components/respiratory-toast-provider";
+import { showToast } from "@/components/ui/toast/toast";
 import { API_BASE_URL, type ExaminationOrder } from "../../_lib/respiratory-api";
 import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-sections";
 import { CaseWorkspaceEmpty } from "./case-workspace-empty";
@@ -34,6 +34,7 @@ import { CaseChangeDialog } from "./case-change-dialog";
 import { CaseWorkflowDecision } from "./case-workflow-decision";
 import { XrayWorkflowDecision } from "./xray-workflow-decision";
 import { CtWorkflowDecision } from "./ct-workflow-decision";
+import { StageExaminationOrder } from "./stage-examination-order";
 import { CaseConsultationRequest } from "./case-consultation-request";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
@@ -432,7 +433,6 @@ export default function RespiratoryCaseDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { authorizedFetch } = useRespiratoryAuth();
-  const { showToast } = useRespiratoryToast();
 
   const caseId = params.caseId as string;
 
@@ -519,43 +519,74 @@ export default function RespiratoryCaseDetailPage() {
   const [panelRetrying, setPanelRetrying] = useState<"AI" | "CLINICAL" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
   const resultSignatureRef = useRef("");
+  const resultRefreshRequestRef = useRef(0);
+  const aiToastStatusRef = useRef(new Map<string, string>());
   activeCaseIdRef.current = caseId;
 
+  useEffect(() => {
+    for (const result of tnmAnalysisResults) {
+      const status = result.status ?? "";
+      const resultKey = result.ai_result_id ?? result.id ?? result.analysis_type;
+      const previousStatus = aiToastStatusRef.current.get(resultKey);
+      if (!status || previousStatus === status) continue;
+      aiToastStatusRef.current.set(resultKey, status);
+      const toastId = `case-ai-status-${caseId}-${resultKey}`;
+      if (status === "PENDING") showToast.info("AI 분석이 시작되었습니다.", { id: toastId });
+      else if (status === "RUNNING") showToast.info("AI 분석이 진행 중입니다.", { id: toastId });
+      else if (status === "FAILED") showToast.error("AI 분석에 실패했습니다.", { id: toastId });
+      else if (status === "SUCCEEDED" && previousStatus) showToast.success("AI 분석이 완료되었습니다.", { id: toastId });
+    }
+  }, [caseId, tnmAnalysisResults]);
+
   const refreshCaseResults = useCallback(async () => {
+    const requestVersion = ++resultRefreshRequestRef.current;
     setResultsSyncing(true);
     try {
-      const [aiResponse, clinicalResponse, ordersResponse] = await Promise.all([
+      const [caseResponse, aiResponse, clinicalResponse, ordersResponse] = await Promise.all([
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/`),
         authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`),
         authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`),
         authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`),
       ]);
-      const [aiPayload, clinicalPayload, ordersPayload] = await Promise.all([
-        aiResponse.ok ? aiResponse.json() : Promise.resolve(null),
-        clinicalResponse.ok ? clinicalResponse.json() : Promise.resolve(null),
-        ordersResponse.ok ? ordersResponse.json() : Promise.resolve(null),
+      if (!caseResponse.ok || !aiResponse.ok || !clinicalResponse.ok || !ordersResponse.ok) {
+        throw new Error("Case workflow refresh failed.");
+      }
+      const [casePayload, aiPayload, clinicalPayload, ordersPayload] = await Promise.all([
+        caseResponse.json(),
+        aiResponse.json(),
+        clinicalResponse.json(),
+        ordersResponse.json(),
       ]);
-      if (!canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) return;
-      if (Array.isArray(aiPayload)) {
-        setTnmAnalysisResults(aiPayload as TnmAnalysisResult[]);
-        setPdl1Results(selectPdl1Results(aiPayload));
+      if (
+        !casePayload || typeof casePayload !== "object" || Array.isArray(casePayload)
+        || !Array.isArray(aiPayload) || !Array.isArray(clinicalPayload) || !Array.isArray(ordersPayload)
+      ) {
+        throw new Error("Case workflow refresh returned an invalid payload.");
       }
-      if (Array.isArray(clinicalPayload)) setTnmClinicalResults(clinicalPayload as TnmClinicalResult[]);
-      if (Array.isArray(ordersPayload)) {
-        setCaseOrders(ordersPayload as ExaminationOrder[]);
-        setOrdersLoaded(true);
+      if (requestVersion !== resultRefreshRequestRef.current || !canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) return;
+      const updatedCase = casePayload as CaseItem;
+      setSelectedCase(updatedCase);
+      setCases((current) => current.map((item) => item.id === updatedCase.id ? updatedCase : item));
+      setTnmAnalysisResults(aiPayload as TnmAnalysisResult[]);
+      setPdl1Results(selectPdl1Results(aiPayload));
+      setTnmClinicalResults(clinicalPayload as TnmClinicalResult[]);
+      setCaseOrders(ordersPayload as ExaminationOrder[]);
+      setOrdersLoaded(true);
+      const signature = `${caseId}:${updatedCase.current_stage}:${resultSyncSignature(aiPayload)}:${resultSyncSignature(clinicalPayload)}:${orderSyncSignature(ordersPayload)}`;
+      const previousSignature = resultSignatureRef.current;
+      if (previousSignature.startsWith(`${caseId}:`) && previousSignature !== signature) {
+        setResultSyncNotice("새 결과 또는 검사 예약 정보가 반영되었습니다.");
+        window.setTimeout(() => setResultSyncNotice(""), 6000);
       }
-      if (Array.isArray(aiPayload) && Array.isArray(clinicalPayload) && Array.isArray(ordersPayload)) {
-        const signature = `${caseId}:${resultSyncSignature(aiPayload)}:${resultSyncSignature(clinicalPayload)}:${orderSyncSignature(ordersPayload)}`;
-        const previousSignature = resultSignatureRef.current;
-        if (previousSignature.startsWith(`${caseId}:`) && previousSignature !== signature) {
-          setResultSyncNotice("새 결과 또는 검사 예약 정보가 반영되었습니다.");
-          window.setTimeout(() => setResultSyncNotice(""), 6000);
-        }
-        resultSignatureRef.current = signature;
-        setLastResultSyncAt(new Date());
+      resultSignatureRef.current = signature;
+      setLastResultSyncAt(new Date());
+    } catch (cause) {
+      console.error(cause);
+      if (requestVersion === resultRefreshRequestRef.current && canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) {
+        showToast.error("최신 Workflow 정보를 불러오지 못했습니다.", { id: `case-results-refresh-${caseId}` });
       }
     } finally {
-      if (canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) setResultsSyncing(false);
+      if (requestVersion === resultRefreshRequestRef.current && canApplyCaseResponse(caseId, activeCaseIdRef.current, false)) setResultsSyncing(false);
     }
   }, [authorizedFetch, caseId]);
 
@@ -696,6 +727,9 @@ export default function RespiratoryCaseDetailPage() {
             setPdl1Results(selectPdl1Results(aiAnalysisPayload));
           });
         } else {
+          const failure = tnmAnalysisRequest.status === "rejected" ? tnmAnalysisRequest.reason : new Error(`AI results HTTP ${tnmAnalysisRequest.value.status}`);
+          console.error(failure);
+          applyCurrentResponse(() => showToast.error("AI 분석 결과를 불러오지 못했습니다.", { id: `case-load-ai-${caseId}` }));
           applyCurrentResponse(() => setAiResultError(
             tnmAnalysisRequest.status === "fulfilled"
               ? getAiResultHttpError(tnmAnalysisRequest.value.status)
@@ -710,6 +744,9 @@ export default function RespiratoryCaseDetailPage() {
 
           applyCurrentResponse(() => setTnmClinicalResults(tnmClinicalData));
         } else {
+          const failure = tnmClinicalRequest.status === "rejected" ? tnmClinicalRequest.reason : new Error(`Clinical results HTTP ${tnmClinicalRequest.value.status}`);
+          console.error(failure);
+          applyCurrentResponse(() => showToast.error("확정 결과를 불러오지 못했습니다.", { id: `case-load-clinical-${caseId}` }));
           applyCurrentResponse(() => setClinicalResultError(
             tnmClinicalRequest.status === "fulfilled"
               ? getClinicalResultHttpError(tnmClinicalRequest.value.status)
@@ -767,6 +804,9 @@ export default function RespiratoryCaseDetailPage() {
 
           applyCurrentResponse(() => setCasePrescriptions(prescriptionData));
         } else {
+          const failure = prescriptionRequest.status === "rejected" ? prescriptionRequest.reason : new Error(`Prescriptions HTTP ${prescriptionRequest.value.status}`);
+          console.error(failure);
+          applyCurrentResponse(() => showToast.error("처방 목록을 불러오지 못했습니다.", { id: `case-load-prescriptions-${caseId}` }));
           applyCurrentResponse(() => setPrescriptionLoadError(
             prescriptionRequest.status === "fulfilled"
               ? getPanelFetchError(prescriptionRequest.value.status, "처방 목록")
@@ -780,8 +820,14 @@ export default function RespiratoryCaseDetailPage() {
             setCaseOrders(Array.isArray(ordersPayload) ? ordersPayload as ExaminationOrder[] : []);
             setOrdersLoaded(true);
           });
+        } else {
+          const failure = ordersRequest.status === "rejected" ? ordersRequest.reason : new Error(`Orders HTTP ${ordersRequest.value.status}`);
+          console.error(failure);
+          applyCurrentResponse(() => showToast.error("검사 오더를 불러오지 못했습니다.", { id: `case-load-orders-${caseId}` }));
         }
       } catch (err) {
+        console.error(err);
+        applyCurrentResponse(() => showToast.error("Case 정보를 불러오지 못했습니다.", { id: `case-load-${caseId}` }));
         applyCurrentResponse(() => setError(
           err instanceof Error
             ? err.message
@@ -863,7 +909,9 @@ export default function RespiratoryCaseDetailPage() {
 
   const retryPanel = async (panel: "REGIMEN" | "TREATMENT" | "PRESCRIPTION") => {
     const requestCaseId = caseId;
+    const toastId = `case-panel-retry-${requestCaseId}-${panel}`;
     setPanelRetrying(panel);
+    showToast.info("정보를 다시 불러오고 있습니다.", { id: toastId });
     try {
       if (panel === "REGIMEN") {
         setRegimenLoadError("");
@@ -874,7 +922,11 @@ export default function RespiratoryCaseDetailPage() {
       } else if (panel === "TREATMENT") {
         setTreatmentLoadError("");
         const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/treatment-decision/`);
-        if (response.status === 404) { if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setCaseTreatmentDecision(null); return; }
+        if (response.status === 404) {
+          if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setCaseTreatmentDecision(null);
+          showToast.success("치료 결정 정보를 다시 확인했습니다.", { id: toastId });
+          return;
+        }
         if (!response.ok) throw new Error(getPanelFetchError(response.status, "치료 결정"));
         const data: CaseTreatmentDecision = await response.json();
         if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) {
@@ -888,12 +940,15 @@ export default function RespiratoryCaseDetailPage() {
         const data: CasePrescription[] = await response.json();
         if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setCasePrescriptions(data);
       }
+      showToast.success("정보를 다시 불러왔습니다.", { id: toastId });
     } catch (retryError) {
       if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      console.error(retryError);
       const message = retryError instanceof Error ? retryError.message : "패널 조회에 실패했습니다.";
       if (panel === "REGIMEN") setRegimenLoadError(message);
       else if (panel === "TREATMENT") setTreatmentLoadError(message);
       else setPrescriptionLoadError(message);
+      showToast.error("정보를 다시 불러오지 못했습니다.", { id: toastId });
     } finally {
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
     }
@@ -901,8 +956,10 @@ export default function RespiratoryCaseDetailPage() {
 
   const retryAiResults = async () => {
     const requestCaseId = caseId;
+    const toastId = `case-ai-retry-${requestCaseId}`;
     setPanelRetrying("AI");
     setAiResultError("");
+    showToast.info("AI 분석 결과를 다시 불러오고 있습니다.", { id: toastId });
 
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/ai-results/`);
@@ -913,8 +970,10 @@ export default function RespiratoryCaseDetailPage() {
 
       setTnmAnalysisResults(Array.isArray(payload) ? payload as TnmAnalysisResult[] : []);
       setPdl1Results(selectPdl1Results(payload));
+      showToast.success("AI 분석 결과를 다시 불러왔습니다.", { id: toastId });
     } catch (retryError) {
       if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      console.error(retryError);
       setAiResultError(
         retryError instanceof TypeError
           ? getAiResultNetworkError()
@@ -922,6 +981,7 @@ export default function RespiratoryCaseDetailPage() {
             ? retryError.message
             : getAiResultNetworkError(),
       );
+      showToast.error("AI 분석 결과를 불러오지 못했습니다.", { id: toastId });
     } finally {
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
     }
@@ -929,8 +989,10 @@ export default function RespiratoryCaseDetailPage() {
 
   const retryClinicalResults = async () => {
     const requestCaseId = caseId;
+    const toastId = `case-clinical-retry-${requestCaseId}`;
     setPanelRetrying("CLINICAL");
     setClinicalResultError("");
+    showToast.info("확정 결과를 다시 불러오고 있습니다.", { id: toastId });
 
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/clinical-results/`);
@@ -938,8 +1000,10 @@ export default function RespiratoryCaseDetailPage() {
 
       const data: TnmClinicalResult[] = await response.json();
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setTnmClinicalResults(data);
+      showToast.success("확정 결과를 다시 불러왔습니다.", { id: toastId });
     } catch (retryError) {
       if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      console.error(retryError);
       setClinicalResultError(
         retryError instanceof TypeError
           ? getClinicalResultNetworkError()
@@ -947,33 +1011,14 @@ export default function RespiratoryCaseDetailPage() {
             ? retryError.message
             : getClinicalResultNetworkError(),
       );
+      showToast.error("확정 결과를 불러오지 못했습니다.", { id: toastId });
     } finally {
       if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setPanelRetrying(null);
     }
   };
 
   const refreshAdvancedCase = async () => {
-    const requestCaseId = caseId;
-    try {
-      const [caseResponse, resultsResponse, ordersResponse] = await Promise.all([
-        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/`),
-        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/clinical-results/`),
-        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/orders/`),
-      ]);
-      if (!caseResponse.ok || !resultsResponse.ok || !ordersResponse.ok) throw new Error("확정은 완료되었지만 최신 진료 정보를 불러오지 못했습니다. 다시 조회해 주세요.");
-      const [updatedCase, results, orders] = await Promise.all([
-        caseResponse.json() as Promise<CaseItem>, resultsResponse.json() as Promise<TnmClinicalResult[]>, ordersResponse.json() as Promise<ExaminationOrder[]>,
-      ]);
-      if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
-      setSelectedCase(updatedCase);
-      setCases((current) => current.map((item) => item.id === updatedCase.id ? updatedCase : item));
-      setTnmClinicalResults(results);
-      setCaseOrders(orders);
-      setOrdersLoaded(true);
-      setClinicalResultError("");
-    } catch (cause) {
-      if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) showToast(cause instanceof Error ? cause.message : "최신 진료 정보를 불러오지 못했습니다.");
-    }
+    await refreshCaseResults();
   };
 
   const handleMainMenuClick = (menu: MainMenu) => {
@@ -1020,7 +1065,7 @@ export default function RespiratoryCaseDetailPage() {
   ) as TnmAnalysisResult | undefined;
 
   const tnmAnalysis = tnmAnalysisResult?.result_detail
-    ? formatAiTnm({ ...tnmAnalysisResult.result_detail.tnm, result_payload: (tnmAnalysisResult.result_detail as { result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> } }).result_payload, ai_result_id: tnmAnalysisResult.id })
+    ? formatAiTnm({ ...tnmAnalysisResult.result_detail.tnm, result_payload: (tnmAnalysisResult.result_detail as { result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> } }).result_payload, ai_result_id: tnmAnalysisResult.ai_result_id })
     : undefined;
 
   const tnmClinicalResult = tnmClinicalResults.find(
@@ -1033,11 +1078,30 @@ export default function RespiratoryCaseDetailPage() {
   const hasFinalPrescription = casePrescriptions.some(
     (prescription) => prescription.prescription_status === "FINAL",
   );
+  const confirmedPathologyResult = tnmClinicalResults.find(
+    (result) => result.workflow_stage === "PATHOLOGY_GENE" && result.result_status === "CONFIRMED",
+  );
+  const confirmedPdl1Result = tnmClinicalResults.find(
+    (result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED",
+  );
+  const activePdl1Order = caseOrders.find(
+    (order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status),
+  );
+  const canCreatePdl1Order = selectedCase?.current_stage === "PATHOLOGY_GENE"
+    && Boolean(confirmedPathologyResult)
+    && !activePdl1Order
+    && !confirmedPdl1Result;
+  const canRetryPdl1StageTransition = selectedCase?.current_stage === "PATHOLOGY_GENE"
+    && Boolean(confirmedPathologyResult)
+    && Boolean(activePdl1Order)
+    && !confirmedPdl1Result;
   const selectedInfoAccess = getCaseInfoAccessState({
     key: selectedInfoMenu,
     currentStage: selectedCase?.current_stage,
     caseStatus: selectedCase?.case_status,
     clinicalResults: tnmClinicalResults,
+    orders: caseOrders,
+    aiResults: tnmAnalysisResults,
   });
   const selectedStageActiveOrder = caseOrders.find(
     (order) => order.order_type === selectedInfoMenu && ["ORDERED", "SCHEDULED"].includes(order.status),
@@ -1053,9 +1117,7 @@ export default function RespiratoryCaseDetailPage() {
   const pdl1ClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PDL1",
   ) as unknown as Pdl1ClinicalResult | undefined;
-  const resolvedPdl1ClinicalResult = pdl1ClinicalResult ?? (
-    geneClinicalResult?.result_detail?.pdl1 ? geneClinicalResult : undefined
-  );
+  const resolvedPdl1ClinicalResult = pdl1ClinicalResult;
 
   const geneAiResult = selectPreferredAiResult(
     tnmAnalysisResults,
@@ -1105,6 +1167,37 @@ export default function RespiratoryCaseDetailPage() {
     tnmAnalysisResults,
     selectedAiType,
   ) as TnmAnalysisResult | undefined;
+
+  const activatePdl1AfterOrderCreation = async () => {
+    if (!confirmedPathologyResult?.id) return;
+    const toastId = `case-pdl1-transition-${caseId}`;
+    showToast.info("PD-L1 단계로 전환하고 있습니다.", { id: toastId });
+    try {
+      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/workflow-decision/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "PROCEED_NEXT_STAGE",
+          source_clinical_result_id: confirmedPathologyResult.id,
+          target_stage: "PDL1",
+          reason: "",
+          retry_purpose: "",
+          retry_priority: "NORMAL",
+          retry_clinical_note: "",
+        }),
+      });
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "PD-L1 단계 활성화에 실패했습니다.");
+      showToast.success("PD-L1 검사 결과 대기 단계로 이동했습니다.", { id: toastId });
+      setStageOrderNotice("PD-L1 오더 요청됨");
+      handleInfoMenuSelect("PDL1");
+    } catch (cause) {
+      console.error(cause);
+      showToast.error("오더는 생성되었지만 다음 단계 전환에 실패했습니다.", { id: toastId });
+    } finally {
+      setCaseRefreshVersion((current) => current + 1);
+    }
+  };
 
   const handleCaseTreatmentDraftSave = async () => {
     if (!caseId) return;
@@ -1209,10 +1302,12 @@ export default function RespiratoryCaseDetailPage() {
   const handleCasePrescriptionCreate = async () => {
     if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
+    const toastId = `case-prescription-create-${caseId}`;
     try {
       setCasePrescriptionWorking(true);
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
+      showToast.info("처방을 저장하고 있습니다.", { id: toastId });
 
       const response = await authorizedFetch(
         `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`,
@@ -1250,10 +1345,11 @@ export default function RespiratoryCaseDetailPage() {
       setCasePrescriptionPhase("INDUCTION");
       setCasePrescriptionCycleStartDate("");
       setCasePrescriptionMessage("처방 DRAFT가 생성되었습니다.");
+      showToast.success("처방이 저장되었습니다.", { id: toastId });
     } catch (err) {
-      setCasePrescriptionError(
-        err instanceof Error ? err.message : "처방 생성에 실패했습니다."
-      );
+      console.error(err);
+      setCasePrescriptionError("처방 저장에 실패했습니다.");
+      showToast.error("처방 저장에 실패했습니다.", { id: toastId });
     } finally {
       setCasePrescriptionWorking(false);
     }
@@ -1267,10 +1363,12 @@ export default function RespiratoryCaseDetailPage() {
   ) => {
     if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
+    const toastId = `case-prescription-item-${caseId}-${itemId}`;
     try {
       setCasePrescriptionWorking(true);
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
+      showToast.info("처방을 저장하고 있습니다.", { id: toastId });
 
       const response = await authorizedFetch(
         `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`,
@@ -1304,12 +1402,11 @@ export default function RespiratoryCaseDetailPage() {
 
       setCasePrescriptions(prescriptionData);
       setCasePrescriptionMessage("처방 약물 정보가 수정되었습니다.");
+      showToast.success("처방이 저장되었습니다.", { id: toastId });
     } catch (err) {
-      setCasePrescriptionError(
-        err instanceof Error
-          ? err.message
-          : "처방 약물 수정에 실패했습니다."
-      );
+      console.error(err);
+      setCasePrescriptionError("처방 저장에 실패했습니다.");
+      showToast.error("처방 저장에 실패했습니다.", { id: toastId });
     } finally {
       setCasePrescriptionWorking(false);
     }
@@ -1428,10 +1525,12 @@ export default function RespiratoryCaseDetailPage() {
 
     if (!confirmed) return;
 
+    const toastId = `case-prescription-finalize-${caseId}-${prescriptionId}`;
     try {
       setCasePrescriptionWorking(true);
       setCasePrescriptionError("");
       setCasePrescriptionMessage("");
+      showToast.info("처방을 확정하고 있습니다.", { id: toastId });
 
       const response = await authorizedFetch(
         `${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/finalize/`,
@@ -1459,12 +1558,11 @@ export default function RespiratoryCaseDetailPage() {
 
       setCasePrescriptions(prescriptionData);
       setCasePrescriptionMessage("처방이 최종 확정되었습니다.");
+      showToast.success("처방이 확정되었습니다.", { id: toastId });
     } catch (err) {
-      setCasePrescriptionError(
-        err instanceof Error
-          ? err.message
-          : "처방 최종 확정에 실패했습니다."
-      );
+      console.error(err);
+      setCasePrescriptionError("처방 최종 확정에 실패했습니다.");
+      showToast.error("처방 확정에 실패했습니다.", { id: toastId });
     } finally {
       setCasePrescriptionWorking(false);
     }
@@ -1489,12 +1587,12 @@ export default function RespiratoryCaseDetailPage() {
       <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
-      <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} onSelect={handleInfoMenuSelect} />
+      <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} orders={caseOrders} aiResults={tnmAnalysisResults} onSelect={handleInfoMenuSelect} />
       <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto p-2 [scrollbar-gutter:stable]">
       <CaseSummaryHeader key={caseId} caseData={selectedCase} />
       <CaseWorkflowBar
         currentStage={selectedCase.current_stage}
-        hasPdl1Result={Boolean(latestPdl1Result || resolvedPdl1ClinicalResult?.result_detail?.pdl1)}
+        hasPdl1Result={Boolean(confirmedPdl1Result)}
       />
 
       {/* A. 담당 환자 목록 */}
@@ -1763,7 +1861,28 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
-<div className="flex shrink-0 items-center gap-2">{selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && (selectedCase.current_stage === "XRAY" ? <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : selectedCase.current_stage === "CT" ? <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed, message }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />)}</div>
+          <div className="flex shrink-0 items-center gap-2">
+            {selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}
+            {stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}
+            {selectedCase?.case_status === "ACTIVE" && canCreatePdl1Order && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
+              <StageExaminationOrder caseId={caseId} orderType="PDL1" onCreated={() => { void activatePdl1AfterOrderCreation(); }} />
+            )}
+            {selectedCase?.case_status === "ACTIVE" && canRetryPdl1StageTransition && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
+              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" triggerLabel="PD-L1 단계 전환 재시도" confirmedResultId={confirmedPathologyResult?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+            )}
+            {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "XRAY" && selectedInfoMenu === "XRAY" && (
+              <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
+            )}
+            {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "CT" && selectedInfoMenu === "CT" && (
+              <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
+            )}
+            {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PDL1" && Boolean(confirmedPdl1Result) && ["PDL1", "TREATMENT"].includes(selectedInfoMenu) && (
+              <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="치료 판단 진행" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+            )}
+            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && !["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(selectedCase.current_stage) && (
+              <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+            )}
+          </div>
         </div>
 
         {selectedInfoAccess.state === "WAITING" && (
@@ -2117,7 +2236,6 @@ export default function RespiratoryCaseDetailPage() {
             apiBaseUrl={API_BASE_URL}
             authorizedFetch={authorizedFetch}
             onTreatmentConfirmed={() => {
-              showToast("치료계획이 확정되어 처방 단계로 이동했습니다.");
               setCaseRefreshVersion((current) => current + 1);
               handleInfoMenuSelect("PRESCRIPTION");
             }}

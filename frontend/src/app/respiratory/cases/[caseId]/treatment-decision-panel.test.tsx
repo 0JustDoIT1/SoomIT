@@ -53,7 +53,7 @@ it("keeps the panel and error after confirmation fails and allows a successful r
   fireEvent.click(await screen.findByRole("button", { name: "결과 입력 및 처리" }));
   const plan = await screen.findByLabelText("치료 계획");
   fireEvent.click(screen.getByRole("button", { name: "치료계획 확정 및 처방 진행" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("확정 실패");
+  expect(await screen.findByRole("alert")).toHaveTextContent("치료계획은 저장되었지만 확정에 실패했습니다.");
   expect(plan).toBeInTheDocument();
   expect(plan).toHaveValue("관찰");
   expect(onTreatmentChanged).not.toHaveBeenCalled();
@@ -75,7 +75,7 @@ it("does not confirm or refresh after a failed save", async () => {
   render(<TreatmentDecisionPanel {...props} authorizedFetch={authorizedFetch} onTreatmentConfirmed={onTreatmentConfirmed} />);
   fireEvent.click(await screen.findByRole("button", { name: "결과 입력 및 처리" }));
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 확정 및 처방 진행" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
+  expect(await screen.findByRole("alert")).toHaveTextContent("치료계획 저장에 실패했습니다.");
   expect(authorizedFetch).toHaveBeenCalledTimes(3);
   expect(onTreatmentConfirmed).not.toHaveBeenCalled();
 });

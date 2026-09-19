@@ -5,6 +5,7 @@ import type { AuthorizedFetch, RegimenCandidate, TreatmentDecision } from "./tre
 import { DecisionModal, DecisionMethodSelect, DecisionStatus, decisionTriggerClass } from "./decision-ui";
 import { TreatmentEvidencePanel } from "./treatment-evidence-panel";
 import { TreatmentOpinionPanel } from "./treatment-opinion-panel";
+import { showToast } from "@/components/ui/toast/toast";
 
 type Props = { actionable?: boolean; caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; onTreatmentChanged?: (decision: TreatmentDecision, confirmed: boolean) => void; onTreatmentConfirmed?: (decision: TreatmentDecision) => void };
 const TYPES = [["CHEMOTHERAPY", "항암화학요법"], ["TARGETED_THERAPY", "표적치료"], ["IMMUNOTHERAPY", "면역치료"], ["COMBINATION", "병합치료"], ["RADIATION", "방사선치료"], ["SURGERY", "수술"], ["SUPPORTIVE_CARE", "완화치료"], ["OBSERVATION", "경과관찰"], ["OTHER", "기타"]] as const;
@@ -52,6 +53,9 @@ export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, 
     if (!actionable || confirmed || submittingRef.current || !treatmentType || !plan.trim()) return;
     submittingRef.current = true;
     setBusy(true); setError("");
+    const toastId = `case-treatment-confirm-${caseId}`;
+    let saved = false;
+    showToast.info("치료계획을 저장하고 있습니다.", { id: toastId });
     try {
       const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-decision/`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -59,15 +63,22 @@ export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, 
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.detail || "치료결정 처리에 실패했습니다.");
+      saved = true;
       const confirmResponse = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-decision/confirm/`, { method: "POST", headers: { "Content-Type": "application/json" } });
       const confirmedPayload = await confirmResponse.json().catch(() => ({}));
       if (!confirmResponse.ok) throw new Error(confirmedPayload.detail || "치료계획 확정에 실패했습니다.");
       const confirmedDecision = confirmedPayload as TreatmentDecision;
       setConfirmed(true);
       setOpen(false);
+      showToast.success("치료계획이 확정되었습니다.", { id: toastId });
       if (onTreatmentConfirmed) onTreatmentConfirmed(confirmedDecision);
       else onTreatmentChanged?.(confirmedDecision, true);
-    } catch (caught) { setError(caught instanceof Error ? caught.message : "치료결정 처리에 실패했습니다."); }
+    } catch (caught) {
+      console.error(caught);
+      const message = saved ? "치료계획은 저장되었지만 확정에 실패했습니다." : "치료계획 저장에 실패했습니다.";
+      setError(message);
+      showToast.error(message, { id: toastId });
+    }
     finally { submittingRef.current = false; setBusy(false); }
   };
 

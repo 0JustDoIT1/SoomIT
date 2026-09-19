@@ -3,6 +3,7 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { DecisionActions, DecisionStatus } from "./decision-ui";
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
+import { showToast } from "@/components/ui/toast/toast";
 
 export type TnmCategory = "T" | "N" | "M";
 type AiTnm = { ai_result_id?: string; predicted_t?: string | null; predicted_n?: string | null; predicted_m?: string | null; predicted_stage_group?: string | null; confidence?: string | number | null; result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> } };
@@ -103,10 +104,25 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
           : { label: "Stage 계산", onClick: calculateStage, disabled: dirty };
   const runNextAction = async () => {
     if (!actionable || submittingRef.current || nextAction.disabled || !authorizedFetch || !apiBaseUrl || !caseId) return;
+    const toastId = `case-tnm-${caseId}`;
     submittingRef.current = true;
     setBusy(true); setError(""); setMessage("");
-    try { await nextAction.onClick(); }
-    catch (cause) { setError(cause instanceof Error ? cause.message : "TNM 결과 처리에 실패했습니다."); }
+    showToast.info("TNM 결과를 처리하고 있습니다.", { id: toastId });
+    try {
+      await nextAction.onClick();
+      const successMessage = nextAction.label === "TNM 초안 저장"
+        ? "TNM 초안이 저장되었습니다."
+        : nextAction.label === "TNM 결과 확정"
+          ? "T/N/M 결과가 확정되었습니다."
+          : nextAction.label === "Stage 계산"
+            ? "TNM Stage가 계산되었습니다."
+            : "TNM 병기가 확정되고 조직·유전자 검사 오더가 생성되었습니다.";
+      showToast.success(successMessage, { id: toastId });
+    } catch (cause) {
+      console.error(cause);
+      setError("TNM 결과 처리에 실패했습니다.");
+      showToast.error("TNM 결과 처리에 실패했습니다.", { id: toastId });
+    }
     finally { submittingRef.current = false; setBusy(false); }
   };
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {

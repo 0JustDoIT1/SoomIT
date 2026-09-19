@@ -8,13 +8,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
-from apps.cases.models import CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.cases.models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.clinical.models import (
     ClinicalResult,
     Prescription,
     Regimen,
     TreatmentDecision,
     TreatmentPhase,
+    TnmResult,
     XrayResult,
 )
 from apps.pathology.models import PathologyWorkItem
@@ -237,6 +238,164 @@ class DoctorExaminationOrderAPITests(TestCase):
             order_type=ExaminationOrder.OrderType.CT,
             status=ExaminationOrder.Status.ORDERED,
         ).exists())
+
+    def test_completed_order_does_not_count_as_the_active_next_order(self):
+        result = self.confirm(WorkflowStage.XRAY)
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Historical CT",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+
+        response = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": "PROCEED_NEXT_STAGE",
+                "source_clinical_result_id": str(result.id),
+                "target_stage": WorkflowStage.CT,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            status=ExaminationOrder.Status.ORDERED,
+        ).exists())
+
+    def test_ct_draft_retry_keeps_one_clinical_result(self):
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="CT review",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        model = ModelVersion.objects.create(
+            model_name="ct-draft-lock-model",
+            version="1.0",
+            analysis_type="CT_ANALYSIS",
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            analysis_type="CT_ANALYSIS",
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        ai_result = AiResult.objects.create(ai_analysis=analysis, schema_version="ct-v1", result_payload={})
+        url = reverse("doctor-ct-result", kwargs={"case_id": self.case.id})
+        payload = {
+            "reviewed_ai_result_id": str(ai_result.id),
+            "overall_assessment": "NODULE_DETECTED",
+            "overall_malignancy_risk": "80.00",
+            "finding_summary": "Stable finding",
+        }
+
+        first = self.client.post(url, payload, format="json")
+        second = self.client.post(url, payload, format="json")
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.data["id"], second.data["id"])
+        self.assertEqual(ClinicalResult.objects.filter(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.CT,
+        ).count(), 1)
+
+    def test_tnm_draft_retry_keeps_one_result_and_stores_indeterminate_m(self):
+        self.case.current_stage = WorkflowStage.PET_CT_TNM
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="TNM review",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        model = ModelVersion.objects.create(
+            model_name="tnm-draft-lock-model",
+            version="1.0",
+            analysis_type="PET_CT_TNM_ANALYSIS",
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            analysis_type="PET_CT_TNM_ANALYSIS",
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        ai_result = AiResult.objects.create(ai_analysis=analysis, schema_version="tnm-v1", result_payload={})
+        url = reverse("doctor-tnm-draft", kwargs={"case_id": self.case.id})
+        payload = {
+            "reviewed_ai_result_id": str(ai_result.id),
+            "t_category": "T2",
+            "n_category": "N0",
+            "m_category": "M_indeterminate",
+        }
+
+        first = self.client.post(url, payload, format="json")
+        second = self.client.post(url, payload, format="json")
+
+        replacement_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            analysis_type="PET_CT_TNM_ANALYSIS",
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        replacement_ai_result = AiResult.objects.create(
+            ai_analysis=replacement_analysis,
+            schema_version="tnm-v1",
+            result_payload={},
+        )
+        replacement_payload = {**payload, "reviewed_ai_result_id": str(replacement_ai_result.id)}
+        replacement = self.client.post(url, replacement_payload, format="json")
+
+        self.assertEqual(first.status_code, 201)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(replacement.status_code, 200)
+        self.assertEqual(first.data["id"], second.data["id"])
+        self.assertEqual(first.data["id"], replacement.data["id"])
+        results = ClinicalResult.objects.filter(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PET_CT_TNM,
+        )
+        self.assertEqual(results.count(), 1)
+        self.assertEqual(results.get().reviewed_ai_result_id, replacement_ai_result.id)
+        self.assertEqual(TnmResult.objects.get(clinical_result=results.get()).m_category, "M_indeterminate")
+
+    def test_department_wide_consultation_response_locks_only_the_request(self):
+        consultation = CaseConsultationRequest.objects.create(
+            case=self.case,
+            requested_by_user=self.doctor,
+            recipient_user=None,
+            target_department_code="PULMONOLOGY",
+            question="Please review",
+        )
+
+        response = self.client.patch(
+            reverse(
+                "doctor-case-consultation-response",
+                kwargs={"case_id": self.case.id, "consultation_id": consultation.id},
+            ),
+            {"status": "RESPONDED", "response_note": "Reviewed"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        consultation.refresh_from_db()
+        self.assertEqual(consultation.status, CaseConsultationRequest.Status.RESPONDED)
 
     def test_workflow_rejects_case_closure_without_a_final_prescription(self):
         result = self.prepare_prescription_stage(Prescription.PrescriptionStatus.DRAFT)
