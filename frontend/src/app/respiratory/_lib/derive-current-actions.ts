@@ -28,6 +28,24 @@ const STAGE_CONFIG: Record<string, { clinicalTitle: string; aiTitle: string; aiT
 export function deriveCurrentActions(caseDetail: ActionCase, clinicalResults: ActionClinicalResult[], aiResults: ActionAiResult[], prescriptions: ActionPrescription[], orders: ActionOrder[] = []): CurrentAction[] {
   if (caseDetail.case_status !== "ACTIVE") return [];
   const actions: CurrentAction[] = [];
+  const pathologyConfirmed = clinicalResults.some((result) => result.workflow_stage === "PATHOLOGY_GENE" && result.result_status === "CONFIRMED");
+  const pdl1Confirmed = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED");
+  const activePdl1Order = orders.find((order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status));
+  const completedPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "COMPLETED");
+  const pdl1AiCompleted = aiResults.some((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
+
+  if (pdl1Confirmed && ["PATHOLOGY_GENE", "PDL1"].includes(caseDetail.current_stage)) {
+    return [{ id: `treatment-after-pdl1-${caseDetail.id}`, title: "PD-L1 확정 결과 기반 치료 판단", source: "SPECIALIST", sourceLabel: "호흡기내과", status: "치료 결정 가능", href: `/respiratory/cases/${caseDetail.id}`, target: "TREATMENT" }];
+  }
+  if (["PATHOLOGY_GENE", "PDL1"].includes(caseDetail.current_stage) && activePdl1Order) {
+    return [{ id: `order-${activePdl1Order.id}`, title: "PD-L1 검사 진행 상태 확인", source: "ORDER", sourceLabel: "PD-L1 검사 오더", status: getOrderActionStatus(activePdl1Order), href: `/respiratory/cases/${caseDetail.id}`, target: "PDL1" }];
+  }
+  if (caseDetail.current_stage === "PDL1" && completedPdl1Order) {
+    return [{ id: `order-${completedPdl1Order.id}`, title: "PD-L1 검사 진행 상태 확인", source: "ORDER", sourceLabel: "PD-L1 검사 오더", status: pdl1AiCompleted ? "병리과 판독 대기" : "검사/분석 진행 중", href: `/respiratory/cases/${caseDetail.id}`, target: "PDL1" }];
+  }
+  if (caseDetail.current_stage === "PATHOLOGY_GENE" && pathologyConfirmed) {
+    return [{ id: `order-pdl1-${caseDetail.id}`, title: "PD-L1 검사 오더", source: "ORDER", sourceLabel: "다음 검사 요청", status: "오더 필요", href: `/respiratory/cases/${caseDetail.id}`, target: "PDL1" }];
+  }
   const config = STAGE_CONFIG[caseDetail.current_stage];
   const clinical = clinicalResults.find((result) => result.workflow_stage === caseDetail.current_stage && Boolean(result.result_status));
 
@@ -56,8 +74,7 @@ export function deriveCurrentActions(caseDetail: ActionCase, clinicalResults: Ac
       });
     });
 
-  const pdl1Clinical = clinicalResults.find((result) => result.workflow_stage === "PDL1" && Boolean(result.result_status))
-    ?? clinicalResults.find((result) => result.workflow_stage !== "PDL1" && hasPdl1Detail(result.result_detail) && Boolean(result.result_status));
+  const pdl1Clinical = clinicalResults.find((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED");
   const pdl1Ai = aiResults.find((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
   if (caseDetail.current_stage !== "PDL1" && pdl1Clinical?.result_status) {
     actions.push({ id: `clinical-pdl1-${pdl1Clinical.id ?? caseDetail.id}`, title: "PD-L1 확정 TPS 확인", source: "SPECIALIST", sourceLabel: "전문과 의료진 결과", status: pdl1Clinical.result_status_label ?? pdl1Clinical.result_status, href: `/respiratory/cases/${caseDetail.id}`, target: "PDL1" });
@@ -97,8 +114,4 @@ function getOrderActionStatus(order: ActionOrder) {
   const date = new Date(order.scheduled_at);
   const formattedDate = Number.isNaN(date.getTime()) ? order.scheduled_at : date.toLocaleString("ko-KR");
   return `${appointmentLabel} · ${formattedDate}`;
-}
-
-function hasPdl1Detail(detail: unknown) {
-  return Boolean(detail && typeof detail === "object" && !Array.isArray(detail) && "pdl1" in detail && (detail as { pdl1?: unknown }).pdl1);
 }

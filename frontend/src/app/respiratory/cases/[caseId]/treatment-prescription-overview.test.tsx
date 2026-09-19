@@ -25,7 +25,7 @@ describe("TreatmentPrescriptionOverview", () => {
         clinicalResults={[
           { workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정" },
           { workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED" },
-          { workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 55 } } },
+          { workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 55 } } },
         ]}
         aiResults={[
           { analysis_type: "PET_CT_TNM_ANALYSIS", status: "SUCCEEDED", status_label: "성공" },

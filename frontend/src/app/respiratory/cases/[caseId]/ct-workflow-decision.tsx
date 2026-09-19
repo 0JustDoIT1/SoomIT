@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { API_BASE_URL } from "../../_lib/respiratory-api";
 import { DecisionModal, DecisionMethodSelect, DecisionReasonFields, decisionInputClass, decisionTriggerClass } from "./decision-ui";
+import { showToast } from "@/components/ui/toast/toast";
 
 type Action = "PROCEED_NEXT_STAGE" | "REFERRED_OUT";
 type CtWorkflowDecisionProps = {
@@ -70,6 +71,9 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
     }
     submittingRef.current = true;
     setBusy(true); setError("");
+    const toastId = `case-ct-result-${caseId}`;
+    let confirmationCompleted = Boolean(resultId);
+    showToast.info("검사 결과를 처리하고 있습니다.", { id: toastId });
     const post = async (path: string, body: object) => {
       const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
       const data = await response.json().catch(() => ({}));
@@ -86,6 +90,7 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
         if (!draft.id) throw new Error("저장된 CT 결과를 확인할 수 없습니다.");
         uncertainConfirmation.current = draft.id;
         await post(`clinical-results/ct/${draft.id}/confirm/`, { advance_to_next_stage: action === "PROCEED_NEXT_STAGE" });
+        confirmationCompleted = true;
         uncertainConfirmation.current = null;
         sourceId = draft.id as string;
         setConfirmedId(sourceId);
@@ -97,15 +102,23 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
         await post("workflow-decision/", { action, source_clinical_result_id: sourceId, target_stage: action === "PROCEED_NEXT_STAGE" ? "PET_CT_TNM" : null, reason });
       }
       setOpen(false);
-      onCompleted({ closed: action !== "PROCEED_NEXT_STAGE", message: action === "REFERRED_OUT" ? "CT 결과를 확정하고 의뢰·전원 처리했습니다." : "PET-CT/TNM 단계가 활성화되었습니다." });
+      const message = action === "REFERRED_OUT" ? "CT 결과를 확정하고 의뢰·전원 처리했습니다." : "CT 결과가 확정되어 PET-CT/TNM 단계가 활성화되었습니다.";
+      showToast.success(message, { id: toastId });
+      onCompleted({ closed: action !== "PROCEED_NEXT_STAGE", message });
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "CT 결과 처리에 실패했습니다.");
+      console.error(cause);
       // Confirmation may have committed even when advancement or its response failed.
       // Reconcile via reads; never guess that it is safe to overwrite the draft.
       if (uncertainConfirmation.current) {
-        try { await reconcileConfirmation(); }
+        try {
+          const recovered = await reconcileConfirmation();
+          confirmationCompleted = Boolean(recovered.id);
+        }
         catch { /* Keep the original error and reconcile again before the next write. */ }
       }
+      const message = confirmationCompleted ? "검사 결과는 확정되었지만 다음 단계 전환에 실패했습니다." : "CT 결과 처리에 실패했습니다.";
+      setError(message);
+      showToast.error(message, { id: toastId });
     } finally {
       submittingRef.current = false; setBusy(false);
     }

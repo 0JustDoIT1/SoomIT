@@ -17,8 +17,9 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from apps.accounts.constants import PATHOLOGY_DEPARTMENT_CODE
 from apps.accounts.models import DepartmentRole
 from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnologist
-from apps.ai_results.models import AiAnalysis, AnalysisType, ModelVersion
+from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, ModelVersion
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.cases.services.pathology_orders import ACTIVE_ORDER_STATUSES
 from apps.clinical.models import ClinicalResult, PDL1Result
 from apps.radiology.views import _PassthroughContentNegotiation
 
@@ -605,7 +606,8 @@ class CasePDL1AnalysisRunAPIView(PathologyStaffAPIViewMixin, APIView):
             ExaminationOrder.objects.select_for_update().filter(
                 case=case,
                 order_type=ExaminationOrder.OrderType.PDL1,
-            ).exclude(status=ExaminationOrder.Status.CANCELLED).order_by("-created_at").first()
+                status__in=ACTIVE_ORDER_STATUSES,
+            ).order_by("-created_at").first()
         )
         if order is None:
             raise ValidationError({"detail": "This case has no active independent PD-L1 order."})
@@ -886,33 +888,36 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
         serializer.is_valid(raise_exception=True)
         hospital_id = pathology_hospital_id(request)
         case = get_object_or_404(
-            LungCancerCase.objects.select_for_update().select_related("patient"),
+            LungCancerCase.objects.select_for_update(of=("self",)).select_related("patient"),
             id=case_id,
             patient__hospital_id=hospital_id,
         )
-        order = get_object_or_404(
-            ExaminationOrder.objects.select_for_update(),
-            case=case,
-            order_type=ExaminationOrder.OrderType.PDL1,
-        )
         wsi = get_object_or_404(
-            WholeSlideImage.objects.select_for_update().select_related("image_asset", "specimen"),
+            WholeSlideImage.objects.select_for_update(of=("self",)).select_related("image_asset", "specimen"),
             id=serializer.validated_data["source_wsi_id"],
             specimen__case=case,
-            specimen__examination_order=order,
+            specimen__examination_order__order_type=ExaminationOrder.OrderType.PDL1,
             stain=WholeSlideImage.Stain.PDL1,
             is_current=True,
             image_asset__status=CaseImageAsset.Status.READY,
         )
+        order = get_object_or_404(
+            ExaminationOrder.objects.select_for_update(of=("self",)),
+            id=wsi.specimen.examination_order_id,
+            case=case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            status__in=ACTIVE_ORDER_STATUSES,
+        )
         analysis = get_object_or_404(
-            AiAnalysis.objects.select_for_update().select_related("ai_result"),
+            AiAnalysis.objects.select_for_update(of=("self",)),
             id=serializer.validated_data["ai_analysis_id"],
             case=case,
             examination_order=order,
             analysis_type=AnalysisType.PDL1_ANALYSIS,
             status=AiAnalysis.Status.SUCCEEDED,
         )
-        if not hasattr(analysis, "ai_result"):
+        ai_result = AiResult.objects.filter(ai_analysis=analysis).first()
+        if ai_result is None:
             raise ValidationError({"ai_analysis_id": "A succeeded PD-L1 AI result is required."})
         if analysis.source_image_asset_id != wsi.image_asset_id:
             raise ValidationError({"ai_analysis_id": "The PD-L1 analysis must use the selected source WSI."})
@@ -930,7 +935,7 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
                 examination_order=order,
                 workflow_stage=WorkflowStage.PDL1,
                 source_image_asset=wsi.image_asset,
-                reviewed_ai_result=analysis.ai_result,
+                reviewed_ai_result=ai_result,
                 result_status=ClinicalResult.ResultStatus.CONFIRMED,
                 confirmed_by_user=request.user,
                 confirmed_at=timezone.now(),
@@ -944,7 +949,7 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
             )
         else:
             clinical_result.source_image_asset = wsi.image_asset
-            clinical_result.reviewed_ai_result = analysis.ai_result
+            clinical_result.reviewed_ai_result = ai_result
             clinical_result.result_status = ClinicalResult.ResultStatus.CONFIRMED
             clinical_result.confirmed_by_user = request.user
             clinical_result.confirmed_at = timezone.now()

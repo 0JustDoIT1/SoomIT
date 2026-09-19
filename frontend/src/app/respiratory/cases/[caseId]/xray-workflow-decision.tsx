@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { DecisionModal, DecisionMethodSelect, DecisionReasonFields, decisionInputClass, decisionTriggerClass } from "./decision-ui";
 import { API_BASE_URL } from "../../_lib/respiratory-api";
+import { showToast } from "@/components/ui/toast/toast";
 
 type Action = "ORDER_CT" | "REFERRED_OUT" | "CLOSE_CASE";
 type Props = { caseId: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (result: { closed: boolean; messages: string[] }) => void };
@@ -27,6 +28,8 @@ export function XrayWorkflowDecision({ caseId, authorizedFetch, onCompleted }: P
     if (!action || submittingRef.current || (action === "ORDER_CT" ? !purpose.trim() : !reason.trim())) return;
     submittingRef.current = true;
     setBusy(true); setError("");
+    const toastId = `case-xray-result-${caseId}`;
+    showToast.info("검사 결과를 처리하고 있습니다.", { id: toastId });
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/xray-workflow/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ assessment, finding_summary: summary, next_action: action, priority, purpose, clinical_note: "", closure_reason: reason }) });
       const body: unknown = await response.json().catch(() => null);
@@ -34,8 +37,14 @@ export function XrayWorkflowDecision({ caseId, authorizedFetch, onCompleted }: P
       const result = body as { case_status?: string };
       setAction(null);
       setError("");
-      onCompleted({ closed: result.case_status !== "ACTIVE", messages: action === "ORDER_CT" ? ["검사 결과가 확정되었습니다.", "흉부 CT 오더가 생성되었습니다."] : action === "REFERRED_OUT" ? ["검사 결과가 확정되었습니다.", "의뢰·전원 처리되었습니다."] : ["검사 결과가 확정되었습니다.", "검사가 종료되었습니다."] });
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "X-ray 결과 처리에 실패했습니다. 네트워크 연결을 확인해 주세요."); }
+      const messages = action === "ORDER_CT" ? ["검사 결과가 확정되었습니다.", "흉부 CT 오더가 생성되었습니다."] : action === "REFERRED_OUT" ? ["검사 결과가 확정되었습니다.", "의뢰·전원 처리되었습니다."] : ["검사 결과가 확정되었습니다.", "검사가 종료되었습니다."];
+      showToast.success(messages.join(" "), { id: toastId });
+      onCompleted({ closed: result.case_status !== "ACTIVE", messages });
+    } catch (cause) {
+      console.error(cause);
+      setError("X-ray 결과 처리에 실패했습니다.");
+      showToast.error("검사 결과 처리에 실패했습니다.", { id: toastId });
+    }
     finally { submittingRef.current = false; setBusy(false); }
   };
   const title = action === "ORDER_CT" ? "결과 확정 및 CT 오더 생성" : action === "REFERRED_OUT" ? "결과 확정 및 의뢰 처리" : "결과 확정 및 Case 종료";

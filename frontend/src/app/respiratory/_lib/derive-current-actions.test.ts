@@ -31,18 +31,18 @@ describe("deriveCurrentActions", () => {
     expect(deriveCurrentActions({ ...activeCase, case_status: "CLOSED" }, [{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED" }], [], [])).toEqual([]);
   });
 
-  it("creates PD-L1 work only from an actual clinical or AI result", () => {
+  it("creates a PD-L1 order action only after pathology confirmation", () => {
     expect(deriveCurrentActions({ ...activeCase, current_stage: "PATHOLOGY_GENE" }, [], [], [])).toEqual([]);
     const actions = deriveCurrentActions(
       { ...activeCase, current_stage: "PATHOLOGY_GENE" },
-      [{ id: "gene-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { pdl1: { tps_percent: 40 } } }],
+      [{ id: "gene-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_status_label: "확정" }],
       [],
       [],
     );
-    expect(actions).toEqual(expect.arrayContaining([expect.objectContaining({ title: "PD-L1 확정 TPS 확인", target: "PDL1", source: "SPECIALIST" })]));
+    expect(actions).toEqual([expect.objectContaining({ title: "PD-L1 검사 오더", target: "PDL1", source: "ORDER", status: "오더 필요" })]);
   });
 
-  it("uses the dedicated PDL1 clinical result without duplicating current-stage work", () => {
+  it("changes the current work to treatment only after a dedicated confirmed PDL1 result", () => {
     const actions = deriveCurrentActions(
       { ...activeCase, current_stage: "PDL1" },
       [{ id: "pdl1-1", workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 50 } } }],
@@ -50,8 +50,44 @@ describe("deriveCurrentActions", () => {
       [],
     );
 
-    expect(actions).toHaveLength(2);
-    expect(actions.filter((action) => action.target === "PDL1")).toHaveLength(2);
+    expect(actions).toEqual([expect.objectContaining({ title: "PD-L1 확정 결과 기반 치료 판단", target: "TREATMENT", status: "치료 결정 가능" })]);
+  });
+
+  it.each([
+    ["ORDERED", "오더 요청됨"],
+    ["SCHEDULED", "예약됨"],
+    ["COMPLETED", "검사/분석 진행 중"],
+  ])("keeps PD-L1 waiting for a %s order without a confirmed result", (status, expectedStatus) => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "PDL1" },
+      [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED" }],
+      [],
+      [],
+      [{ id: "pdl1-order", order_type: "PDL1", order_type_label: "PD-L1 검사", status }],
+    );
+    expect(actions).toEqual([expect.objectContaining({ title: "PD-L1 검사 진행 상태 확인", target: "PDL1", status: expect.stringContaining(expectedStatus) })]);
+  });
+
+  it("marks a completed PD-L1 analysis as pathology review waiting", () => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "PDL1" },
+      [],
+      [{ id: "pdl1-ai", analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }],
+      [],
+      [{ id: "pdl1-order", order_type: "PDL1", status: "COMPLETED" }],
+    );
+    expect(actions[0]).toMatchObject({ status: "병리과 판독 대기", target: "PDL1" });
+  });
+
+  it.each(["COMPLETED", "CANCELLED"])("does not treat a historical %s PD-L1 order as active in pathology", (status) => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "PATHOLOGY_GENE" },
+      [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED" }],
+      [],
+      [],
+      [{ id: "old-pdl1", order_type: "PDL1", status }],
+    );
+    expect(actions).toEqual([expect.objectContaining({ title: "PD-L1 검사 오더", status: "오더 필요" })]);
   });
 
   it("opens gene review in the combined pathology and gene workspace", () => {

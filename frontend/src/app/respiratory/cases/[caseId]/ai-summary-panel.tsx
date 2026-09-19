@@ -149,7 +149,7 @@ function ComparisonBadge({ comparison }: { comparison: Comparison }) {
 }
 
 function findClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[]) {
-  if (type === "PDL1_ANALYSIS") return results.find((item) => item.result_status === "CONFIRMED" && getRecord(item.result_detail, "pdl1"));
+  if (type === "PDL1_ANALYSIS") return results.find((item) => item.workflow_stage === "PDL1" && item.result_status === "CONFIRMED");
   return results.find((item) => examTypes.includes(item.workflow_stage) && item.result_status === "CONFIRMED");
 }
 

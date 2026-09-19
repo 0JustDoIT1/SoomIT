@@ -5,6 +5,8 @@ export type CaseInfoClinicalResult = {
   result_status?: string;
   result_detail?: { ct?: { overall_assessment?: string | null } };
 };
+export type CaseInfoOrder = { order_type: string; status: string };
+export type CaseInfoAiResult = { analysis_type: string; status?: string };
 
 const ITEMS: { key: CaseInfoKey; label: string }[] = [
   { key: "OVERVIEW", label: "전체 요약" },
@@ -35,13 +37,18 @@ const WAITING_MESSAGES: Partial<Record<CaseInfoKey, string>> = {
   PRESCRIPTION: "치료계획 최종 확정이 필요합니다.",
 };
 
-export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE", clinicalResults = [] }: { key: CaseInfoKey; currentStage?: string; caseStatus?: string; clinicalResults?: CaseInfoClinicalResult[] }) {
+export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE", clinicalResults = [], orders = [], aiResults = [] }: { key: CaseInfoKey; currentStage?: string; caseStatus?: string; clinicalResults?: CaseInfoClinicalResult[]; orders?: CaseInfoOrder[]; aiResults?: CaseInfoAiResult[] }) {
   const itemIndex = WORKFLOW_STAGES.indexOf(key);
   if (itemIndex < 0) return { state: "OPEN" as const, message: "" };
 
   const currentIndex = WORKFLOW_STAGES.indexOf(currentStage as CaseInfoKey);
   const confirmed = clinicalResults.some((result) => result.workflow_stage === key && result.result_status === "CONFIRMED");
   const confirmedCt = clinicalResults.find((result) => result.workflow_stage === "CT" && result.result_status === "CONFIRMED");
+  const pathologyConfirmed = clinicalResults.some((result) => result.workflow_stage === "PATHOLOGY_GENE" && result.result_status === "CONFIRMED");
+  const pdl1Confirmed = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED");
+  const activePdl1Order = orders.find((order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status));
+  const completedPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "COMPLETED");
+  const pdl1AiCompleted = aiResults.some((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
   const ctRequiresFurtherEvaluation = ["NODULE_DETECTED", "INDETERMINATE"].includes(
     confirmedCt?.result_detail?.ct?.overall_assessment ?? "",
   );
@@ -53,6 +60,29 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
       return { state: "LOCKED" as const, message: "Case가 종료되어 이후 진료 단계는 사용할 수 없습니다." };
     }
     return { state: confirmed ? "COMPLETED" as const : "LOCKED" as const, message: "Case가 종료되었습니다." };
+  }
+
+  if (key === "PDL1") {
+    if (pdl1Confirmed) return { state: "COMPLETED" as const, message: "PD-L1 병리과 최종 확정이 완료되었습니다." };
+    if (activePdl1Order) {
+      const message = activePdl1Order.status === "ORDERED"
+        ? "PD-L1 오더 요청됨 · 병리과 접수를 기다리고 있습니다."
+        : activePdl1Order.status === "SCHEDULED"
+          ? "PD-L1 검사 예약됨 · 검사 진행을 기다리고 있습니다."
+          : "PD-L1 검사/분석 진행 중입니다.";
+      return { state: "WAITING" as const, message };
+    }
+    if (currentStage === "PDL1" && completedPdl1Order) {
+      return { state: "WAITING" as const, message: pdl1AiCompleted ? "PD-L1 분석 완료 · 병리과 판독을 기다리고 있습니다." : "PD-L1 검사/분석 진행 중입니다." };
+    }
+    if (pathologyConfirmed) return { state: "ACTIONABLE" as const, message: "PD-L1 검사 오더를 요청할 수 있습니다." };
+    if (currentIndex >= WORKFLOW_STAGES.indexOf("PATHOLOGY_GENE")) {
+      return { state: "WAITING" as const, message: "조직·유전자 병리과 최종 확정 결과가 필요합니다." };
+    }
+  }
+
+  if (key === "TREATMENT" && pdl1Confirmed && currentIndex <= WORKFLOW_STAGES.indexOf("TREATMENT")) {
+    return { state: "ACTIONABLE" as const, message: "PD-L1 확정 결과를 바탕으로 치료 판단을 진행할 수 있습니다." };
   }
 
   if (confirmed && itemIndex < currentIndex) return { state: "COMPLETED" as const, message: "" };
@@ -72,7 +102,7 @@ const STATUS_LABEL: Record<CaseInfoAccessState, string> = {
   OPEN: "",
 };
 
-export function CaseInfoMenu({ selected, currentStage, caseStatus, clinicalResults, onSelect }: { selected: CaseInfoKey; currentStage?: string; caseStatus?: string; clinicalResults?: CaseInfoClinicalResult[]; onSelect: (key: CaseInfoKey) => void }) {
+export function CaseInfoMenu({ selected, currentStage, caseStatus, clinicalResults, orders, aiResults, onSelect }: { selected: CaseInfoKey; currentStage?: string; caseStatus?: string; clinicalResults?: CaseInfoClinicalResult[]; orders?: CaseInfoOrder[]; aiResults?: CaseInfoAiResult[]; onSelect: (key: CaseInfoKey) => void }) {
 
   return (
     <aside className="flex min-h-0 w-[108px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fbff] py-3 xl:w-[116px]">
@@ -87,7 +117,7 @@ export function CaseInfoMenu({ selected, currentStage, caseStatus, clinicalResul
             <div className="space-y-0.5">
               {group.keys.map((key) => {
                 const item = ITEMS.find((candidate) => candidate.key === key)!;
-                const access = getCaseInfoAccessState({ key: item.key, currentStage, caseStatus, clinicalResults });
+                const access = getCaseInfoAccessState({ key: item.key, currentStage, caseStatus, clinicalResults, orders, aiResults });
                 const locked = access.state === "LOCKED";
                 const isCurrent = item.key === currentStage;
                 return (

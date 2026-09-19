@@ -10,7 +10,17 @@ from django.test import SimpleTestCase
 
 from apps.cases.models import WorkflowStage
 from apps.cases.views import DoctorCaseWorkflowDecisionAPIView
-from apps.clinical.views import DoctorTnmStageConfirmAPIView
+from apps.clinical.models import TnmResult
+from apps.clinical.serializers import TNM_M_VALUES
+from apps.clinical.views import (
+    PULMONOLOGY_WRITE_PERMISSIONS,
+    DoctorCtResultAPIView,
+    DoctorCtResultConfirmAPIView,
+    DoctorTnmConfirmAPIView,
+    DoctorTnmDraftAPIView,
+    DoctorTnmStageAPIView,
+    DoctorTnmStageConfirmAPIView,
+)
 from apps.cases.services.examination_orders import ExaminationOrderCreationError
 
 
@@ -61,16 +71,36 @@ class TnmWorkflowValidationTests(SimpleTestCase):
             with self.subTest(action=action):
                 self.workflow("", action=action)
 
+    def test_tnm_m_storage_fits_every_supported_value(self):
+        self.assertGreaterEqual(
+            TnmResult._meta.get_field("m_category").max_length,
+            max(len(value) for value in TNM_M_VALUES),
+        )
+
+    def test_ct_and_tnm_write_endpoints_require_pulmonology_permissions(self):
+        for view in (
+            DoctorCtResultAPIView,
+            DoctorCtResultConfirmAPIView,
+            DoctorTnmDraftAPIView,
+            DoctorTnmConfirmAPIView,
+            DoctorTnmStageAPIView,
+            DoctorTnmStageConfirmAPIView,
+        ):
+            with self.subTest(view=view.__name__):
+                self.assertEqual(view.permission_classes, PULMONOLOGY_WRITE_PERMISSIONS)
+
     def finalize(self, *, candidate_status="candidate_ready", current_stage="PET_CT_TNM", fail_order=False):
         detail = Mock(stage_group="", evidence={"stage": {"stage_group_candidate": "IIA", "stage_group_status": candidate_status}})
         case = Mock(current_stage=current_stage, case_status="ACTIVE")
         diagnosis = Mock(tnm_detail=detail, case=case)
         request = SimpleNamespace(user=Mock(), data={"advance_to_next_stage": True})
-        with patch("apps.clinical.views.ClinicalResult.objects") as results, \
+        with patch("apps.clinical.views.LungCancerCase.objects") as cases, \
+             patch("apps.clinical.views.ClinicalResult.objects") as results, \
              patch("apps.cases.services.examination_orders.create_examination_order") as order, \
              patch("apps.clinical.views.ClinicianDecision.objects") as decisions, \
              patch("apps.clinical.views.DoctorTnmDraftSerializer") as serializer, \
              patch("apps.clinical.views.transaction.set_rollback") as rollback:
+            cases.select_for_update.return_value.filter.return_value.first.return_value = case
             results.select_for_update.return_value.filter.return_value.first.return_value = diagnosis
             serializer.return_value.data = {"stage_group": "IIA"}
             if fail_order:

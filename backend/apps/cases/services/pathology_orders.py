@@ -11,12 +11,8 @@ class PathologyOrderCreationError(Exception):
 
 
 ACTIVE_ORDER_STATUSES = {
-    value
-    for value, _label in ExaminationOrder.Status.choices
-    if value not in {
-        ExaminationOrder.Status.COMPLETED,
-        ExaminationOrder.Status.CANCELLED,
-    }
+    ExaminationOrder.Status.ORDERED,
+    ExaminationOrder.Status.SCHEDULED,
 }
 
 

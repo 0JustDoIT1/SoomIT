@@ -11,12 +11,13 @@ from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import (
     AiAnalysis,
     AiResult,
+    AnalysisType,
     ModelVersion,
     PathologyAiResult,
     PDL1AiResult,
 )
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult, PathologyResult
+from apps.clinical.models import ClinicalResult, PDL1Result, PathologyResult
 from apps.patients.models import Patient
 from apps.pathology.models import (
     PathologySpecimen,
@@ -1133,6 +1134,93 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(analysis.source_image_asset, asset)
         self.assertEqual(analysis.input_metadata, {"roi_layer": "Tumor"})
         delay.assert_called_once_with(str(analysis.id))
+
+    @patch("apps.pathology.views.run_pdl1_analysis.delay")
+    def test_pdl1_analysis_does_not_use_a_completed_order_as_active(self, delay):
+        order = self._create_pdl1_order()
+        order.status = ExaminationOrder.Status.COMPLETED
+        order.save(update_fields=["status", "updated_at"])
+        self.authenticate_pathology_user()
+
+        response = self.client.post(
+            reverse("pathology:case-pdl1-analysis-run", kwargs={"case_id": self.case.id}),
+            {},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        delay.assert_not_called()
+
+    def test_pdl1_confirmation_uses_the_order_linked_to_wsi_and_analysis(self):
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.user,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Historical PD-L1",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        order = self._create_pdl1_order()
+        asset = CaseImageAsset.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            image_type=CaseImageAsset.ImageType.WSI,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gs://bucket/pdl1/confirm.svs",
+            file_format="SVS",
+            status=CaseImageAsset.Status.READY,
+        )
+        specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            examination_order=order,
+            specimen_code="PDL1-CONFIRM",
+            specimen_type=PathologySpecimen.SpecimenType.OTHER,
+            status=PathologySpecimen.Status.READY,
+            created_by_user=self.user,
+        )
+        wsi = WholeSlideImage.objects.create(
+            specimen=specimen,
+            image_asset=asset,
+            slide_code="PDL1-CONFIRM",
+            stain=WholeSlideImage.Stain.PDL1,
+            original_filename="confirm.svs",
+            sha256="b" * 64,
+            uploaded_by_user=self.user,
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            source_image_asset=asset,
+            model_version=self.pdl1_model_version,
+            analysis_type=AnalysisType.PDL1_ANALYSIS,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        ai_result = AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="pdl1-v1",
+            result_payload={},
+        )
+        self.department_role.role = DepartmentRole.Role.DOCTOR
+        self.department_role.save(update_fields=["role"])
+        self.authenticate_pathology_user()
+
+        response = self.client.post(
+            reverse("pathology:pdl1-result-confirm", kwargs={"case_id": self.case.id}),
+            {
+                "ai_analysis_id": str(analysis.id),
+                "source_wsi_id": str(wsi.id),
+                "tps_percent": "55.00",
+                "interpretation": "Positive",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        clinical_result = ClinicalResult.objects.get(id=response.data["id"])
+        self.assertEqual(clinical_result.examination_order, order)
+        self.assertEqual(clinical_result.reviewed_ai_result, ai_result)
+        self.assertEqual(PDL1Result.objects.get(clinical_result=clinical_result).source_wsi, wsi)
 
     def test_unauthenticated_user_cannot_access_case_diagnoses(self):
         url = reverse(

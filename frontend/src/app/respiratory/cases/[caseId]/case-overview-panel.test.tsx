@@ -94,4 +94,23 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getByText(/2026\. 9\. 20\./)).toBeTruthy();
     expect(screen.queryByText("결과 조회됨")).toBeNull();
   });
+
+  it("does not treat a pathology result containing legacy PD-L1 detail as a confirmed PD-L1 stage", () => {
+    render(
+      <CaseOverviewPanel
+        caseData={{ ...caseData, current_stage: "CT" }}
+        clinicalResults={[{
+          id: "pathology-with-legacy-pdl1",
+          workflow_stage: "PATHOLOGY_GENE",
+          result_status: "CONFIRMED",
+          result_detail: { pdl1: { tps_percent: 50 } },
+        }]}
+        aiResults={[]}
+      />,
+    );
+
+    const pdl1Step = screen.getByText("PD-L1").closest("div");
+    expect(pdl1Step).not.toHaveTextContent("전문과 확정");
+    expect(pdl1Step).toHaveTextContent("정보 없음");
+  });
 });

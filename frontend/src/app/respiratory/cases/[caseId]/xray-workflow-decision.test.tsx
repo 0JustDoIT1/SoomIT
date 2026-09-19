@@ -32,7 +32,7 @@ it.each(["CLOSE_CASE", "REFERRED_OUT"])("keeps X-ray inputs after a failed %s an
   fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "정상 소견" } });
   const label = action === "CLOSE_CASE" ? "결과 확정 및 Case 종료" : "결과 확정 및 의뢰 처리";
   fireEvent.click(screen.getByRole("button", { name: label }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("처리 실패");
+  expect(await screen.findByRole("alert")).toHaveTextContent("X-ray 결과 처리에 실패했습니다.");
   expect(screen.getByPlaceholderText("결정 사유")).toHaveValue("정상 소견");
   expect(onCompleted).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: label }));

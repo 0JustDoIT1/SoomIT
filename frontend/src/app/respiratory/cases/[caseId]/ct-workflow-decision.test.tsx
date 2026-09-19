@@ -85,7 +85,7 @@ it("retries only the downstream decision after CT confirmation succeeded", async
   fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "REFERRED_OUT" } });
   fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "전원" } });
   fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 의뢰 처리" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("전원 실패");
+  expect(await screen.findByRole("alert")).toHaveTextContent("검사 결과는 확정되었지만 다음 단계 전환에 실패했습니다.");
   expect(screen.getByLabelText("종합 판정")).toBeDisabled();
   expect(screen.getByPlaceholderText("결정 사유")).toHaveValue("전원");
   fireEvent.click(screen.getByRole("button", { name: "의뢰 처리" }));
@@ -105,7 +105,7 @@ it("reconciles a committed confirmation after advancement failed without resavin
   render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
   fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
   fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("다음 검사 생성 실패");
+  expect(await screen.findByRole("alert")).toHaveTextContent("검사 결과는 확정되었지만 다음 단계 전환에 실패했습니다.");
   const retry = await screen.findByRole("button", { name: "PET-CT/TNM 진행" });
   await vi.waitFor(() => expect(retry).toBeEnabled());
   fireEvent.click(retry);

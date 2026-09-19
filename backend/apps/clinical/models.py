@@ -176,7 +176,7 @@ class TnmResult(models.Model):
     )
     t_category = models.CharField(max_length=10)
     n_category = models.CharField(max_length=10)
-    m_category = models.CharField(max_length=10)
+    m_category = models.CharField(max_length=20)
     stage_group = models.CharField(max_length=20)
     evidence = models.JSONField(null=True, blank=True)
     note = models.TextField(null=True, blank=True)
