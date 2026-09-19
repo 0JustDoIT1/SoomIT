@@ -140,12 +140,26 @@ jobs:
         run: |
           IMAGE="gcr.io/$PROJECT_ID/${{ matrix.service }}:${{ needs.changes.outputs.image_tag }}"
           if [[ -n "${{ matrix.config }}" ]]; then
-            gcloud builds submit --project="$PROJECT_ID" --config="${{ matrix.config }}" \
-              --substitutions="_IMAGE_TAG=${{ needs.changes.outputs.image_tag }}" .
+            BUILD_ID="$(gcloud builds submit --async --project="$PROJECT_ID" --config="${{ matrix.config }}" \
+              --substitutions="_IMAGE_TAG=${{ needs.changes.outputs.image_tag }}" \
+              --format='value(id)' .)"
           else
-            gcloud builds submit --project="$PROJECT_ID" \
-              --tag="$IMAGE" --timeout=3600s .
+            BUILD_ID="$(gcloud builds submit --async --project="$PROJECT_ID" \
+              --tag="$IMAGE" --timeout=3600s --format='value(id)' .)"
           fi
+
+          echo "Cloud Build submitted: $BUILD_ID"
+          while true; do
+            BUILD_STATUS="$(gcloud builds describe "$BUILD_ID" --project="$PROJECT_ID" --format='value(status)')"
+            case "$BUILD_STATUS" in
+              SUCCESS) break ;;
+              FAILURE|INTERNAL_ERROR|TIMEOUT|CANCELLED|EXPIRED)
+                echo "Cloud Build ended with status: $BUILD_STATUS"
+                exit 1
+                ;;
+            esac
+            sleep 10
+          done
       - name: Deploy only this Cloud Run service
         shell: bash
         run: |
