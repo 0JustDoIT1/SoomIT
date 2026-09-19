@@ -29,7 +29,7 @@ GENE_SHA = os.environ["PATHOLOGY_GENE_MODEL_SHA256"].lower()
 MAX_WSI_BYTES = int(os.getenv("PATHOLOGY_MAX_WSI_BYTES", str(10 * 1024**3)))
 MAX_PATCHES = int(os.getenv("PATHOLOGY_MAX_PATCHES", "10000"))
 BATCH_SIZE = int(os.getenv("PATHOLOGY_UNI2H_BATCH_SIZE", "32"))
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("uvicorn.error")
 
 
 def log_latency(stage: str, started: float) -> None:
