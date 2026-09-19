@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 
@@ -163,25 +164,44 @@ class Uni2hEmbedder:
             use_amp = self.device.type == "cuda"
             read_and_transform_seconds = 0.0
             gpu_embed_seconds = 0.0
-            for start in range(0, len(coordinates), self.batch_size):
-                batch_started = time.perf_counter()
+
+            def read_batch(batch_coordinates: list[tuple[int, int, int]]) -> torch.Tensor:
                 images = [
                     self.transform(
                         slide.read_region((x, y), patch_level, (tile_size, tile_size)).convert("RGB")
                     )
-                    for x, y, patch_level in coordinates[start : start + self.batch_size]
+                    for x, y, patch_level in batch_coordinates
                 ]
-                batch = torch.stack(images).to(self.device)
-                read_and_transform_seconds += time.perf_counter() - batch_started
-                gpu_started = time.perf_counter()
-                with torch.inference_mode(), torch.autocast(
-                    device_type=self.device.type,
-                    dtype=torch.float16,
-                    enabled=use_amp,
-                ):
-                    embedding = self.model(batch)
-                batches.append(embedding.float().cpu())
-                gpu_embed_seconds += time.perf_counter() - gpu_started
+                return torch.stack(images)
+
+            batch_slices = [
+                coordinates[start : start + self.batch_size]
+                for start in range(0, len(coordinates), self.batch_size)
+            ]
+            # Only one thread ever calls into openslide at a time (this pool has a
+            # single worker), so it never reads concurrently with itself - it only
+            # overlaps with the *next* batch's CPU tile read/transform running while
+            # the *current* batch's GPU forward pass is in flight, since neither
+            # touches the slide handle. Read order, batch order, and the model call
+            # itself are unchanged, so results are identical to the sequential loop.
+            with ThreadPoolExecutor(max_workers=1) as prefetch_executor:
+                next_batch_future = prefetch_executor.submit(read_batch, batch_slices[0])
+                for index, _ in enumerate(batch_slices):
+                    wait_started = time.perf_counter()
+                    batch_cpu = next_batch_future.result()
+                    read_and_transform_seconds += time.perf_counter() - wait_started
+                    if index + 1 < len(batch_slices):
+                        next_batch_future = prefetch_executor.submit(read_batch, batch_slices[index + 1])
+                    batch = batch_cpu.to(self.device)
+                    gpu_started = time.perf_counter()
+                    with torch.inference_mode(), torch.autocast(
+                        device_type=self.device.type,
+                        dtype=torch.float16,
+                        enabled=use_amp,
+                    ):
+                        embedding = self.model(batch)
+                    batches.append(embedding.float().cpu())
+                    gpu_embed_seconds += time.perf_counter() - gpu_started
             logger.info(
                 "latency service=pathology_analysis stage=patch_read_and_transform elapsed_seconds=%.3f",
                 read_and_transform_seconds,
