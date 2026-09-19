@@ -5,6 +5,7 @@ import Image from "next/image";
 import dynamic from "next/dynamic";
 
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { showToast } from "@/components/ui/toast/toast";
 
 import {
   groupBySeriesInstanceUid,
@@ -462,6 +463,10 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [isUploadDragOver, setIsUploadDragOver] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
   const [trackedAnalysis, setTrackedAnalysis] = useState<TrackedAnalysis | null>(() => getInitialAnalysis(item));
+  const analysisToastStateRef = useRef({
+    analysisId: item.latest_ai_analysis?.id ?? null,
+    status: item.latest_ai_analysis?.status ?? null,
+  });
   const order = item.examination_order;
   const image = item.latest_image_asset;
   const isXray = order.order_type === "XRAY";
@@ -592,6 +597,15 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       try {
         const nextAnalysis = await fetchRadiologyAnalysis(analysisId, controller.signal);
         if (controller.signal.aborted) return;
+        const previous = analysisToastStateRef.current;
+        if (previous.analysisId === analysisId && previous.status !== nextAnalysis.status) {
+          if (nextAnalysis.status === "SUCCEEDED") {
+            showToast.success("AI 분석이 완료되었습니다.");
+          } else if (nextAnalysis.status === "FAILED") {
+            showToast.error("AI 분석에 실패했습니다.");
+          }
+        }
+        analysisToastStateRef.current = { analysisId, status: nextAnalysis.status };
         setTrackedAnalysis(trackAnalysis(nextAnalysis));
         if (["PENDING", "RUNNING"].includes(nextAnalysis.status)) {
           timer = setTimeout(() => void pollAnalysis(), 5000);
@@ -651,11 +665,17 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
         onImageUploaded?.();
       }
       const created = await startRadiologyAnalysis(order.id);
+      analysisToastStateRef.current = { analysisId: created.analysis_id, status: created.status };
       setTrackedAnalysis(trackAnalysis(created));
       setAnalysisResult(null);
-      setActionMessage(created.status === "PENDING" ? "AI 분석이 실행 대기 상태로 등록되었습니다." : "AI 분석이 등록되었습니다.");
+      showToast.info("AI 분석을 시작했습니다.");
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "AI 분석을 등록하지 못했습니다.");
+      console.error(error);
+      showToast.error(
+        order.order_type === "PET_CT_TNM"
+          ? "PET-CT 처리에 실패했습니다. 다시 시도해 주세요."
+          : "AI 분석을 시작하지 못했습니다. 다시 시도해 주세요.",
+      );
     } finally {
       setStartingAnalysis(false);
     }
@@ -700,10 +720,11 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       setSelectedFiles([]);
       setDicomHeaders([]);
       setSelectedSeriesUid(null);
-      setActionMessage("CT 영상이 서버에 등록되었습니다. 이제 AI 분석을 실행할 수 있습니다.");
+      showToast.success("\uC601\uC0C1 \uC5C5\uB85C\uB4DC\uAC00 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
       onImageUploaded?.();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "CT 영상 업로드에 실패했습니다.");
+      console.error(error);
+      showToast.error("\uC601\uC0C1 \uC5C5\uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
     } finally {
       setUploadingCtSeries(false);
     }
@@ -718,10 +739,11 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       await uploadRadiologyXrayImage(order.id, previewFile);
       setUploadedXrayPreview({ orderId: order.id, file: previewFile });
       setSelectedFiles([]);
-      setActionMessage("X-ray 영상이 업로드되어 영상 자산으로 연결되었습니다.");
+      showToast.success("\uC601\uC0C1 \uC5C5\uB85C\uB4DC\uAC00 \uC644\uB8CC\uB418\uC5C8\uC2B5\uB2C8\uB2E4.");
       onImageUploaded?.();
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : "X-ray 영상을 업로드하지 못했습니다.");
+      console.error(error);
+      showToast.error("\uC601\uC0C1 \uC5C5\uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
     } finally {
       setUploadingImage(false);
     }
@@ -732,15 +754,12 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     setSubmitting(true);
     setActionError("");
     try {
-      const response = await submitRadiologyAnalysisForReview(trackedAnalysis.analysis_id);
+      await submitRadiologyAnalysisForReview(trackedAnalysis.analysis_id);
       setSubmitted(true);
-      setActionMessage(
-        response.submitted
-          ? "AI 결과를 담당 의사에게 제출했습니다."
-          : "이미 담당 의사에게 제출된 AI 결과입니다.",
-      );
+      showToast.success("\uAC80\uC0AC \uACB0\uACFC\uB97C \uC81C\uCD9C\uD588\uC2B5\uB2C8\uB2E4.");
     } catch (error) {
-      setActionError(error instanceof RadiologyApiError ? error.message : "AI 결과를 제출하지 못했습니다.");
+      console.error(error);
+      showToast.error("\uAC80\uC0AC \uACB0\uACFC \uC81C\uCD9C\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
     } finally {
       setSubmitting(false);
     }
