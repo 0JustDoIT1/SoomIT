@@ -7,7 +7,7 @@ import { RecentPatients, useRecentPatients, type RecentPatient } from "@/compone
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
 
-import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
+import { RadiologyDetail, RadiologyPatientSummary, RadiologyWorkflowBadge } from "./_components/radiology-detail";
 import { RadiologyCompletedHistory } from "./_components/radiology-completed-history";
 import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
@@ -101,7 +101,27 @@ function RadiologyCaseDetail({
   }, [caseId, reloadVersion]);
 
   if (error) return <StateMessage variant="error" title={error} className="m-6" />;
-  if (!workflow) return <StateMessage variant="loading" title="검사 흐름을 불러오는 중입니다." className="m-6" />;
+  if (!workflow) return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="m-6 flex min-h-[320px] flex-col items-center justify-center rounded-xl border border-violet-100 bg-white px-4 py-8 text-center"
+    >
+      <Image
+        src="/images/soomi-loading.png"
+        alt=""
+        width={160}
+        height={160}
+        className="h-[120px] w-[120px] object-contain"
+      />
+      <p className="mt-3 text-sm font-semibold text-[#25324B]">검사 흐름을 불러오는 중입니다</p>
+      <p className="mt-1 text-xs text-slate-500">잠시만 기다려 주세요</p>
+      <span
+        className="mt-3 block h-4 w-4 animate-spin rounded-full border-2 border-violet-100 border-t-[#5364C7]"
+        aria-label="로딩 중"
+      />
+    </div>
+  );
   if (workflow.exams.length === 0) return <StateMessage variant="empty" title="표시할 영상 검사가 없습니다." className="m-6" />;
   if (!currentExam) return <StateMessage variant="empty" title="표시할 현재 검사가 없습니다." className="m-6" />;
 
@@ -137,9 +157,10 @@ function RadiologyCaseDetail({
             <span className="mr-2 text-xs text-violet-600">01</span>
             {currentWorkflowExam.examination_order.order_type_label}
           </p>
-          <StatusBadge status={currentWorkflowExam.workflow_status} label={currentWorkflowExam.workflow_status_label} />
+          <RadiologyWorkflowBadge status={currentWorkflowExam.workflow_status} label={currentWorkflowExam.workflow_status_label} />
         </div>
         <RadiologyDetail
+          key={currentWorkflowExam.examination_order.id}
           item={currentWorkflowExam}
           embedded
           onImageUploaded={() => setReloadVersion((version) => version + 1)}

@@ -1613,6 +1613,11 @@ export default function PathologyDashboardPage() {
     }
 
     const controller = new AbortController();
+    const detailTimeout = window.setTimeout(() => {
+      setDetailError("병리 검사 상세 조회가 시간 초과되었습니다. 다시 선택해 주세요.");
+      setDetailLoading(false);
+      controller.abort();
+    }, 30_000);
 
     void fetchPathologyCaseWorkflow(selectedId, controller.signal)
       .then(data => { if (!controller.signal.aborted) setSelectedWorkflow(data); })
@@ -1626,10 +1631,14 @@ export default function PathologyDashboardPage() {
         }
       })
       .finally(() => {
+        window.clearTimeout(detailTimeout);
         if (!controller.signal.aborted) setDetailLoading(false);
       });
 
-    return () => controller.abort();
+    return () => {
+      window.clearTimeout(detailTimeout);
+      controller.abort();
+    };
   }, [selectedId]);
 
   const visible = useMemo(() => {
@@ -1883,9 +1892,11 @@ export default function PathologyDashboardPage() {
                           tabIndex={0}
                           onClick={() =>
                             (() => {
-                              setDetailLoading(true);
-                              setDetailError("");
-                              setSelectedWorkflow(null);
+                              if (item.case_id !== selectedId) {
+                                setDetailLoading(true);
+                                setDetailError("");
+                                setSelectedWorkflow(null);
+                              }
                               setSelectedItem(item);
                               recent.remember({ case_id: item.case_id, patient_name: item.patient.name, birth_date: item.patient.birth_date });
                               setSelectedId(item.case_id);
@@ -1898,9 +1909,11 @@ export default function PathologyDashboardPage() {
                               event.key ===
                               "Enter"
                             ) {
-                              setDetailLoading(true);
-                              setDetailError("");
-                              setSelectedWorkflow(null);
+                              if (item.case_id !== selectedId) {
+                                setDetailLoading(true);
+                                setDetailError("");
+                                setSelectedWorkflow(null);
+                              }
                               setSelectedItem(item);
                               recent.remember({ case_id: item.case_id, patient_name: item.patient.name, birth_date: item.patient.birth_date });
                               setSelectedId(item.case_id);
@@ -2045,13 +2058,13 @@ export default function PathologyDashboardPage() {
           <section className="flex min-h-0 flex-col overflow-hidden rounded-xl border border-[#DDE2F7] bg-white shadow-sm">
           {detailLoading ? (
             <div
-              className="flex min-h-0 flex-1 items-center justify-center bg-[#F7F8FC] px-6 py-10"
+              className="flex min-h-0 flex-1 items-center justify-center bg-white px-6 py-10"
               role="status"
               aria-live="polite"
             >
               <div className="-translate-y-6 text-center">
                 <Image
-                  src="/images/soomi2.png"
+                  src="/images/soomi-loading.png"
                   alt=""
                   width={176}
                   height={176}

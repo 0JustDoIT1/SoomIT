@@ -128,6 +128,24 @@ function getWorkflowLabel(status: RadiologyWorklistItem["workflow_status"]) {
   return labels[status];
 }
 
+const completedRadiologyStatuses = new Set([
+  "COMPLETED",
+  "SUCCEEDED",
+  "READY",
+  "REVIEW_COMPLETED",
+  "AI_COMPLETED",
+]);
+
+export function RadiologyWorkflowBadge({ status, label }: { status: string; label?: string }) {
+  if (!completedRadiologyStatuses.has(status)) return <StatusBadge status={status} label={label} />;
+
+  return (
+    <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${status === "REVIEW_COMPLETED" ? "bg-[#DDD6FE] text-[#5B21B6] ring-[#8B5CF6]" : "bg-[#EEF2FF] text-[#4338CA] ring-[#C7D2FE]"}`}>
+      {label ?? status}
+    </span>
+  );
+}
+
 function getAnalysisLabel(item: RadiologyWorklistItem) {
   if (item.examination_order.order_type_label === "PET-CT") return "TNM AI 분석";
   return item.examination_order.order_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
@@ -200,7 +218,7 @@ function CtNoduleCard({ nodule }: { nodule: Extract<RadiologyAnalysisResult["res
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm font-bold text-slate-900">결절 #{nodule.nodule_no}</p>
         {malignancyPrediction ? (
-          <StatusBadge
+          <RadiologyWorkflowBadge
             status={malignancyPrediction === "MALIGNANT" ? "AI_FAILED" : "AI_COMPLETED"}
             label={malignancyPrediction === "MALIGNANT" ? "악성 의심" : "양성 의심"}
           />
@@ -297,9 +315,35 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
   const t = payload?.t;
   const n = payload?.n;
   const m = payload?.m;
-  const mRule = m?.m_rule_result;
-  const mEvidence = m?.imaging_evidence;
   const mModelSupport = m?.model_support;
+  const hasValue = (item: unknown) => item !== null && item !== undefined && item !== "";
+  const tResult = hasValue(result.predicted_t) ? result.predicted_t : hasValue(t?.t_candidate) ? t?.t_candidate : t?.size_only_t_candidate;
+  return <div className="space-y-4">
+    <div className="grid items-stretch gap-3 sm:grid-cols-3">
+      <section className="min-h-28 rounded-lg border border-violet-100 bg-violet-50/30 p-4">
+        <h4 className="text-xs font-medium text-violet-700">T 분석 결과</h4>
+        <p className="mt-2 text-2xl font-semibold text-slate-900">{hasValue(tResult) ? String(tResult) : "-"}</p>
+        {hasValue(t?.mask_bbox_diagonal_mm) ? <p className="mt-1 text-xs text-slate-500">종양 크기 {String(t?.mask_bbox_diagonal_mm)} mm</p> : null}
+      </section>
+      <section className="min-h-28 rounded-lg border border-blue-100 bg-blue-50/30 p-4">
+        <h4 className="text-xs font-medium text-blue-700">N 분석 결과</h4>
+        <p className="mt-2 text-xs text-slate-500">N+ probability</p>
+        <p className="mt-1 text-2xl font-semibold text-slate-900">{formatPercent(n?.nplus_probability)}</p>
+      </section>
+      <section className="min-h-28 rounded-lg border border-indigo-100 bg-indigo-50/30 p-4">
+        <h4 className="text-xs font-medium text-indigo-700">M 분석 결과</h4>
+        <p className="mt-2 text-2xl font-semibold text-slate-900">{hasValue(result.predicted_m) ? result.predicted_m : hasValue(m?.m_candidate) ? m?.m_candidate : "-"}</p>
+        {hasValue(mModelSupport?.m_positive_probability) ? <p className="mt-1 text-xs text-slate-500">M+ probability {formatPercent(mModelSupport?.m_positive_probability)}</p> : null}
+      </section>
+    </div>
+    {hasValue(result.predicted_stage_group) || hasValue(result.confidence) ? (
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-violet-100 bg-violet-50/20 px-4 py-3 text-sm">
+        {hasValue(result.predicted_stage_group) ? <p><span className="text-slate-500">Stage</span><span className="ml-2 font-semibold text-slate-900">{result.predicted_stage_group}</span></p> : null}
+        {hasValue(result.confidence) ? <p><span className="text-slate-500">Confidence</span><span className="ml-2 font-semibold text-slate-900">{formatPercent(result.confidence)}</span></p> : null}
+      </div>
+    ) : null}
+  </div>;
+  /*
   const value = (item: unknown) => item === null || item === undefined || item === "" ? "-" : String(item);
   const yesNo = (item: boolean | null | undefined) => item === null || item === undefined ? "-" : item ? "예" : "아니오";
   return <div className="space-y-4">
@@ -349,6 +393,7 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
       {[["기존 T 값", result.predicted_t], ["기존 N 값", result.predicted_n], ["기존 M 값", result.predicted_m], ["기존 Stage", result.predicted_stage_group], ["기존 Confidence", formatPercent(result.confidence)]].map(([label, item]) => <div key={label} className="rounded-xl border border-slate-200 bg-white p-3"><dt className="text-slate-500">{label}</dt><dd className="mt-1 font-semibold text-slate-800">{item ?? "-"}</dd></div>)}
     </dl>
   </div>;
+  */
 }
 
 export function RadiologyPatientSummary({ item, onClear }: {
@@ -364,7 +409,7 @@ export function RadiologyPatientSummary({ item, onClear }: {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">선택 환자</p>
           <div className="mt-1 flex min-w-0 items-baseline gap-2"><h2 id="selected-patient-heading" className="truncate text-lg font-bold text-slate-900">{item.patient.name}</h2><span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{item.patient.patient_code}</span></div>
         </div>
-        <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
+        <RadiologyWorkflowBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
         <button type="button" onClick={onClear} className="shrink-0 text-xs font-semibold text-slate-500 hover:text-slate-800">선택 해제</button>
       </div>
       <dl className="grid gap-x-4 gap-y-3 border-x border-violet-100 bg-white px-5 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
@@ -402,6 +447,12 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [serverImageUrl, setServerImageUrl] = useState<string | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [dicomHeaders, setDicomHeaders] = useState<DicomHeaderInfo[]>([]);
+  const [uploadedDicomPreview, setUploadedDicomPreview] = useState<{
+    orderId: string;
+    seriesFiles: DicomHeaderInfo[];
+    renderKey: string;
+  } | null>(null);
+  const [uploadedXrayPreview, setUploadedXrayPreview] = useState<{ orderId: string; file: File } | null>(null);
   const [parsingDicom, setParsingDicom] = useState(false);
   const [selectedSeriesUid, setSelectedSeriesUid] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -414,13 +465,20 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const order = item.examination_order;
   const image = item.latest_image_asset;
   const isXray = order.order_type === "XRAY";
-  const previewFile = isXray ? selectedFiles.find(isPreviewableImage) ?? null : null;
+  const isCt = order.order_type === "CT";
+  const previewFile = isXray
+    ? selectedFiles.find(isPreviewableImage) ?? (uploadedXrayPreview?.orderId === order.id ? uploadedXrayPreview.file : null)
+    : null;
   const previewUrl = useMemo(
     () => previewFile ? URL.createObjectURL(previewFile) : null,
     [previewFile],
   );
-  const selectedFileSize = selectedFiles.reduce((total, file) => total + file.size, 0);
-  const selectedFileTypes = Array.from(new Set(selectedFiles.map(getFileExtension)));
+  const selectedFileSize = isXray && previewFile
+    ? previewFile.size
+    : selectedFiles.reduce((total, file) => total + file.size, 0);
+  const selectedFileTypes = isXray
+    ? (previewFile ? [getFileExtension(previewFile)] : [])
+    : Array.from(new Set(selectedFiles.map(getFileExtension)));
   const analysisCompleted = trackedAnalysis?.status === "SUCCEEDED";
   const analysisRunning = trackedAnalysis?.status === "RUNNING" || trackedAnalysis?.status === "PENDING";
   const trackedAnalysisId = trackedAnalysis?.analysis_id;
@@ -431,21 +489,43 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     () => (selectedSeriesUid ? seriesGroups.get(selectedSeriesUid) ?? [] : []),
     [seriesGroups, selectedSeriesUid],
   );
+  const uploadedSeriesPreview = uploadedDicomPreview?.orderId === order.id ? uploadedDicomPreview : null;
+  const previewSeriesFiles = uploadedSeriesPreview?.seriesFiles ?? selectedSeriesFiles;
+  const hasUploadedSeriesPreview = !isXray && uploadedSeriesPreview !== null;
+  const hasUploadedXrayPreview = isXray && uploadedXrayPreview?.orderId === order.id;
+  const hasUploadedPreview = hasUploadedSeriesPreview || hasUploadedXrayPreview;
+  const previewSeriesSize = previewSeriesFiles.reduce((total, header) => total + header.file.size, 0);
+  const previewFileTypes = isXray ? selectedFileTypes : Array.from(new Set(previewSeriesFiles.map((header) => getFileExtension(header.file))));
   const ctSeriesValidation = useMemo(
     () => (selectedSeriesFiles.length > 0 ? (order.order_type === "PET_CT_TNM" ? validatePetSeries(selectedSeriesFiles) : validateCtSeries(selectedSeriesFiles)) : null),
     [selectedSeriesFiles, order.order_type],
   );
   const ctReadyToUpload = !isXray && selectedSeriesFiles.length > 0 && ctSeriesValidation?.valid === true;
-  const isCt = order.order_type === "CT";
   const serverImageReady = (image?.status === "READY" && image.id !== resetAssetId) || (isCt && ctSeriesUploaded);
   const uploadLocked = serverImageReady;
   const canStartAnalysis = trackedAnalysis === null && (serverImageReady || (!isXray && !isCt && ctReadyToUpload));
+  const activeStepIndex = !image
+    ? 0
+    : !analysisCompleted
+      ? 1
+      : !analysisResult
+        ? 2
+        : !submitted
+          ? 3
+          : -1;
+  const indicatorStepIndex = activeStepIndex >= 0
+    ? activeStepIndex
+    : submitted && Boolean(image) && (analysisCompleted || analysisRunning) && Boolean(analysisResult)
+      ? 3
+      : -1;
 
   function handleSelectedFiles(files: File[]) {
     if (uploadLocked) return;
     setSelectedFiles(isXray ? files : filterDicomFolderFiles(files));
     setDicomHeaders([]);
     setSelectedSeriesUid(null);
+    setUploadedDicomPreview(null);
+    setUploadedXrayPreview(null);
   }
 
   function handleUploadDrop(event: DragEvent<HTMLDivElement>) {
@@ -557,6 +637,11 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
         const selectedFilesForUpload = selectedSeriesFiles.map((header) => header.file);
         if (order.order_type === "PET_CT_TNM") {
           await uploadRadiologyPetSeries(order.id, selectedFilesForUpload, selectedSeriesUid);
+          setUploadedDicomPreview({
+            orderId: order.id,
+            seriesFiles: [...selectedSeriesFiles],
+            renderKey: `uploaded-${Date.now()}`,
+          });
         } else {
           await uploadRadiologyCtSeries(order.id, selectedFilesForUpload, selectedSeriesUid);
         }
@@ -589,6 +674,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       setSelectedFiles([]);
       setDicomHeaders([]);
       setSelectedSeriesUid(null);
+      setUploadedDicomPreview(null);
       setActionMessage("실패한 분석을 초기화했습니다. PET 영상을 다시 선택해 서버에 등록한 뒤 AI 분석을 실행해 주세요.");
       onImageUploaded?.();
     } catch (error) {
@@ -605,6 +691,11 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     setActionMessage("");
     try {
       await uploadRadiologyCtSeries(order.id, selectedSeriesFiles.map((header) => header.file), selectedSeriesUid);
+      setUploadedDicomPreview({
+        orderId: order.id,
+        seriesFiles: [...selectedSeriesFiles],
+        renderKey: `uploaded-${Date.now()}`,
+      });
       setCtSeriesUploaded(true);
       setSelectedFiles([]);
       setDicomHeaders([]);
@@ -625,6 +716,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     setActionMessage("");
     try {
       await uploadRadiologyXrayImage(order.id, previewFile);
+      setUploadedXrayPreview({ orderId: order.id, file: previewFile });
       setSelectedFiles([]);
       setActionMessage("X-ray 영상이 업로드되어 영상 자산으로 연결되었습니다.");
       onImageUploaded?.();
@@ -664,7 +756,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
             <p className="mt-1 text-xs text-slate-500">{item.patient.name} · {item.patient.patient_code}</p>
             {order.order_type_label === "PET-CT" ? <p className="mt-1 text-xs font-medium text-slate-600">PET-CT 영상 → TNM AI 분석 → 결과 확인</p> : null}
           </div>
-          <StatusBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
+          <RadiologyWorkflowBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
         </div>
       </div> : null}
 
@@ -677,7 +769,8 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
             ["04", "의사에게 제출", submitted],
           ].map(([number, label, completed], index) => {
             const active = index === 0 ? !image : index === 1 ? Boolean(image) && !analysisCompleted : index === 2 ? analysisCompleted && !analysisResult : analysisCompleted && !submitted;
-            return <div key={String(number)} className={`relative rounded-xl border px-3 py-3 transition-colors ${completed ? "border-emerald-200 bg-emerald-50/90 text-emerald-700" : active ? "border-violet-300 bg-violet-100/80 text-violet-700 shadow-sm" : "border-slate-100 bg-white/70 text-slate-400"}`}><span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${completed ? "bg-emerald-100" : active ? "bg-violet-200" : "bg-slate-100"}`}>{number}</span><p className="mt-1.5 text-xs font-semibold">{label}</p></div>;
+            const finalCompleted = index === 3 && completed;
+            return <div key={String(number)} className={`relative overflow-visible rounded-xl border py-3 pl-3 pr-8 transition-colors ${finalCompleted ? "border-[#8B5CF6] bg-[#DDD6FE] text-[#5B21B6]" : completed ? "border-[#C7D2FE] bg-[#EEF2FF] text-[#4338CA]" : active ? "border-violet-300 bg-violet-100/80 text-violet-700 shadow-sm" : "border-slate-100 bg-white/70 text-slate-400"}`}><span className={`inline-flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-bold ${finalCompleted ? "bg-[#C4B5FD] text-[#5B21B6]" : completed ? "bg-[#E0E7FF]" : active ? "bg-violet-200" : "bg-slate-100"}`}>{number}</span><p className="mt-1.5 text-xs font-semibold">{label}</p>{indicatorStepIndex === index ? <span className="pointer-events-none absolute -right-2 top-1/2 z-10 h-8 w-8 -translate-y-1/2" role="img" aria-label={`현재 단계: ${String(label)}`}><Image src="/images/borasoomi_face.png" alt="" width={32} height={32} className="h-8 w-8 object-contain" /></span> : null}</div>;
           })}
         </div>
         <section className="rounded-xl border border-blue-100 bg-white p-5 shadow-sm" aria-labelledby="image-upload-heading">
@@ -686,14 +779,14 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
               <h3 id="image-upload-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-blue-700">01</span>영상 준비</h3>
               {image ? (
                 <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                  <StatusBadge status={image.status} label={image.status_label} />
+                  <RadiologyWorkflowBadge status={image.status} label={image.status_label} />
                   <span>{image.image_type} · 영상 자산 {item.image_asset_count}건</span>
                   <span className="text-slate-400">촬영 {formatDateTime(image.acquired_at)}</span>
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">연결된 영상 자산이 없습니다.</p>}
             </div>
           </div>
-          {selectedFiles.length === 0 ? (
+          {selectedFiles.length === 0 && !hasUploadedPreview ? (
             <div
               role="button"
               tabIndex={0}
@@ -738,20 +831,20 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
               ) : null}
             </div>
           ) : null}
-          {selectedFiles.length > 0 ? (
+          {selectedFiles.length > 0 || hasUploadedPreview ? (
             <div className="mt-4 border-l-2 border-slate-300 bg-slate-50 px-4 py-3 text-xs text-slate-700">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="font-semibold text-slate-800">선택 영상 {selectedFiles.length}건 · {formatFileSize(selectedFileSize)}</p>
-                <StatusBadge status="IMAGE_PENDING" label="영상 연결 대기" />
+                <p className="font-semibold text-slate-800">선택 영상 {isXray ? selectedFiles.length || (previewFile ? 1 : 0) : previewSeriesFiles.length}건 · {formatFileSize(isXray ? selectedFileSize : previewSeriesSize)}</p>
+                {hasUploadedPreview ? <span className="font-medium text-violet-700">업로드 완료 · 파일 변경 불가</span> : <StatusBadge status="IMAGE_PENDING" label="영상 연결 대기" />}
               </div>
-              <p className="mt-1 text-slate-500">파일 형식: {selectedFileTypes.join(", ")}</p>
+              <p className="mt-1 text-slate-500">파일 형식: {previewFileTypes.join(", ")}</p>
               {previewUrl ? <div className="mt-3 flex min-h-72 items-center justify-center border border-slate-200 bg-slate-950"><Image src={previewUrl} alt="선택한 X-ray 영상 미리보기" width={960} height={640} unoptimized className="max-h-[420px] h-auto w-auto max-w-full object-contain" /></div> : null}
               {isXray && !previewUrl ? <div className="mt-3 flex min-h-72 items-center justify-center border border-dashed border-slate-300 bg-slate-100 px-3 text-center text-slate-500">DICOM 파일은 이 화면에서 미리보기를 제공하지 않습니다.</div> : null}
               {!isXray ? (
                 <div className="mt-3">
                   <div className="flex min-h-72 flex-col items-center justify-center border border-dashed border-slate-300 bg-slate-100 text-center text-slate-600">
                     <p className="text-sm font-semibold">선택된 DICOM 폴더</p>
-                    <p className="mt-2 text-2xl font-bold text-slate-800">{selectedFiles.length} files</p>
+                    <p className="mt-2 text-2xl font-bold text-slate-800">{previewSeriesFiles.length} files</p>
                     <p className="mt-1 text-xs text-slate-500">
                       {parsingDicom ? "DICOM 헤더 분석 중…" : `Series ${seriesGroups.size}개 감지됨`}
                     </p>
@@ -784,9 +877,12 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                       })}
                     </div>
                   ) : null}
-                  {!parsingDicom && selectedSeriesFiles.length > 0 ? (
+                  {!parsingDicom && previewSeriesFiles.length > 0 ? (
                     <>
-                      <CtSeriesPreview seriesFiles={selectedSeriesFiles} />
+                      <CtSeriesPreview
+                        key={uploadedSeriesPreview?.renderKey ?? `selected-${selectedSeriesUid ?? "none"}`}
+                        seriesFiles={previewSeriesFiles}
+                      />
                       {ctSeriesValidation && !ctSeriesValidation.valid ? (
                         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
                           <p className="font-semibold">선택한 Series를 분석에 사용할 수 없습니다.</p>
@@ -804,7 +900,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                   )}
                 </div>
               ) : null}
-              {isXray ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{"\uc120\ud0dd\ud55c PNG \ub610\ub294 JPEG\ub294 \uc5c5\ub85c\ub4dc \ud6c4 \uc601\uc0c1 \uc790\uc0b0\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4."}</p><button type="button" onClick={handleUploadImage} disabled={!previewFile || uploadingImage} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingImage ? "\uc5c5\ub85c\ub4dc \uc911" : "\uc11c\ubc84\uc5d0 \uc5c5\ub85c\ub4dc"}</button></div> : <p className="mt-3 text-slate-500">{ctReadyToUpload ? "아래 \"AI 분석 실행\"을 누르면 선택한 Series가 업로드된 뒤 분석이 시작됩니다." : "선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다."}</p>}
+              {isXray ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{"\uc120\ud0dd\ud55c PNG \ub610\ub294 JPEG\ub294 \uc5c5\ub85c\ub4dc \ud6c4 \uc601\uc0c1 \uc790\uc0b0\uc73c\ub85c \uc5f0\uacb0\ub429\ub2c8\ub2e4."}</p><button type="button" onClick={handleUploadImage} disabled={!previewFile || uploadingImage || hasUploadedXrayPreview} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingImage ? "\uc5c5\ub85c\ub4dc \uc911" : hasUploadedXrayPreview ? "\uc5c5\ub85c\ub4dc \uc644\ub8cc" : "\uc11c\ubc84\uc5d0 \uc5c5\ub85c\ub4dc"}</button></div> : hasUploadedSeriesPreview ? <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p> : <p className="mt-3 text-slate-500">{ctReadyToUpload ? "아래 \"AI 분석 실행\"을 누르면 선택한 Series가 업로드된 뒤 분석이 시작됩니다." : "선택한 파일은 아직 서버에 업로드되거나 영상 자산으로 등록되지 않았습니다."}</p>}
             </div>
           ) : null}
           {isCt ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{ctSeriesUploaded || image?.status === "READY" ? "CT 영상이 서버에 등록되었습니다." : "선택한 Series를 먼저 서버에 등록하세요."}</p><button type="button" onClick={handleUploadCtSeries} disabled={!ctReadyToUpload || uploadingCtSeries || ctSeriesUploaded || image?.status === "READY"} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingCtSeries ? "업로드 중" : ctSeriesUploaded || image?.status === "READY" ? "서버 등록 완료" : "서버에 올리기"}</button></div> : null}
@@ -824,7 +920,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
               <h3 id="ai-analysis-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-blue-700">02</span>{getAnalysisLabel(item)}</h3>
               {trackedAnalysis ? (
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
-                  <span>현재 상태: <StatusBadge status={trackedAnalysis.status} label={trackedAnalysis.status === "PENDING" ? "실행 대기" : trackedAnalysis.status === "RUNNING" ? "분석 중" : trackedAnalysis.status === "SUCCEEDED" ? "분석 완료" : "분석 실패"} /></span>
+                  <span>현재 상태: <RadiologyWorkflowBadge status={trackedAnalysis.status} label={trackedAnalysis.status === "PENDING" ? "실행 대기" : trackedAnalysis.status === "RUNNING" ? "분석 중" : trackedAnalysis.status === "SUCCEEDED" ? "분석 완료" : "분석 실패"} /></span>
                   <span>모델: <strong className="font-semibold text-slate-700">{trackedAnalysis.model_name} · {trackedAnalysis.model_version}</strong></span>
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">현재 상태: AI 분석 이력 없음</p>}
@@ -846,9 +942,9 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
           {actionError ? <p className="mt-3 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">{actionError}</p> : null}
 
           {analysisCompleted ? (
-            <div className="mt-4 rounded-xl border border-emerald-100 bg-gradient-to-r from-emerald-50 to-blue-50 px-4 py-3">
-              <p className="text-sm font-semibold text-emerald-800">AI 분석 완료</p>
-              <p className="mt-1 text-xs text-slate-600">분석 결과가 아래 결과 영역에 표시됩니다.</p>
+            <div className="mt-4 rounded-xl border border-[#C7D2FE] bg-[#EEF2FF]/60 px-4 py-3">
+              <p className="text-sm font-semibold text-[#312E81]">AI 분석 완료</p>
+              <p className="mt-1 text-xs text-slate-600">분석 결과가 정상적으로 생성되었습니다.</p>
             </div>
           ) : null}
         </section>
@@ -858,14 +954,14 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
           {analysisResult ? <div className="mt-4"><AnalysisResultView data={analysisResult} sourceImageUrl={serverImageUrl} /></div> : analysisRunning ? <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">AI 분석 중입니다.</div> : trackedAnalysis?.status === "FAILED" ? <div className="mt-3 rounded-lg border border-dashed border-red-200 bg-red-50/60 px-4 py-5 text-center text-xs text-red-700">AI 분석 결과를 표시할 수 없습니다.</div> : <div className="mt-3 rounded-lg border border-dashed border-slate-200 bg-slate-50/70 px-4 py-5 text-center text-xs text-slate-500">AI 분석이 완료되면 결과가 여기에 표시됩니다.</div>}
         </section>
 
-        <section className={`rounded-xl border p-5 shadow-sm ${item.workflow_status === "REVIEW_COMPLETED" ? "border-emerald-200 bg-emerald-50/60" : "border-violet-200 bg-gradient-to-r from-violet-50/90 to-blue-50/70"}`} aria-labelledby="review-heading">
+        <section className={`rounded-xl border p-5 shadow-sm ${item.workflow_status === "REVIEW_COMPLETED" ? "border-[#C7D2FE] bg-[#EEF2FF]/60" : "border-violet-200 bg-gradient-to-r from-violet-50/90 to-blue-50/70"}`} aria-labelledby="review-heading">
           <h3 id="review-heading" className="text-sm font-bold text-slate-800"><span className="mr-2 text-xs text-violet-600">04</span>의사에게 제출</h3>
           <div className="mt-3 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/80 bg-white/65 p-4">
             <div>
               <p className="text-sm font-semibold text-slate-800">{submitted ? "제출 완료" : "AI 분석 결과를 담당 호흡기내과 의사에게 제출합니다."}</p>
               <p className="mt-1 text-xs text-slate-500">담당 의사: {item.responsible_doctor?.name ?? "미지정"}</p>
             </div>
-            {submitted ? <span className="rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-semibold text-emerald-700">제출 완료</span> : <button type="button" onClick={handleSubmitForReview} disabled={!analysisCompleted || !item.responsible_doctor || submitting} className="rounded-lg bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300">{submitting ? "제출 중" : "의사에게 제출"}</button>}
+            {submitted ? <span className="rounded-full border border-[#C7D2FE] bg-[#EEF2FF] px-3 py-1.5 text-xs font-semibold text-[#4338CA]">제출 완료</span> : <button type="button" onClick={handleSubmitForReview} disabled={!analysisCompleted || !item.responsible_doctor || submitting} className="rounded-lg bg-violet-600 px-4 py-2.5 text-xs font-semibold text-white hover:bg-violet-700 disabled:cursor-not-allowed disabled:bg-slate-300">{submitting ? "제출 중" : "의사에게 제출"}</button>}
           </div>
           {!analysisCompleted ? <p className="mt-2 text-xs text-slate-500">AI 분석이 완료된 후 제출할 수 있습니다.</p> : null}
           {analysisCompleted && !item.responsible_doctor ? <p className="mt-2 text-xs text-amber-700">현재 Case에 연결된 담당 의사가 없어 제출할 수 없습니다.</p> : null}
