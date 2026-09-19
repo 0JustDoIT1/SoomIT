@@ -251,7 +251,9 @@ def predict(body: TRequest) -> dict:
             target_mask_path = None
             target_mask_uri = metadata.get("target_mask_uri")
             if isinstance(target_mask_uri, str) and target_mask_uri.startswith("gs://"):
-                target_mask_path = download_file(target_mask_uri, input_dir / "target_nodule_mask.nii.gz")
+                # nnU-Net treats every NIfTI file in input_dir as an inference
+                # case. Keep this post-processing-only mask outside that folder.
+                target_mask_path = download_file(target_mask_uri, root / "metadata" / "target_nodule_mask.nii.gz")
             log_latency("download", stage_started)
             output_dir.mkdir(parents=True)
             if nnunet_predictor is None:
