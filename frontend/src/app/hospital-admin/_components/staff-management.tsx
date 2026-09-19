@@ -5,6 +5,7 @@ import { useCallback, useEffect, useState, type FormEvent } from "react";
 import Alert from "@/components/common/Alert";
 import Input from "@/components/common/Input";
 import { StateMessage } from "@/components/workspace/state-message";
+import { showToast } from "@/components/ui/toast/toast";
 
 import {
   createStaff,
@@ -43,7 +44,6 @@ export function StaffManagement() {
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const load = useCallback(async (signal: AbortSignal) => {
     await Promise.resolve();
@@ -87,17 +87,17 @@ export function StaffManagement() {
     if (!token) return;
     setSaving(true);
     setError("");
-    setSuccess("");
     try {
       await createStaff(token, {
         ...form,
         license_number: isDoctor ? form.license_number : "",
       });
       setForm(initialForm);
-      setSuccess("직원 계정을 생성했습니다.");
+      showToast.success("직원 계정을 생성했습니다.");
       setReloadKey((current) => current + 1);
     } catch (caught) {
-      setError(apiMessage(caught));
+      console.error(caught);
+      showToast.error(apiMessage(caught));
     } finally {
       setSaving(false);
     }
@@ -109,13 +109,20 @@ export function StaffManagement() {
     if (!token) return;
     setDeletingId(item.id);
     setError("");
-    setSuccess("");
+    const request = deleteStaff(token, item.id);
+    showToast.promise(request, {
+      loading: `${item.name} 계정을 삭제하는 중입니다...`,
+      success: `${item.name} 계정을 삭제했습니다.`,
+      error: (caught) => {
+        console.error(caught);
+        return apiMessage(caught);
+      },
+    });
     try {
-      await deleteStaff(token, item.id);
-      setSuccess(`${item.name} 계정을 삭제했습니다.`);
+      await request;
       setReloadKey((current) => current + 1);
-    } catch (caught) {
-      setError(apiMessage(caught));
+    } catch {
+      // showToast.promise above already surfaced the error message.
     } finally {
       setDeletingId(null);
     }
@@ -197,7 +204,6 @@ export function StaffManagement() {
         </div>
         <div className="mt-4">
           <Alert message={error} />
-          {success ? <p role="status" className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{success}</p> : null}
         </div>
         <button type="submit" disabled={saving || roles.length === 0} className="mt-5 w-full rounded-lg bg-blue-700 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-400">
           {saving ? "생성 중..." : "직원 생성"}
