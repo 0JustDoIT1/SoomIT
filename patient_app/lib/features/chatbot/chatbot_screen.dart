@@ -225,150 +225,115 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         '$message';
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: const Color(
-        0xFFFCFAFF,
-      ),
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            _buildHeader(),
-
-            Expanded(
-              child: _buildMessageList(),
-            ),
-
-            _buildRecommendedQuestions(),
-
-            _buildInputArea(),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHeader() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(
-        18,
-        16,
-        18,
-        14,
-      ),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(
-            color: Color(
-              0xFFEEEAF4,
-            ),
-          ),
-        ),
-      ),
-      child: Row(
+@override
+Widget build(BuildContext context) {
+  return Material(
+    color: const Color(0xFFF8FBFF),
+    child: SafeArea(
+      bottom: false,
+      child: Column(
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration:
-                const BoxDecoration(
-              color: Color(
-                0xFFEDE8FF,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.smart_toy_rounded,
-              color: Color(
-                0xFF6950B8,
-              ),
-              size: 24,
-            ),
+          _buildHeader(),
+
+          Expanded(
+            child: _buildMessageList(),
           ),
 
-          const SizedBox(
-            width: 12,
-          ),
+          _buildRecommendedQuestions(),
 
-          const Expanded(
-            child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
-              children: [
-                Text(
-                  '숨-잇 챗봇',
-                  style: TextStyle(
-                    fontSize: 17,
-                    fontWeight:
-                        FontWeight.w700,
-                    color: Color(
-                      0xFF292535,
-                    ),
-                  ),
-                ),
-
-                SizedBox(
-                  height: 3,
-                ),
-
-                Row(
-                  children: [
-                    _OnlineDot(),
-
-                    SizedBox(
-                      width: 5,
-                    ),
-
-                    Text(
-                      '무엇이든 편하게 물어보세요',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(
-                          0xFF817A8D,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          Container(
-            padding:
-                const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 5,
-            ),
-            decoration: BoxDecoration(
-              color: const Color(
-                0xFFF3F0FA,
-              ),
-              borderRadius:
-                  BorderRadius.circular(
-                20,
-              ),
-            ),
-            child: const Text(
-              '안내',
-              style: TextStyle(
-                fontSize: 11,
-                color: Color(
-                  0xFF6950B8,
-                ),
-                fontWeight:
-                    FontWeight.w600,
-              ),
-            ),
-          ),
+          _buildInputArea(),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
+Widget _buildHeader() {
+  return Container(
+    margin: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+    padding: const EdgeInsets.all(16),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      border: Border.all(
+        color: const Color(0xFFE7F2FF),
+      ),
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 52,
+          height: 52,
+          decoration: const BoxDecoration(
+            color: Color(0xFFEAF6FF),
+            shape: BoxShape.circle,
+          ),
+          child: ClipOval(
+            child: Image.asset(
+              'assets/images/AIchat숨이.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 12),
+
+        const Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                '숨-잇 AI 챗봇',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w800,
+                  color: Color(0xFF1E2F4D),
+                ),
+              ),
+
+              SizedBox(height: 5),
+
+              Row(
+                children: [
+                  _OnlineDot(),
+
+                  SizedBox(width: 6),
+
+                  Text(
+                    '무엇이든 편하게 물어보세요',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Color(0xFF8A97A8),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+
+        Container(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 7,
+          ),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF6FF),
+            borderRadius: BorderRadius.circular(18),
+          ),
+          child: const Text(
+            '안내',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF2F9BFF),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
   Widget _buildMessageList() {
     return ListView.builder(
       controller: _scrollController,
@@ -399,373 +364,299 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     );
   }
 
-  Widget _buildMessageBubble(
-    _ChatMessage message,
-  ) {
-    if (message.isUser) {
-      return Align(
-        alignment:
-            Alignment.centerRight,
-        child: Container(
-          constraints:
-              const BoxConstraints(
-            maxWidth: 280,
+Widget _buildMessageBubble(
+  _ChatMessage message,
+) {
+  if (message.isUser) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        constraints: const BoxConstraints(
+          maxWidth: 280,
+        ),
+        margin: const EdgeInsets.only(
+          left: 60,
+          bottom: 14,
+        ),
+        padding: const EdgeInsets.symmetric(
+          horizontal: 16,
+          vertical: 12,
+        ),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4DA8FF),
+          borderRadius: BorderRadius.circular(18),
+        ),
+        child: Text(
+          message.text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 14,
+            height: 1.45,
           ),
-          margin:
-              const EdgeInsets.only(
-            left: 60,
-            bottom: 14,
+        ),
+      ),
+    );
+  }
+
+  return Padding(
+    padding: const EdgeInsets.only(
+      right: 40,
+      bottom: 14,
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: const BoxDecoration(
+            color: Color(0xFFEAF6FF),
+            shape: BoxShape.circle,
           ),
-          padding:
-              const EdgeInsets.symmetric(
+          child: ClipOval(
+            child: Image.asset(
+              'assets/images/AIchat숨이.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 8),
+
+        Flexible(
+          child: Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 16,
+              vertical: 13,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(6),
+                topRight: Radius.circular(18),
+                bottomLeft: Radius.circular(18),
+                bottomRight: Radius.circular(18),
+              ),
+              border: Border.all(
+                color: const Color(0xFFE5F1FC),
+              ),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x08000000),
+                  blurRadius: 8,
+                  offset: Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Text(
+              message.text,
+              style: const TextStyle(
+                color: Color(0xFF334155),
+                fontSize: 14,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildTypingBubble() {
+  return Padding(
+    padding: const EdgeInsets.only(
+      bottom: 14,
+    ),
+    child: Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: const BoxDecoration(
+            color: Color(0xFFEAF6FF),
+            shape: BoxShape.circle,
+          ),
+          child: ClipOval(
+            child: Image.asset(
+              'assets/images/AIchat숨이.png',
+              fit: BoxFit.cover,
+            ),
+          ),
+        ),
+
+        const SizedBox(width: 8),
+
+        Container(
+          padding: const EdgeInsets.symmetric(
             horizontal: 16,
             vertical: 12,
           ),
           decoration: BoxDecoration(
-            color: const Color(
-              0xFF7460C8,
-            ),
-            borderRadius:
-                BorderRadius.circular(
-              18,
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: const Color(0xFFE5F1FC),
             ),
           ),
-          child: Text(
-            message.text,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 14,
-              height: 1.45,
-            ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _TypingDot(),
+              SizedBox(width: 4),
+              _TypingDot(),
+              SizedBox(width: 4),
+              _TypingDot(),
+            ],
           ),
         ),
-      );
-    }
+      ],
+    ),
+  );
+}
 
-    return Padding(
-      padding:
-          const EdgeInsets.only(
-        right: 40,
-        bottom: 14,
+Widget _buildRecommendedQuestions() {
+  final icons = [
+    Icons.description_outlined,
+    Icons.assignment_outlined,
+    Icons.calendar_month_outlined,
+    Icons.medication_outlined,
+  ];
+
+  return Container(
+    color: const Color(0xFFF8FBFF),
+    padding: const EdgeInsets.fromLTRB(
+      12,
+      6,
+      12,
+      8,
+    ),
+    child: SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _recommendedQuestions.length,
+        separatorBuilder: (_, _) =>
+            const SizedBox(width: 8),
+        itemBuilder: (
+          context,
+          index,
+        ) {
+          final question =
+              _recommendedQuestions[index];
+
+          return ActionChip(
+            avatar: Icon(
+              icons[index],
+              size: 18,
+              color: const Color(0xFF3C9DFF),
+            ),
+            side: const BorderSide(
+              color: Color(0xFFCFE7FF),
+            ),
+            backgroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(14),
+            ),
+            label: Text(
+              question,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF334155),
+              ),
+            ),
+            onPressed: _isReplying
+                ? null
+                : () {
+                    _sendMessage(question);
+                  },
+          );
+        },
       ),
-      child: Row(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration:
-                const BoxDecoration(
-              color: Color(
-                0xFFEDE8FF,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.smart_toy_rounded,
-              size: 17,
-              color: Color(
-                0xFF6950B8,
-              ),
-            ),
-          ),
+    ),
+  );
+}
 
-          const SizedBox(
-            width: 8,
-          ),
-
-          Flexible(
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(
-                horizontal: 15,
-                vertical: 12,
-              ),
-              decoration:
-                  BoxDecoration(
-                color: Colors.white,
-                borderRadius:
-                    const BorderRadius.only(
-                  topLeft:
-                      Radius.circular(6),
-                  topRight:
-                      Radius.circular(18),
-                  bottomLeft:
-                      Radius.circular(18),
-                  bottomRight:
-                      Radius.circular(18),
+Widget _buildInputArea() {
+  return Container(
+    padding: const EdgeInsets.fromLTRB(
+      12,
+      8,
+      12,
+      10,
+    ),
+    decoration: const BoxDecoration(
+      color: Colors.white,
+      border: Border(
+        top: BorderSide(
+          color: Color(0xFFEAF2F8),
+        ),
+      ),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Expanded(
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF4F7FA),
+              borderRadius: BorderRadius.circular(24),
+            ),
+            child: TextField(
+              controller: _controller,
+              minLines: 1,
+              maxLines: 4,
+              enabled: !_isReplying,
+              textInputAction: TextInputAction.send,
+              decoration: const InputDecoration(
+                prefixIcon: Icon(
+                  Icons.auto_awesome_rounded,
+                  color: Color(0xFF4DA8FF),
+                  size: 19,
                 ),
-                border: Border.all(
-                  color:
-                      const Color(
-                    0xFFF0EDF5,
-                  ),
-                ),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(
-                      0x0A000000,
-                    ),
-                    blurRadius: 10,
-                    offset: Offset(
-                      0,
-                      3,
-                    ),
-                  ),
-                ],
-              ),
-              child: Text(
-                message.text,
-                style: const TextStyle(
-                  color: Color(
-                    0xFF3A3642,
-                  ),
+                hintText: '궁금한 내용을 입력해주세요.',
+                hintStyle: TextStyle(
+                  color: Color(0xFF9AA8B7),
                   fontSize: 14,
-                  height: 1.5,
+                ),
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  vertical: 12,
                 ),
               ),
+              onSubmitted: (_) {
+                _sendMessage();
+              },
             ),
           ),
-        ],
-      ),
-    );
-  }
+        ),
 
-  Widget _buildTypingBubble() {
-    return Padding(
-      padding:
-          const EdgeInsets.only(
-        bottom: 14,
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 30,
-            height: 30,
-            decoration:
-                const BoxDecoration(
-              color: Color(
-                0xFFEDE8FF,
-              ),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.smart_toy_rounded,
-              size: 17,
-              color: Color(
-                0xFF6950B8,
-              ),
-            ),
-          ),
+        const SizedBox(width: 8),
 
-          const SizedBox(
-            width: 8,
-          ),
-
-          Container(
-            padding:
-                const EdgeInsets.symmetric(
-              horizontal: 16,
-              vertical: 12,
-            ),
-            decoration:
-                BoxDecoration(
-              color: Colors.white,
-              borderRadius:
-                  BorderRadius.circular(
-                18,
-              ),
-            ),
-            child: const Row(
-              mainAxisSize:
-                  MainAxisSize.min,
-              children: [
-                _TypingDot(),
-                SizedBox(width: 4),
-                _TypingDot(),
-                SizedBox(width: 4),
-                _TypingDot(),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildRecommendedQuestions() {
-    return Container(
-      color: const Color(
-        0xFFFCFAFF,
-      ),
-      padding:
-          const EdgeInsets.fromLTRB(
-        12,
-        4,
-        12,
-        8,
-      ),
-      child: SizedBox(
-        height: 38,
-        child: ListView.separated(
-          scrollDirection:
-              Axis.horizontal,
-          itemCount:
-              _recommendedQuestions
-                  .length,
-          separatorBuilder:
-              (context, index) =>
-                  const SizedBox(
-            width: 7,
-          ),
-          itemBuilder: (
-            context,
-            index,
-          ) {
-            final question =
-                _recommendedQuestions[
-                    index];
-
-            return ActionChip(
-              side: const BorderSide(
-                color: Color(
-                  0xFFE1DAF2,
-                ),
-              ),
+        SizedBox(
+          width: 46,
+          height: 46,
+          child: IconButton(
+            onPressed:
+                _isReplying ? null : _sendMessage,
+            style: IconButton.styleFrom(
               backgroundColor:
-                  Colors.white,
-              label: Text(
-                question,
-                style:
-                    const TextStyle(
-                  fontSize: 12,
-                  color: Color(
-                    0xFF554A72,
-                  ),
-                ),
-              ),
-              onPressed:
-                  _isReplying
-                      ? null
-                      : () {
-                          _sendMessage(
-                            question,
-                          );
-                        },
-            );
-          },
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInputArea() {
-    return Container(
-      padding:
-          const EdgeInsets.fromLTRB(
-        12,
-        8,
-        12,
-        8,
-      ),
-      decoration:
-          const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          top: BorderSide(
-            color: Color(
-              0xFFF0ECF5,
+                  const Color(0xFF4DA8FF),
+              foregroundColor: Colors.white,
+              disabledBackgroundColor:
+                  const Color(0xFFBFDDF7),
+            ),
+            icon: const Icon(
+              Icons.send_rounded,
+              size: 21,
             ),
           ),
         ),
-      ),
-      child: Row(
-        crossAxisAlignment:
-            CrossAxisAlignment.end,
-        children: [
-          Expanded(
-            child: Container(
-              decoration:
-                  BoxDecoration(
-                color: const Color(
-                  0xFFF7F5FA,
-                ),
-                borderRadius:
-                    BorderRadius.circular(
-                  24,
-                ),
-              ),
-              child: TextField(
-                controller:
-                    _controller,
-                minLines: 1,
-                maxLines: 4,
-                enabled:
-                    !_isReplying,
-                textInputAction:
-                    TextInputAction.send,
-                decoration:
-                    const InputDecoration(
-                  hintText:
-                      '궁금한 내용을 입력해주세요.',
-                  hintStyle:
-                      TextStyle(
-                    color: Color(
-                      0xFFA59EAD,
-                    ),
-                    fontSize: 14,
-                  ),
-                  border:
-                      InputBorder.none,
-                  contentPadding:
-                      EdgeInsets.symmetric(
-                    horizontal: 17,
-                    vertical: 12,
-                  ),
-                ),
-                onSubmitted: (_) {
-                  _sendMessage();
-                },
-              ),
-            ),
-          ),
-
-          const SizedBox(
-            width: 8,
-          ),
-
-          SizedBox(
-            width: 44,
-            height: 44,
-            child: IconButton(
-              onPressed:
-                  _isReplying
-                      ? null
-                      : _sendMessage,
-              style:
-                  IconButton.styleFrom(
-                backgroundColor:
-                    const Color(
-                  0xFF7460C8,
-                ),
-                foregroundColor:
-                    Colors.white,
-                disabledBackgroundColor:
-                    const Color(
-                  0xFFD5CFE5,
-                ),
-              ),
-              icon: const Icon(
-                Icons.arrow_upward_rounded,
-                size: 22,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+      ],
+    ),
+  );
+}
 }
 
 class _OnlineDot

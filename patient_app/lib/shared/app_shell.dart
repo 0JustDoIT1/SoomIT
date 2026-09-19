@@ -264,8 +264,8 @@ class _AppShellState extends State<AppShell>
        * 챗봇 아이콘 → X
        * 아이콘 자체도 살짝 회전하며 전환
        */
-      floatingActionButton: FloatingActionButton(
-        onPressed: _toggleChatbot,
+      floatingActionButton: GestureDetector(
+        onTap: _toggleChatbot,
         child: AnimatedSwitcher(
           duration: const Duration(milliseconds: 220),
           transitionBuilder: (child, animation) {
@@ -274,13 +274,26 @@ class _AppShellState extends State<AppShell>
               child: ScaleTransition(scale: animation, child: child),
             );
           },
-          child: Icon(
-            _isChatbotOpen ? Icons.close_rounded : Icons.smart_toy_outlined,
-            key: ValueKey(_isChatbotOpen),
-          ),
+          child: _isChatbotOpen
+              ? Container(
+                  key: const ValueKey('close'),
+                  width: 56,
+                  height: 56,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF4DA8FF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded, color: Colors.white),
+                )
+              : Image.asset(
+                  'assets/images/AIchat숨이.png',
+                  key: const ValueKey('soomi'),
+                  width: 70,
+                  height: 70,
+                  fit: BoxFit.contain,
+                ),
         ),
       ),
-
       floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
 
       /*
