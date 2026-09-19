@@ -49,6 +49,7 @@ from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_p
 from .services.pathology_storage import (
     PathologyStorageError,
     download_pathology_wsi_preview,
+    read_svs_mpp,
     upload_pathology_wsi,
 )
 
@@ -323,6 +324,7 @@ class PathologyOrderPathologyGeneInputUploadAPIView(PathologyStaffAPIViewMixin, 
 
         wsi_file = serializer.validated_data["wsi_file"]
         original_filename = wsi_file.name
+        mpp = read_svs_mpp(wsi_file)
 
         try:
             wsi_uri = upload_pathology_wsi(
@@ -371,6 +373,7 @@ class PathologyOrderPathologyGeneInputUploadAPIView(PathologyStaffAPIViewMixin, 
                     stain=WholeSlideImage.Stain.HE,
                     original_filename=original_filename,
                     sha256=file_sha256,
+                    mpp=mpp,
                     is_current=True,
                     uploaded_by_user=request.user,
                 )

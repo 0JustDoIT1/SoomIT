@@ -1,4 +1,6 @@
 from pathlib import Path
+import re
+import struct
 from uuid import uuid4
 
 from django.conf import settings
@@ -7,6 +9,50 @@ from google.cloud import storage
 
 class PathologyStorageError(RuntimeError):
     pass
+
+
+def read_svs_mpp(uploaded_file):
+    """Read the explicitly recorded Aperio MPP value from an SVS TIFF header."""
+    original_position = uploaded_file.tell()
+    try:
+        uploaded_file.seek(0)
+        header = uploaded_file.read(8)
+        if len(header) != 8 or header[:2] not in (b"II", b"MM"):
+            return None
+
+        endian = "<" if header[:2] == b"II" else ">"
+        magic, ifd_offset = struct.unpack(f"{endian}HI", header[2:])
+        if magic != 42:
+            return None
+
+        uploaded_file.seek(ifd_offset)
+        count_bytes = uploaded_file.read(2)
+        if len(count_bytes) != 2:
+            return None
+        entry_count = struct.unpack(f"{endian}H", count_bytes)[0]
+
+        for _ in range(entry_count):
+            entry = uploaded_file.read(12)
+            if len(entry) != 12:
+                return None
+            tag, field_type, value_count = struct.unpack(f"{endian}HHI", entry[:8])
+            if tag != 270 or field_type != 2 or value_count == 0:
+                continue
+
+            value = entry[8:12] if value_count <= 4 else None
+            if value is None:
+                description_offset = struct.unpack(f"{endian}I", entry[8:12])[0]
+                uploaded_file.seek(description_offset)
+                value = uploaded_file.read(min(value_count, 1024 * 1024))
+            match = re.search(rb"(?:^|[|\s])MPP\s*=\s*([0-9]+(?:\.[0-9]+)?)", value, re.IGNORECASE)
+            if match:
+                return match.group(1).decode("ascii")
+            return None
+        return None
+    except (OSError, struct.error, ValueError):
+        return None
+    finally:
+        uploaded_file.seek(original_position)
 
 
 def download_pathology_wsi_preview(wsi_uri):

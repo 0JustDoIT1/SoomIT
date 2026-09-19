@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import Image from "next/image";
 import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
@@ -148,6 +148,88 @@ function geneStatus(value: string | undefined) {
   return "-";
 }
 
+type PathologyGeneResultEntry = NonNullable<
+  NonNullable<PathologyAiAnalysis["result_detail"]>["genes"]
+>[number];
+
+function PathologyGeneResultGroups({
+  results,
+  compact = false,
+}: {
+  results: PathologyGeneResultEntry[];
+  compact?: boolean;
+}) {
+  const displayResults = geneTargets.map((target) => ({
+    target,
+    result: results.find((entry) => entry?.gene_symbol === target.symbol) ?? null,
+  }));
+  const positiveResults = displayResults.filter(
+    ({ result }) => result?.predicted_status === "PREDICTED_POSITIVE",
+  );
+  const otherResults = displayResults.filter(
+    ({ result }) => result?.predicted_status !== "PREDICTED_POSITIVE",
+  );
+
+  return (
+    <div className={compact ? "mt-5" : "mt-3"}>
+      <div className="flex items-center justify-between gap-3">
+        <h4 className="text-xs font-bold text-slate-800">주요 양성 결과</h4>
+        {positiveResults.length > 0 ? (
+          <span className="rounded-full bg-[#EEF2FF] px-2 py-0.5 text-[10px] font-semibold text-[#3446B8]">
+            {positiveResults.length}개
+          </span>
+        ) : null}
+      </div>
+      {positiveResults.length > 0 ? (
+        <div className={`mt-2 grid gap-2 ${compact ? "sm:grid-cols-2" : "sm:grid-cols-2"}`}>
+          {positiveResults.map(({ target, result }) => (
+            <article
+              key={target.symbol}
+              className="rounded-xl border border-[#EBD8DD] bg-[#FCF6F7] p-3"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h5 className="text-sm font-bold text-[#783A4B]">{target.label}</h5>
+                <span className="rounded-full bg-[#F5E6E9] px-2 py-1 text-[11px] font-bold text-[#874557] ring-1 ring-inset ring-[#E9CDD4]">
+                  Positive
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Probability <span className="font-semibold text-slate-700">{percent(result?.predicted_probability)}</span>
+              </p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 rounded-lg bg-[#F8F9FC] px-3 py-2 text-xs text-slate-500">
+          주요 양성 유전자 없음
+        </p>
+      )}
+
+      <div className="mt-4">
+        <h4 className="text-xs font-semibold text-slate-600">기타 유전자 결과</h4>
+        {otherResults.length > 0 ? (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {otherResults.map(({ target, result }) => (
+              <span
+                key={target.symbol}
+                className="inline-flex items-center gap-1.5 rounded-full border border-[#E5E7F0] bg-slate-50 px-2.5 py-1.5 text-[11px] text-slate-600"
+              >
+                <span className="font-semibold text-slate-700">{target.label}</span>
+                <span>{geneStatus(result?.predicted_status)}</span>
+                {result?.predicted_probability !== null && result?.predicted_probability !== undefined ? (
+                  <span className="text-slate-400">· {percent(result.predicted_probability)}</span>
+                ) : null}
+              </span>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-[11px] text-slate-400">기타 유전자 결과 없음</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function AnalysisProgress({
   status,
 }: {
@@ -232,38 +314,38 @@ function PatientSummary({
   return (
     <section
       aria-labelledby="pathology-selected-patient-heading"
-      className="min-h-0 overflow-y-auto border-t border-[#E2E5F2] bg-[#FBFBFF] p-4"
+      className="min-h-0 overflow-y-auto rounded-xl border border-[#DDE2F7] bg-white shadow-sm"
     >
-      <div className="bg-white px-1 py-1">
+      <div className="border-b border-[#E2E5F2] bg-[#F8F8FF] px-4 py-3">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
           선택 환자
         </p>
 
         <div className="mt-1 flex items-start justify-between gap-3">
-          <div>
+          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
             <h2
               id="pathology-selected-patient-heading"
-              className="text-base font-bold text-slate-900"
+              className="text-lg font-bold text-slate-900"
             >
               {item.patient.name}
             </h2>
 
-            <p className="mt-0.5 text-xs text-slate-500">
+            <p className="text-xs text-slate-500">
               {item.patient.patient_code}
             </p>
           </div>
 
-          <span className="whitespace-nowrap px-1 py-0 text-[11px] font-semibold text-[#3446B8]">
+          <span className="shrink-0 whitespace-nowrap rounded-full border border-[#CDD3EE] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#3446B8]">
             {workflowDisplayStatus(item)}
           </span>
         </div>
       </div>
 
-      <dl className="grid gap-x-4 gap-y-3 bg-white px-1 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+      <dl className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-4 text-xs">
         {summaryRows.map(([label, value]) => (
           <div key={label}>
             <dt className="text-[11px] text-slate-400">{label}</dt>
-            <dd className="mt-1 break-words font-medium text-slate-800">
+            <dd className="mt-1 break-words font-semibold text-slate-800">
               {value}
             </dd>
           </div>
@@ -273,12 +355,27 @@ function PatientSummary({
   );
 }
 
+function subscribeToUserSessionStorage() {
+  return () => undefined;
+}
+
+function getPathologyStaffName() {
+  try {
+    const user = JSON.parse(sessionStorage.getItem("user") ?? "null") as { name?: string; username?: string } | null;
+    return user?.name || user?.username || "-";
+  } catch {
+    return "-";
+  }
+}
+
 function SelectedCaseOverview({
   workflow,
   item,
+  staffName,
 }: {
   workflow: PathologyCaseWorkflow;
   item: PathologyWorkstationItem | null;
+  staffName: string;
 }) {
   return (
     <section className="overflow-hidden border-b border-[#E2E5F2] bg-white">
@@ -288,7 +385,7 @@ function SelectedCaseOverview({
             선택 환자 정보
           </p>
           <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h1 className="text-xl font-bold text-slate-900">
+            <h1 className="text-xl font-extrabold text-slate-900">
               {workflow.patient.name}
             </h1>
             <span className="text-xs text-slate-500">
@@ -304,20 +401,20 @@ function SelectedCaseOverview({
         ) : null}
       </div>
 
-      <dl className="grid gap-x-6 gap-y-3 px-5 py-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
+      <dl className="grid gap-x-6 gap-y-4 px-5 py-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
         {[
           ["생년월일", workflow.patient.birth_date || "-"],
           ["성별", workflow.patient.sex || "-"],
           ["Case Code", workflow.case.case_code || "-"],
           ["현재 단계", workflow.case.current_stage || "-"],
           ["Case 상태", workflow.case.case_status || "-"],
-          ["담당자", item?.assigned_to_name ?? "-"],
+          ["담당자", staffName],
           ["의뢰 의사", item?.requesting_doctor?.name ?? "-"],
           ["현재 검사", item?.order_type_label ?? "-"],
         ].map(([label, value]) => (
-          <div key={label} className="border-l-2 border-[#CDD3EE] pl-3">
+          <div key={label} className="border-l border-[#E8EAF5] pl-3">
             <dt className="text-[11px] text-slate-400">{label}</dt>
-            <dd className="mt-1 break-words font-semibold text-slate-800">
+            <dd className={`mt-1 break-words ${label === "?꾩옱 ?④퀎" || label === "?꾩옱 寃??" ? "font-semibold text-slate-900" : "font-medium text-slate-700"}`}>
               {value}
             </dd>
           </div>
@@ -459,9 +556,11 @@ function PathologyCompletedHistory() {
 function WorkArea({
   item,
   sectionNumber,
+  onGeneWsiUploaded,
 }: {
   item: PathologyWorkstationItem;
   sectionNumber: number;
+  onGeneWsiUploaded: () => void;
 }) {
   const [pdl1Analyses, setPdl1Analyses] = useState<
     PathologyAiAnalysis[]
@@ -662,6 +761,7 @@ function WorkArea({
     try {
       const result = await uploadPathologyGeneInput(orderId, pathologyGeneWsiFile);
       setPathologyGeneWsiId(result.wsi_id);
+      onGeneWsiUploaded();
       setPathologyGeneUploadMessage("H&E WSI 파일이 서버에 업로드되었습니다.");
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "H&E WSI 업로드에 실패했습니다.");
@@ -801,6 +901,13 @@ function WorkArea({
         alreadySubmitted || item.workflow_status === "REVIEW_COMPLETED",
     },
   ];
+  const activeWorkflowStepIndex = workflowSteps.findIndex((step) => !step.completed);
+  const indicatorWorkflowStepIndex =
+    activeWorkflowStepIndex >= 0
+      ? activeWorkflowStepIndex
+      : alreadySubmitted || item.workflow_status === "REVIEW_COMPLETED"
+        ? workflowSteps.length - 1
+        : -1;
 
   async function handleSubmitForReview() {
     if (!canSubmitForReview || !currentAnalysis) return;
@@ -852,12 +959,12 @@ function WorkArea({
         {isKnownTestType ? (
           <ol
             aria-label={`${testTitle} workflow`}
-            className="grid overflow-hidden rounded-lg border border-[#DDE2F7] bg-white sm:grid-cols-4"
+            className="grid overflow-visible rounded-lg border border-[#DDE2F7] bg-white sm:grid-cols-4"
           >
             {workflowSteps.map((step, index) => (
               <li
                 key={step.label}
-                className={`relative flex items-center gap-3 border-b border-[#E2E5F2] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${
+                className={`relative flex items-center gap-3 border-b border-[#E2E5F2] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${indicatorWorkflowStepIndex === index ? "pr-12" : ""} ${
                   step.completed ? "bg-[#F1F3FF]" : "bg-white"
                 }`}
               >
@@ -877,6 +984,21 @@ function WorkArea({
                 >
                   {step.label}
                 </span>
+                {indicatorWorkflowStepIndex === index ? (
+                  <span
+                    className="pointer-events-none absolute -right-2 top-1/2 z-10 h-8 w-8 -translate-y-1/2"
+                    role="img"
+                    aria-label={`현재 단계: ${step.label}`}
+                  >
+                    <Image
+                      src="/images/borasoomi_face.png"
+                      alt=""
+                      width={32}
+                      height={32}
+                      className="h-8 w-8 object-contain"
+                    />
+                  </span>
+                ) : null}
               </li>
             ))}
           </ol>
@@ -931,7 +1053,9 @@ function WorkArea({
                 <div>
                   <dt className="text-slate-500">MPP</dt>
                   <dd className="mt-1 font-semibold">
-                    {item.latest_wsi.mpp ?? "-"}
+                    {item.latest_wsi.mpp == null
+                      ? "-"
+                      : `${item.latest_wsi.mpp} μm/px`}
                   </dd>
                 </div>
 
@@ -1178,13 +1302,13 @@ function WorkArea({
                       pathologyResult.malignancy_assessment_label ?? "-",
                     ],
                     ["악성 확률", percent(pathologyResult.malignancy_probability)],
-                  ].map(([label, value]) => (
+                  ].map(([label, value], index) => (
                     <div
                       key={label}
-                      className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
+                      className="rounded-xl border border-[#E4E7F3] bg-gradient-to-b from-[#F5F6FF] to-white p-3"
                     >
-                      <dt className="text-xs text-slate-500">{label}</dt>
-                      <dd className="mt-2 font-bold text-slate-900">{value}</dd>
+                      <dt className="text-[11px] font-medium text-slate-500">{label}</dt>
+                      <dd className={`mt-2 text-base ${index === 0 && value === "LUAD" ? "font-bold text-[#A13F57]" : index === 2 ? "font-bold text-[#A13F57]" : "font-semibold text-[#59627F]"}`}>{value}</dd>
                     </div>
                   ))}
                 </dl>
@@ -1246,28 +1370,7 @@ function WorkArea({
                     <span className="ml-2 text-xs text-slate-400">NOT_APPLICABLE_NON_LUAD</span>
                   </div>
                 ) : (
-                  <dl className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {geneTargets.map((gene) => {
-                      const result = geneResults.find(
-                        (entry) => entry.gene_symbol === gene.symbol,
-                      );
-
-                      return (
-                        <div
-                          key={gene.symbol}
-                          className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-sm"
-                        >
-                          <dt className="font-bold text-slate-800">{gene.label}</dt>
-                          <dd className="mt-2 font-semibold text-slate-700">
-                            {geneStatus(result?.predicted_status)}
-                          </dd>
-                          <dd className="mt-1 text-xs text-slate-500">
-                            Probability {percent(result?.predicted_probability)}
-                          </dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
+                  <PathologyGeneResultGroups results={geneResults} />
                 )}
               </div>
             ) : null}
@@ -1365,7 +1468,7 @@ function WorkArea({
                     <dl className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
                       <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">예측 아형</dt>
-                        <dd className="mt-1 font-bold text-slate-900">
+                        <dd className={`mt-1 font-bold ${(pathologyResult.predicted_subtype ?? pathologyResult.predicted_histologic_type) === "LUAD" ? "text-[#A13F57]" : "text-slate-900"}`}>
                           {pathologyResult.predicted_subtype ??
                             pathologyResult.predicted_histologic_type ??
                             "-"}
@@ -1379,7 +1482,7 @@ function WorkArea({
                       </div>
                       <div className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
                         <dt className="text-slate-500">악성 판정</dt>
-                        <dd className="mt-1 font-bold text-slate-900">
+                        <dd className="mt-1 font-bold text-[#A13F57]">
                           {pathologyResult.malignancy_assessment_label ?? "-"}
                         </dd>
                       </div>
@@ -1445,21 +1548,7 @@ function WorkArea({
                       <span className="ml-2 text-xs text-slate-400">NOT_APPLICABLE_NON_LUAD</span>
                     </div>
                   ) : (
-                  <dl className="mt-2 grid gap-2 sm:grid-cols-2">
-                    {geneTargets.map((gene) => {
-                      const result = geneResults.find(
-                        (entry) => entry.gene_symbol === gene.symbol,
-                      );
-
-                      return (
-                        <div key={gene.symbol} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3 text-sm">
-                          <dt className="font-bold text-slate-800">{gene.label}</dt>
-                          <dd className="text-right text-slate-600"><span className="mr-1 text-[11px] text-slate-400">Probability</span>{percent(result?.predicted_probability)}</dd>
-                          <dd className="col-span-2 mt-1 font-semibold text-slate-700"><span className="mr-2 text-[11px] font-normal text-slate-400">결과</span>{geneStatus(result?.predicted_status)}</dd>
-                        </div>
-                      );
-                    })}
-                  </dl>
+                  <PathologyGeneResultGroups results={geneResults} compact />
                   )}
                 </div>
               ) : null}
@@ -1513,6 +1602,11 @@ function WorkArea({
 
 export default function PathologyDashboardPage() {
   const recent = useRecentPatients("pathologyRecentPatients");
+  const pathologyStaffName = useSyncExternalStore(
+    subscribeToUserSessionStorage,
+    getPathologyStaffName,
+    () => "-",
+  );
   const [items, setItems] = useState<
     PathologyWorkstationItem[]
   >([]);
@@ -1526,6 +1620,7 @@ export default function PathologyDashboardPage() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<
     PathologyCaseWorkflow | null
   >(null);
+  const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
@@ -1620,7 +1715,12 @@ export default function PathologyDashboardPage() {
     }, 30_000);
 
     void fetchPathologyCaseWorkflow(selectedId, controller.signal)
-      .then(data => { if (!controller.signal.aborted) setSelectedWorkflow(data); })
+      .then(data => {
+        if (!controller.signal.aborted) {
+          setSelectedWorkflow(data);
+          setDetailError("");
+        }
+      })
       .catch((reason: unknown) => {
         if (!controller.signal.aborted) {
           setDetailError(
@@ -1639,7 +1739,7 @@ export default function PathologyDashboardPage() {
       window.clearTimeout(detailTimeout);
       controller.abort();
     };
-  }, [selectedId]);
+  }, [selectedId, workflowRefreshVersion]);
 
   const visible = useMemo(() => {
     const nonCancelled = items.filter(
@@ -1888,7 +1988,7 @@ export default function PathologyDashboardPage() {
                     <tbody>
                       {visible.map((item) => (
                         <tr
-                          key={item.case_id}
+                          key={item.id}
                           tabIndex={0}
                           onClick={() =>
                             (() => {
@@ -2087,16 +2187,18 @@ export default function PathologyDashboardPage() {
               className="m-6 self-start"
             />
           ) : selectedId && selectedWorkflow ? (
-            <main className="min-h-0 flex-1 overflow-y-auto bg-[#F7F8FC] p-4">
+            <main className="min-h-0 flex-1 overflow-y-auto bg-white p-4">
               <SelectedCaseOverview
                 workflow={selectedWorkflow}
                 item={currentWorkflowOrder}
+                staffName={pathologyStaffName}
               />
               {currentWorkflowOrder ? (
                 <WorkArea
                   key={currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}
                   item={currentWorkflowOrder}
                   sectionNumber={1}
+                  onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
                 />
               ) : selectedWorkflow.orders.length === 0 ? (
                 <StateMessage
@@ -2113,9 +2215,9 @@ export default function PathologyDashboardPage() {
               )}
             </main>
           ) : (
-            <main className="flex min-h-0 flex-1 items-center justify-center bg-[#F7F8FC] p-6">
+            <main className="flex min-h-0 flex-1 items-center justify-center bg-white p-6">
               <div className="flex -translate-y-8 flex-col items-center text-center">
-                <Image src="/images/soomi2.png" alt="" width={176} height={176} className="mb-5 h-auto w-44 object-contain" />
+                <Image src="/images/soomi.png" alt="" width={176} height={176} className="mb-5 h-auto w-44 object-contain" />
                 <h1 className="text-xl font-bold text-slate-900">환자를 선택해 주세요</h1>
                 <p className="mt-2 max-w-[340px] text-sm leading-6 text-slate-500">
                   왼쪽 Worklist에서 환자를 선택하면 병리 검사 및 AI 분석 작업을 시작할 수 있습니다.
