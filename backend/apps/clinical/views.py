@@ -12,7 +12,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase
+from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff
+from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.patients.models import CurrentMedication, LabResult, MedicationSchedule, Patient, PatientAccount, PatientHealthProfile
 from apps.patients.patient_authentication import PatientJWTAuthentication
 
@@ -44,6 +45,24 @@ UNRESOLVED_SAFETY_SOURCE_CODES = {
     "ALLERGY_UNCONFIRMED",
     "LAB_MISSING",
 }
+
+PULMONOLOGY_WRITE_PERMISSIONS = [
+    IsAuthenticated,
+    IsActiveStaff,
+    IsDoctor,
+    IsPulmonologyStaff,
+]
+
+
+class PulmonologyWritePermissionMixin:
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        permission_classes = self.permission_classes
+        if self.request.method not in {"GET", "HEAD", "OPTIONS"}:
+            permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
+        return [permission() for permission in permission_classes]
 
 
 class DoctorTnmDraftAPIView(APIView):
@@ -78,7 +97,6 @@ class DoctorTnmDraftAPIView(APIView):
                 case=case, examination_order=order, workflow_stage="PET_CT_TNM",
                 reviewed_ai_result_id=ai_result_id,
             )
-            .select_related("tnm_detail")
             .first()
         )
         if draft is not None and draft.result_status == ClinicalResult.ResultStatus.CONFIRMED:
@@ -166,6 +184,33 @@ class DoctorCtResultConfirmAPIView(APIView):
         result.confirmed_by_user = request.user
         result.confirmed_at = timezone.now()
         result.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+        if request.data.get("advance_to_next_stage") is True:
+            if result.case.current_stage != WorkflowStage.CT:
+                return Response({"detail": "CT is not the current workflow stage."}, status=400)
+            from apps.cases.services.examination_orders import ExaminationOrderCreationError, create_examination_order
+            try:
+                create_examination_order(
+                    case=result.case,
+                    requesting_doctor=request.user,
+                    order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+                    priority=ExaminationOrder.Priority.NORMAL,
+                    purpose="CT result confirmed; proceed with PET-CT/TNM",
+                    clinical_note="",
+                )
+            except ExaminationOrderCreationError as exc:
+                return Response({"detail": str(exc)}, status=400)
+            result.case.current_stage = WorkflowStage.PET_CT_TNM
+            result.case.save(update_fields=["current_stage", "updated_at"])
+            ClinicianDecision.objects.create(
+                case=result.case,
+                source_stage=WorkflowStage.CT,
+                source_clinical_result=result,
+                decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
+                target_stage=WorkflowStage.PET_CT_TNM,
+                reason="CT result confirmed and PET-CT/TNM ordered",
+                decided_by_user=request.user,
+                decided_at=timezone.now(),
+            )
         return Response({"id": str(result.id), "workflow_stage": result.workflow_stage, "result_status": result.result_status, "reviewed_ai_result_id": str(result.reviewed_ai_result_id), "confirmed_by_user_id": str(request.user.id), "confirmed_at": result.confirmed_at})
 
 
@@ -181,7 +226,6 @@ class DoctorTnmConfirmAPIView(APIView):
                 id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
                 case__primary_doctor=request.user,
             )
-            .select_related("tnm_detail")
             .first()
         )
         if diagnosis is None:
@@ -209,7 +253,6 @@ class DoctorTnmStageAPIView(APIView):
             .filter(id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
                     result_status=ClinicalResult.ResultStatus.CONFIRMED,
                     case__primary_doctor=request.user)
-            .select_related("tnm_detail", "case__patient")
             .first()
         )
         if diagnosis is None:
@@ -242,7 +285,6 @@ class DoctorTnmStageConfirmAPIView(APIView):
             .filter(id=result_id, case_id=case_id, workflow_stage="PET_CT_TNM",
                     result_status=ClinicalResult.ResultStatus.CONFIRMED,
                     case__primary_doctor=request.user)
-            .select_related("tnm_detail")
             .first()
         )
         if diagnosis is None:
@@ -254,8 +296,41 @@ class DoctorTnmStageConfirmAPIView(APIView):
             return Response({"detail": "A ready Stage candidate is required."}, status=400)
         if detail.stage_group:
             return Response({"detail": "Stage Group is already confirmed."}, status=409)
+        if request.data.get("advance_to_next_stage") is True and (
+            diagnosis.case.current_stage != WorkflowStage.PET_CT_TNM
+            or diagnosis.case.case_status != LungCancerCase.CaseStatus.ACTIVE
+        ):
+            return Response({"detail": "PET-CT/TNM is not the active workflow stage."}, status=400)
         detail.stage_group = candidate
         detail.save(update_fields=["stage_group"])
+        if request.data.get("advance_to_next_stage") is True:
+            if diagnosis.case.current_stage != WorkflowStage.PET_CT_TNM:
+                return Response({"detail": "PET-CT/TNM is not the current workflow stage."}, status=400)
+            from apps.cases.services.examination_orders import ExaminationOrderCreationError, create_examination_order
+            try:
+                create_examination_order(
+                    case=diagnosis.case,
+                    requesting_doctor=request.user,
+                    order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+                    priority=ExaminationOrder.Priority.NORMAL,
+                    purpose="TNM Stage Group confirmed; proceed with pathology/gene testing",
+                    clinical_note="",
+                )
+            except ExaminationOrderCreationError as exc:
+                transaction.set_rollback(True)
+                return Response({"detail": str(exc)}, status=400)
+            diagnosis.case.current_stage = WorkflowStage.PATHOLOGY_GENE
+            diagnosis.case.save(update_fields=["current_stage", "updated_at"])
+            ClinicianDecision.objects.create(
+                case=diagnosis.case,
+                source_stage=WorkflowStage.PET_CT_TNM,
+                source_clinical_result=diagnosis,
+                decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
+                target_stage=WorkflowStage.PATHOLOGY_GENE,
+                reason="TNM Stage Group confirmed and pathology/gene testing ordered",
+                decided_by_user=request.user,
+                decided_at=timezone.now(),
+            )
         return Response(DoctorTnmDraftSerializer(diagnosis).data)
 
 
@@ -454,20 +529,17 @@ class DoctorClinicalResultListAPIView(ListAPIView):
         )
 
 @extend_schema(tags=["호흡기내과-치료결정"])
-class DoctorTreatmentDecisionAPIView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+class DoctorTreatmentDecisionAPIView(PulmonologyWritePermissionMixin, APIView):
 
-    def get_case(self, case_id, user):
-        return (
-            LungCancerCase.objects
-            .filter(
-                id=case_id,
-                primary_doctor=user,
-                case_status="ACTIVE",
-            )
-            .first()
-        )
+    def get_case(self, case_id, user, *, lock=False):
+        cases = LungCancerCase.objects.all()
+        if lock:
+            cases = cases.select_for_update(of=("self",))
+        return cases.filter(
+            id=case_id,
+            primary_doctor=user,
+            case_status="ACTIVE",
+        ).first()
 
     # 치료 결정 조회
     @extend_schema(
@@ -516,12 +588,22 @@ class DoctorTreatmentDecisionAPIView(APIView):
         },
     )
     def post(self, request, case_id):
-        case = self.get_case(case_id, request.user)
+        with transaction.atomic():
+            return self._save_treatment_decision(request, case_id)
+
+    def _save_treatment_decision(self, request, case_id):
+        case = self.get_case(case_id, request.user, lock=True)
 
         if case is None:
             return Response(
                 {"detail": "담당 Case를 찾을 수 없습니다."},
                 status=404,
+            )
+
+        if case.current_stage != WorkflowStage.TREATMENT:
+            return Response(
+                {"detail": "Treatment decisions can only be saved during the TREATMENT stage."},
+                status=400,
             )
 
         clinical_result = ClinicalResult.objects.filter(case=case, workflow_stage="TREATMENT").first()
@@ -546,12 +628,11 @@ class DoctorTreatmentDecisionAPIView(APIView):
         )
         DoctorRegimenCandidateListAPIView.validate_selected_regimen(request, case_id, selected_regimen)
 
-        with transaction.atomic():
-            if clinical_result is None:
-                clinical_result = ClinicalResult.objects.create(
-                    case=case, workflow_stage="TREATMENT", result_status="DRAFT",
-                )
-            serializer.save(clinical_result=clinical_result)
+        if clinical_result is None:
+            clinical_result = ClinicalResult.objects.create(
+                case=case, workflow_stage="TREATMENT", result_status="DRAFT",
+            )
+        serializer.save(clinical_result=clinical_result)
 
         return Response(
             serializer.data,
@@ -560,7 +641,7 @@ class DoctorTreatmentDecisionAPIView(APIView):
 @extend_schema(tags=["호흡기내과-치료결정"])
 class DoctorTreatmentDecisionConfirmAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @extend_schema(
         request=None,
@@ -569,7 +650,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
     @transaction.atomic
     def post(self, request, case_id):
         case = (
-            LungCancerCase.objects
+            LungCancerCase.objects.select_for_update(of=("self",))
             .filter(
                 id=case_id,
                 primary_doctor=request.user,
@@ -584,14 +665,29 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 status=404,
             )
 
+        if case.current_stage != "TREATMENT":
+            return Response(
+                {"detail": "치료결정 단계에서만 최종 확정할 수 있습니다."},
+                status=400,
+            )
+
+        clinical_result = (
+            ClinicalResult.objects.select_for_update(of=("self",))
+            .filter(case=case, workflow_stage=WorkflowStage.TREATMENT)
+            .first()
+        )
+        if clinical_result is None:
+            return Response({"detail": "Treatment decision was not found."}, status=404)
+        if clinical_result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response({"detail": "Treatment decision is already confirmed."}, status=400)
+
         treatment_decision = (
             TreatmentDecision.objects
             .select_related(
-                "clinical_result",
                 "selected_regimen",
             )
             .filter(
-                clinical_result__case=case,
+                clinical_result=clinical_result,
             )
             .first()
         )
@@ -679,9 +775,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
         )
 
 @extend_schema(tags=["호흡기내과-처방관리"])
-class DoctorPrescriptionAPIView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
 
     def get_case(self, case_id, user, *, lock=False):
         cases = LungCancerCase.objects.all()
@@ -738,6 +832,12 @@ class DoctorPrescriptionAPIView(APIView):
             return Response(
                 {"detail": "담당 Case를 찾을 수 없습니다."},
                 status=404,
+            )
+
+        if case.current_stage != "PRESCRIPTION":
+            return Response(
+                {"detail": "처방 단계에서만 처방을 생성할 수 있습니다."},
+                status=400,
             )
 
         treatment_decision = (
@@ -858,7 +958,7 @@ class DoctorPrescriptionAPIView(APIView):
 @extend_schema(tags=["호흡기내과-처방관리"])
 class DoctorPrescriptionFinalizeAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @extend_schema(
         request=PrescriptionFinalizeSerializer,
@@ -890,6 +990,12 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
             return Response(
                 {"detail": "처방을 찾을 수 없습니다."},
                 status=404,
+            )
+
+        if prescription.case.current_stage != "PRESCRIPTION":
+            return Response(
+                {"detail": "처방 단계에서만 처방을 최종 확정할 수 있습니다."},
+                status=400,
             )
 
         if prescription.prescription_status != "VALIDATED":
@@ -1035,9 +1141,7 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
         )
 
 
-class DoctorMedicationScheduleListCreateAPIView(APIView):
-    authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+class DoctorMedicationScheduleListCreateAPIView(PulmonologyWritePermissionMixin, APIView):
 
     def _prescription(self, request, case_id, prescription_id):
         return Prescription.objects.filter(
@@ -1105,7 +1209,7 @@ class DoctorMedicationScheduleDetailAPIView(DoctorMedicationScheduleListCreateAP
 @extend_schema(tags=["호흡기내과-처방관리"])
 class DoctorSafetyWarningAcknowledgeAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @extend_schema(
         request={
@@ -1191,7 +1295,7 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
 @extend_schema(tags=["호흡기내과-처방관리"])
 class DoctorPrescriptionItemUpdateAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @extend_schema(
         request={
@@ -1291,7 +1395,7 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
 @extend_schema(tags=["호흡기내과-처방관리"])
 class DoctorPrescriptionSafetyCheckAPIView(APIView):
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     @extend_schema(request=None, responses={200: DoctorPrescriptionSerializer})
     @transaction.atomic

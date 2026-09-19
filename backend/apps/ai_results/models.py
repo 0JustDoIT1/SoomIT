@@ -222,7 +222,7 @@ class TnmAiResult(models.Model):
     )
     predicted_t = models.CharField(max_length=10, null=True, blank=True)
     predicted_n = models.CharField(max_length=10, null=True, blank=True)
-    predicted_m = models.CharField(max_length=10, null=True, blank=True)
+    predicted_m = models.CharField(max_length=20, null=True, blank=True)
     predicted_stage_group = models.CharField(max_length=20, null=True, blank=True)
     confidence = models.DecimalField(max_digits=5, decimal_places=4, null=True, blank=True)
 

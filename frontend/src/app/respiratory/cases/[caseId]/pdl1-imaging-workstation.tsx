@@ -55,7 +55,7 @@ export function Pdl1ResultPanel({
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
           <h1 className="mt-0.5 text-base font-bold text-slate-900">PD-L1</h1>
         </div>
-        <p className="text-right text-[10px] text-slate-500">PD-L1 원본 슬라이드와 AI 예측, 전문과 확정 TPS를 함께 확인합니다.</p>
+        <p className="text-right text-[10px] text-slate-500">PD-L1 원본 슬라이드와 AI 예측, 병리과 확정 TPS를 함께 확인합니다.</p>
       </header>
 
       <div className="grid min-h-0 flex-1 gap-2 bg-slate-100/70 p-2 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">

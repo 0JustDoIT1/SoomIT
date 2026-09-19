@@ -69,7 +69,7 @@ export function PathologyGeneReviewPanel({
         <p className="text-[10px] font-semibold text-blue-600">검사 결과</p>
         <h1 className="mt-0.5 text-lg font-bold text-slate-900">조직/유전자 검사·결과</h1>
         <p className="mt-1 text-xs text-slate-600">
-          조직검사와 유전자검사의 전문과 확정 결과 및 AI 후보를 항목별로 구분해 확인합니다.
+          조직검사와 유전자검사의 병리과 확정 결과 및 AI 후보를 항목별로 구분해 확인합니다.
         </p>
       </header>
 

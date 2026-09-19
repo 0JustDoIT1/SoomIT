@@ -666,10 +666,18 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
         serializer = DoctorCaseWorkflowDecisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
+        decision_source_stage = case.current_stage
+        source_stages = [case.current_stage]
+        if case.current_stage == WorkflowStage.PRESCRIPTION and values["action"] in {
+            ClinicianDecision.DecisionType.REFERRED_OUT, "CASE_CLOSED",
+        }:
+            # Prescriptions are not ClinicalResults; retain the confirmed treatment
+            # result as the clinical evidence for terminal prescription decisions.
+            source_stages.append(WorkflowStage.TREATMENT)
         source_result = ClinicalResult.objects.select_for_update().filter(
             id=values["source_clinical_result_id"],
             case=case,
-            workflow_stage=case.current_stage,
+            workflow_stage__in=source_stages,
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
         ).first()
         if source_result is None:
@@ -678,11 +686,40 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
         action = values["action"]
         target_stage = values.get("target_stage")
         if action == ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE:
+            if case.current_stage == WorkflowStage.PET_CT_TNM:
+                tnm = getattr(source_result, "tnm_detail", None)
+                if tnm is None or not (tnm.stage_group or "").strip():
+                    return Response({"detail": "Stage Group 최종 확정 후 다음 단계로 진행할 수 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
             expected_stage = NEXT_WORKFLOW_STAGE.get(case.current_stage)
             if expected_stage is None:
                 return Response({"detail": "현재 단계에서는 다음 진료 단계로 진행할 수 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
             if target_stage != expected_stage:
                 return Response({"detail": "현재 단계에서 허용되는 다음 진료 단계가 아닙니다."}, status=status.HTTP_400_BAD_REQUEST)
+            if target_stage in {
+                WorkflowStage.CT,
+                WorkflowStage.PET_CT_TNM,
+                WorkflowStage.PATHOLOGY_GENE,
+                WorkflowStage.PDL1,
+            } and not ExaminationOrder.objects.filter(
+                case=case,
+                order_type=target_stage,
+                status__in=[
+                    ExaminationOrder.Status.ORDERED,
+                    ExaminationOrder.Status.SCHEDULED,
+                    ExaminationOrder.Status.COMPLETED,
+                ],
+            ).exists():
+                try:
+                    create_examination_order(
+                        case=case,
+                        requesting_doctor=request.user,
+                        order_type=target_stage,
+                        priority=ExaminationOrder.Priority.NORMAL,
+                        purpose=f"{source_result.get_workflow_stage_display()} 확정 후 {target_stage} 진행",
+                        clinical_note=values.get("reason", "").strip(),
+                    )
+                except ExaminationOrderCreationError as exc:
+                    return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
             if target_stage in {
                 WorkflowStage.CT,
                 WorkflowStage.PET_CT_TNM,
@@ -711,6 +748,7 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
                     priority=values["retry_priority"],
                     purpose=values["retry_purpose"].strip(),
                     clinical_note=values["retry_clinical_note"].strip(),
+                    allow_repeat_current_stage=True,
                 )
             except ExaminationOrderCreationError as exc:
                 return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
@@ -722,6 +760,14 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
             case.save(update_fields=["case_status", "closed_at", "updated_at"])
             target_stage = None
         else:  # CASE_CLOSED
+            if not Prescription.objects.filter(
+                case=case,
+                prescription_status=Prescription.PrescriptionStatus.FINAL,
+            ).exists():
+                return Response(
+                    {"detail": "Case can only be closed after a FINAL prescription exists."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
             case.case_status = LungCancerCase.CaseStatus.CLOSED
             case.closed_at = timezone.now()
             case.save(update_fields=["case_status", "closed_at", "updated_at"])
@@ -730,7 +776,7 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
 
         decision = ClinicianDecision.objects.create(
             case=case,
-            source_stage=source_result.workflow_stage,
+            source_stage=decision_source_stage,
             source_clinical_result=source_result,
             decision_type=action,
             target_stage=target_stage,

@@ -28,7 +28,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.output = mock("DoctorPrescriptionSerializer")
         self.atomic = mock("transaction.atomic")
         self.request = NS(user=object(), data={})
-        self.case = NS(patient=object())
+        self.case = NS(patient=object(), current_stage="PRESCRIPTION")
         self.cases.all.return_value.select_for_update.return_value.filter.return_value.first.return_value = self.case
         self.regimen = NS(induction_cycles=4)
         self.decisions.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = NS(selected_regimen=self.regimen)
@@ -40,6 +40,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
                        drug=object(), route="ORAL", administration_day="daily", frequency=None)
         self.drugs.filter.return_value.select_related.return_value.order_by.return_value = [self.drug]
         self.prescription = MagicMock(prescription_status="VALIDATED")
+        self.prescription.case.current_stage = "PRESCRIPTION"
         self.prescription.treatment_decision.clinical_result.result_status = "CONFIRMED"
         self.rx.select_for_update.return_value.filter.return_value.first.return_value = self.prescription
         self.rx.select_for_update.return_value.select_related.return_value.filter.return_value.first.return_value = self.prescription
@@ -89,6 +90,22 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.cases.all.return_value.select_for_update.assert_called_once_with(of=("self",))
         self.items.create.assert_called_once()
         self.assertIsNone(self.items.create.call_args.kwargs["final_dose"])
+
+    def test_creation_requires_the_prescription_stage(self):
+        self.case.current_stage = "TREATMENT"
+
+        response = self.create()
+
+        self.assertEqual(response.status_code, 400)
+        self.output.return_value.save.assert_not_called()
+
+    def test_finalize_requires_the_prescription_stage(self):
+        self.prescription.case.current_stage = "TREATMENT"
+
+        response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
+
+        self.assertEqual(response.status_code, 400)
+        self.prescription.save.assert_not_called()
 
     def test_invalid_final_dose_has_no_writes(self):
         for value in ("NaN", "Infinity", "-Infinity", "-1", "0.0001", "1000000000", "bad", None):

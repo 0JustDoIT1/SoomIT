@@ -64,7 +64,16 @@ def create_order_notifications(*, order, requesting_doctor):
 
 
 @transaction.atomic
-def create_examination_order(*, case, requesting_doctor, order_type, priority, purpose, clinical_note=""):
+def create_examination_order(
+    *,
+    case,
+    requesting_doctor,
+    order_type,
+    priority,
+    purpose,
+    clinical_note="",
+    allow_repeat_current_stage=False,
+):
     from apps.pathology.models import PathologyWorkItem
 
     locked_case = type(case).objects.select_for_update().get(pk=case.pk)
@@ -78,6 +87,13 @@ def create_examination_order(*, case, requesting_doctor, order_type, priority, p
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
         ).exists():
             raise ExaminationOrderCreationError("선행 검사의 전문의 확정 결과가 필요합니다.")
+        is_pathology_repeat = (
+            allow_repeat_current_stage
+            and order_type == ExaminationOrder.OrderType.PATHOLOGY_GENE
+            and locked_case.current_stage == WorkflowStage.PATHOLOGY_GENE
+        )
+        if locked_case.current_stage != prerequisite and not is_pathology_repeat:
+            raise ExaminationOrderCreationError("현재 진료 단계에서 생성할 수 없는 검사 오더입니다.")
     if ExaminationOrder.objects.filter(
         case=locked_case,
         order_type=order_type,

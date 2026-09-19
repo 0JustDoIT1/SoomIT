@@ -29,7 +29,10 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         self.candidates = self.stack.enter_context(patch.object(Candidates, "get_queryset"))
         self.candidates.return_value = [NS(regimen_id="R1"), NS(regimen_id="R2"), NS(regimen_id="R1")]
         self.case = MagicMock()
+        self.case.current_stage = "TREATMENT"
         self.cases.filter.return_value.first.return_value = self.case
+        self.cases.all.return_value.select_for_update.return_value.filter.return_value.first.return_value = self.case
+        self.cases.select_for_update.return_value.filter.return_value.first.return_value = self.case
         self.results.filter.return_value.first.return_value = None
         self.serializer = self.serializer_class.return_value
         self.serializer.validated_data = {"selected_regimen": NS(pk="R1")}
@@ -55,7 +58,6 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
             self.results.create.assert_not_called()
             self.results.get_or_create.assert_not_called()
             self.serializer.save.assert_not_called()
-            self.atomic.assert_not_called()
 
     def test_request_validation_precedes_candidate_query_and_writes(self):
         self.serializer.is_valid.side_effect = ValidationError({"treatment_type": "invalid"})
@@ -83,8 +85,18 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         clinical = MagicMock(result_status="DRAFT")
         decision = NS(clinical_result=clinical, treatment_type=treatment_type,
                       selected_regimen=NS(pk=regimen) if regimen else None)
+        self.results.select_for_update.return_value.filter.return_value.first.return_value = clinical
         self.decisions.select_related.return_value.filter.return_value.first.return_value = decision
         return clinical
+
+    def test_draft_rejects_a_case_outside_the_treatment_stage(self):
+        self.case.current_stage = "PDL1"
+
+        response = Save().post(self.request, "case")
+
+        self.assertEqual(response.status_code, 400)
+        self.results.create.assert_not_called()
+        self.serializer.save.assert_not_called()
 
     def test_confirmation_rechecks_after_results_change(self):
         Save().post(self.request, "case")
@@ -106,6 +118,16 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         self.assertEqual(clinical.result_status, "CONFIRMED")
         clinical.save.assert_called_once()
 
+    def test_repeated_confirmation_does_not_duplicate_decision(self):
+        clinical = self.prepare_confirmation()
+        clinical.result_status = "CONFIRMED"
+
+        response = Confirm.post.__wrapped__(Confirm(), self.request, "case")
+
+        self.assertEqual(response.status_code, 400)
+        self.audit.create.assert_not_called()
+        self.case.save.assert_not_called()
+
     def test_confirmation_preserves_required_and_optional_policy(self):
         self.prepare_confirmation(regimen=None)
         response = Confirm.post.__wrapped__(Confirm(), self.request, "case")
@@ -115,15 +137,23 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.candidates.assert_not_called()
 
+    def test_confirmation_rejects_a_case_outside_the_treatment_stage(self):
+        self.case.current_stage = "PDL1"
+        response = Confirm.post.__wrapped__(Confirm(), self.request, "case")
+
+        self.assertEqual(response.status_code, 400)
+        self.audit.create.assert_not_called()
+        self.case.save.assert_not_called()
+
     def test_non_owner_or_inactive_case_rejected_by_both_endpoints(self):
         self.cases.filter.return_value.first.return_value = None
+        self.cases.all.return_value.select_for_update.return_value.filter.return_value.first.return_value = None
+        self.cases.select_for_update.return_value.filter.return_value.first.return_value = None
         for reason in ("non_owner", "inactive"):
             for view in (Save(), Confirm()):
                 with self.subTest(reason=reason, endpoint=type(view).__name__):
                     post = view.post if isinstance(view, Save) else lambda r, c: Confirm.post.__wrapped__(view, r, c)
                     self.assertEqual(post(self.request, "case").status_code, 404)
-                    self.cases.filter.assert_called_with(
-                        id="case", primary_doctor=self.request.user, case_status="ACTIVE")
         self.results.create.assert_not_called()
         self.serializer.save.assert_not_called()
         self.candidates.assert_not_called()

@@ -13,8 +13,7 @@ import { ResultReviewPanel } from "./result-review-panel";
 import { CaseChatPanel } from "./case-chat-panel";
 import { PathologyGeneReviewPanel } from "./pathology-gene-imaging-workstation";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
-import { BottomActionBar } from "./bottom-action-bar";
-import { CaseInfoKey, CaseInfoMenu } from "./case-info-menu";
+import { CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
 import { CasePatientSidebar } from "./case-patient-sidebar";
 import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
@@ -32,7 +31,6 @@ import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
-import { StageExaminationOrder } from "./stage-examination-order";
 import { CaseWorkflowDecision } from "./case-workflow-decision";
 import { XrayWorkflowDecision } from "./xray-workflow-decision";
 import { CtWorkflowDecision } from "./ct-workflow-decision";
@@ -97,6 +95,9 @@ type TnmClinicalResult = {
   result_status_label?: string;
   result_date?: string | null;
   result_detail: {
+    ct?: {
+      overall_assessment?: string | null;
+    };
     tnm?: {
       t_category: string | null;
       n_category: string | null;
@@ -423,12 +424,6 @@ const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
 const workspacePrescriptionSubMenus: typeof prescriptionSubMenus = [
   { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "SAFETY_CHECK", label: "안전성 검사" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
 ];
-const NEXT_ORDER_BY_INFO_MENU = {
-  XRAY: "CT",
-  CT: "PET_CT_TNM",
-  PET_CT_TNM: "PATHOLOGY_GENE",
-  PATHOLOGY_GENE: "PDL1",
-} as const;
 // 기존 메뉴 상수는 기존 화면 동작과 타입 호환성을 위해 보존합니다.
 void [mainMenus, resultSubMenus, aiSubMenus, treatmentSubMenus, prescriptionSubMenus];
 
@@ -957,6 +952,30 @@ export default function RespiratoryCaseDetailPage() {
     }
   };
 
+  const refreshAdvancedCase = async () => {
+    const requestCaseId = caseId;
+    try {
+      const [caseResponse, resultsResponse, ordersResponse] = await Promise.all([
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/`),
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/clinical-results/`),
+        authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/orders/`),
+      ]);
+      if (!caseResponse.ok || !resultsResponse.ok || !ordersResponse.ok) throw new Error("확정은 완료되었지만 최신 진료 정보를 불러오지 못했습니다. 다시 조회해 주세요.");
+      const [updatedCase, results, orders] = await Promise.all([
+        caseResponse.json() as Promise<CaseItem>, resultsResponse.json() as Promise<TnmClinicalResult[]>, ordersResponse.json() as Promise<ExaminationOrder[]>,
+      ]);
+      if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
+      setSelectedCase(updatedCase);
+      setCases((current) => current.map((item) => item.id === updatedCase.id ? updatedCase : item));
+      setTnmClinicalResults(results);
+      setCaseOrders(orders);
+      setOrdersLoaded(true);
+      setClinicalResultError("");
+    } catch (cause) {
+      if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) showToast(cause instanceof Error ? cause.message : "최신 진료 정보를 불러오지 못했습니다.");
+    }
+  };
+
   const handleMainMenuClick = (menu: MainMenu) => {
     setSelectedMainMenu(menu);
     setExpandedMainMenu((current) =>
@@ -972,16 +991,17 @@ export default function RespiratoryCaseDetailPage() {
     if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
   };
 
+  const currentCaseStage = selectedCase?.current_stage;
   useEffect(() => {
-    if (!selectedCase) return;
-    const stage = selectedCase.current_stage as CaseInfoKey;
+    if (!currentCaseStage) return;
+    const stage = currentCaseStage as CaseInfoKey;
     if (!(["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"] as CaseInfoKey[]).includes(stage)) return;
     setSelectedInfoMenu(stage);
     const navigation = getCaseMenuNavigation(stage);
     if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
     if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
     if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
-  }, [caseId, selectedCase]);
+  }, [caseId, currentCaseStage]);
 
   const latestPdl1Result =
     pdl1Results.length > 0
@@ -1005,7 +1025,16 @@ export default function RespiratoryCaseDetailPage() {
   const tnmClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PET_CT_TNM"
   );
-  const currentStageClinicalResult = tnmClinicalResults.find((result) => result.workflow_stage === selectedCase?.current_stage && result.result_status === "CONFIRMED");
+  const currentStageClinicalResult = tnmClinicalResults.find((result) => result.workflow_stage === selectedCase?.current_stage && result.result_status === "CONFIRMED")
+    ?? (selectedCase?.current_stage === "PRESCRIPTION"
+      ? tnmClinicalResults.find((result) => result.workflow_stage === "TREATMENT" && result.result_status === "CONFIRMED")
+      : undefined);
+  const selectedInfoAccess = getCaseInfoAccessState({
+    key: selectedInfoMenu,
+    currentStage: selectedCase?.current_stage,
+    caseStatus: selectedCase?.case_status,
+    clinicalResults: tnmClinicalResults,
+  });
   const selectedStageActiveOrder = caseOrders.find(
     (order) => order.order_type === selectedInfoMenu && ["ORDERED", "SCHEDULED"].includes(order.status),
   );
@@ -1174,7 +1203,7 @@ export default function RespiratoryCaseDetailPage() {
   };
 
   const handleCasePrescriptionCreate = async () => {
-    if (!caseId) return;
+    if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
     try {
       setCasePrescriptionWorking(true);
@@ -1232,7 +1261,7 @@ export default function RespiratoryCaseDetailPage() {
     finalDose: string,
     instructions: string
   ) => {
-    if (!caseId) return;
+    if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
     try {
       setCasePrescriptionWorking(true);
@@ -1285,7 +1314,7 @@ export default function RespiratoryCaseDetailPage() {
   const handleCasePrescriptionSafetyCheck = async (
     prescriptionId: string
   ) => {
-    if (!caseId) return;
+    if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
     try {
       setCasePrescriptionWorking(true);
@@ -1328,7 +1357,7 @@ export default function RespiratoryCaseDetailPage() {
   const handleCasePrescriptionAcknowledgeWarnings = async (
     prescriptionId: string
   ) => {
-    if (!caseId) return;
+    if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
     const note = window.prompt(
       "WARNING 확인 사유를 입력하세요.",
@@ -1387,7 +1416,7 @@ export default function RespiratoryCaseDetailPage() {
     prescriptionId: string,
     medicationSchedules: FinalizeMedicationSchedule[] = []
   ) => {
-    if (!caseId) return;
+    if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
 
     const confirmed = window.confirm(
       "처방을 최종 확정하면 이후 수정할 수 없습니다.\n계속하시겠습니까?"
@@ -1452,11 +1481,11 @@ export default function RespiratoryCaseDetailPage() {
   return (
     <>
       <div className="h-full min-h-0 overflow-auto bg-[#f3f7fd] [scrollbar-gutter:stable]" aria-label="Case Workspace">
-      <div className="grid min-h-full min-w-[1180px] grid-cols-[minmax(190px,210px)_120px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(210px,230px)_128px_minmax(0,1fr)]">
+      <div className="grid min-h-full min-w-[1100px] grid-cols-[minmax(172px,190px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(184px,200px)_116px_minmax(0,1fr)]">
       <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
-      <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} onSelect={handleInfoMenuSelect} />
+      <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} onSelect={handleInfoMenuSelect} />
       <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto p-2 [scrollbar-gutter:stable]">
       <CaseSummaryHeader key={caseId} caseData={selectedCase} />
       <CaseWorkflowBar
@@ -1704,7 +1733,7 @@ export default function RespiratoryCaseDetailPage() {
             setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
       />
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-xl border border-blue-100 bg-white p-3 shadow-sm [scrollbar-gutter:stable]">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm [scrollbar-gutter:stable]">
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
@@ -1730,8 +1759,15 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
-          <div className="flex shrink-0 items-center gap-2">{selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{(selectedInfoMenu === "CT" || selectedInfoMenu === "PET_CT_TNM" || selectedInfoMenu === "PATHOLOGY_GENE") && <StageExaminationOrder caseId={caseId} orderType={NEXT_ORDER_BY_INFO_MENU[selectedInfoMenu]} onCreated={(orderType) => { const message = `${orderType === "CT" ? "흉부 CT" : orderType === "PET_CT_TNM" ? "PET-CT / TNM" : orderType === "PATHOLOGY_GENE" ? "조직/유전자" : "PD-L1"} 오더가 생성되었습니다.`; setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); showToast(message); }} />}{selectedCase && selectedCase.current_stage !== "XRAY" && selectedInfoMenu === selectedCase.current_stage && <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} confirmedResultId={currentStageClinicalResult?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />}</div>
+<div className="flex shrink-0 items-center gap-2">{selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && (selectedCase.current_stage === "XRAY" ? <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : selectedCase.current_stage === "CT" ? <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed, message }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />)}</div>
         </div>
+
+        {selectedInfoAccess.state === "WAITING" && (
+          <div role="status" className="mb-3 flex items-center gap-2 border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            <span className="font-bold">결과 대기</span>
+            <span>{selectedInfoAccess.message}</span>
+          </div>
+        )}
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
           <TreatmentPrescriptionOverview treatment={caseTreatmentDecision} prescriptions={casePrescriptions} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
@@ -1763,7 +1799,7 @@ export default function RespiratoryCaseDetailPage() {
           </div>
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
-          <PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">
+          <fieldset disabled={selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION"} className="contents"><PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">
             <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
               <div>
                 <p className="text-xs font-semibold text-emerald-600">
@@ -1975,32 +2011,7 @@ export default function RespiratoryCaseDetailPage() {
                       </div>
                     )}
 
-                    {false && (
-                      <div className="mt-3 flex justify-end">
-                        <button
-                          type="button"
-                          disabled={
-                            casePrescriptionWorking ||
-                            prescription.safety_check_results.some(
-                              (result) => result.result === "BLOCK"
-                            ) ||
-                            prescription.safety_check_results.some(
-                              (result) =>
-                                result.result === "WARNING" &&
-                                !result.acknowledged_at
-                            )
-                          }
-                          onClick={() =>
-                            handleCasePrescriptionFinalize(prescription.id)
-                          }
-                          className="rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:bg-slate-300"
-                        >
-                          {casePrescriptionWorking
-                            ? "처리 중..."
-                            : "처방 최종 확정"}
-                        </button>
-                      </div>
-                    )}
+
 
                     <p className="mt-3 border-t border-slate-100 pt-3 text-[11px] text-slate-400">
                       생성 {prescription.created_at} · 수정 {prescription.updated_at}
@@ -2090,18 +2101,21 @@ export default function RespiratoryCaseDetailPage() {
                 생성 조건과 안전성 검사는 기존 처방 검증 기준을 따릅니다.
               </p>
             </section>
-          </PrescriptionSection>
+          </PrescriptionSection></fieldset>
         ) : selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "SAFETY_CHECK" ? (
-          <PatientSafetyDataPanel key={caseId} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} />
+          <fieldset disabled={selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION"} className="contents"><PatientSafetyDataPanel key={caseId} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} /></fieldset>
         ) : selectedMainMenu === "TREATMENT" &&
         selectedTreatmentMenu === "FINAL_PLAN" ? (
           <TreatmentDecisionPanel
+            actionable={selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "TREATMENT"}
+            key={caseId}
             caseId={caseId}
             apiBaseUrl={API_BASE_URL}
             authorizedFetch={authorizedFetch}
-            onTreatmentChanged={() => {
-              showToast("치료결정 정보가 저장되었습니다.");
+            onTreatmentConfirmed={() => {
+              showToast("치료계획이 확정되어 처방 단계로 이동했습니다.");
               setCaseRefreshVersion((current) => current + 1);
+              handleInfoMenuSelect("PRESCRIPTION");
             }}
           />
         ) : false ? (
@@ -2468,6 +2482,7 @@ export default function RespiratoryCaseDetailPage() {
         selectedAiMenu === "PET_CT_TNM" ? (
         <div className="min-h-0 overflow-hidden">
           <TnmReviewWorkspace
+            actionable={selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PET_CT_TNM"}
             key={caseId}
             aiTnm={tnmAnalysis}
             clinicalTnm={tnmClinical}
@@ -2479,6 +2494,7 @@ export default function RespiratoryCaseDetailPage() {
             apiBaseUrl={API_BASE_URL}
             authorizedFetch={authorizedFetch}
             onConfirmed={retryClinicalResults}
+            onStageAdvanced={refreshAdvancedCase}
             onDirtyChange={setTnmDirty}
           />
           <div className="hidden">
@@ -2766,7 +2782,6 @@ export default function RespiratoryCaseDetailPage() {
                 </div>
             </div>
             )}
-        {selectedInfoMenu === "PET_CT_TNM" && <BottomActionBar />}
         </main>
         </div>
         {pendingCaseId && <CaseChangeDialog onCancel={() => setPendingCaseId(null)} onDiscard={discardDraftAndMove} returnFocusRef={caseTriggerRef} />}

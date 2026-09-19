@@ -1,10 +1,11 @@
 "use client";
 
-import { KeyboardEvent, useEffect, useId, useRef, useState } from "react";
+import { KeyboardEvent, useEffect, useRef, useState } from "react";
+import { DecisionActions, DecisionStatus } from "./decision-ui";
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 
 export type TnmCategory = "T" | "N" | "M";
-type AiTnm = { predicted_t?: string | null; predicted_n?: string | null; predicted_m?: string | null; predicted_stage_group?: string | null; confidence?: string | number | null; result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> } };
+type AiTnm = { ai_result_id?: string; predicted_t?: string | null; predicted_n?: string | null; predicted_m?: string | null; predicted_stage_group?: string | null; confidence?: string | number | null; result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> } };
 type ClinicalTnm = { t_category?: string | null; n_category?: string | null; m_category?: string | null; stage_group?: string | null; evidence?: { stage?: { ctnm_candidate?: string | null; stage_group_candidate?: string | null; stage_group_status?: string | null; warnings?: string[] } } | null; note?: string | null };
 type TnmDraft = { selectedValue: string; decisionType: string; opinion: string; rationale: string; unresolvedIssue: string; dirty: boolean };
 const OPTIONS: Record<TnmCategory, string[]> = { T: ["TX","T0","Tis","T1mi","T1a","T1b","T1c","T1","T2a","T2b","T2","T3","T4"], N: ["NX","N0","N1","N2","N2a","N2b","N3"], M: ["M0","M1","M1a","M1b","M1c","M1c1","M1c2","M_indeterminate"] };
@@ -12,11 +13,17 @@ const OPTIONS: Record<TnmCategory, string[]> = { T: ["TX","T0","Tis","T1mi","T1a
 const META: Record<TnmCategory, string> = { T: "T 원발 종양", N: "N 림프절", M: "M 원격 전이" };
 const EMPTY_DRAFT: TnmDraft = { selectedValue: "", decisionType: "", opinion: "", rationale: "", unresolvedIssue: "", dirty: false };
 
-export function TnmReviewWorkspace({ aiTnm, clinicalTnm, clinicalResultId, clinicalResultStatus, modelName, modelVersion, caseId, apiBaseUrl, authorizedFetch, onConfirmed, onDirtyChange }: { aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; clinicalResultId?: string; clinicalResultStatus?: string; modelName?: string; modelVersion?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onConfirmed?: () => void; onDirtyChange?: (dirty: boolean) => void }) {
+export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clinicalResultId, clinicalResultStatus, modelName, modelVersion, caseId, apiBaseUrl, authorizedFetch, onConfirmed, onStageAdvanced, onDirtyChange }: { actionable?: boolean; aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; clinicalResultId?: string; clinicalResultStatus?: string; modelName?: string; modelVersion?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onConfirmed?: () => void | Promise<void>; onStageAdvanced?: () => void | Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
   const [category, setCategory] = useState<TnmCategory>("T");
-  const [drafts, setDrafts] = useState<Record<TnmCategory, TnmDraft>>({ T: { ...EMPTY_DRAFT }, N: { ...EMPTY_DRAFT }, M: { ...EMPTY_DRAFT } });
+  const [edits, setEdits] = useState<Partial<Record<TnmCategory, TnmDraft>>>({});
+  const [savedDrafts, setSavedDrafts] = useState<Record<TnmCategory, TnmDraft> | null>(null);
+  const baseline = savedDrafts ?? {
+    T: { ...EMPTY_DRAFT, selectedValue: clinicalTnm?.t_category ?? "", opinion: clinicalTnm?.note ?? "" },
+    N: { ...EMPTY_DRAFT, selectedValue: clinicalTnm?.n_category ?? "" },
+    M: { ...EMPTY_DRAFT, selectedValue: clinicalTnm?.m_category ?? "" },
+  };
+  const drafts = { T: edits.T ?? baseline.T, N: edits.N ?? baseline.N, M: edits.M ?? baseline.M };
   const tabRefs = useRef<Record<TnmCategory, HTMLButtonElement | null>>({ T: null, N: null, M: null });
-  const saveReasonId = useId();
   const draft = drafts[category];
   const dirty = Object.values(drafts).some((item) => item.dirty);
   const aiValue = valueFor(category, aiTnm);
@@ -24,17 +31,84 @@ export function TnmReviewWorkspace({ aiTnm, clinicalTnm, clinicalResultId, clini
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
-  const updateDraft = (patch: Partial<TnmDraft>) => setDrafts((current) => ({ ...current, [category]: { ...current[category], ...patch, dirty: true } }));
+  const updateDraft = (patch: Partial<TnmDraft>, target: TnmCategory = category) => {
+    if (!actionable || submittingRef.current || resultConfirmed) return;
+    const updated = { ...drafts[target], ...patch, dirty: false };
+    const original = { ...baseline[target], dirty: false };
+    setEdits((current) => ({ ...current, [target]: { ...updated, dirty: JSON.stringify(updated) !== JSON.stringify(original) } }));
+  };
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submittingRef = useRef(false);
+  const [stageResult, setStageResult] = useState<ClinicalTnm | null>(null);
   const activeResultId = savedId ?? clinicalResultId ?? null;
   const resultConfirmed = isConfirmed || clinicalResultStatus === "CONFIRMED";
-  const saveDraft = async () => { const aiResultId = (aiTnm as AiTnm & { ai_result_id?: string })?.ai_result_id; const values = { t_category: drafts.T.selectedValue, n_category: drafts.N.selectedValue, m_category: drafts.M.selectedValue }; if (!authorizedFetch || !apiBaseUrl || !caseId || !aiResultId || Object.values(values).some((v) => !v)) return; const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/clinical-results/tnm/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ reviewed_ai_result_id: aiResultId, ...values, note: drafts.T.opinion }) }); if (r.ok) { const data = await r.json(); setSavedId(data.id ?? null); setMessage("Draft ?? ??"); } else setMessage("Draft ?? ??"); };
-  const confirmDraft = async () => { if (!authorizedFetch || !apiBaseUrl || !caseId || !activeResultId || resultConfirmed) return; const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/clinical-results/tnm/${activeResultId}/confirm/`, { method: "POST" }); setMessage(r.ok ? "TNM ?? ??" : "TNM ?? ??"); if (r.ok) { setIsConfirmed(true); onConfirmed?.(); } };
+  const post = async (path: string, body?: object) => {
+    if (!authorizedFetch || !apiBaseUrl || !caseId) throw new Error("TNM 결과를 처리할 수 없습니다.");
+    const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/clinical-results/tnm/${path}`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "TNM 결과 처리에 실패했습니다.");
+    return data as ClinicalTnm & { id?: string };
+  };
+  const saveDraft = async () => {
+    if (!aiTnm?.ai_result_id || !draftComplete) throw new Error("AI 결과와 T·N·M 선택값이 필요합니다.");
+    const data = await post("", { reviewed_ai_result_id: aiTnm.ai_result_id, t_category: drafts.T.selectedValue, n_category: drafts.N.selectedValue, m_category: drafts.M.selectedValue, note: drafts.T.opinion });
+    if (!data.id) throw new Error("저장된 TNM 결과 ID를 확인할 수 없습니다.");
+    setSavedId(data.id);
+    setSavedDrafts({ T: { ...drafts.T, dirty: false }, N: { ...drafts.N, dirty: false }, M: { ...drafts.M, dirty: false } });
+    setEdits({});
+    setMessage("TNM 초안이 저장되었습니다.");
+    return data.id;
+  };
+  const confirmDraft = async () => {
+    if (resultConfirmed) return;
+    const latestId = dirty || !activeResultId ? await saveDraft() : activeResultId;
+    await post(`${latestId}/confirm/`);
+    setIsConfirmed(true);
+    setMessage("TNM 결과가 확정되었습니다.");
+    await onConfirmed?.();
+  };
   const selectCategory = (next: TnmCategory) => { setCategory(next); requestAnimationFrame(() => tabRefs.current[next]?.focus()); };
-  const calculateStage = async () => { if (!authorizedFetch || !apiBaseUrl || !caseId || !activeResultId || !resultConfirmed) return; const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/clinical-results/tnm/${activeResultId}/stage/`, { method: "POST" }); setMessage(r.ok ? "Stage ?? ??" : "Stage ?? ??"); if (r.ok) onConfirmed?.(); }
-  const confirmStage = async () => { if (!authorizedFetch || !apiBaseUrl || !caseId || !activeResultId || !resultConfirmed) return; const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/clinical-results/tnm/${activeResultId}/stage/confirm/`, { method: "POST" }); setMessage(r.ok ? "Stage Group ?? ??" : "Stage Group ?? ??"); if (r.ok) onConfirmed?.(); }
+  const calculateStage = async () => {
+    if (!activeResultId || !resultConfirmed || dirty) return;
+    setStageResult(await post(`${activeResultId}/stage/`));
+    setMessage("Stage 계산이 완료되었습니다.");
+    await onConfirmed?.();
+  };
+  const confirmStage = async () => {
+    if (!activeResultId || !resultConfirmed || dirty || !candidateReady || stageConfirmed) return;
+    setStageResult(await post(`${activeResultId}/stage/confirm/`, { advance_to_next_stage: true }));
+    setMessage("Stage Group이 확정되었습니다.");
+    if (onStageAdvanced) await onStageAdvanced();
+    else await onConfirmed?.();
+  };
+  const draftComplete = Object.values(drafts).every((item) => item.selectedValue);
+  const stage = (stageResult ?? clinicalTnm)?.evidence?.stage;
+  const candidateReady = stage?.stage_group_status === "candidate_ready" && Boolean(stage.stage_group_candidate);
+  const stageConfirmed = resultConfirmed && Boolean((stageResult ?? clinicalTnm)?.stage_group?.trim());
+  const canSave = draftComplete && Boolean(aiTnm?.ai_result_id);
+  const nextAction = !activeResultId
+    ? { label: "TNM 초안 저장", onClick: saveDraft, disabled: !canSave }
+    : !resultConfirmed
+      ? { label: "TNM 결과 확정", onClick: confirmDraft, disabled: dirty && !canSave }
+      : stageConfirmed
+        ? { label: "Stage Group 확정 완료", onClick: () => undefined, disabled: true }
+        : candidateReady
+          ? { label: "Stage Group 확정 및 다음 단계 진행", onClick: confirmStage, disabled: dirty }
+          : { label: "Stage 계산", onClick: calculateStage, disabled: dirty };
+  const runNextAction = async () => {
+    if (!actionable || submittingRef.current || nextAction.disabled || !authorizedFetch || !apiBaseUrl || !caseId) return;
+    submittingRef.current = true;
+    setBusy(true); setError(""); setMessage("");
+    try { await nextAction.onClick(); }
+    catch (cause) { setError(cause instanceof Error ? cause.message : "TNM 결과 처리에 실패했습니다."); }
+    finally { submittingRef.current = false; setBusy(false); }
+  };
   const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>) => {
     if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
     event.preventDefault();
@@ -46,29 +120,31 @@ export function TnmReviewWorkspace({ aiTnm, clinicalTnm, clinicalResultId, clini
   return (
     <section className="min-h-[780px] overflow-auto rounded-lg border border-slate-200 bg-white [scrollbar-gutter:stable]">
       <div className="grid min-h-[740px] min-w-[820px] grid-rows-[40px_minmax(0,1fr)]">
-        <header className="flex items-center justify-between border-b border-slate-200 px-3"><div className="flex items-center gap-2"><h1 className="whitespace-nowrap text-sm font-bold text-slate-900">PET-CT 기반 TNM 병기 검토</h1><span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700">TNM 개별 소견 저장 API 연동 대기</span></div><p className="truncate text-[10px] text-slate-500">PET-CT 근거 · AI 병기 후보 · 전문과 확정 근거 · 호흡기내과 결정을 구분해 검토합니다.</p></header>
+        <header className="flex items-center justify-between border-b border-slate-200 px-3"><div className="flex items-center gap-2"><h1 className="whitespace-nowrap text-sm font-bold text-slate-900">PET-CT 기반 TNM 병기 검토</h1><span className="whitespace-nowrap rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700">T/N/M 분석 → Stage Group 계산 → 호흡기내과 최종 확정</span></div><p className="truncate text-[10px] text-slate-500">PET-CT 근거 · AI 병기 후보 · 호흡기내과 판정 근거 · 호흡기내과 결정을 구분해 검토합니다.</p></header>
         <div className="grid min-h-0 grid-cols-[minmax(560px,1fr)_260px]">
           <main className="grid min-h-0 grid-rows-[34px_360px_minmax(130px,1fr)_28px] border-r border-slate-200">
-            <nav role="tablist" aria-label="TNM 범주" className="grid grid-cols-4 border-b border-slate-200">
+            <nav role="tablist" aria-label="TNM 범주" className="grid grid-cols-3 border-b border-slate-200">
               {(["T", "N", "M"] as TnmCategory[]).map((item) => <button ref={(node) => { tabRefs.current[item] = node; }} key={item} id={`tnm-tab-${item}`} role="tab" aria-selected={category === item} aria-controls={`tnm-panel-${item}`} tabIndex={category === item ? 0 : -1} type="button" onClick={() => selectCategory(item)} onKeyDown={handleTabKeyDown} className={`whitespace-nowrap border-r border-slate-200 px-2 text-[11px] font-bold ${category === item ? "bg-blue-50 text-blue-700 shadow-[inset_0_-2px_0_#2563eb]" : "text-slate-500"}`}>{META[item]} <span className="font-normal">{confirmedFor(item, clinicalTnm) ? "· 결과 있음" : "· 미확인"}</span>{drafts[item].dirty && <span className="ml-1 text-amber-600" aria-label="저장되지 않은 변경사항">●</span>}</button>)}
-              <button type="button" disabled aria-describedby={saveReasonId} className="whitespace-nowrap text-[11px] font-bold text-slate-400">TNM 종합 · 잠김</button>
             </nav>
             <EvidenceViewerPanel />
             <section id={`tnm-panel-${category}`} role="tabpanel" aria-labelledby={`tnm-tab-${category}`} className="min-h-0 p-2">
               <div className="grid h-full grid-cols-3 gap-2">
-                <ReviewCard title="A. AI·규칙 후보" source="AI 분석 후보"><Field label={`${category} 후보`} value={aiValue} /><Field label="Confidence" value={aiTnm?.confidence} /><Field label="모델명·버전" value={[modelName, modelVersion].filter(Boolean).join(" · ")} /><button type="button" disabled aria-describedby={saveReasonId} className="mt-auto rounded border border-slate-200 py-1 text-[9px] text-slate-400">모델 근거 API 연동 대기</button></ReviewCard>
-                <ReviewCard title="B. 전문과 확정 근거" source="의료진 확정"><Field label="확정 결과" value={clinicalValue} /><Field label="핵심 소견" value={clinicalTnm?.note} clamp /><Field label="근거 자료" value={clinicalTnm?.evidence ? "연결됨" : undefined} /><button type="button" disabled aria-describedby={saveReasonId} className="mt-auto rounded border border-slate-200 py-1 text-[9px] text-slate-400">전체 판독문 API 연동 대기</button></ReviewCard>
-                <ReviewCard title="C. 호흡기내과 결정" source="최종 진료 판단"><label className="text-[9px] text-slate-500" htmlFor={`tnm-value-${category}`}>최종 {category} 선택</label><select id={`tnm-value-${category}`} value={draft.selectedValue} onChange={(event) => updateDraft({ selectedValue: event.target.value })} className="mt-0.5 h-7 w-full rounded border border-slate-200 px-2 text-[11px]"><option value="">??</option>{OPTIONS[category].map((option) => <option key={option} value={option}>{option}</option>)}</select><label className="mt-1 text-[9px] text-slate-500" htmlFor={`tnm-opinion-${category}`}>{category} 의사 소견</label><textarea id={`tnm-opinion-${category}`} value={draft.opinion} onChange={(event) => updateDraft({ opinion: event.target.value })} rows={2} placeholder="의사 소견 입력" className="mt-0.5 w-full resize-none rounded border border-slate-200 p-1.5 text-[11px]" /><div className="mt-auto grid grid-cols-4 gap-1">{["채택", "수정", "재검", "보류"].map((label) => <button key={label} type="button" aria-pressed={draft.decisionType === label} onClick={() => updateDraft({ decisionType: label })} className={`rounded py-1 text-[9px] font-semibold ${draft.decisionType === label ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{label}</button>)}</div></ReviewCard>
+                <ReviewCard title="A. AI·규칙 후보" source="AI 분석 후보"><Field label={`${category} 후보`} value={aiValue} /><Field label="Confidence" value={aiTnm?.confidence} /><Field label="모델명·버전" value={[modelName, modelVersion].filter(Boolean).join(" · ")} /></ReviewCard>
+                <ReviewCard title="B. 호흡기내과 판정 근거" source="의료진 확정"><Field label="확정 결과" value={clinicalValue} /><Field label="핵심 소견" value={clinicalTnm?.note} clamp /><Field label="근거 자료" value={clinicalTnm?.evidence ? "연결됨" : undefined} /></ReviewCard>
+                <ReviewCard title="C. 호흡기내과 결정" source="최종 진료 판단"><label className="text-[9px] text-slate-500" htmlFor={`tnm-value-${category}`}>최종 {category} 선택</label><select disabled={!actionable || busy || resultConfirmed} id={`tnm-value-${category}`} value={draft.selectedValue} onChange={(event) => updateDraft({ selectedValue: event.target.value })} className="mt-0.5 h-7 w-full rounded border border-slate-200 px-2 text-[11px]"><option value="">선택</option>{OPTIONS[category].map((option) => <option key={option} value={option}>{option}</option>)}</select><label className="mt-1 text-[9px] text-slate-500" htmlFor={`tnm-opinion-${category}`}>TNM 종합 소견</label><textarea disabled={!actionable || busy || resultConfirmed} id={`tnm-opinion-${category}`} value={drafts.T.opinion} onChange={(event) => updateDraft({ opinion: event.target.value }, "T")} rows={2} placeholder="의사 소견 입력" className="mt-0.5 w-full resize-none rounded border border-slate-200 p-1.5 text-[11px]" /><p className="text-[9px] text-slate-500">T·N·M과 종합 소견은 함께 저장됩니다.</p></ReviewCard>
               </div>
             </section>
             <ResultDifference aiValue={aiValue} clinicalValue={clinicalValue} />
           </main>
-          <ReviewSidebar category={category} onSelect={selectCategory} aiTnm={aiTnm} clinicalTnm={clinicalTnm} reasonId={saveReasonId} />
+          <ReviewSidebar category={category} onSelect={selectCategory} aiTnm={aiTnm} clinicalTnm={clinicalTnm} />
         </div>
       </div>
-      <div className="mx-3 mb-2 rounded border border-violet-100 bg-violet-50 px-3 py-2 text-xs text-slate-700">Stage ??: {format(clinicalTnm?.evidence?.stage?.stage_group_candidate)} ? cTNM: {format(clinicalTnm?.evidence?.stage?.ctnm_candidate)} ? ??: {format(clinicalTnm?.evidence?.stage?.stage_group_status)}{(clinicalTnm?.evidence?.stage?.warnings?.length ?? 0) > 0 && <div className="mt-1 text-amber-700">{clinicalTnm?.evidence?.stage?.warnings?.join(" / ")}</div>}</div>
-      <div className="flex items-center gap-2 border-t border-slate-200 px-3 py-2"><button type="button" onClick={saveDraft} className="rounded bg-blue-600 px-3 py-1 text-xs font-semibold text-white">Draft ??</button><button type="button" onClick={confirmDraft} disabled={!activeResultId || resultConfirmed} className="rounded bg-emerald-600 px-3 py-1 text-xs font-semibold text-white disabled:bg-slate-200">?? ??</button><button type="button" aria-label="Calculate Stage candidate" onClick={calculateStage} disabled={!activeResultId || !resultConfirmed} className="rounded bg-violet-600 px-3 py-1 text-xs font-semibold text-white disabled:bg-slate-200">Stage ??</button><button type="button" onClick={confirmStage} disabled={!activeResultId || !resultConfirmed || !clinicalTnm?.evidence?.stage?.stage_group_candidate || clinicalTnm?.stage_group != null && clinicalTnm.stage_group !== ""} className="rounded bg-emerald-700 px-3 py-1 text-xs font-semibold text-white disabled:bg-slate-200">Stage Group ?? ??</button>{message && <span className="text-xs text-slate-600">{message}</span>}</div>
-      <p id={saveReasonId} className="sr-only">TNM 개별 소견과 확정 저장 API가 연결된 후 사용할 수 있습니다.</p>
+      <div className="mx-3 mb-2 rounded border border-violet-100 bg-violet-50 px-3 py-2 text-xs text-slate-700">Stage 후보: {format(stage?.stage_group_candidate)} · cTNM: {format(stage?.ctnm_candidate)} · {stageConfirmed ? "최종 확정 완료" : candidateReady ? "확정 가능" : "Stage 계산 대기"}{(stage?.warnings?.length ?? 0) > 0 && <div className="mt-1 text-amber-700">{stage?.warnings?.join(" / ")}</div>}</div>
+      <div className="border-t border-slate-200 px-3 py-2">
+        {dirty && <p className="text-xs text-amber-700">저장되지 않은 변경사항이 있습니다. 확정 시 최신값을 먼저 저장합니다.</p>}
+        <DecisionStatus error={error} message={!actionable ? "현재 단계에서는 결과 조회만 가능합니다. 선행 단계 완료 후 처리하세요." : message} />
+        {stageConfirmed ? <p className="text-xs text-slate-600">Stage Group 확정 완료</p> : <DecisionActions busy={busy} disabled={!actionable || nextAction.disabled || !authorizedFetch || !apiBaseUrl || !caseId} label={nextAction.label} onSubmit={() => void runNextAction()} />}
+      </div>
     </section>
   );
 }
@@ -85,11 +161,11 @@ export function compareTnmValues(aiValue: unknown, clinicalValue: unknown): TnmC
 function ResultDifference({ aiValue, clinicalValue }: { aiValue: unknown; clinicalValue: unknown }) {
   const comparison = compareTnmValues(aiValue, clinicalValue);
   const labels: Record<TnmComparison, string> = { MATCH: "결과 일치", DIFFERENCE: "결과 차이 확인 필요", UNAVAILABLE: "비교 불가", EMPTY: "비교할 결과 없음" };
-  return <div className={`mx-2 flex min-w-0 items-center gap-3 rounded border px-3 text-[10px] ${comparison === "DIFFERENCE" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}><strong className="whitespace-nowrap">{labels[comparison]}</strong><span className="truncate">AI 후보 {format(aiValue)} · 전문과 판단 {format(clinicalValue)}</span><button type="button" disabled={comparison !== "DIFFERENCE"} className="ml-auto whitespace-nowrap rounded border border-current px-2 py-0.5 font-semibold disabled:border-slate-200 disabled:text-slate-300">근거 비교</button></div>;
+  return <div className={`mx-2 flex min-w-0 items-center gap-3 rounded border px-3 text-[10px] ${comparison === "DIFFERENCE" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}><strong className="whitespace-nowrap">{labels[comparison]}</strong><span className="truncate">AI 후보 {format(aiValue)} · 호흡기내과 판단 {format(clinicalValue)}</span></div>;
 }
 
-function ReviewSidebar({ category, onSelect, aiTnm, clinicalTnm, reasonId }: { category: TnmCategory; onSelect: (value: TnmCategory) => void; aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; reasonId: string }) {
-  return <aside className="min-h-0 overflow-y-auto bg-slate-50/50 p-2"><section className="rounded-lg border border-slate-200 bg-white p-2.5"><h2 className="text-[11px] font-bold text-slate-900">T / N / M 검토 현황</h2><div className="mt-1.5 space-y-1">{(["T", "N", "M"] as TnmCategory[]).map((item) => <button key={item} type="button" onClick={() => onSelect(item)} className={`flex min-h-11 w-full items-center justify-between rounded border px-2.5 text-left ${category === item ? "border-blue-300 bg-blue-50" : "border-slate-200"}`}><span className="whitespace-nowrap text-[11px] font-semibold">{META[item]}</span><span className="text-right text-[9px] leading-4 text-slate-500">AI 후보 {format(valueFor(item, aiTnm))}<br />의사 선택 {format(confirmedFor(item, clinicalTnm))}</span></button>)}</div></section><section className="mt-2 rounded-lg border border-slate-200 bg-white p-2.5"><h2 className="text-[11px] font-bold text-slate-900">TNM 종합 확정 조건</h2><ul className="mt-1.5 space-y-0.5">{(["T", "N", "M"] as TnmCategory[]).map((item) => <li key={item} className="flex items-center gap-2 text-[10px] text-slate-600"><span className="text-slate-300">○</span>{item} 개별 확정</li>)}<li className="text-[10px] text-slate-500">○ 결과 충돌 해결</li><li className="text-[10px] text-slate-500">○ 필수 근거 확인</li><li className="text-[10px] text-slate-500">○ TNM 종합 소견 작성</li></ul><button type="button" disabled aria-describedby={reasonId} className="mt-2 h-7 w-full rounded bg-slate-200 text-[10px] font-semibold text-slate-400">cTNM 및 Stage Group 확정</button><p className="mt-1.5 text-[9px] leading-4 text-slate-500">T·N·M 개별 확정과 종합 소견이 완료되면 활성화됩니다.</p></section><section className="mt-2 rounded-lg border border-slate-200 bg-white p-2.5"><div className="flex items-center justify-between gap-2"><h2 className="text-[11px] font-bold text-slate-900">TNM 종합 소견</h2><span className="text-[9px] text-slate-400">전문과 판독 근거</span></div><div className="mt-1.5 grid grid-cols-4 gap-1"><Summary label="cT" value={clinicalTnm?.t_category} /><Summary label="cN" value={clinicalTnm?.n_category} /><Summary label="cM" value={clinicalTnm?.m_category} /><Summary label="Stage Group" value={clinicalTnm?.stage_group} /></div></section></aside>;
+function ReviewSidebar({ category, onSelect, aiTnm, clinicalTnm }: { category: TnmCategory; onSelect: (value: TnmCategory) => void; aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm }) {
+  return <aside className="min-h-0 overflow-y-auto bg-slate-50/50 p-2"><section className="rounded-lg border border-slate-200 bg-white p-2.5"><h2 className="text-[11px] font-bold text-slate-900">T / N / M 검토 현황</h2><div className="mt-1.5 space-y-1">{(["T", "N", "M"] as TnmCategory[]).map((item) => <button key={item} type="button" onClick={() => onSelect(item)} className={`flex min-h-11 w-full items-center justify-between rounded border px-2.5 text-left ${category === item ? "border-blue-300 bg-blue-50" : "border-slate-200"}`}><span className="whitespace-nowrap text-[11px] font-semibold">{META[item]}</span><span className="text-right text-[9px] leading-4 text-slate-500">AI 후보 {format(valueFor(item, aiTnm))}<br />의사 선택 {format(confirmedFor(item, clinicalTnm))}</span></button>)}</div></section><section className="mt-2 rounded-lg border border-slate-200 bg-white p-2.5"><div className="flex items-center justify-between gap-2"><h2 className="text-[11px] font-bold text-slate-900">TNM 종합 소견</h2><span className="text-[9px] text-slate-400">호흡기내과 판정 근거</span></div><div className="mt-1.5 grid grid-cols-4 gap-1"><Summary label="cT" value={clinicalTnm?.t_category} /><Summary label="cN" value={clinicalTnm?.n_category} /><Summary label="cM" value={clinicalTnm?.m_category} /><Summary label="Stage Group" value={clinicalTnm?.stage_group} /></div></section></aside>;
 }
 
 function ReviewCard({ title, source, children }: { title: string; source: string; children: React.ReactNode }) { return <article className="flex min-h-0 flex-col rounded-lg border border-slate-200 p-2.5"><div className="flex items-center justify-between gap-2"><h2 className="whitespace-nowrap text-[11px] font-bold text-slate-800">{title}</h2><span className="whitespace-nowrap rounded-full bg-slate-100 px-1.5 py-0.5 text-[8px] text-slate-500">{source}</span></div><div className="mt-2 flex min-h-0 flex-1 flex-col space-y-1.5">{children}</div></article>; }

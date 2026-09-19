@@ -94,6 +94,16 @@ class PathologyReadAPIViewMixin:
     permission_classes = [IsAuthenticated, IsActiveStaff, IsPathologyStaff, IsPathologyReader]
 
 
+class PathologyDiagnosisAPIViewMixin:
+    authentication_classes = [JWTAuthentication]
+
+    def get_permissions(self):
+        permission_classes = [IsAuthenticated, IsActiveStaff]
+        if self.request.method not in {"GET", "HEAD", "OPTIONS"}:
+            permission_classes += [IsPathologyStaff, IsPathologyReader]
+        return [permission() for permission in permission_classes]
+
+
 class PathologyWorkstationPagination(PageNumberPagination):
     page_size = 10
 
@@ -161,9 +171,8 @@ def _workstation_queryset(request):
     )
 
 
-class CasePathologyDiagnosisListAPIView(ListAPIView):
+class CasePathologyDiagnosisListAPIView(PathologyDiagnosisAPIViewMixin, ListAPIView):
     serializer_class = PathologyDiagnosisSerializer
-    permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
         return (
@@ -220,8 +229,7 @@ class CasePathologyReportListAPIView(ListAPIView):
         )
 
 
-class PathologyDiagnosisDetailAPIView(APIView):
-    permission_classes = [IsAuthenticated]
+class PathologyDiagnosisDetailAPIView(PathologyDiagnosisAPIViewMixin, APIView):
 
     def get_object(self, diagnosis_id):
         return get_object_or_404(
@@ -909,7 +917,6 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
         clinical_result = (
             ClinicalResult.objects.select_for_update()
             .filter(case=case, examination_order=order, workflow_stage=WorkflowStage.PDL1)
-            .select_related("pdl1_detail")
             .first()
         )
         if clinical_result and clinical_result.result_status == ClinicalResult.ResultStatus.CONFIRMED:

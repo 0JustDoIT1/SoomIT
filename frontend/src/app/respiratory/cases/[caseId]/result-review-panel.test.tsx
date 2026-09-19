@@ -2,10 +2,19 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ResultReviewPanel } from "./result-review-panel";
 
+it("does not claim a radiology sign-off from a pulmonology CT confirmation", () => {
+  const { container } = render(<ResultReviewPanel stage="CT" showEvidence={false} clinicalResult={{ workflow_stage: "CT", result_status: "CONFIRMED" }} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED" }} />);
+  const radiology = screen.getByText("영상의학과 판독").closest("li");
+  expect(radiology).toHaveTextContent("판독 상태 정보 없음");
+  expect(radiology?.querySelector("[data-workflow-state]")).toHaveAttribute("data-workflow-state", "pending");
+  expect(container.textContent).not.toContain("CONFIRMED");
+  expect(container.textContent).not.toContain("SUCCEEDED");
+});
+
 describe("ResultReviewPanel", () => {
   it("shows the specialist-confirmed result before the AI candidate", () => {
     render(<ResultReviewPanel stage="PET_CT_TNM" clinicalResult={{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { tnm: { t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" } } }} aiResult={{ analysis_type: "PET_CT_TNM_ANALYSIS", status: "SUCCEEDED", status_label: "성공", result_detail: { tnm: { predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM0", confidence: 0.82 } } }} />);
-    const specialist = screen.getByText("전문과 확정 결과");
+    const specialist = screen.getByRole("heading", { name: "호흡기내과 최종 판단" });
     const ai = screen.getByText("AI 분석 후보");
     expect(specialist.compareDocumentPosition(ai) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(screen.getByText("AI 분석 후보")).toBeTruthy();
@@ -14,10 +23,10 @@ describe("ResultReviewPanel", () => {
 
   it("shows explicit empty and viewer waiting states without fabricated values", () => {
     render(<ResultReviewPanel stage="CT" />);
-    expect(screen.getByText(/확인 가능한 전문과 확정 결과가 없습니다/)).toBeTruthy();
+    expect(screen.getByText(/확인 가능한 확정 결과가 없습니다/)).toBeTruthy();
     expect(screen.getByText("현재 검사에 연결된 AI 분석 후보가 없습니다.")).toBeTruthy();
     expect(screen.getByText(/원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요/)).toBeTruthy();
-    expect(screen.getByText(/전문과 판독 결과 대기/)).toBeTruthy();
+    expect(screen.getByText(/호흡기내과 최종 판단 결과 대기/)).toBeTruthy();
     expect(screen.queryByText("Annotation API 연동 대기")).toBeNull();
     expect(screen.getByText("연결된 영상이 없습니다.")).toBeTruthy();
   });

@@ -1212,7 +1212,7 @@ class PathologyReadAPITestCase(APITestCase):
         )
 
     def test_authenticated_user_can_create_draft_diagnosis(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:case-diagnosis-list",
             kwargs={"case_id": self.case.id},
@@ -1254,7 +1254,7 @@ class PathologyReadAPITestCase(APITestCase):
             clinical_result=draft,
             malignancy_status=PathologyResult.MalignancyStatus.INDETERMINATE,
         )
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:diagnosis-detail",
             kwargs={"diagnosis_id": draft.id},
@@ -1289,7 +1289,7 @@ class PathologyReadAPITestCase(APITestCase):
             clinical_result=draft,
             malignancy_status=PathologyResult.MalignancyStatus.BENIGN,
         )
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:diagnosis-confirm",
             kwargs={"diagnosis_id": draft.id},
@@ -1313,7 +1313,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertIsNotNone(self.work_item.completed_at)
 
     def test_draft_creation_requires_matching_diagnostic_review_work_item(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         self.work_item.task_type = PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS
         self.work_item.save(update_fields=["task_type", "updated_at"])
         url = reverse(
@@ -1334,7 +1334,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertIn("work_item_id", response.data)
 
     def test_confirmed_diagnosis_cannot_be_updated(self):
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         url = reverse(
             "pathology:diagnosis-detail",
             kwargs={"diagnosis_id": self.clinical_result.id},

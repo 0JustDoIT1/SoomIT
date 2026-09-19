@@ -1,3 +1,4 @@
+import { resultStatusLabel } from "./decision-status-labels";
 import { BiomarkerSourceHeader } from "./biomarker-source-header";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
 
@@ -73,9 +74,9 @@ export function Pdl1ResultPanel({
           <div>
             <p className="text-[10px] font-semibold text-slate-500">PD-L1 검사</p>
             <h2 className="mt-0.5 text-base font-bold text-slate-800">PD-L1 결과 비교</h2>
-            <p className="mt-1 text-xs text-slate-400">전문과 확정 TPS와 AI 예측 구간을 서로 다른 출처로 표시합니다.</p>
+            <p className="mt-1 text-xs text-slate-400">병리과 확정 TPS와 AI 예측 구간을 서로 다른 출처로 표시합니다.</p>
           </div>
-          {aiResult?.status_label && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{aiResult.status_label}</span>}
+          {aiResult?.status_label && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{resultStatusLabel(aiResult.status_label)}</span>}
         </header>
 
         {aiError && (
@@ -91,14 +92,14 @@ export function Pdl1ResultPanel({
 
         {!aiResult && !aiError && (
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-            현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다. 전문과 확정 TPS가 있으면 임상 결과에서 별도로 표시됩니다.
+            현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다. 병리과 확정 TPS가 있으면 임상 결과에서 별도로 표시됩니다.
           </p>
         )}
 
         <div className="mt-4 grid grid-cols-3 gap-3">
           <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "AI 결과 없음"} tone="blue" />
           <ResultCard source="PD-L1 AI 분석 후보" label="분석 신뢰도" value={confidence !== null ? `${confidence.toFixed(2)}%` : "-"} tone="blue" />
-          <ResultCard source="전문과 확정 결과" label="확정 TPS" value={clinical?.tps_percent !== null && clinical?.tps_percent !== undefined ? `${clinical.tps_percent}%` : "확정 결과 없음"} tone="emerald" />
+          <ResultCard source="병리과 확정 결과" label="확정 TPS" value={clinical?.tps_percent !== null && clinical?.tps_percent !== undefined ? `${clinical.tps_percent}%` : "확정 결과 없음"} tone="emerald" />
         </div>
 
         {probabilities && (
@@ -108,8 +109,8 @@ export function Pdl1ResultPanel({
         )}
 
         <dl className="mt-3 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
-          <Detail label="전문과 확정 해석" value={clinical?.interpretation ?? "확정 결과 없음"} />
-          <Detail label="전문과 판독 소견" value={clinical?.note ?? "-"} />
+          <Detail label="병리과 확정 해석" value={clinical?.interpretation ?? "확정 결과 없음"} />
+          <Detail label="병리과 판독 소견" value={clinical?.note ?? "-"} />
           <Detail label="결과일" value={clinicalResult?.result_date ?? "-"} />
           <Detail label="AI 모델" value={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" ") || "-"} />
           <Detail label="모델 구성" value={formatModelComponents(aiResult?.model_components) || "-"} />
@@ -124,7 +125,7 @@ export function Pdl1ResultPanel({
         {aiResult?.error_message && <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{aiResult.error_message}</p>}
 
         <p className="mt-3 text-[11px] leading-5 text-amber-700">
-          AI 결과는 TPS 예측 구간이며 전문과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.
+          AI 결과는 TPS 예측 구간이며 병리과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.
         </p>
       </section>
     </div>

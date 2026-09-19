@@ -9,7 +9,14 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
 from apps.cases.models import CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult, XrayResult
+from apps.clinical.models import (
+    ClinicalResult,
+    Prescription,
+    Regimen,
+    TreatmentDecision,
+    TreatmentPhase,
+    XrayResult,
+)
 from apps.pathology.models import PathologyWorkItem
 from apps.patients.models import Appointment, Patient
 from apps.radiology.models import RadiologyReview
@@ -37,6 +44,35 @@ class DoctorExaminationOrderAPITests(TestCase):
 
     def post_order(self, order_type):
         return self.client.post(self.url, {"order_type": order_type, "priority": "NORMAL", "purpose": "Next examination", "clinical_note": ""}, format="json")
+
+    def prepare_prescription_stage(self, prescription_status=None):
+        result = self.confirm(WorkflowStage.TREATMENT)
+        treatment_decision = TreatmentDecision.objects.create(
+            clinical_result=result,
+            ai_recommendation_action=TreatmentDecision.AiRecommendationAction.NOT_USED,
+            treatment_type=TreatmentDecision.TreatmentType.OBSERVATION,
+            treatment_plan="Follow the confirmed treatment plan.",
+        )
+        self.case.current_stage = WorkflowStage.PRESCRIPTION
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        if prescription_status is not None:
+            regimen = Regimen.objects.create(
+                regimen_code=f"CLOSE-{prescription_status}",
+                regimen_name="Closure policy regimen",
+                cancer_type="NSCLC",
+            )
+            Prescription.objects.create(
+                case=self.case,
+                treatment_decision=treatment_decision,
+                regimen=regimen,
+                cycle_number=1,
+                phase=TreatmentPhase.CONTINUOUS,
+                cycle_start_date=date.today(),
+                prescription_status=prescription_status,
+                prescribed_by_user=self.doctor,
+                prescribed_at=timezone.now(),
+            )
+        return result
 
     def test_order_list_includes_the_latest_active_appointment_time(self):
         order = ExaminationOrder.objects.create(
@@ -73,8 +109,20 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertIsNone(created.data["pathology_work_item_id"])
         self.assertEqual(self.post_order("CT").status_code, 400)
 
+    def test_rejects_an_order_created_from_a_completed_or_future_stage(self):
+        self.confirm(WorkflowStage.XRAY)
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        response = self.post_order("CT")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("현재 진료 단계", response.data["detail"])
+
     def test_pathology_gene_order_creates_upload_work_item_atomically(self):
         self.confirm(WorkflowStage.PET_CT_TNM)
+        self.case.current_stage = WorkflowStage.PET_CT_TNM
+        self.case.save(update_fields=["current_stage", "updated_at"])
         created = self.post_order("PATHOLOGY_GENE")
         self.assertEqual(created.status_code, 201)
         order = ExaminationOrder.objects.get(id=created.data["id"])
@@ -99,6 +147,8 @@ class DoctorExaminationOrderAPITests(TestCase):
 
     def test_cancelling_pathology_order_cancels_pending_work_item(self):
         self.confirm(WorkflowStage.PET_CT_TNM)
+        self.case.current_stage = WorkflowStage.PET_CT_TNM
+        self.case.save(update_fields=["current_stage", "updated_at"])
         created = self.post_order("PATHOLOGY_GENE")
         order = ExaminationOrder.objects.get(id=created.data["id"])
         work_item = PathologyWorkItem.objects.get(examination_order=order)
@@ -114,6 +164,8 @@ class DoctorExaminationOrderAPITests(TestCase):
 
     def test_cannot_cancel_pathology_order_with_started_work_item(self):
         self.confirm(WorkflowStage.PET_CT_TNM)
+        self.case.current_stage = WorkflowStage.PET_CT_TNM
+        self.case.save(update_fields=["current_stage", "updated_at"])
         created = self.post_order("PATHOLOGY_GENE")
         order = ExaminationOrder.objects.get(id=created.data["id"])
         PathologyWorkItem.objects.filter(examination_order=order).update(status=PathologyWorkItem.Status.IN_PROGRESS)
@@ -168,27 +220,151 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(decision.source_clinical_result, result)
         self.assertEqual(decision.target_stage, WorkflowStage.CT)
 
-    def test_workflow_requires_next_order_and_records_case_closure_reason(self):
+    def test_workflow_creates_the_required_next_order_and_advances_the_case(self):
         result = self.confirm(WorkflowStage.XRAY)
         url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
 
-        missing_order = self.client.post(url, {
+        response = self.client.post(url, {
             "action": "PROCEED_NEXT_STAGE",
             "source_clinical_result_id": str(result.id),
             "target_stage": "CT",
         }, format="json")
-        self.assertEqual(missing_order.status_code, 400)
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.CT)
+        self.assertTrue(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            status=ExaminationOrder.Status.ORDERED,
+        ).exists())
+
+    def test_workflow_rejects_case_closure_without_a_final_prescription(self):
+        result = self.prepare_prescription_stage(Prescription.PrescriptionStatus.DRAFT)
+        url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
 
         closed = self.client.post(url, {
             "action": "CASE_CLOSED",
             "source_clinical_result_id": str(result.id),
-            "reason": "No further examination required",
+            "reason": "Regular follow-up",
         }, format="json")
+
+        self.assertEqual(closed.status_code, 400)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.ACTIVE)
+        self.assertFalse(ClinicianDecision.objects.filter(case=self.case).exists())
+
+    def test_workflow_records_case_closure_and_follow_up_reason_with_a_final_prescription(self):
+        result = self.prepare_prescription_stage(Prescription.PrescriptionStatus.FINAL)
+        url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
+
+        payload = {
+            "action": "CASE_CLOSED",
+            "source_clinical_result_id": str(result.id),
+            "reason": "Regular follow-up",
+        }
+        closed = self.client.post(url, payload, format="json")
         self.assertEqual(closed.status_code, 200)
         self.case.refresh_from_db()
         self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.CLOSED)
         self.assertIsNotNone(self.case.closed_at)
-        self.assertEqual(ClinicianDecision.objects.get(case=self.case).decision_type, ClinicianDecision.DecisionType.CLOSE_CASE)
+        decision = ClinicianDecision.objects.get(case=self.case)
+        self.assertEqual(decision.decision_type, ClinicianDecision.DecisionType.CLOSE_CASE)
+        self.assertEqual(decision.reason, "Regular follow-up")
+
+        repeated = self.client.post(url, payload, format="json")
+        self.assertEqual(repeated.status_code, 404)
+        self.assertEqual(ClinicianDecision.objects.filter(case=self.case).count(), 1)
+
+    def test_workflow_referral_does_not_require_a_final_prescription(self):
+        result = self.confirm(WorkflowStage.XRAY)
+        response = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": ClinicianDecision.DecisionType.REFERRED_OUT,
+                "source_clinical_result_id": str(result.id),
+                "reason": "Transfer for specialized care",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.REFERRED_OUT)
+        self.assertEqual(
+            ClinicianDecision.objects.get(case=self.case).decision_type,
+            ClinicianDecision.DecisionType.REFERRED_OUT,
+        )
+
+    def test_pathology_confirmation_creates_pdl1_order_work_item_and_advances_case(self):
+        pathology_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Pathology and gene testing",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=pathology_order,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        )
+        self.case.current_stage = WorkflowStage.PATHOLOGY_GENE
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        response = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": "PROCEED_NEXT_STAGE",
+                "source_clinical_result_id": str(result.id),
+                "target_stage": "PDL1",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.PDL1)
+        pdl1_order = ExaminationOrder.objects.get(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+        )
+        self.assertTrue(PathologyWorkItem.objects.filter(
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+            status=PathologyWorkItem.Status.PENDING,
+        ).exists())
+        self.assertTrue(ClinicianDecision.objects.filter(
+            case=self.case,
+            source_clinical_result=result,
+            decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
+            target_stage=WorkflowStage.PDL1,
+        ).exists())
+
+    def test_confirmed_pdl1_result_advances_to_treatment_without_an_examination_order(self):
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            workflow_stage=WorkflowStage.PDL1,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        )
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        response = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": "PROCEED_NEXT_STAGE",
+                "source_clinical_result_id": str(result.id),
+                "target_stage": "TREATMENT",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.TREATMENT)
+        self.assertFalse(ExaminationOrder.objects.filter(case=self.case).exists())
 
     def test_xray_workflow_confirms_result_orders_ct_and_advances_atomically(self):
         url = reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id})

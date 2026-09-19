@@ -1,21 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { API_BASE_URL } from "../../_lib/respiratory-api";
+import { DecisionModal, DecisionMethodSelect, DecisionReasonFields, decisionInputClass, decisionTriggerClass } from "./decision-ui";
 
+type Action = "PROCEED_NEXT_STAGE" | "CASE_CLOSED" | "REFERRED_OUT";
 type CtWorkflowDecisionProps = {
   caseId: string;
   aiResultId?: string;
   clinicalResult?: { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } };
   authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
-  onCompleted: () => void;
+  onCompleted: (result: { closed: boolean; message: string }) => void;
 };
-
-const assessmentOptions = [
-  { value: "NO_NODULE", label: "결절 없음" },
-  { value: "NODULE_DETECTED", label: "결절 발견" },
-  { value: "INDETERMINATE", label: "판정 불가" },
-];
 
 export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authorizedFetch, onCompleted }: CtWorkflowDecisionProps) {
   const initialDetail = clinicalResult?.result_detail?.ct;
@@ -23,60 +19,107 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
   const [assessment, setAssessment] = useState(initialDetail?.overall_assessment || "INDETERMINATE");
   const [risk, setRisk] = useState(initialDetail?.overall_malignancy_risk == null ? "" : String(initialDetail.overall_malignancy_risk));
   const [summary, setSummary] = useState(initialDetail?.finding_summary || "");
+  const [action, setAction] = useState<Action>(initialDetail?.overall_assessment === "NO_NODULE" ? "CASE_CLOSED" : "PROCEED_NEXT_STAGE");
+  const [reason, setReason] = useState("");
+  const [confirmedId, setConfirmedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-
-  const close = () => {
-    if (busy) return;
-    setOpen(false);
-    setError("");
+  const submittingRef = useRef(false);
+  const uncertainConfirmation = useRef<string | null>(null);
+  const resultId = confirmedId ?? (clinicalResult?.result_status === "CONFIRMED" ? clinicalResult.id : undefined);
+  const close = () => { if (!submittingRef.current) { setOpen(false); setError(""); } };
+  const openDialog = () => {
+    if (!confirmedId && initialDetail) {
+      setAssessment(initialDetail.overall_assessment || "INDETERMINATE");
+      setSummary(initialDetail.finding_summary || "");
+      setRisk(initialDetail.overall_malignancy_risk == null ? "" : String(initialDetail.overall_malignancy_risk));
+      setAction(initialDetail.overall_assessment === "NO_NODULE" ? "CASE_CLOSED" : "PROCEED_NEXT_STAGE");
+    }
+    setOpen(true);
+  };
+  const reconcileConfirmation = async () => {
+    const id = uncertainConfirmation.current;
+    if (!id) return { id: resultId, completed: false };
+    const [resultsResponse, caseResponse] = await Promise.all([
+      authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`),
+      authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/`),
+    ]);
+    if (!resultsResponse.ok || !caseResponse.ok) throw new Error("확정 상태를 확인하지 못했습니다. 다시 시도해 주세요.");
+    const results = await resultsResponse.json() as { id: string; result_status: string }[];
+    const currentCase = await caseResponse.json() as { current_stage: string; case_status: string };
+    const saved = results.find((result) => result.id === id);
+    if (!saved || !currentCase.current_stage || !currentCase.case_status) throw new Error("확정 상태를 확인하지 못했습니다. 다시 시도해 주세요.");
+    uncertainConfirmation.current = null;
+    if (saved.result_status !== "CONFIRMED") return { id: undefined, completed: false };
+    setConfirmedId(id);
+    const completed = currentCase.case_status !== "ACTIVE" || currentCase.current_stage !== "CT";
+    if (completed) {
+      setOpen(false);
+      onCompleted({ closed: currentCase.case_status !== "ACTIVE", message: "서버에서 완료된 CT 처리 상태를 확인했습니다." });
+    }
+    return { id, completed };
   };
 
   const submit = async () => {
-    if (!aiResultId) return;
+    if (submittingRef.current || (!aiResultId && !resultId)) return;
+    if (action !== "PROCEED_NEXT_STAGE" && !reason.trim()) return;
     const parsedRisk = risk.trim() === "" ? null : Number(risk);
-    if (parsedRisk !== null && (!Number.isFinite(parsedRisk) || parsedRisk < 0 || parsedRisk > 100)) {
+    if (!resultId && parsedRisk !== null && (!Number.isFinite(parsedRisk) || parsedRisk < 0 || parsedRisk > 100)) {
       setError("악성 위험도는 0부터 100 사이의 숫자로 입력해 주세요.");
       return;
     }
-    setBusy(true);
-    setError("");
+    submittingRef.current = true;
+    setBusy(true); setError("");
+    const post = async (path: string, body: object) => {
+      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/${path}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "CT 결과 처리에 실패했습니다.");
+      return data;
+    };
     try {
-      const draftResponse = await authorizedFetch(
-        `${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/ct/`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            reviewed_ai_result_id: aiResultId,
-            overall_assessment: assessment,
-            overall_malignancy_risk: parsedRisk,
-            finding_summary: summary.trim() || null,
-          }),
-        }
-      );
-      const draft = await draftResponse.json().catch(() => ({}));
-      if (!draftResponse.ok) throw new Error(draft.detail || "CT 결과를 저장하지 못했습니다.");
-
-      const confirmResponse = await authorizedFetch(
-        `${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/ct/${draft.id}/confirm/`,
-        { method: "POST" }
-      );
-      const confirmed = await confirmResponse.json().catch(() => ({}));
-      if (!confirmResponse.ok) throw new Error(confirmed.detail || "CT 결과를 확정하지 못했습니다.");
+      const recovered = uncertainConfirmation.current ? await reconcileConfirmation() : { id: resultId, completed: false };
+      if (recovered.completed) return;
+      let sourceId = recovered.id;
+      let advanced = false;
+      if (!sourceId) {
+        const draft = await post("clinical-results/ct/", { reviewed_ai_result_id: aiResultId, overall_assessment: assessment, overall_malignancy_risk: parsedRisk, finding_summary: summary.trim() || null });
+        if (!draft.id) throw new Error("저장된 CT 결과를 확인할 수 없습니다.");
+        uncertainConfirmation.current = draft.id;
+        await post(`clinical-results/ct/${draft.id}/confirm/`, { advance_to_next_stage: action === "PROCEED_NEXT_STAGE" });
+        uncertainConfirmation.current = null;
+        sourceId = draft.id as string;
+        setConfirmedId(sourceId);
+        advanced = action === "PROCEED_NEXT_STAGE";
+      }
+      // A successful confirmation is retained if the following decision fails.
+      // Retrying must not overwrite or reconfirm the clinical result.
+      if (!advanced) {
+        await post("workflow-decision/", { action, source_clinical_result_id: sourceId, target_stage: action === "PROCEED_NEXT_STAGE" ? "PET_CT_TNM" : null, reason });
+      }
       setOpen(false);
-      onCompleted();
+      onCompleted({ closed: action !== "PROCEED_NEXT_STAGE", message: action === "CASE_CLOSED" ? "CT 결과를 확정하고 Case를 종료했습니다." : action === "REFERRED_OUT" ? "CT 결과를 확정하고 의뢰·전원 처리했습니다." : "PET-CT/TNM 단계가 활성화되었습니다." });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "CT 결과 처리에 실패했습니다.");
+      // Confirmation may have committed even when advancement or its response failed.
+      // Reconcile via reads; never guess that it is safe to overwrite the draft.
+      if (uncertainConfirmation.current) {
+        try { await reconcileConfirmation(); }
+        catch { /* Keep the original error and reconcile again before the next write. */ }
+      }
     } finally {
-      setBusy(false);
+      submittingRef.current = false; setBusy(false);
     }
   };
-
-  if (clinicalResult?.result_status === "CONFIRMED") return null;
-
+  const prefix = resultId ? "" : "결과 확정 및 ";
+  const primaryLabel = prefix + (action === "CASE_CLOSED" ? "Case 종료" : action === "REFERRED_OUT" ? "의뢰 처리" : "PET-CT/TNM 진행");
   return <>
-    <button type="button" disabled={!aiResultId} title={!aiResultId ? "확정할 CT AI 분석 결과가 필요합니다." : undefined} onClick={() => setOpen(true)} className="rounded-md bg-blue-600 px-2.5 py-1.5 text-[10px] font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200">결과 입력 및 확정</button>
-    {open && <div role="presentation" className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4"><section role="dialog" aria-modal="true" aria-labelledby="ct-workflow-title" className="w-full max-w-xl rounded-xl bg-white p-5 shadow-2xl"><div className="flex items-start justify-between gap-4"><div><p className="text-xs font-semibold text-blue-700">호흡기내과 진료 결정</p><h2 id="ct-workflow-title" className="mt-1 text-base font-bold text-slate-900">흉부 CT 결과 입력 및 확정</h2><p className="mt-1 text-xs leading-5 text-slate-500">AI 결과를 참고 자료로 검토한 뒤 호흡기내과 판단을 확정합니다. 확정 후 PET-CT/TNM 단계 진행을 선택할 수 있습니다.</p></div><button type="button" disabled={busy} onClick={close} aria-label="CT 결과 입력 닫기" className="text-lg text-slate-400 hover:text-slate-700">×</button></div><div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">종합 판정<select value={assessment} disabled={busy} onChange={(event) => setAssessment(event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm"><>{assessmentOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</></select></label><label className="text-xs font-semibold text-slate-700">악성 위험도 (%)<input type="number" min="0" max="100" step="0.01" value={risk} disabled={busy} onChange={(event) => setRisk(event.target.value)} placeholder="선택 입력" className="mt-1 w-full rounded-md border border-slate-300 p-2 text-sm" /></label></div><label className="mt-3 block text-xs font-semibold text-slate-700">호흡기내과 소견<textarea value={summary} disabled={busy} onChange={(event) => setSummary(event.target.value)} maxLength={5000} rows={5} placeholder="영상·AI 결과를 검토한 소견을 입력하세요." className="mt-1 w-full resize-none rounded-md border border-slate-300 p-2 text-sm" /></label>{error && <p role="alert" className="mt-3 rounded bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}<div className="mt-5 flex justify-end gap-2"><button type="button" disabled={busy} onClick={close} className="rounded border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">취소</button><button type="button" disabled={busy} onClick={() => void submit()} className="rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-blue-300">{busy ? "확정 중..." : "결과 확정"}</button></div></section></div>}
+    <button type="button" disabled={busy || (!aiResultId && !resultId)} title={!aiResultId && !resultId ? "확정할 CT AI 분석 결과가 필요합니다." : undefined} onClick={openDialog} className={decisionTriggerClass}>결과 입력 및 처리</button>
+    {open && <DecisionModal title="흉부 CT 결과 입력 및 처리" description="영상·AI 결과를 검토하고 다음 처리를 선택하세요." busy={busy} error={error} message={resultId ? "결과 확정 완료 · 선택한 후속 처리를 진행합니다." : undefined} primaryLabel={primaryLabel} disabled={action !== "PROCEED_NEXT_STAGE" && !reason.trim()} onSubmit={() => void submit()} onClose={close}>
+      <label className="block text-xs font-semibold text-slate-700">종합 판정<select disabled={Boolean(resultId)} value={assessment} onChange={(event) => { setAssessment(event.target.value); setAction(event.target.value === "NO_NODULE" ? "CASE_CLOSED" : "PROCEED_NEXT_STAGE"); }} className={decisionInputClass}><option value="NO_NODULE">결절 없음</option><option value="NODULE_DETECTED">결절 발견</option><option value="INDETERMINATE">추가 평가 필요</option></select></label>
+      <label className="block text-xs font-semibold text-slate-700">호흡기내과 소견<textarea disabled={Boolean(resultId)} value={summary} onChange={(event) => setSummary(event.target.value)} rows={3} maxLength={5000} className={decisionInputClass} /></label>
+      <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[{ value: "PROCEED_NEXT_STAGE", label: "PET-CT/TNM 진행" }, { value: "CASE_CLOSED", label: "Case 종료" }, { value: "REFERRED_OUT", label: "의뢰·전원" }]} />
+      {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: PET-CT/TNM</p> : <DecisionReasonFields kind={action === "CASE_CLOSED" ? "close" : "refer"} reason={reason} onReasonChange={setReason} />}
+      <details><summary className="cursor-pointer text-xs text-slate-600">CT 판정 상세 (선택)</summary><label className="mt-3 block text-xs font-semibold text-slate-700">악성 위험도 (%)<input disabled={Boolean(resultId)} type="number" min="0" max="100" step="0.01" value={risk} onChange={(event) => setRisk(event.target.value)} placeholder="선택 입력" className={decisionInputClass} /></label></details>
+    </DecisionModal>}
   </>;
 }
