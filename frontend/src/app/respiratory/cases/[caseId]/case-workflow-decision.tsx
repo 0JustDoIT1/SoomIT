@@ -18,7 +18,7 @@ type WorkflowDecisionCompletion = {
   closed: boolean;
 };
 
-export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, exceptionsOnly = false, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; exceptionsOnly?: boolean; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
+export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, exceptionsOnly = false, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; exceptionsOnly?: boolean; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
   const [action, setAction] = useState<"PROCEED_NEXT_STAGE" | "RETRY" | "REFERRED_OUT" | "CASE_CLOSED" | null>(null);
   const [reason, setReason] = useState("");
   const [retryPurpose, setRetryPurpose] = useState("");
@@ -76,7 +76,8 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
       <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[
         ...(!exceptionsOnly && next ? [{ value: "PROCEED_NEXT_STAGE" as const, label: next.label + " 진행", disabled: !canProceed }] : []),
         ...(currentStage === "PATHOLOGY_GENE" ? [{ value: "RETRY" as const, label: "재생검" }] : []),
-        { value: "REFERRED_OUT", label: "의뢰·전원" }, { value: "CASE_CLOSED", label: "Case 종료" },
+        { value: "REFERRED_OUT", label: "의뢰·전원" },
+        ...(hasFinalPrescription ? [{ value: "CASE_CLOSED" as const, label: "Case 종료" }] : []),
       ]} />
       {currentStage === "PET_CT_TNM" && !confirmedStageGroup?.trim() && <p className="text-xs text-amber-700">다음 단계 진행에는 TNM 결과와 Stage Group 최종 확정이 필요합니다.</p>}
       {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: {next?.label}</p> : <DecisionReasonFields kind={action === "RETRY" ? "retry" : action === "REFERRED_OUT" ? "refer" : "close"} reason={reason} onReasonChange={setReason} retryPurpose={retryPurpose} onRetryPurposeChange={setRetryPurpose} />}

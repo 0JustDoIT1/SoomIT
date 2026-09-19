@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import { API_BASE_URL } from "../../_lib/respiratory-api";
 import { DecisionModal, DecisionMethodSelect, DecisionReasonFields, decisionInputClass, decisionTriggerClass } from "./decision-ui";
 
-type Action = "PROCEED_NEXT_STAGE" | "CASE_CLOSED" | "REFERRED_OUT";
+type Action = "PROCEED_NEXT_STAGE" | "REFERRED_OUT";
 type CtWorkflowDecisionProps = {
   caseId: string;
   aiResultId?: string;
@@ -19,7 +19,7 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
   const [assessment, setAssessment] = useState(initialDetail?.overall_assessment || "INDETERMINATE");
   const [risk, setRisk] = useState(initialDetail?.overall_malignancy_risk == null ? "" : String(initialDetail.overall_malignancy_risk));
   const [summary, setSummary] = useState(initialDetail?.finding_summary || "");
-  const [action, setAction] = useState<Action>(initialDetail?.overall_assessment === "NO_NODULE" ? "CASE_CLOSED" : "PROCEED_NEXT_STAGE");
+  const [action, setAction] = useState<Action>("PROCEED_NEXT_STAGE");
   const [reason, setReason] = useState("");
   const [confirmedId, setConfirmedId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,7 +33,7 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
       setAssessment(initialDetail.overall_assessment || "INDETERMINATE");
       setSummary(initialDetail.finding_summary || "");
       setRisk(initialDetail.overall_malignancy_risk == null ? "" : String(initialDetail.overall_malignancy_risk));
-      setAction(initialDetail.overall_assessment === "NO_NODULE" ? "CASE_CLOSED" : "PROCEED_NEXT_STAGE");
+      setAction("PROCEED_NEXT_STAGE");
     }
     setOpen(true);
   };
@@ -97,7 +97,7 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
         await post("workflow-decision/", { action, source_clinical_result_id: sourceId, target_stage: action === "PROCEED_NEXT_STAGE" ? "PET_CT_TNM" : null, reason });
       }
       setOpen(false);
-      onCompleted({ closed: action !== "PROCEED_NEXT_STAGE", message: action === "CASE_CLOSED" ? "CT 결과를 확정하고 Case를 종료했습니다." : action === "REFERRED_OUT" ? "CT 결과를 확정하고 의뢰·전원 처리했습니다." : "PET-CT/TNM 단계가 활성화되었습니다." });
+      onCompleted({ closed: action !== "PROCEED_NEXT_STAGE", message: action === "REFERRED_OUT" ? "CT 결과를 확정하고 의뢰·전원 처리했습니다." : "PET-CT/TNM 단계가 활성화되었습니다." });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "CT 결과 처리에 실패했습니다.");
       // Confirmation may have committed even when advancement or its response failed.
@@ -111,14 +111,14 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
     }
   };
   const prefix = resultId ? "" : "결과 확정 및 ";
-  const primaryLabel = prefix + (action === "CASE_CLOSED" ? "Case 종료" : action === "REFERRED_OUT" ? "의뢰 처리" : "PET-CT/TNM 진행");
+  const primaryLabel = prefix + (action === "REFERRED_OUT" ? "의뢰 처리" : "PET-CT/TNM 진행");
   return <>
     <button type="button" disabled={busy || (!aiResultId && !resultId)} title={!aiResultId && !resultId ? "확정할 CT AI 분석 결과가 필요합니다." : undefined} onClick={openDialog} className={decisionTriggerClass}>결과 입력 및 처리</button>
     {open && <DecisionModal title="흉부 CT 결과 입력 및 처리" description="영상·AI 결과를 검토하고 다음 처리를 선택하세요." busy={busy} error={error} message={resultId ? "결과 확정 완료 · 선택한 후속 처리를 진행합니다." : undefined} primaryLabel={primaryLabel} disabled={action !== "PROCEED_NEXT_STAGE" && !reason.trim()} onSubmit={() => void submit()} onClose={close}>
-      <label className="block text-xs font-semibold text-slate-700">종합 판정<select disabled={Boolean(resultId)} value={assessment} onChange={(event) => { setAssessment(event.target.value); setAction(event.target.value === "NO_NODULE" ? "CASE_CLOSED" : "PROCEED_NEXT_STAGE"); }} className={decisionInputClass}><option value="NO_NODULE">결절 없음</option><option value="NODULE_DETECTED">결절 발견</option><option value="INDETERMINATE">추가 평가 필요</option></select></label>
+      <label className="block text-xs font-semibold text-slate-700">종합 판정<select disabled={Boolean(resultId)} value={assessment} onChange={(event) => { setAssessment(event.target.value); }} className={decisionInputClass}><option value="NO_NODULE">결절 없음</option><option value="NODULE_DETECTED">결절 발견</option><option value="INDETERMINATE">추가 평가 필요</option></select></label>
       <label className="block text-xs font-semibold text-slate-700">호흡기내과 소견<textarea disabled={Boolean(resultId)} value={summary} onChange={(event) => setSummary(event.target.value)} rows={3} maxLength={5000} className={decisionInputClass} /></label>
-      <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[{ value: "PROCEED_NEXT_STAGE", label: "PET-CT/TNM 진행" }, { value: "CASE_CLOSED", label: "Case 종료" }, { value: "REFERRED_OUT", label: "의뢰·전원" }]} />
-      {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: PET-CT/TNM</p> : <DecisionReasonFields kind={action === "CASE_CLOSED" ? "close" : "refer"} reason={reason} onReasonChange={setReason} />}
+      <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[{ value: "PROCEED_NEXT_STAGE", label: "PET-CT/TNM 진행" }, { value: "REFERRED_OUT", label: "의뢰·전원" }]} />
+      {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: PET-CT/TNM</p> : <DecisionReasonFields kind="refer" reason={reason} onReasonChange={setReason} />}
       <details><summary className="cursor-pointer text-xs text-slate-600">CT 판정 상세 (선택)</summary><label className="mt-3 block text-xs font-semibold text-slate-700">악성 위험도 (%)<input disabled={Boolean(resultId)} type="number" min="0" max="100" step="0.01" value={risk} onChange={(event) => setRisk(event.target.value)} placeholder="선택 입력" className={decisionInputClass} /></label></details>
     </DecisionModal>}
   </>;

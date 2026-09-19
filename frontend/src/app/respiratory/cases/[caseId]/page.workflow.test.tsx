@@ -14,7 +14,8 @@ vi.mock("./case-image-evidence", () => ({ CaseImageEvidence: () => null }));
 vi.mock("./case-wsi-evidence", () => ({ CaseWsiEvidence: () => null }));
 vi.mock("./pathology-gene-imaging-workstation", () => ({ PathologyGeneReviewPanel: () => null }));
 vi.mock("./pdl1-imaging-workstation", () => ({ Pdl1ResultPanel: () => null }));
-vi.mock("./result-review-panel", () => ({ ResultReviewPanel: () => null }));
+vi.mock("./result-review-panel", () => ({ ResultReviewPanel: ({ specialistAction }: { specialistAction?: import("react").ReactNode }) => specialistAction ?? null }));
+vi.mock("./treatment-decision-panel", () => ({ TreatmentDecisionPanel: () => <div data-testid="treatment-final-plan" /> }));
 vi.mock("./evidence-viewer-panel", () => ({ EvidenceViewerPanel: () => null }));
 
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
@@ -31,7 +32,7 @@ it("exposes one CT decision entry and opens future TNM read-only after a suspici
     return response([]);
   });
   render(<Page />);
-  const trigger = await screen.findByRole("button", { name: "결과 입력 및 처리" });
+  const trigger = await screen.findByRole("button", { name: "결과 입력 및 처리" }, { timeout: 3000 });
   await waitFor(() => expect(trigger).toBeEnabled());
   expect(screen.getAllByRole("button", { name: "결과 입력 및 처리" })).toHaveLength(1);
   fireEvent.click(trigger);
@@ -45,6 +46,44 @@ it("exposes one CT decision entry and opens future TNM read-only after a suspici
   expect(await screen.findByLabelText("최종 T 선택")).toBeDisabled();
   expect(screen.getByRole("button", { name: "TNM 초안 저장" })).toBeDisabled();
   expect(mocks.authorizedFetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});
+
+it("passes the actual AiResult ID when saving a CT result", async () => {
+  const caseData = { id: "case-1", case_code: "CASE-1", patient_code: "PAT-1", patient_name: "환자", primary_doctor_name: "의사", current_stage: "CT", case_status: "ACTIVE" };
+  mocks.authorizedFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+    const url = new URL(input).pathname;
+    if (url === "/api/doctor/cases/") return response([caseData]);
+    if (url === "/api/doctor/cases/case-1/") return response(caseData);
+    if (url.endsWith("/ai-results/")) return response([{ id: "analysis-1", ai_result_id: "ai-result-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }]);
+    if (url.endsWith("/clinical-results/ct/") && init?.method === "POST") return response({ id: "ct-result-1" }, 201);
+    if (url.endsWith("/clinical-results/ct/ct-result-1/confirm/")) return response({ id: "ct-result-1", result_status: "CONFIRMED" });
+    if (url.endsWith("/workflow-decision/")) return response({ current_stage: "PET_CT_TNM", case_status: "ACTIVE" });
+    if (url.endsWith("/clinical-results/")) return response([]);
+    if (url.endsWith("/treatment-decision/")) return response({}, 404);
+    return response([]);
+  });
+  render(<Page />);
+  const trigger = await screen.findByRole("button", { name: "결과 입력 및 처리" });
+  await waitFor(() => expect(trigger).toBeEnabled());
+  fireEvent.click(trigger);
+  fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
+  await waitFor(() => expect(mocks.authorizedFetch.mock.calls.some(([url]) => String(url).endsWith("/clinical-results/ct/"))).toBe(true));
+  const saveCall = mocks.authorizedFetch.mock.calls.find(([url, init]) => String(url).endsWith("/clinical-results/ct/") && init?.method === "POST");
+  expect(JSON.parse(saveCall![1].body)).toMatchObject({ reviewed_ai_result_id: "ai-result-1" });
+});
+
+it("opens the final treatment plan by default when entering TREATMENT", async () => {
+  const caseData = { id: "case-1", case_code: "CASE-1", patient_code: "PAT-1", patient_name: "환자", primary_doctor_name: "의사", current_stage: "TREATMENT", case_status: "ACTIVE" };
+  mocks.authorizedFetch.mockImplementation(async (input: string) => {
+    const url = new URL(input).pathname;
+    if (url === "/api/doctor/cases/") return response([caseData]);
+    if (url === "/api/doctor/cases/case-1/") return response(caseData);
+    if (url.endsWith("/clinical-results/")) return response([]);
+    if (url.endsWith("/treatment-decision/")) return response({}, 404);
+    return response([]);
+  });
+  render(<Page />);
+  expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
 });
 
 it("refreshes Case, navigation and timeline after TNM finalization without unmounting the page", async () => {
@@ -106,9 +145,42 @@ it("opens prescription exceptions using the existing confirmed treatment result"
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
   expect(screen.queryByRole("option", { name: "다음 단계 진행" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Case 종료" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "전원 사유" } });
   fireEvent.click(screen.getByRole("button", { name: "의뢰·전원 처리" }));
   await waitFor(() => expect(mocks.router.push).toHaveBeenCalledWith("/respiratory/cases"));
   const call = mocks.authorizedFetch.mock.calls.find(([url]) => String(url).endsWith("/workflow-decision/"));
   expect(JSON.parse(call![1].body)).toMatchObject({ action: "REFERRED_OUT", source_clinical_result_id: "treatment-1", target_stage: null });
+});
+
+it("exposes Case closure after a FINAL prescription is loaded", async () => {
+  const caseData = { id: "case-1", case_code: "CASE-1", patient_code: "PAT-1", patient_name: "환자", primary_doctor_name: "의사", current_stage: "PRESCRIPTION", case_status: "ACTIVE" };
+  mocks.authorizedFetch.mockImplementation(async (input: string) => {
+    const url = new URL(input).pathname;
+    if (url === "/api/doctor/cases/") return response([caseData]);
+    if (url === "/api/doctor/cases/case-1/") return response(caseData);
+    if (url.endsWith("/prescriptions/")) return response([{
+      id: "rx-1",
+      regimen_detail: { id: "regimen-1", regimen_code: "TEST", regimen_name: "테스트 요법", cancer_type: "NSCLC", histology: null, treatment_line: null, cycle_length_days: null, induction_cycles: null, maintenance_yn: false, source: null, source_version: null },
+      cycle_number: 1,
+      phase: "INDUCTION",
+      phase_label: "유도",
+      cycle_start_date: "2026-09-19",
+      prescription_status: "FINAL",
+      prescription_status_label: "최종",
+      items: [],
+      safety_check_results: [],
+      created_at: "2026-09-19T00:00:00Z",
+      updated_at: "2026-09-19T00:00:00Z",
+    }]);
+    if (url.endsWith("/clinical-results/")) return response([{ id: "treatment-1", workflow_stage: "TREATMENT", result_status: "CONFIRMED", result_detail: {} }]);
+    if (url.endsWith("/treatment-decision/")) return response({}, 404);
+    return response([]);
+  });
+  render(<Page />);
+  const button = await screen.findByRole("button", { name: "결과 입력 및 처리" });
+  await waitFor(() => expect(button).toBeEnabled());
+  fireEvent.click(button);
+  expect(screen.getByRole("option", { name: "Case 종료" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "의뢰·전원" })).toBeInTheDocument();
 });

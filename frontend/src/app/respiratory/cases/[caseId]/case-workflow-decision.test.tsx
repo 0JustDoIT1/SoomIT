@@ -6,7 +6,8 @@ it("does not expose a second TNM progression path alongside the workspace", () =
   render(<CaseWorkflowDecision caseId="case-1" currentStage="PET_CT_TNM" confirmedResultId="tnm-1" confirmedStageGroup="IIA" exceptionsOnly authorizedFetch={vi.fn()} onCompleted={vi.fn()} />);
   fireEvent.click(screen.getByRole("button", { name: "종료·의뢰 처리" }));
   expect(screen.queryByRole("option", { name: /진행/ })).not.toBeInTheDocument();
-  expect(screen.getByRole("option", { name: "Case 종료" })).toBeInTheDocument();
+  expect(screen.getByRole("option", { name: "의뢰·전원" })).toBeInTheDocument();
+  expect(screen.queryByRole("option", { name: "Case 종료" })).not.toBeInTheDocument();
 });
 
 it("keeps a failed PD-L1 decision open and retries without a biopsy option", async () => {
@@ -77,18 +78,31 @@ it("allows TNM advancement after final Stage Group confirmation", async () => {
   expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ action: "PROCEED_NEXT_STAGE", target_stage: "PATHOLOGY_GENE", source_clinical_result_id: "result-1" });
 });
 
-it.each(["REFERRED_OUT", "CASE_CLOSED"])("allows %s from PRESCRIPTION without a next-stage option", async (action) => {
-  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case_status: action === "REFERRED_OUT" ? "REFERRED_OUT" : "CLOSED" })));
+it("allows referral from PRESCRIPTION without a FINAL prescription", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case_status: "REFERRED_OUT" })));
   const onCompleted = vi.fn();
   render(<CaseWorkflowDecision caseId="case-1" currentStage="PRESCRIPTION" confirmedResultId="result-1" authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
   fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
   expect(screen.queryByRole("option", { name: /진행/ })).not.toBeInTheDocument();
-  fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: action } });
-  expect(screen.getByRole("button", { name: action === "REFERRED_OUT" ? "의뢰·전원 처리" : "Case 종료" })).toBeDisabled();
+  expect(screen.queryByRole("option", { name: "Case 종료" })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "REFERRED_OUT" } });
+  expect(screen.getByRole("button", { name: "의뢰·전원 처리" })).toBeDisabled();
   fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "사유 기록" } });
-  fireEvent.click(screen.getByRole("button", { name: action === "REFERRED_OUT" ? "의뢰·전원 처리" : "Case 종료" }));
+  fireEvent.click(screen.getByRole("button", { name: "의뢰·전원 처리" }));
   await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ closed: true })));
-  expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ action, target_stage: null, reason: "사유 기록" });
+  expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ action: "REFERRED_OUT", target_stage: null, reason: "사유 기록" });
+});
+
+it("allows Case closure from PRESCRIPTION only with a FINAL prescription", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case_status: "CLOSED" })));
+  const onCompleted = vi.fn();
+  render(<CaseWorkflowDecision caseId="case-1" currentStage="PRESCRIPTION" confirmedResultId="result-1" hasFinalPrescription authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
+  fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
+  fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "CASE_CLOSED" } });
+  fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "정기 추적" } });
+  fireEvent.click(screen.getByRole("button", { name: "Case 종료" }));
+  await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ closed: true })));
+  expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ action: "CASE_CLOSED", target_stage: null, reason: "정기 추적" });
 });
 
 it("requires both reason and purpose for a biopsy retry", async () => {

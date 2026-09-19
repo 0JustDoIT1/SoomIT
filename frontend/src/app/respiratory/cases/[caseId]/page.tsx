@@ -560,7 +560,7 @@ export default function RespiratoryCaseDetailPage() {
   }, [authorizedFetch, caseId]);
 
   const [selectedTreatmentMenu, setSelectedTreatmentMenu] =
-  useState<TreatmentSubMenu>("AI_RECOMMENDATION");
+  useState<TreatmentSubMenu>("FINAL_PLAN");
 
   const [selectedPrescriptionMenu, setSelectedPrescriptionMenu] =
   useState<PrescriptionSubMenu>("PRESCRIPTION_LIST");
@@ -1001,6 +1001,7 @@ export default function RespiratoryCaseDetailPage() {
     if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
     if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
     if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
+    if (stage === "TREATMENT") setSelectedTreatmentMenu("FINAL_PLAN");
   }, [caseId, currentCaseStage]);
 
   const latestPdl1Result =
@@ -1029,6 +1030,9 @@ export default function RespiratoryCaseDetailPage() {
     ?? (selectedCase?.current_stage === "PRESCRIPTION"
       ? tnmClinicalResults.find((result) => result.workflow_stage === "TREATMENT" && result.result_status === "CONFIRMED")
       : undefined);
+  const hasFinalPrescription = casePrescriptions.some(
+    (prescription) => prescription.prescription_status === "FINAL",
+  );
   const selectedInfoAccess = getCaseInfoAccessState({
     key: selectedInfoMenu,
     currentStage: selectedCase?.current_stage,
@@ -1759,7 +1763,7 @@ export default function RespiratoryCaseDetailPage() {
               </p>
             </div>
           </div>
-<div className="flex shrink-0 items-center gap-2">{selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && (selectedCase.current_stage === "XRAY" ? <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : selectedCase.current_stage === "CT" ? <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed, message }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />)}</div>
+<div className="flex shrink-0 items-center gap-2">{selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}{stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}{selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && (selectedCase.current_stage === "XRAY" ? <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : selectedCase.current_stage === "CT" ? <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed, message }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} /> : <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { showToast(message); if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />)}</div>
         </div>
 
         {selectedInfoAccess.state === "WAITING" && (
@@ -2740,7 +2744,6 @@ export default function RespiratoryCaseDetailPage() {
         ) : selectedMainMenu === "RESULTS" ? (
         <ResultReviewPanel
           stage={selectedResultMenu}
-          specialistAction={selectedResultMenu === "XRAY" && selectedCase?.current_stage === "XRAY" ? <XrayWorkflowDecision caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed, messages }) => { messages.forEach((message) => showToast(message)); if (closed) { router.push("/respiratory/cases"); return; } setStageOrderNotice("흉부 CT 단계가 활성화되었습니다."); setCaseRefreshVersion((current) => current + 1); }} /> : selectedResultMenu === "CT" && selectedCase?.current_stage === "CT" ? <CtWorkflowDecision caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult as unknown as { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } }} authorizedFetch={authorizedFetch} onCompleted={() => { showToast("흉부 CT 결과가 확정되었습니다."); setCaseRefreshVersion((current) => current + 1); void retryClinicalResults(); }} /> : undefined}
           caseId={caseId}
           apiBaseUrl={API_BASE_URL}
           authorizedFetch={authorizedFetch}
