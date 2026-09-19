@@ -1,4 +1,5 @@
 import re
+from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
 
 from celery import shared_task
@@ -354,24 +355,46 @@ def run_tnm_analysis(analysis_id):
     analysis.error_message = None
     analysis.save(update_fields=["status", "started_at", "completed_at", "error_message"])
 
-    prefix = None
+    # M's inputs (the Phase1-confirmed CT and the PET series) do not depend on
+    # T/Phase2/N's outputs, and each hits its own dedicated Cloud Run service
+    # (tnm-t-serve / ct-analysis-phase2-serve / tnm-serve vs tnm-m-serve), so
+    # there is no shared GPU/process to contend over. Running the T->Phase2->N
+    # chain and the PET export + M call concurrently only overlaps network-bound
+    # waits; the DB write below still waits for both branches before committing
+    # anything, so the final result/contract is unchanged.
+    pet_export = {"prefix": None}
     try:
         t_input_uri, phase1_artifact_uri = _single_confirmed_ct(analysis)
         age, gender = _patient_phase2_inputs(analysis)
         histology = _confirmed_histology(analysis)
-        t_payload = request_tnm_t_analysis(case_id=analysis.case_id, t_input_uri=t_input_uri)
-        phase2_payload = request_ct_phase2_analysis(
-            case_id=str(analysis.case_id), patient_id=str(analysis.case.patient_id), age=age,
-            gender=gender, histology=histology, phase1_artifact_uri=phase1_artifact_uri,
-            t_tumor_mask_uri=t_payload["tumor_mask_uri"],
-        )
-        n_input = load_n_input(phase2_payload["n_input_uri"])
-        n_payload = request_tnm_n_analysis(patient_id=analysis.case.patient_id, features=n_input["features"])
-        prefix = export_pet_series_for_analysis(analysis)
-        m_payload = request_tnm_m_analysis(
-            case_id=analysis.case_id, ct_gcs_uri=t_input_uri, pet_dicom_gcs_prefix=prefix,
-            pet_series_instance_uid=analysis.source_image_asset.series_instance_uid,
-        )
+
+        def run_t_chain():
+            t_payload = request_tnm_t_analysis(case_id=analysis.case_id, t_input_uri=t_input_uri)
+            phase2_payload = request_ct_phase2_analysis(
+                case_id=str(analysis.case_id), patient_id=str(analysis.case.patient_id), age=age,
+                gender=gender, histology=histology, phase1_artifact_uri=phase1_artifact_uri,
+                t_tumor_mask_uri=t_payload["tumor_mask_uri"],
+            )
+            n_input = load_n_input(phase2_payload["n_input_uri"])
+            n_payload = request_tnm_n_analysis(patient_id=analysis.case.patient_id, features=n_input["features"])
+            return t_payload, phase2_payload, n_payload
+
+        def run_m_branch():
+            # Record the prefix as soon as the export lands so the `finally`
+            # cleanup below can still find and delete it even if this branch's
+            # own M call - or the other branch - fails afterward.
+            pet_export["prefix"] = export_pet_series_for_analysis(analysis)
+            return request_tnm_m_analysis(
+                case_id=analysis.case_id, ct_gcs_uri=t_input_uri, pet_dicom_gcs_prefix=pet_export["prefix"],
+                pet_series_instance_uid=analysis.source_image_asset.series_instance_uid,
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            t_chain_future = executor.submit(run_t_chain)
+            m_branch_future = executor.submit(run_m_branch)
+            t_payload, phase2_payload, n_payload = t_chain_future.result()
+            m_payload = m_branch_future.result()
+
         probability = (m_payload.get("model_support") or {}).get("m_positive_probability")
         confidence = Decimal(str(probability)) if probability is not None else None
         if confidence is not None and not Decimal("0") <= confidence <= Decimal("1"):
@@ -395,9 +418,9 @@ def run_tnm_analysis(analysis_id):
         _mark_failed(analysis.id, error_message="PET-CT TNM analysis failed.")
         return "failed"
     finally:
-        if prefix:
+        if pet_export["prefix"]:
             try:
-                cleanup_pet_dicom_gcs_prefix(prefix)
+                cleanup_pet_dicom_gcs_prefix(pet_export["prefix"])
             except Exception:
                 pass
 
