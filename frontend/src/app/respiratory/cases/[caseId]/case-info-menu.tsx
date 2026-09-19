@@ -32,8 +32,8 @@ const WORKFLOW_STAGES: CaseInfoKey[] = ["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_G
 const WAITING_MESSAGES: Partial<Record<CaseInfoKey, string>> = {
   PET_CT_TNM: "PET-CT/TNM 검사 및 결과 확정이 필요합니다.",
   PATHOLOGY_GENE: "PET-CT/TNM 확정 결과가 필요합니다.",
-  PDL1: "병리 확정 결과가 필요합니다.",
-  TREATMENT: "PD-L1 병리 확정 결과가 필요합니다.",
+  PDL1: "조직·유전자 결과의 호흡기내과 확인이 완료되어야 PD-L1을 진행할 수 있습니다.",
+  TREATMENT: "PD-L1 호흡기내과 최종 확정 결과가 필요합니다.",
   PRESCRIPTION: "치료계획 최종 확정이 필요합니다.",
 };
 
@@ -63,7 +63,7 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
   }
 
   if (key === "PDL1") {
-    if (pdl1Confirmed) return { state: "COMPLETED" as const, message: "PD-L1 병리과 최종 확정이 완료되었습니다." };
+    if (pdl1Confirmed) return { state: "COMPLETED" as const, message: "PD-L1 호흡기내과 최종 확정이 완료되었습니다." };
     if (activePdl1Order) {
       const message = activePdl1Order.status === "ORDERED"
         ? "PD-L1 오더 요청됨 · 병리과 접수를 기다리고 있습니다."
@@ -73,11 +73,11 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
       return { state: "WAITING" as const, message };
     }
     if (currentStage === "PDL1" && completedPdl1Order) {
-      return { state: "WAITING" as const, message: pdl1AiCompleted ? "PD-L1 분석 완료 · 병리과 판독을 기다리고 있습니다." : "PD-L1 검사/분석 진행 중입니다." };
+      return { state: "WAITING" as const, message: pdl1AiCompleted ? "PD-L1 분석 완료 · 병리과 검토를 기다리고 있습니다." : "PD-L1 검사/분석 진행 중입니다." };
     }
     if (pathologyConfirmed) return { state: "ACTIONABLE" as const, message: "PD-L1 검사 오더를 요청할 수 있습니다." };
     if (currentIndex >= WORKFLOW_STAGES.indexOf("PATHOLOGY_GENE")) {
-      return { state: "WAITING" as const, message: "조직·유전자 병리과 최종 확정 결과가 필요합니다." };
+      return { state: "WAITING" as const, message: "조직·유전자 결과의 호흡기내과 확인이 완료되어야 PD-L1을 진행할 수 있습니다." };
     }
   }
 

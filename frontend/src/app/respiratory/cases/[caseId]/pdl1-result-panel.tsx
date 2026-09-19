@@ -1,8 +1,10 @@
 import { resultStatusLabel } from "./decision-status-labels";
 import { BiomarkerSourceHeader } from "./biomarker-source-header";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
+import { WorkflowStatusFlow } from "./result-review-panel";
 
 type Pdl1AiResult = {
+  status?: string;
   status_label?: string;
   model_name?: string;
   model_version_name?: string;
@@ -26,6 +28,7 @@ type Pdl1AiResult = {
 };
 
 type Pdl1ClinicalResult = {
+  result_status?: string;
   result_date: string | null;
   result_detail: {
     pdl1?: {
@@ -64,6 +67,10 @@ export function Pdl1ResultPanel({
   const probabilities = ai?.probabilities
     ? [ai.probabilities.class_0, ai.probabilities.class_1, ai.probabilities.class_2].map(toPercentage)
     : null;
+  const clinicalConfirmed = clinicalResult?.result_status === "CONFIRMED";
+  const clinicalSource = clinicalConfirmed ? "호흡기내과 최종 확정" : "병리과 검토 결과";
+  const clinicalTpsLabel = clinicalConfirmed ? "최종 TPS" : "병리과 TPS 결과";
+  const clinicalEmptyLabel = clinicalConfirmed ? "확정 결과 없음" : "병리과 검토 결과 없음";
 
   return (
     <div className="space-y-4">
@@ -74,7 +81,7 @@ export function Pdl1ResultPanel({
           <div>
             <p className="text-[10px] font-semibold text-slate-500">PD-L1 검사</p>
             <h2 className="mt-0.5 text-base font-bold text-slate-800">PD-L1 결과 비교</h2>
-            <p className="mt-1 text-xs text-slate-400">병리과 확정 TPS와 AI 예측 구간을 서로 다른 출처로 표시합니다.</p>
+            <p className="mt-1 text-xs text-slate-400">병리과 검토 TPS와 AI 예측 구간을 구분해 표시하며, 호흡기내과 확정 후 최종 TPS를 표시합니다.</p>
           </div>
           {aiResult?.status_label && <span className="rounded-full bg-blue-50 px-3 py-1 text-xs font-semibold text-blue-700">{resultStatusLabel(aiResult.status_label)}</span>}
         </header>
@@ -92,12 +99,12 @@ export function Pdl1ResultPanel({
 
         {!aiResult && !aiError && (
           <p className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-800">
-            현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다. 병리과 확정 TPS가 있으면 임상 결과에서 별도로 표시됩니다.
+            현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다. 병리과 TPS 결과가 있으면 별도로 표시됩니다.
           </p>
         )}
 
-        <div className="mt-4 grid grid-cols-3 gap-3">
-          <ResultCard source="병리과 확정 결과" label="확정 TPS" value={clinical?.tps_percent !== null && clinical?.tps_percent !== undefined ? `${clinical.tps_percent}%` : "확정 결과 없음"} tone="emerald" />
+        <div className="mt-4 grid grid-cols-2 gap-2.5">
+          <ResultCard className="col-span-2" source={clinicalSource} label={clinicalTpsLabel} value={clinical?.tps_percent !== null && clinical?.tps_percent !== undefined ? `${clinical.tps_percent}%` : clinicalEmptyLabel} tone="emerald" />
           <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "AI 결과 없음"} tone="blue" />
           <ResultCard source="PD-L1 AI 분석 후보" label="분석 신뢰도" value={confidence !== null ? `${confidence.toFixed(2)}%` : "-"} tone="blue" />
         </div>
@@ -109,8 +116,8 @@ export function Pdl1ResultPanel({
         )}
 
         <dl className="mt-3 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
-          <Detail label="병리과 확정 해석" value={clinical?.interpretation ?? "확정 결과 없음"} />
-          <Detail label="병리과 판독 소견" value={clinical?.note ?? "-"} />
+          <Detail label={clinicalConfirmed ? "호흡기내과 최종 해석" : "병리과 검토 해석"} value={clinical?.interpretation ?? clinicalEmptyLabel} />
+          <Detail label="병리과 검토 소견" value={clinical?.note ?? "-"} />
           <Detail label="결과일" value={clinicalResult?.result_date ?? "-"} />
           <Detail label="AI 모델" value={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" ") || "-"} />
           <Detail label="모델 구성" value={formatModelComponents(aiResult?.model_components) || "-"} />
@@ -122,10 +129,17 @@ export function Pdl1ResultPanel({
           <dl className="mt-2 space-y-2"><Detail label="입력 검사" value={formatPdl1Input(aiResult?.input_context).order} /><Detail label="입력 영상" value={formatPdl1Input(aiResult?.input_context).asset} /><Detail label="Study UID" value={aiResult?.input_context?.source_asset?.study_instance_uid ?? "-"} /><Detail label="WSI / ROI" value={formatPdl1Input(aiResult?.input_context).metadata} /><Detail label="Schema" value={aiResult?.input_context?.schema_version ?? "-"} /></dl>
         </div>
 
+        <WorkflowStatusFlow
+          stage="PDL1"
+          aiStatus={aiResult?.status}
+          clinicalStatus={clinicalResult?.result_status}
+          hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+        />
+
         {aiResult?.error_message && <p role="alert" className="mt-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700">{aiResult.error_message}</p>}
 
         <p className="mt-3 text-[11px] leading-5 text-amber-700">
-          AI 결과는 TPS 예측 구간이며 병리과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.
+          AI 결과는 TPS 예측 구간이며 병리과 TPS 결과는 실제 TPS 값입니다. 호흡기내과 확정 후 최종 TPS로 표시됩니다.
         </p>
       </section>
     </div>
@@ -138,9 +152,9 @@ function toPercentage(value: unknown) {
   return Number.isFinite(number) ? number * 100 : null;
 }
 
-function ResultCard({ source, label, value, tone }: { source: string; label: string; value: string; tone: "blue" | "emerald" }) {
+function ResultCard({ source, label, value, tone, className = "" }: { source: string; label: string; value: string; tone: "blue" | "emerald"; className?: string }) {
   const colors = tone === "blue" ? "border-blue-100 bg-blue-50/60 text-blue-700" : "border-emerald-100 bg-emerald-50/60 text-emerald-700";
-  return <div className={`rounded-xl border p-4 ${colors}`}><p className="text-[10px] font-semibold">{source}</p><p className="text-xs font-medium text-slate-500">{label}</p><p className="mt-2 text-xl font-bold">{value}</p></div>;
+  return <div className={`min-w-0 rounded-xl border p-3 ${colors} ${className}`}><p className="break-words text-[10px] font-semibold leading-4">{source}</p><p className="mt-0.5 text-xs font-medium text-slate-500">{label}</p><p className="mt-1.5 text-xl font-bold">{value}</p></div>;
 }
 
 function ProbabilityCard({ label, value }: { label: string; value: number | null }) {

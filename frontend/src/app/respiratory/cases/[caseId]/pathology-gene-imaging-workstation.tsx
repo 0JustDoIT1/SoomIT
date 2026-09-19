@@ -62,7 +62,7 @@ export function PathologyGeneReviewPanel({
   authorizedFetch,
 }: Props) {
   return (
-    <section className="flex min-h-[min(700px,calc(100dvh-190px))] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
         <div>
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
@@ -74,7 +74,7 @@ export function PathologyGeneReviewPanel({
       <div className="grid min-h-0 flex-1 gap-2 bg-slate-100/70 p-2 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
         <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
           {caseId && apiBaseUrl && authorizedFetch ? (
-            <CaseWsiEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stain="HE" />
+            <CaseWsiEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stain="HE" fillHeight />
           ) : (
             <EvidenceViewerPanel />
           )}

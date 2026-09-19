@@ -11,21 +11,21 @@ describe("AiSummaryPanel", () => {
       { workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pathology: { subtype: "LUSC" } } },
     ]} />);
 
-    expect(screen.getByRole("tab", { name: "흉부 X선" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("button", { name: /흉부 X선/ }).find((button) => button.hasAttribute("aria-pressed"))).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("AI 소견")).toBeTruthy();
     expect(screen.getByText("전문과 의료진 확정 소견")).toBeTruthy();
-    expect(screen.queryByText("LUAD")).toBeNull();
+    expect(screen.getByRole("tabpanel", { name: "흉부 X선 분석 결과" })).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("tab", { name: "조직·유전자 분석" }));
+    fireEvent.click(screen.getByRole("button", { name: /조직·유전자 분석/ }));
     expect(screen.getByRole("tabpanel", { name: "조직·유전자 분석 분석 결과" })).toBeTruthy();
-    expect(screen.getByText("LUAD")).toBeTruthy();
-    expect(screen.getByText("LUSC")).toBeTruthy();
+    expect(screen.getAllByText("LUAD").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("LUSC").length).toBeGreaterThan(0);
   });
 
   it("uses an explicit empty state instead of inventing analysis or confirmed results", () => {
     render(<AiSummaryPanel aiResults={[]} clinicalResults={[]} />);
     expect(screen.getAllByText("분석 결과 없음").length).toBeGreaterThan(0);
-    expect(screen.getByText("확정 결과 없음")).toBeTruthy();
+    expect(screen.getAllByText("확정 결과 없음").length).toBeGreaterThan(0);
     expect(screen.getByText("비교 불가")).toBeTruthy();
   });
 
@@ -38,7 +38,7 @@ describe("AiSummaryPanel", () => {
 
   it("shows comparison only for the selected stage with both actual results", () => {
     render(<AiSummaryPanel aiResults={[{ analysis_type: "PET_CT_TNM_ANALYSIS", status: "SUCCEEDED", result_detail: { tnm: { predicted_t: "T2", predicted_n: "N1", predicted_m: "M0" } } }]} clinicalResults={[{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_detail: { tnm: { t_category: "T2", n_category: "N2", m_category: "M0" } } }]} />);
-    fireEvent.click(screen.getByRole("tab", { name: "PET-CT / TNM 병기" }));
+    fireEvent.click(screen.getAllByRole("button", { name: /PET-CT \/ TNM 병기/ }).find((button) => button.hasAttribute("aria-pressed"))!);
     const differences = screen.getByLabelText("결과 차이 항목");
     expect(differences).toHaveTextContent("N");
     expect(differences).toHaveTextContent("AI N1 / 의료진 N2");
@@ -52,7 +52,7 @@ describe("AiSummaryPanel", () => {
       { analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED", result_detail: { genes } },
     ]} clinicalResults={[]} />);
     expect(screen.queryByText("유전자 전체 보기")).toBeNull();
-    fireEvent.click(screen.getByRole("tab", { name: "조직·유전자 분석" }));
+    fireEvent.click(screen.getByRole("button", { name: /조직·유전자 분석/ }));
     expect(screen.getByText("유전자 전체 보기")).toBeTruthy();
     expect(screen.getByLabelText("전체 유전자 결과")).toBeTruthy();
   });
@@ -67,13 +67,16 @@ describe("AiSummaryPanel review action", () => {
       reviewRequest={{ analysisType: "CT_ANALYSIS" }}
     />);
 
-    expect(screen.getByRole("tab", { name: "흉부 CT" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getAllByRole("button", { name: /흉부 CT/ }).find((button) => button.hasAttribute("aria-pressed"))).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("CT original image")).toBeTruthy();
+    expect(screen.getByText("AI 분석 결과")).toBeTruthy();
+    expect(screen.getByText("전문과 의료진 확정 결과")).toBeTruthy();
+    expect(screen.getByText("근거 및 검토 정보")).toBeTruthy();
   });
 });
 
-describe("AiSummaryPanel combined analysis", () => {
-  it("shows every analysis result from the final tab", () => {
+describe("AiSummaryPanel master-detail layout", () => {
+  it("keeps all analyses in the master list and swaps only the detail pane", () => {
     render(<AiSummaryPanel
       aiResults={[
         { analysis_type: "XRAY_ANALYSIS", status: "SUCCEEDED", result_detail: { xray: { assessment_label: "X-ray result" } } },
@@ -82,11 +85,13 @@ describe("AiSummaryPanel combined analysis", () => {
       clinicalResults={[]}
     />);
 
-    fireEvent.click(screen.getByRole("tab", { name: "AI 종합 분석" }));
-    expect(screen.getByText("X-ray result")).toBeTruthy();
+    expect(screen.getAllByText("X-ray result").length).toBeGreaterThan(0);
     expect(screen.getAllByText("흉부 CT").length).toBeGreaterThan(0);
-    fireEvent.click(screen.getByRole("button", { name: /흉부 CT.*상세 근거 보기/ }));
-    expect(screen.getByRole("tab", { name: "흉부 CT" })).toHaveAttribute("aria-selected", "true");
+    const ctSummary = screen.getByRole("button", { name: /흉부 CT.*AI.*악성 위험도/ });
+    expect(ctSummary).toHaveAttribute("aria-pressed", "false");
+    fireEvent.click(ctSummary);
+    expect(ctSummary).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("tabpanel", { name: "흉부 CT 분석 결과" })).toBeTruthy();
   });
 });
 

@@ -1,15 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../_lib/respiratory-api";
+import { DashboardWorkQueues, buildDashboardReviewQueue, type DashboardCaseSnapshot, type DashboardConsultation } from "../dashboard/dashboard-work-queues";
 import { getCaseListFetchError, getCaseListHttpError } from "./case-list-errors";
-import { getCaseListEmptyState } from "./case-list-empty-state";
 import { CASES_PER_PAGE, getVisiblePageNumbers, paginateCases } from "./case-pagination";
-import { isSameLocalCalendarDay, sortByUpdatedAtDesc } from "./case-date";
-import { filterWorklistCases, type WorklistFilter } from "./case-worklist-filter";
+import { sortByUpdatedAtDesc } from "./case-date";
 
 type CaseItem = {
   id: string;
@@ -55,17 +54,20 @@ function readCaseList(payload: unknown): CaseItem[] {
 
 export default function RespiratoryCasesPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const isDashboard = pathname === "/respiratory/dashboard";
   const { authorizedFetch } = useRespiratoryAuth();
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [search, setSearch] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
-  const [worklistFilter, setWorklistFilter] = useState<WorklistFilter>("ALL");
   const [notifications, setNotifications] = useState<NotificationResponse>({ unread_count: 0, results: [] });
+  const [caseSnapshots, setCaseSnapshots] = useState<Record<string, DashboardCaseSnapshot>>({});
+  const [consultations, setConsultations] = useState<DashboardConsultation[]>([]);
   const [lastCasesSyncAt, setLastCasesSyncAt] = useState<Date | null>(null);
   const [casesSyncing, setCasesSyncing] = useState(false);
   const [lastCaseId, setLastCaseId] = useState("");
+  const snapshotVersionsRef = useRef<Record<string, string>>({});
 
   const openCase = useCallback((id: string) => {
     window.localStorage.setItem("respiratory-last-case-id", id);
@@ -162,6 +164,13 @@ export default function RespiratoryCasesPage() {
   }, [fetchCases]);
 
   useEffect(() => {
+    if (isDashboard || loading || error || !cases.length) return;
+    const lastOpenedCaseId = window.localStorage.getItem("respiratory-last-case-id");
+    const target = cases.find((item) => item.id === lastOpenedCaseId) ?? cases[0];
+    if (target) router.replace(`/respiratory/cases/${target.id}`);
+  }, [cases, error, isDashboard, loading, router]);
+
+  useEffect(() => {
     const controller = new AbortController();
     const requestTimer = window.setTimeout(() => void fetchNotifications(controller.signal), 0);
     let disposed = false;
@@ -189,6 +198,54 @@ export default function RespiratoryCasesPage() {
     };
   }, [fetchNotifications]);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/consultations/me/`, { signal: controller.signal });
+        const data: unknown = await response.json().catch(() => []);
+        if (response.ok && Array.isArray(data)) setConsultations(data as DashboardConsultation[]);
+      } catch {
+        // The dashboard remains usable with Case and notification data.
+      }
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [authorizedFetch]);
+
+  useEffect(() => {
+    const targets = cases.filter((item) => item.case_status === "ACTIVE" && snapshotVersionsRef.current[item.id] !== item.updated_at);
+    if (!targets.length) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const results = await Promise.all(targets.map(async (caseItem) => {
+        try {
+          const [clinicalResponse, aiResponse, orderResponse] = await Promise.all([
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseItem.id}/clinical-results/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseItem.id}/ai-results/`, { signal: controller.signal }),
+            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseItem.id}/orders/`, { signal: controller.signal }),
+          ]);
+          if (!clinicalResponse.ok || !aiResponse.ok || !orderResponse.ok) return null;
+          const [clinicalResults, aiResults, orders] = await Promise.all([clinicalResponse.json(), aiResponse.json(), orderResponse.json()]);
+          if (!Array.isArray(clinicalResults) || !Array.isArray(aiResults) || !Array.isArray(orders)) return null;
+          return { caseItem, snapshot: { clinicalResults, aiResults, orders } as DashboardCaseSnapshot };
+        } catch {
+          return null;
+        }
+      }));
+      if (controller.signal.aborted) return;
+      setCaseSnapshots((current) => {
+        const next = { ...current };
+        results.forEach((result) => {
+          if (!result) return;
+          next[result.caseItem.id] = result.snapshot;
+          snapshotVersionsRef.current[result.caseItem.id] = result.caseItem.updated_at;
+        });
+        return next;
+      });
+    }, 0);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [authorizedFetch, cases]);
+
   const openNotification = useCallback(async (notification: StaffNotification) => {
     if (!notification.read_at) {
       try {
@@ -211,28 +268,19 @@ export default function RespiratoryCasesPage() {
     if (notification.case_id) openCase(notification.case_id);
   }, [authorizedFetch, openCase]);
 
-  const unreadNotificationCaseIds = useMemo(() => new Set(notifications.results.filter((item) => !item.read_at && item.case_id).map((item) => item.case_id as string)), [notifications.results]);
-
-  const filteredCases = useMemo(() => {
-    const keyword = search.trim().toLowerCase();
-    const searchedCases = keyword ? cases.filter((item) =>
-      [item.patient_name, item.patient_code, item.case_code].some((value) =>
-        value?.toLowerCase().includes(keyword),
-      ),
-    ) : cases;
-
-    return filterWorklistCases(searchedCases, worklistFilter, unreadNotificationCaseIds);
-  }, [cases, search, unreadNotificationCaseIds, worklistFilter]);
-
-  const pagination = useMemo(() => paginateCases(filteredCases, currentPage), [filteredCases, currentPage]);
+  const recentCases = useMemo(() => sortByUpdatedAtDesc(cases), [cases]);
+  const pagination = useMemo(() => paginateCases(recentCases, currentPage), [recentCases, currentPage]);
   const visiblePages = getVisiblePageNumbers(pagination.page, pagination.pageCount);
-  const emptyState = getCaseListEmptyState(search, worklistFilter);
   const activeCases = cases.filter((item) => item.case_status === "ACTIVE");
-  const updatedToday = cases.filter((item) => isSameLocalCalendarDay(item.updated_at)).length;
-  const currentStageCount = filterWorklistCases(cases, "IMAGING").length;
-  const recentCases = sortByUpdatedAtDesc(filteredCases);
+  const reviewQueue = useMemo(() => buildDashboardReviewQueue(cases, caseSnapshots, consultations), [caseSnapshots, cases, consultations]);
   const lastWorkedCase = cases.find((item) => item.id === lastCaseId);
-  const visibleNotifications = notifications.results.filter((item) => !item.read_at).slice(0, 5);
+  const firstUnreadNotification = notifications.results.find((item) => !item.read_at);
+
+  if (!isDashboard) {
+    return <div className="flex h-full items-center justify-center bg-slate-50 px-6 text-sm text-slate-500">
+      {error ? error : loading ? "Case Workspace를 여는 중입니다." : cases.length ? "Case Workspace로 이동 중입니다." : "열 수 있는 ACTIVE Case가 없습니다."}
+    </div>;
+  }
 
   return (
     <div className="h-full overflow-auto bg-slate-50 px-6 py-5">
@@ -256,20 +304,23 @@ export default function RespiratoryCasesPage() {
         </div>
 
         {!loading && !error && <>
-          <section className="mb-5 grid grid-cols-4 gap-3">
-            <DashboardMetric label="진행 중 Case" value={activeCases.length} description="현재 담당 중" />
-            <DashboardMetric label="검사 진행 단계" value={currentStageCount} description="X-ray 또는 CT 단계" tone="blue" />
-            <DashboardMetric label="새 알림" value={notifications.unread_count} description="미읽음 알림" tone="amber" />
-            <DashboardMetric label="오늘 업데이트" value={updatedToday} description="Case 최근 변경" tone="emerald" />
+          <section className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <DashboardMetric label="진행 중 Case" value={activeCases.length} description="담당 ACTIVE Case" />
+            <DashboardMetric label="검토 대기" value={reviewQueue.length} description="결과·오더·협진 확인" tone="blue" />
+            <DashboardMetric label="새 알림" value={notifications.unread_count} description="읽지 않은 알림" tone="amber" />
           </section>
 
-          <section className="mb-5 grid grid-cols-[minmax(0,1fr)_280px] gap-4">
-            <div className="rounded-xl border border-blue-100 bg-white shadow-sm">
-              <div className="flex items-center justify-between gap-4 border-b border-blue-100 px-5 py-4"><div><h2 className="font-bold text-slate-900">지금 확인할 일</h2><p className="mt-1 text-xs text-slate-500">새 알림과 우선 확인이 필요한 업무입니다.</p></div><div className="flex shrink-0 items-center gap-2"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{notifications.unread_count}건</span>{unreadNotificationCaseIds.size > 0 && <button type="button" onClick={() => { setWorklistFilter("NOTIFIED"); setCurrentPage(1); }} className="text-xs font-semibold text-blue-700 hover:text-blue-900">Case 보기 →</button>}</div></div>
-              {visibleNotifications.length ? <div className="divide-y divide-slate-100">{visibleNotifications.map((notification) => <button key={notification.id} type="button" onClick={() => void openNotification(notification)} className="flex w-full items-center justify-between gap-4 bg-blue-50/40 px-5 py-3 text-left transition hover:bg-blue-50"><div><p className="text-sm font-semibold text-slate-800">{notification.title}</p><p className="mt-1 text-xs text-slate-500">{notification.message}</p></div><span className="shrink-0 text-xs font-semibold text-blue-700">{notification.case_id ? "Case 확인 →" : "읽음 처리"}</span></button>)}</div> : <p className="px-5 py-7 text-center text-sm text-slate-400">새로 확인할 알림이 없습니다.</p>}
-            </div>
-            <aside className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="font-bold text-slate-900">빠른 이동</h2><div className="mt-3 space-y-2">{lastWorkedCase && <button type="button" onClick={() => openCase(lastWorkedCase.id)} className="w-full rounded-lg border border-blue-200 bg-blue-50 px-3 py-2.5 text-left text-sm font-semibold text-blue-800 hover:bg-blue-100"><span className="block text-[11px] font-medium text-blue-600">최근 작업 Case 재개</span><span className="mt-1 block truncate">{lastWorkedCase.patient_name || lastWorkedCase.patient_code} · {lastWorkedCase.case_code}</span></button>}<button type="button" onClick={() => router.push("/respiratory/schedules")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">진료 일정 관리</button><button type="button" onClick={() => router.push("/respiratory/settings")} className="w-full rounded-lg border border-slate-200 px-3 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">내 프로필·알림 설정</button></div></aside>
-          </section>
+          <DashboardWorkQueues
+            cases={cases}
+            snapshots={caseSnapshots}
+            consultations={consultations}
+            lastWorkedCase={lastWorkedCase}
+            unreadNotificationCount={notifications.unread_count}
+            onOpenCase={openCase}
+            onOpenSchedules={() => router.push("/respiratory/schedules")}
+            onOpenConsultation={() => lastWorkedCase ? openCase(lastWorkedCase.id) : router.push("/respiratory/cases")}
+            onOpenNotifications={() => { if (firstUnreadNotification) void openNotification(firstUnreadNotification); }}
+          />
         </>}
 
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
@@ -278,22 +329,7 @@ export default function RespiratoryCasesPage() {
               <h2 className="font-bold text-slate-900">최근 업데이트 Case</h2>
               <p className="mt-1 text-xs text-slate-500">현재 로그인한 담당의에게 배정된 Case를 최근 변경 순으로 확인합니다.</p>
             </div>
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => { setSearch(event.target.value); setCurrentPage(1); }}
-              placeholder="환자명, 환자번호, Case 검색"
-              aria-label="담당 Case 검색"
-              className="w-80 rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-            />
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-5 py-3" aria-label="업무함 필터">
-            <WorklistFilterButton active={worklistFilter === "ALL"} onClick={() => { setWorklistFilter("ALL"); setCurrentPage(1); }}>전체 {cases.length}</WorklistFilterButton>
-            <WorklistFilterButton active={worklistFilter === "ACTIVE"} onClick={() => { setWorklistFilter("ACTIVE"); setCurrentPage(1); }}>진행 중 {activeCases.length}</WorklistFilterButton>
-            <WorklistFilterButton active={worklistFilter === "IMAGING"} onClick={() => { setWorklistFilter("IMAGING"); setCurrentPage(1); }}>X-ray · CT {currentStageCount}</WorklistFilterButton>
-            <WorklistFilterButton active={worklistFilter === "NOTIFIED"} onClick={() => { setWorklistFilter("NOTIFIED"); setCurrentPage(1); }}>새 알림 {unreadNotificationCaseIds.size}</WorklistFilterButton>
-            <p className="ml-auto text-xs text-slate-500">현재 API의 Case 상태·검사 단계·미읽음 알림을 기준으로 표시합니다.</p>
+            <span className="text-xs text-slate-400">글로벌 검색에서 환자명·환자번호·Case 번호 검색 가능</span>
           </div>
 
           {loading ? (
@@ -310,19 +346,18 @@ export default function RespiratoryCasesPage() {
             </EmptyState>
           ) : (
             <div className="overflow-x-auto">
-              <table className="min-w-[980px] w-full table-fixed">
+              <table className="min-w-[820px] w-full table-fixed">
                 <thead className="bg-slate-50 text-left text-xs font-semibold text-slate-500">
                   <tr>
-                    <th className="w-[22%] whitespace-nowrap px-5 py-3">환자</th>
-                    <th className="w-[18%] whitespace-nowrap px-5 py-3">Case 번호</th>
-                    <th className="w-[17%] whitespace-nowrap px-5 py-3">현재 단계</th>
-                    <th className="w-[15%] whitespace-nowrap px-5 py-3">Case 상태</th>
-                    <th className="w-[18%] whitespace-nowrap px-5 py-3">최근 업데이트</th>
-                    <th className="w-[10%] px-5 py-3 text-right">업무</th>
+                    <th className="w-[25%] whitespace-nowrap px-5 py-3">환자</th>
+                    <th className="w-[20%] whitespace-nowrap px-5 py-3">현재 단계</th>
+                    <th className="w-[25%] whitespace-nowrap px-5 py-3">최근 상태</th>
+                    <th className="w-[20%] whitespace-nowrap px-5 py-3">최근 업데이트</th>
+                    <th className="w-[10%] px-5 py-3 text-right">바로가기</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {paginateCases(recentCases, currentPage).items.map((caseItem) => (
+                  {pagination.items.map((caseItem) => (
                     <tr
                       key={caseItem.id}
                       className="cursor-pointer transition hover:bg-blue-50/60"
@@ -330,11 +365,10 @@ export default function RespiratoryCasesPage() {
                     >
                       <td className="px-5 py-4">
                         <p className="truncate text-sm font-semibold text-slate-800">{caseItem.patient_name || "-"}</p>
-                        <p className="mt-1 truncate text-xs text-slate-500">{caseItem.patient_code || "-"}</p>
+                        <p className="mt-1 truncate text-xs text-slate-500">{caseItem.patient_code || "-"} · {caseItem.case_code || "-"}</p>
                       </td>
-                      <td className="whitespace-nowrap px-5 py-4 text-sm text-slate-700">{caseItem.case_code || "-"}</td>
                       <td className="whitespace-nowrap px-5 py-4"><Badge label={STAGE_LABELS[caseItem.current_stage] ?? caseItem.current_stage ?? "-"} tone="blue" /></td>
-                      <td className="whitespace-nowrap px-5 py-4"><Badge label={STATUS_LABELS[caseItem.case_status] ?? caseItem.case_status ?? "-"} tone="slate" /></td>
+                      <td className="px-5 py-4"><span className="text-xs font-semibold text-slate-700">{reviewQueue.find((item) => item.caseId === caseItem.id)?.action || STATUS_LABELS[caseItem.case_status] || caseItem.case_status || "-"}</span></td>
                       <td className="whitespace-nowrap px-5 py-4 text-xs text-slate-500">{formatDateTime(caseItem.updated_at)}</td>
                       <td className="px-5 py-4 text-right">
                         <button
@@ -350,15 +384,15 @@ export default function RespiratoryCasesPage() {
                       </td>
                     </tr>
                   ))}
-                  {filteredCases.length === 0 && (
-                    <tr><td colSpan={6}><EmptyState title={emptyState.title} description={emptyState.description}>{worklistFilter !== "ALL" && <button type="button" onClick={() => { setWorklistFilter("ALL"); setCurrentPage(1); }} className="mt-4 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 hover:bg-blue-50">전체 Case 보기</button>}</EmptyState></td></tr>
+                  {recentCases.length === 0 && (
+                    <tr><td colSpan={5}><EmptyState title="현재 배정된 진행 중 Case가 없습니다." /></td></tr>
                   )}
                 </tbody>
               </table>
-              {filteredCases.length > 0 && (
+              {recentCases.length > 0 && (
                 <nav aria-label="Case 목록 페이지" className="flex items-center justify-between gap-4 border-t border-slate-200 px-5 py-3">
                   <p className="whitespace-nowrap text-xs text-slate-500">
-                    총 {filteredCases.length}건 · {(pagination.page - 1) * CASES_PER_PAGE + 1}–{Math.min(pagination.page * CASES_PER_PAGE, filteredCases.length)}건 표시
+                    총 {recentCases.length}건 · {(pagination.page - 1) * CASES_PER_PAGE + 1}–{Math.min(pagination.page * CASES_PER_PAGE, recentCases.length)}건 표시
                   </p>
                   <div className="flex items-center gap-1">
                     <button type="button" disabled={pagination.page === 1} onClick={() => setCurrentPage((page) => Math.max(1, page - 1))} className="whitespace-nowrap rounded-md border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">이전</button>
@@ -380,10 +414,6 @@ export default function RespiratoryCasesPage() {
 function Badge({ label, tone }: { label: string; tone: "blue" | "slate" }) {
   const color = tone === "blue" ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-700";
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${color}`}>{label}</span>;
-}
-
-function WorklistFilterButton({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
-  return <button type="button" aria-pressed={active} onClick={onClick} className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition ${active ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"}`}>{children}</button>;
 }
 
 function DashboardMetric({ label, value, description, tone = "slate" }: { label: string; value: number; description: string; tone?: "slate" | "blue" | "amber" | "emerald" }) {

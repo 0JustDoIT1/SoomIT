@@ -2,13 +2,44 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ResultReviewPanel } from "./result-review-panel";
 
-it("does not claim a radiology sign-off from a pulmonology CT confirmation", () => {
+it("shows the CT-specific flow without a radiology sign-off", () => {
   const { container } = render(<ResultReviewPanel stage="CT" showEvidence={false} clinicalResult={{ workflow_stage: "CT", result_status: "CONFIRMED" }} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED" }} />);
-  const radiology = screen.getByText("영상의학과 판독").closest("li");
-  expect(radiology).toHaveTextContent("판독 상태 정보 없음");
-  expect(radiology?.querySelector("[data-workflow-state]")).toHaveAttribute("data-workflow-state", "pending");
-  expect(container.textContent).not.toContain("CONFIRMED");
-  expect(container.textContent).not.toContain("SUCCEEDED");
+  expect(screen.getByText("CT 영상 등록")).toBeTruthy();
+  expect(screen.getAllByText("AI 분석").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("호흡기내과 최종 판단").length).toBeGreaterThan(0);
+  expect(screen.queryByText("영상의학과 판독")).toBeNull();
+  expect(container.querySelectorAll('[data-workflow-state="completed"]')).toHaveLength(3);
+});
+
+it("shows the simplified pathology flow while retaining submission-derived confirmation state", () => {
+  render(<ResultReviewPanel stage="PATHOLOGY_GENE" showEvidence={false} clinicalResult={{ workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT" }} aiResult={{ analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED" }} />);
+  expect(screen.getByText("검체·WSI 등록")).toBeTruthy();
+  expect(screen.getAllByText("AI 분석")).toHaveLength(2);
+  expect(screen.getByText("호흡기내과 확인")).toBeTruthy();
+  expect(screen.getByText("확인 대기")).toBeTruthy();
+  expect(screen.queryByText("병리과 검토")).toBeNull();
+  expect(screen.queryByText("호흡기내과에 제출")).toBeNull();
+});
+
+it("shows the simplified PD-L1 flow", () => {
+  render(<ResultReviewPanel stage="PDL1" showEvidence={false} clinicalResult={{ workflow_stage: "PDL1", result_status: "DRAFT" }} aiResult={{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }} />);
+  expect(screen.getByText("WSI/데이터 등록")).toBeTruthy();
+  expect(screen.getAllByText("AI 분석")).toHaveLength(2);
+  expect(screen.getByText("호흡기내과 확정")).toBeTruthy();
+  expect(screen.queryByText("병리과 검토")).toBeNull();
+  expect(screen.queryByText("호흡기내과에 제출")).toBeNull();
+});
+
+it("uses analysis and sync details instead of the duplicate CT review-status card", () => {
+  render(<ResultReviewPanel stage="CT" showEvidence={false} lastSyncedAt={new Date("2026-09-18T09:30:00")} onRefreshResults={vi.fn()} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", model_name: "Server Test Radiology CT", model_version_name: "v1.0", started_at: "2026-09-18T09:00:00", completed_at: "2026-09-18T09:10:00", input_context: { source_asset: { series_instance_uid: "1.2.826.0.1" } } }} />);
+  expect(screen.getByText("분석 · 영상 정보")).toBeTruthy();
+  expect(screen.getByText("Server Test Radiology CT")).toBeTruthy();
+  expect(screen.getByText("v1.0")).toBeTruthy();
+  expect(screen.getByText("1.2.826.0.1")).toBeTruthy();
+  expect(screen.getByText("결과 동기화")).toBeTruthy();
+  expect(screen.getByText(/30초 자동 갱신/)).toBeTruthy();
+  expect(screen.getByRole("button", { name: "지금 새로고침" })).toBeTruthy();
+  expect(screen.queryByText("검토 상태")).toBeNull();
 });
 
 describe("ResultReviewPanel", () => {
@@ -83,23 +114,22 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText("음성 예측 · 93.21%")).toBeTruthy();
   });
 
-  it("shows safe analysis input traceability without a storage URI", () => {
+  it("shows the CT Series UID without a storage URI", () => {
     render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", model_components: { detector: "v2", classifier: "v1" }, input_context: { schema_version: "ct-phase1-v1", examination_order: { id: "order-12345678", order_type_label: "CT" }, source_asset: { image_type: "CT", workflow_stage: "CT", study_instance_uid: "study-1", series_instance_uid: "series-1" } } }} />);
 
     expect(screen.getByText("분석 입력 추적")).toBeTruthy();
     expect(screen.getByText("CT · #order-12")).toBeTruthy();
     expect(screen.getByText("CT · CT · Series series-1")).toBeTruthy();
-    expect(screen.getByText("Series series-1")).toBeTruthy();
-    expect(screen.getByText("detector: v2 · classifier: v1")).toBeTruthy();
-    expect(screen.getByText("study-1")).toBeTruthy();
-    expect(screen.getByText("ct-phase1-v1")).toBeTruthy();
+    expect(screen.getByText("series-1")).toBeTruthy();
     expect(screen.queryByText(/gs:\/\//)).toBeNull();
   });
 
-  it("does not mark failed AI or unconfirmed specialist results as completed", () => {
+it("does not mark failed AI or unconfirmed specialist decisions as completed", () => {
     const { container } = render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "FAILED", status_label: "실패", result_detail: {} }} clinicalResult={{ workflow_stage: "CT", result_status: "DRAFT", result_status_label: "작성 중", result_detail: {} }} />);
 
-    expect(container.querySelectorAll('[data-workflow-state="completed"]')).toHaveLength(0);
+    // The input registration is known from the existing AI record, but the
+    // failed analysis and unconfirmed clinical decision remain incomplete.
+    expect(container.querySelectorAll('[data-workflow-state="completed"]')).toHaveLength(1);
     expect(container.querySelectorAll('[data-workflow-state="failed"]')).toHaveLength(1);
   });
 

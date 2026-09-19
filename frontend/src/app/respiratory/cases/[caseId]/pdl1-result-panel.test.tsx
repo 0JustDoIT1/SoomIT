@@ -10,7 +10,7 @@ describe("Pdl1ResultPanel", () => {
     expect(screen.getByText("AI 결과 없음")).toBeTruthy();
     expect(screen.getByText(/현재 Case에서 조회된 PD-L1 AI 분석 결과가 없습니다/)).toBeTruthy();
     expect(document.body).not.toHaveTextContent("인증 연동 대기");
-    expect(screen.getAllByText("확정 결과 없음").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("병리과 검토 결과 없음").length).toBeGreaterThan(0);
     expect(document.body).not.toHaveTextContent("유전자 결과 비교");
   });
 
@@ -31,6 +31,7 @@ describe("Pdl1ResultPanel", () => {
           },
         }}
         clinicalResult={{
+          result_status: "CONFIRMED",
           result_date: "2026-09-11T11:00:00Z",
           result_detail: {
             pdl1: { tps_percent: 35, interpretation: "확정 해석", note: "판독 소견" },
@@ -41,7 +42,25 @@ describe("Pdl1ResultPanel", () => {
 
     expect(screen.getAllByText("1–49%").length).toBeGreaterThan(0);
     expect(screen.getByText("35%")).toBeTruthy();
-    expect(screen.getByText("AI 결과는 TPS 예측 구간이며 병리과 확정 결과는 실제 TPS 값입니다. 두 결과는 서로 대체되지 않습니다.")).toBeTruthy();
+    expect(screen.getByText("최종 TPS")).toBeTruthy();
+    expect(screen.getByText("AI 결과는 TPS 예측 구간이며 병리과 TPS 결과는 실제 TPS 값입니다. 호흡기내과 확정 후 최종 TPS로 표시됩니다.")).toBeTruthy();
+  });
+
+  it("labels submitted pathology TPS as a review result before pulmonology confirmation", () => {
+    render(
+      <Pdl1ResultPanel
+        aiResult={null}
+        clinicalResult={{
+          result_status: "DRAFT",
+          result_date: null,
+          result_detail: { pdl1: { tps_percent: 20, interpretation: "병리과 검토", note: "제출 대기" } },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("병리과 검토 결과")).toBeTruthy();
+    expect(screen.getByText("병리과 TPS 결과")).toBeTruthy();
+    expect(screen.queryByText("최종 TPS")).toBeNull();
   });
 
   it("shows an AI error separately and retries only the AI result request", async () => {
