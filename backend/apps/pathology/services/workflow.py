@@ -24,8 +24,8 @@ WORKFLOW_LABELS = {
     PathologyWorkflowStatus.AI_READY: "AI 실행 대기",
     PathologyWorkflowStatus.AI_RUNNING: "AI 분석 중",
     PathologyWorkflowStatus.AI_COMPLETED: "AI 분석 완료",
-    PathologyWorkflowStatus.REVIEW_PENDING: "의사 판독 대기",
-    PathologyWorkflowStatus.REVIEW_COMPLETED: "의사 판독 완료",
+    PathologyWorkflowStatus.REVIEW_PENDING: "호흡기내과 확인 대기",
+    PathologyWorkflowStatus.REVIEW_COMPLETED: "호흡기내과 확정 완료",
 }
 
 
@@ -57,7 +57,7 @@ def calculate_workflow_status(work_item):
         analyses = [
             analysis for analysis in analyses if _analysis_order_id(analysis) == order.id
         ]
-    if confirmed_results or any(
+    if any(result.result_status == "CONFIRMED" for result in confirmed_results) or any(
         item.status == PathologyWorkItem.Status.COMPLETED for item in review_items
     ):
         return PathologyWorkflowStatus.REVIEW_COMPLETED

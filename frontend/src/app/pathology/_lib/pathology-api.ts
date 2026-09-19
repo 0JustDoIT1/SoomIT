@@ -236,10 +236,6 @@ export function pathologyDiagnosisApiUrl(diagnosisId: string) {
   return `${API_BASE_URL}/api/pathology/diagnoses/${encodeURIComponent(diagnosisId)}/`;
 }
 
-export function pathologyDiagnosisConfirmApiUrl(diagnosisId: string) {
-  return `${pathologyDiagnosisApiUrl(diagnosisId)}confirm/`;
-}
-
 export function casePathologyReportsApiUrl(caseId: string) {
   return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/reports/`;
 }

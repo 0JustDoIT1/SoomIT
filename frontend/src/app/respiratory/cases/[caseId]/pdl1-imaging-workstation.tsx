@@ -49,7 +49,7 @@ export function Pdl1ResultPanel({
   syncNotice?: string;
 }) {
   return (
-    <section className="flex min-h-[720px] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <section className="flex min-h-[min(700px,calc(100dvh-190px))] flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
       <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
         <div>
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>

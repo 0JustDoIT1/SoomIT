@@ -18,7 +18,7 @@ import {
   uploadPdl1Input,
   uploadPathologyGeneInput,
   submitPathologyForReview,
-  confirmPdl1Result,
+  savePdl1Draft,
   type PathologyWorkstationItem,
   type PathologyCaseWorkflow,
   type PathologyCompletedExamHistory,
@@ -70,7 +70,7 @@ const geneTargets = [
 
 function workflowDisplayStatus(item: PathologyWorkstationItem) {
   if (item.workflow_status === "REVIEW_COMPLETED") {
-    return "의사 판독 완료";
+    return "호흡기내과 확정 완료";
   }
 
   if (
@@ -508,8 +508,8 @@ function PathologyCompletedHistory() {
                           ["검사", item.order_type_label ?? "-"],
                           ["검체", item.specimen?.specimen_code ?? "-"],
                           ["파일", item.latest_wsi?.original_filename ?? "-"],
-                          ["의사 판독", item.diagnostic_review?.status ?? "-"],
-                          ["판독 완료", item.diagnostic_review?.completed_at ? new Date(item.diagnostic_review.completed_at).toLocaleDateString("ko-KR") : "-"],
+                          ["제출 상태", item.diagnostic_review?.status ?? "-"],
+                          ["확정 완료", item.diagnostic_review?.completed_at ? new Date(item.diagnostic_review.completed_at).toLocaleDateString("ko-KR") : "-"],
                         ].map(([label, value]) => (
                           <div key={label}>
                             <dt className="text-slate-400">{label}</dt>
@@ -596,8 +596,8 @@ function WorkArea({
   const [runningPathologyGene, setRunningPathologyGene] = useState(false);
   const [cancellingPathologyGene, setCancellingPathologyGene] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
-  const [pdl1Confirmation, setPdl1Confirmation] = useState<{
-    result_status: string; confirmed_at: string; pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
+  const [pdl1Draft, setPdl1Draft] = useState<{
+    result_status: string; confirmed_at: string | null; pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
   } | null>(null);
   const [pdl1TpsPercent, setPdl1TpsPercent] = useState("");
   const [pdl1Interpretation, setPdl1Interpretation] = useState("");
@@ -645,8 +645,11 @@ function WorkArea({
     const timer = window.setTimeout(() => {
       if (item.order_type !== "PDL1" || !item.clinical_result || typeof item.clinical_result !== "object") return;
       const result = item.clinical_result as { result_status?: string; confirmed_at?: string; pdl1?: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string } };
-      if (result.result_status === "CONFIRMED" && result.confirmed_at && result.pdl1) {
-        setPdl1Confirmation({ result_status: result.result_status, confirmed_at: result.confirmed_at, pdl1: result.pdl1 });
+      if (result.result_status === "DRAFT" && result.pdl1) {
+        setPdl1Draft({ result_status: result.result_status, confirmed_at: null, pdl1: result.pdl1 });
+        setPdl1TpsPercent(result.pdl1.tps_percent);
+        setPdl1Interpretation(result.pdl1.interpretation);
+        setPdl1Note(result.pdl1.note ?? "");
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -732,21 +735,21 @@ function WorkArea({
     }
   }
 
-  async function handlePdl1Confirm() {
+  async function handlePdl1DraftSave() {
     if (!pdl1AnalysisId || !item.latest_wsi?.id || confirmingPdl1) return;
     setConfirmingPdl1(true);
     setError("");
     try {
-      const result = await confirmPdl1Result(item.case_id, {
+      const result = await savePdl1Draft(item.case_id, {
         ai_analysis_id: pdl1AnalysisId,
         source_wsi_id: item.latest_wsi.id,
         tps_percent: pdl1TpsPercent,
         interpretation: pdl1Interpretation,
         note: pdl1Note,
       });
-      setPdl1Confirmation(result);
+      setPdl1Draft(result);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "PD-L1 결과를 확정하지 못했습니다.");
+      setError(reason instanceof Error ? reason.message : "PD-L1 결과를 저장하지 못했습니다.");
     } finally {
       setConfirmingPdl1(false);
     }
@@ -870,6 +873,7 @@ function WorkArea({
     currentAnalysis?.status === "SUCCEEDED" &&
     currentAnalysis.analysis_type === expectedAnalysisType &&
     item.workflow_status !== "REVIEW_COMPLETED" &&
+    (!isPdl1 || Boolean(pdl1Draft)) &&
     !alreadySubmitted &&
     !submittingReview;
   const testTitle = isPathologyGene
@@ -1340,12 +1344,12 @@ function WorkArea({
 
             {isPdl1 && currentAnalysis?.status === "SUCCEEDED" ? (
               <section className="mt-4 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-4">
-                <h4 className="text-sm font-bold text-slate-800">PD-L1 결과 확정</h4>
-                {pdl1Confirmation ? (
+                <h4 className="text-sm font-bold text-slate-800">PD-L1 결과 작성</h4>
+                {pdl1Draft ? (
                   <div className="mt-3 text-sm text-slate-700">
-                    <p className="font-semibold text-emerald-700">확정 완료</p>
-                    <p className="mt-1">TPS {pdl1Confirmation.pdl1.tps_percent}% · {pdl1Confirmation.pdl1.interpretation}</p>
-                    <p className="mt-1 text-xs text-slate-500">확정 시각: {new Date(pdl1Confirmation.confirmed_at).toLocaleString()}</p>
+                    <p className="font-semibold text-emerald-700">분석 결과 저장 완료</p>
+                    <p className="mt-1">TPS {pdl1Draft.pdl1.tps_percent}% · {pdl1Draft.pdl1.interpretation}</p>
+                    <p className="mt-1 text-xs text-slate-500">의사에게 제출하면 호흡기내과에서 최종 확인합니다.</p>
                   </div>
                 ) : isPathologyDoctor ? (
                   <div className="mt-3 grid gap-3">
@@ -1353,10 +1357,10 @@ function WorkArea({
                     <label className="text-xs font-semibold text-slate-700">해석/판정<textarea value={pdl1Interpretation} onChange={(event) => setPdl1Interpretation(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
                     <label className="text-xs font-semibold text-slate-700">병리 소견<textarea value={pdl1Note} onChange={(event) => setPdl1Note(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
                     <p className="text-xs text-slate-500">근거 WSI: {item.latest_wsi?.original_filename ?? "연결된 PD-L1 WSI가 없습니다."}</p>
-                    <button type="button" disabled={!pdl1TpsPercent || !pdl1Interpretation.trim() || !item.latest_wsi?.id || confirmingPdl1} onClick={handlePdl1Confirm} className="w-fit rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{confirmingPdl1 ? "확정 중" : "PD-L1 결과 확정"}</button>
+                    <button type="button" disabled={!pdl1TpsPercent || !pdl1Interpretation.trim() || !item.latest_wsi?.id || confirmingPdl1} onClick={handlePdl1DraftSave} className="w-fit rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{confirmingPdl1 ? "저장 중" : "PD-L1 결과 저장"}</button>
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs text-slate-500">PD-L1 최종 확정은 병리과 의사만 수행할 수 있습니다.</p>
+                  <p className="mt-3 text-xs text-slate-500">PD-L1 결과 작성은 병리과 의사가 수행합니다.</p>
                 )}
               </section>
             ) : null}
@@ -1382,15 +1386,15 @@ function WorkArea({
             <div>
               <p className="text-sm font-semibold text-slate-800">
                 {item.workflow_status === "REVIEW_COMPLETED"
-                  ? "의사 판독 완료"
+                  ? "호흡기내과 확정 완료"
                   : alreadySubmitted
                     ? "의사에게 제출 완료"
-                    : "AI 분석 결과를 의사 판독 대상으로 제출합니다."}
+                    : "분석 결과를 호흡기내과 의사에게 제출합니다."}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 {reviewSubmissionError ||
                   (alreadySubmitted
-                    ? "동일한 판독 작업은 중복 생성되지 않습니다."
+                    ? "동일한 제출은 중복 생성되지 않습니다."
                     : "완료된 현재 검사 결과만 제출할 수 있습니다.")}
               </p>
             </div>
@@ -1558,15 +1562,15 @@ function WorkArea({
               <div>
                 <p className="text-sm font-semibold text-slate-700">
                   {item.workflow_status === "REVIEW_COMPLETED"
-                    ? "의사 판독 완료"
+                    ? "호흡기내과 확정 완료"
                     : alreadySubmitted
                       ? "의사에게 제출 완료"
-                      : "AI 분석 결과를 의사 판독 대상으로 제출합니다."}
+                      : "분석 결과를 호흡기내과 의사에게 제출합니다."}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   {reviewSubmissionError ||
                     (alreadySubmitted
-                      ? "동일한 판독 작업은 중복 생성되지 않습니다."
+                      ? "동일한 제출은 중복 생성되지 않습니다."
                       : "완료된 현재 검사 결과만 제출할 수 있습니다.")}
                 </p>
               </div>

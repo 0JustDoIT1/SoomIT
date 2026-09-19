@@ -4,11 +4,11 @@ export function CurrentActionQueue({ actions, onNavigate, onOpen }: { actions: C
   const visible = actions.slice(0, 3);
 
   return (
-    <section className="shrink-0 border-y border-blue-100 bg-[#f8fbff] px-3 py-1.5" aria-label="지금 해야 할 일">
+    <section className="shrink-0 rounded-lg border border-blue-100 bg-[#f8fbff] px-2 py-1" aria-label="지금 해야 할 일">
       <div className="flex items-stretch gap-2 overflow-x-auto">
-        <div className="flex min-w-[104px] shrink-0 flex-col justify-center rounded-md border border-blue-100 bg-blue-600 px-3 py-2 text-white">
+        <div className="flex min-w-[112px] shrink-0 flex-col justify-center rounded-md bg-blue-600 px-2.5 py-1.5 text-white">
           <p className="text-[11px] font-bold">지금 해야 할 일</p>
-          <p className="mt-0.5 text-[9px] font-medium text-blue-100">다음 행동과 완료 조건</p>
+          <p className="mt-0.5 text-[9px] font-medium text-blue-100">Case 전체 업무</p>
         </div>
         {visible.length ? (
           <div className="flex min-w-0 flex-1 gap-2">
@@ -19,13 +19,13 @@ export function CurrentActionQueue({ actions, onNavigate, onOpen }: { actions: C
                 aria-label="검토 열기"
                 title={action.title}
                 onClick={() => { if (onOpen) onOpen(action); else onNavigate(action.href); }}
-                className="flex min-w-[238px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-left transition hover:border-blue-300 hover:bg-blue-50"
+                className="flex min-w-[220px] flex-1 items-center gap-2 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-left transition hover:border-blue-300 hover:bg-blue-50"
               >
                 <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-blue-600 text-[10px] font-bold text-white">{index + 1}</span>
                 <span className="min-w-0">
                   <span className="block truncate text-[11px] font-bold text-slate-800">{action.title}</span>
                   <span className="mt-0.5 block truncate text-[9px] text-slate-500"><span className={getSourceStyle(action.source)}>{action.sourceLabel}</span> · {action.status}</span>
-                  <span className="mt-0.5 block truncate text-[9px] font-medium text-slate-600">완료 조건: {completionCondition(action)}</span>
+                  <span className="sr-only">완료 조건: {completionCondition(action)}</span>
                 </span>
                 <span aria-hidden="true" className="ml-auto text-blue-600">›</span>
               </button>

@@ -71,7 +71,7 @@ vi.mock("./_lib/pathology-workstation-api", () => ({
   fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyCompletedExams: vi.fn(), fetchPathologyWorkstation: vi.fn(),
   fetchPathologyWsiPreview: vi.fn().mockResolvedValue(new Blob(["preview"], { type: "image/jpeg" })),
   fetchPdl1Analyses: vi.fn(),
-  runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), submitPathologyForReview: vi.fn(),
+  runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), savePdl1Draft: vi.fn(), submitPathologyForReview: vi.fn(),
 }));
 
 it("keeps selection and workflow across numbered/next/previous pages and loading", async () => {

@@ -146,7 +146,9 @@ type GeneClinicalResult = {
 };
 
 type Pdl1ClinicalResult = {
+  id?: string;
   workflow_stage: string;
+  result_status?: string;
   result_date: string | null;
   result_detail: {
     pdl1?: {
@@ -444,6 +446,7 @@ export default function RespiratoryCaseDetailPage() {
   const [resultsSyncing, setResultsSyncing] = useState(false);
   const [resultSyncNotice, setResultSyncNotice] = useState("");
   const [stageOrderNotice, setStageOrderNotice] = useState("");
+  const [confirmingPathologyResult, setConfirmingPathologyResult] = useState(false);
 
   const [searchText, setSearchText] = useState("");
   const deferredSearchText = useDeferredValue(searchText);
@@ -1084,6 +1087,11 @@ export default function RespiratoryCaseDetailPage() {
   const confirmedPdl1Result = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED",
   );
+  const submittedPathologyResult = tnmClinicalResults.find(
+    (result) => result.workflow_stage === selectedCase?.current_stage
+      && ["PATHOLOGY_GENE", "PDL1"].includes(result.workflow_stage)
+      && result.result_status === "DRAFT",
+  );
   const activePdl1Order = caseOrders.find(
     (order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status),
   );
@@ -1196,6 +1204,34 @@ export default function RespiratoryCaseDetailPage() {
       showToast.error("오더는 생성되었지만 다음 단계 전환에 실패했습니다.", { id: toastId });
     } finally {
       setCaseRefreshVersion((current) => current + 1);
+    }
+  };
+
+  const confirmSubmittedPathologyResult = async () => {
+    if (!submittedPathologyResult?.id || confirmingPathologyResult) return;
+    const toastId = `case-pathology-confirm-${caseId}-${submittedPathologyResult.id}`;
+    setConfirmingPathologyResult(true);
+    try {
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/pathology/${submittedPathologyResult.id}/confirm/`,
+        { method: "POST" },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof body.detail === "string" ? body.detail : "결과 확정에 실패했습니다.");
+      }
+      showToast.success(
+        submittedPathologyResult.workflow_stage === "PDL1"
+          ? "PD-L1 결과가 확정되었습니다."
+          : "병리 결과가 확정되었습니다.",
+        { id: toastId },
+      );
+      await refreshCaseResults();
+    } catch (error) {
+      console.error(error);
+      showToast.error("결과 확정에 실패했습니다.", { id: toastId });
+    } finally {
+      setConfirmingPathologyResult(false);
     }
   };
 
@@ -1582,13 +1618,13 @@ export default function RespiratoryCaseDetailPage() {
 
   return (
     <>
-      <div className="h-full min-h-0 overflow-auto bg-[#f3f7fd] [scrollbar-gutter:stable]" aria-label="Case Workspace">
-      <div className="grid min-h-full min-w-[1100px] grid-cols-[minmax(172px,190px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(184px,200px)_116px_minmax(0,1fr)]">
+      <div className="h-full min-h-0 overflow-hidden bg-[#f3f7fd]" aria-label="Case Workspace">
+      <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(172px,190px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(184px,200px)_116px_minmax(0,1fr)]">
       <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
       <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} orders={caseOrders} aiResults={tnmAnalysisResults} onSelect={handleInfoMenuSelect} />
-      <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto p-2 [scrollbar-gutter:stable]">
+      <div className="flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden p-2">
       <CaseSummaryHeader key={caseId} caseData={selectedCase} />
       <CaseWorkflowBar
         currentStage={selectedCase.current_stage}
@@ -1835,14 +1871,15 @@ export default function RespiratoryCaseDetailPage() {
             setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
       />
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm [scrollbar-gutter:stable]">
+      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden rounded-lg border border-slate-200 bg-white p-2 shadow-sm [scrollbar-gutter:stable]">
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
-        <div className="mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1">
+        <div className="mb-2 flex min-h-10 items-center justify-between gap-3 border-b border-slate-200 px-1 pb-1">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="h-5 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
+            <span className="h-6 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
             <div className="min-w-0">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">열람 중</p>
               <h1 className="truncate text-sm font-bold text-slate-900">
               {selectedInfoMenu === "AI_SUMMARY"
                 ? "AI 종합 분석"
@@ -1854,16 +1891,22 @@ export default function RespiratoryCaseDetailPage() {
                     selectedPrescriptionMenu
                   )}
               </h1>
-              <p className="truncate text-[10px] text-slate-400">
-              {selectedCase.patient_name} ·{" "}
-              {selectedCase.patient_code} ·{" "}
-              {selectedCase.case_code}
-              </p>
             </div>
+            <span className="hidden shrink-0 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-semibold text-blue-700 lg:inline">현재 Case 단계 · {getStageLabel(selectedCase.current_stage)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}
             {stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}
+            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && submittedPathologyResult && (
+              <button
+                type="button"
+                disabled={confirmingPathologyResult}
+                onClick={() => { void confirmSubmittedPathologyResult(); }}
+                className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {confirmingPathologyResult ? "확정 중" : "결과 확인/확정"}
+              </button>
+            )}
             {selectedCase?.case_status === "ACTIVE" && canCreatePdl1Order && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
               <StageExaminationOrder caseId={caseId} orderType="PDL1" onCreated={() => { void activatePdl1AfterOrderCreation(); }} />
             )}

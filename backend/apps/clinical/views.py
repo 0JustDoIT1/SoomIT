@@ -1,7 +1,7 @@
 import json
 
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Q
 from django.utils import timezone
 
 from drf_spectacular.utils import extend_schema
@@ -541,9 +541,15 @@ class DoctorClinicalResultListAPIView(ListAPIView):
 
         return (
             ClinicalResult.objects
+            .filter(case=case)
             .filter(
-                case=case,
-                result_status="CONFIRMED",
+                Q(result_status=ClinicalResult.ResultStatus.CONFIRMED)
+                | Q(
+                    result_status=ClinicalResult.ResultStatus.DRAFT,
+                    workflow_stage__in=[WorkflowStage.PATHOLOGY_GENE, WorkflowStage.PDL1],
+                    examination_order__pathology_work_items__task_type="DIAGNOSTIC_REVIEW",
+                    examination_order__pathology_work_items__status__in=["PENDING", "IN_PROGRESS"],
+                )
             )
             .select_related(
                 "case",
@@ -558,6 +564,7 @@ class DoctorClinicalResultListAPIView(ListAPIView):
                 "gene_detail__gene_findings",
             )
             .order_by("-confirmed_at", "-updated_at")
+            .distinct()
         )
 
 @extend_schema(tags=["호흡기내과-치료결정"])

@@ -236,12 +236,12 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertIsNone(review.assigned_to_id)
         self.assertEqual(review.specimen_id, self.work_item.specimen_id)
         self.assertEqual(review.wsi_id, self.work_item.wsi_id)
-        self.assertFalse(
-            ClinicalResult.objects.filter(
+        draft = ClinicalResult.objects.get(
                 case=self.case,
                 result_status=ClinicalResult.ResultStatus.DRAFT,
-            ).exists()
         )
+        self.assertEqual(draft.reviewed_ai_result, self.ai_result)
+        self.assertEqual(draft.pathology_detail.subtype, "Adenocarcinoma")
 
     def test_review_submission_rejects_running_analysis(self):
         url = self.prepare_review_submission()
@@ -414,6 +414,19 @@ class PathologyReadAPITestCase(APITestCase):
             ai_analysis=pdl1_analysis,
             schema_version="1.0",
             result_payload={},
+        )
+        pdl1_draft = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            workflow_stage=WorkflowStage.PDL1,
+            source_image_asset=pdl1_asset,
+            reviewed_ai_result=pdl1_analysis.ai_result,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PDL1Result.objects.create(
+            clinical_result=pdl1_draft,
+            tps_percent="55.00",
+            interpretation="Positive",
         )
         self.case.workstation_analyses = [pdl1_analysis, self.ai_analysis]
         self.assertEqual(calculate_workflow_status(pdl1_work_item), "AI_COMPLETED")
@@ -1151,7 +1164,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         delay.assert_not_called()
 
-    def test_pdl1_confirmation_uses_the_order_linked_to_wsi_and_analysis(self):
+    def test_pdl1_draft_uses_the_order_linked_to_wsi_and_analysis(self):
         ExaminationOrder.objects.create(
             case=self.case,
             order_type=ExaminationOrder.OrderType.PDL1,
@@ -1206,7 +1219,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.authenticate_pathology_user()
 
         response = self.client.post(
-            reverse("pathology:pdl1-result-confirm", kwargs={"case_id": self.case.id}),
+            reverse("pathology:pdl1-result-draft", kwargs={"case_id": self.case.id}),
             {
                 "ai_analysis_id": str(analysis.id),
                 "source_wsi_id": str(wsi.id),
@@ -1220,6 +1233,8 @@ class PathologyReadAPITestCase(APITestCase):
         clinical_result = ClinicalResult.objects.get(id=response.data["id"])
         self.assertEqual(clinical_result.examination_order, order)
         self.assertEqual(clinical_result.reviewed_ai_result, ai_result)
+        self.assertEqual(clinical_result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertIsNone(clinical_result.confirmed_by_user_id)
         self.assertEqual(PDL1Result.objects.get(clinical_result=clinical_result).source_wsi, wsi)
 
     def test_unauthenticated_user_cannot_access_case_diagnoses(self):
@@ -1367,7 +1382,7 @@ class PathologyReadAPITestCase(APITestCase):
             "Updated draft",
         )
 
-    def test_authenticated_user_can_confirm_draft_diagnosis(self):
+    def test_pathology_user_cannot_confirm_draft_diagnosis(self):
         draft = ClinicalResult.objects.create(
             case=self.case,
             workflow_stage=WorkflowStage.PATHOLOGY_GENE,
@@ -1389,16 +1404,13 @@ class PathologyReadAPITestCase(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["result_status"], "CONFIRMED")
-        self.assertEqual(response.data["confirmed_by_name"], self.user.name)
-        self.assertIsNotNone(response.data["confirmed_at"])
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        draft.refresh_from_db()
+        self.assertEqual(draft.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertIsNone(draft.confirmed_by_user_id)
         self.work_item.refresh_from_db()
-        self.assertEqual(
-            self.work_item.status,
-            PathologyWorkItem.Status.COMPLETED,
-        )
-        self.assertIsNotNone(self.work_item.completed_at)
+        self.assertNotEqual(self.work_item.status, PathologyWorkItem.Status.COMPLETED)
+        self.assertIsNone(self.work_item.completed_at)
 
     def test_draft_creation_requires_matching_diagnostic_review_work_item(self):
         self.authenticate_pathology_user()

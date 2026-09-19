@@ -60,7 +60,7 @@ class PathologyReviewSubmissionSerializer(serializers.Serializer):
     ai_analysis_id = serializers.UUIDField()
 
 
-class PDL1ResultConfirmSerializer(serializers.Serializer):
+class PDL1ResultDraftSerializer(serializers.Serializer):
     ai_analysis_id = serializers.UUIDField()
     source_wsi_id = serializers.UUIDField()
     tps_percent = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"))

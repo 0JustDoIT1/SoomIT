@@ -75,12 +75,12 @@ export type PathologyReviewSubmission = {
   submitted: boolean;
 };
 
-export type PDL1ConfirmedResult = {
+export type PDL1DraftResult = {
   id: string;
   workflow_stage: "PDL1";
-  result_status: "CONFIRMED";
-  confirmed_by_user_id: string;
-  confirmed_at: string;
+  result_status: "DRAFT";
+  confirmed_by_user_id: null;
+  confirmed_at: null;
   pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
 };
 
@@ -268,13 +268,13 @@ export async function submitPathologyForReview(
   return readJson<PathologyReviewSubmission>(response);
 }
 
-export async function confirmPdl1Result(
+export async function savePdl1Draft(
   caseId: string,
   payload: { ai_analysis_id: string; source_wsi_id: string; tps_percent: string; interpretation: string; note: string },
 ) {
   const response = await staffAuthenticatedFetch(
-    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/pdl1-results/confirm/`),
+    url(`/api/pathology/cases/${encodeURIComponent(caseId)}/pdl1-results/draft/`),
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) },
   );
-  return readJson<PDL1ConfirmedResult>(response);
+  return readJson<PDL1DraftResult>(response);
 }

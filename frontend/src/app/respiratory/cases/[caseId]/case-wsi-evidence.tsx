@@ -9,6 +9,11 @@ type Slide = { id: string; specimen_id: string; slide_code: string; stain: strin
 type Viewer = { width: number; height: number; tile_width: number; tile_height: number; max_level: number; tile_url_template: string };
 const errorDetail = (body: unknown, fallback: string) => body && typeof body === "object" && "detail" in body && typeof body.detail === "string" ? body.detail : fallback;
 const stainName = (stain: "HE" | "PDL1") => stain === "PDL1" ? "PD-L1" : "H&E";
+const doctorAssetUrl = (apiBaseUrl: string, path: string) => {
+  if (/^https?:\/\//.test(path)) return path;
+  const normalized = path.replace("/api/doctor/slides/", "/api/doctor/cases/slides/");
+  return `${apiBaseUrl}${normalized.startsWith("/") ? "" : "/"}${normalized}`;
+};
 
 export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain }: { apiBaseUrl: string; authorizedFetch: AuthorizedFetch; caseId: string; stain: "HE" | "PDL1" }) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -33,7 +38,7 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain }: 
         if (!response.ok) throw new Error(errorDetail(payload, "검체 목록을 불러오지 못했습니다."));
         const specimenList = Array.isArray(payload) ? payload as Specimen[] : [];
         const slideLists = await Promise.all(specimenList.map(async (specimen) => {
-          const slideResponse = await authorizedFetch(`${apiBaseUrl}/api/doctor/specimens/${specimen.id}/slides/`, { signal: controller.signal });
+          const slideResponse = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/specimens/${specimen.id}/slides/`, { signal: controller.signal });
           const slidePayload: unknown = await slideResponse.json();
           if (!slideResponse.ok) throw new Error(errorDetail(slidePayload, "슬라이드 목록을 불러오지 못했습니다."));
           return Array.isArray(slidePayload) ? slidePayload as Slide[] : [];
@@ -49,7 +54,7 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain }: 
     const controller = new AbortController();
     void (async () => {
       setViewerLoading(true); setError(""); setViewerData(null);
-      try { const response = await authorizedFetch(`${apiBaseUrl}${selectedSlide.viewer_url}`, { signal: controller.signal }); const payload: unknown = await response.json(); if (!response.ok) throw new Error(errorDetail(payload, "WSI 뷰어 정보를 불러오지 못했습니다.")); if (!controller.signal.aborted) setViewerData(payload as Viewer); }
+      try { const response = await authorizedFetch(doctorAssetUrl(apiBaseUrl, selectedSlide.viewer_url), { signal: controller.signal }); const payload: unknown = await response.json(); if (!response.ok) throw new Error(errorDetail(payload, "WSI 뷰어 정보를 불러오지 못했습니다.")); if (!controller.signal.aborted) { const viewer = payload as Viewer; setViewerData({ ...viewer, tile_url_template: doctorAssetUrl(apiBaseUrl, viewer.tile_url_template) }); } }
       catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "WSI 뷰어를 준비하지 못했습니다."); }
       finally { if (!controller.signal.aborted) setViewerLoading(false); }
     })();
