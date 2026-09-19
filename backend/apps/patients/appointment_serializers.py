@@ -1,6 +1,7 @@
 from rest_framework import serializers
 
 from .models import Appointment, AppointmentRequest
+from apps.cases.models import ExaminationOrder
 
 
 # 원무과 - 예약 목록 / 상세 조회용
@@ -88,3 +89,23 @@ class AppointmentRequestRejectSerializer(serializers.Serializer):
         allow_null=True,
         max_length=1000,
     )
+
+
+class CoordinatorExaminationOrderSerializer(serializers.ModelSerializer):
+    patient_code = serializers.CharField(source="case.patient.patient_code", read_only=True)
+    patient_name = serializers.CharField(source="case.patient.name", read_only=True)
+    requesting_doctor_name = serializers.CharField(source="requesting_doctor.name", read_only=True)
+    order_type_label = serializers.CharField(source="get_order_type_display", read_only=True)
+
+    class Meta:
+        model = ExaminationOrder
+        fields = [
+            "id",
+            "patient_code",
+            "patient_name",
+            "requesting_doctor_name",
+            "order_type",
+            "order_type_label",
+            "status",
+            "created_at",
+        ]

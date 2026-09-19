@@ -2,6 +2,7 @@
 
 import { API_BASE_URL } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
+import { showToast } from "@/components/ui/toast/toast";
 
 type Appointment = {
   id: string;
@@ -176,7 +177,7 @@ export default function AppointmentsPage() {
 
       setSelectedAppointment(data);
     } catch (err) {
-      alert(
+      showToast.error(
         err instanceof Error
           ? err.message
           : "예약 상세 조회 중 오류가 발생했습니다."
@@ -215,7 +216,7 @@ export default function AppointmentsPage() {
 
       setSelectedAppointmentRequest(await response.json());
     } catch (err) {
-      alert(
+      showToast.error(
         err instanceof Error
           ? err.message
           : "예약 요청 상세 조회 중 오류가 발생했습니다."
@@ -259,6 +260,11 @@ export default function AppointmentsPage() {
       setSelectedAppointmentRequest(null);
       setIsRejectMode(false);
       setRejectionReason("");
+      showToast.success(
+        selectedAppointmentRequest.request_type === "CHANGE"
+          ? "예약 변경 요청이 승인되었습니다."
+          : "예약 취소 요청이 승인되었습니다."
+      );
     } catch (err) {
       setRequestActionError(
         err instanceof Error
@@ -312,6 +318,11 @@ export default function AppointmentsPage() {
       setSelectedAppointmentRequest(null);
       setIsRejectMode(false);
       setRejectionReason("");
+      showToast.success(
+        selectedAppointmentRequest.request_type === "CHANGE"
+          ? "예약 변경 요청이 반려되었습니다."
+          : "예약 취소 요청이 반려되었습니다."
+      );
     } catch (err) {
       setRequestActionError(
         err instanceof Error
@@ -357,6 +368,7 @@ export default function AppointmentsPage() {
         );
 
       setSelectedAppointment(updatedAppointment);
+      showToast.success("예약이 승인되었습니다.");
     } catch (err) {
       setActionError(
         err instanceof Error
@@ -430,6 +442,7 @@ export default function AppointmentsPage() {
       setSelectedAppointment(updatedAppointment);
       setIsCancelMode(false);
       setCancellationReason("");
+      showToast.success("예약이 취소되었습니다.");
     } catch (err) {
       setActionError(
         err instanceof Error

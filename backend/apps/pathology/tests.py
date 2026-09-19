@@ -1,7 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.utils import timezone
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -236,12 +237,12 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertIsNone(review.assigned_to_id)
         self.assertEqual(review.specimen_id, self.work_item.specimen_id)
         self.assertEqual(review.wsi_id, self.work_item.wsi_id)
-        self.assertFalse(
-            ClinicalResult.objects.filter(
+        draft = ClinicalResult.objects.get(
                 case=self.case,
                 result_status=ClinicalResult.ResultStatus.DRAFT,
-            ).exists()
         )
+        self.assertEqual(draft.reviewed_ai_result, self.ai_result)
+        self.assertEqual(draft.pathology_detail.subtype, "Adenocarcinoma")
 
     def test_review_submission_rejects_running_analysis(self):
         url = self.prepare_review_submission()
@@ -415,6 +416,19 @@ class PathologyReadAPITestCase(APITestCase):
             schema_version="1.0",
             result_payload={},
         )
+        pdl1_draft = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            workflow_stage=WorkflowStage.PDL1,
+            source_image_asset=pdl1_asset,
+            reviewed_ai_result=pdl1_analysis.ai_result,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PDL1Result.objects.create(
+            clinical_result=pdl1_draft,
+            tps_percent="55.00",
+            interpretation="Positive",
+        )
         self.case.workstation_analyses = [pdl1_analysis, self.ai_analysis]
         self.assertEqual(calculate_workflow_status(pdl1_work_item), "AI_COMPLETED")
 
@@ -482,18 +496,70 @@ class PathologyReadAPITestCase(APITestCase):
             examination_order=pdl1_order,
             task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
         )
+        pdl1_older_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.QUALITY_CHECK,
+        )
+        pdl1_latest_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+        )
         gene_work_item = PathologyWorkItem.objects.create(
             case=self.case,
             examination_order=gene_order,
             task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
         )
+        gene_older_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            task_type=PathologyWorkItem.TaskType.QUALITY_CHECK,
+        )
+        gene_latest_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+        )
+        older_timestamp = timezone.make_aware(datetime(2025, 1, 1, 10, 0, 0))
+        latest_timestamp = timezone.make_aware(datetime(2025, 1, 1, 10, 10, 0))
+        PathologyWorkItem.objects.filter(
+            id__in=[pdl1_work_item.id, pdl1_older_work_item.id, gene_work_item.id, gene_older_work_item.id]
+        ).update(created_at=older_timestamp)
+        PathologyWorkItem.objects.filter(
+            id__in=[pdl1_older_work_item.id, pdl1_latest_work_item.id, gene_latest_work_item.id]
+        ).update(created_at=latest_timestamp)
         self.authenticate_pathology_user()
 
         response = self.client.get(reverse("pathology:workstation-list"))
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["count"], 1)
-        self.assertEqual(str(response.data["results"][0]["case_id"]), str(self.case.id))
+        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(
+            {item["order_type"] for item in response.data["results"]},
+            {"PATHOLOGY_GENE", "PDL1"},
+        )
+        self.assertTrue(
+            all(str(item["case_id"]) == str(self.case.id) for item in response.data["results"])
+        )
+        self.assertEqual(
+            {str(item["examination_order"]["id"]) for item in response.data["results"]},
+            {str(pdl1_order.id), str(gene_order.id)},
+        )
+        self.assertEqual(
+            [str(item["examination_order"]["id"]) for item in response.data["results"]],
+            [str(order.id) for order in (gene_order, pdl1_order)],
+        )
+        result_by_order_id = {
+            str(item["examination_order"]["id"]): item for item in response.data["results"]
+        }
+        self.assertEqual(
+            str(result_by_order_id[str(pdl1_order.id)]["id"]),
+            str(max([pdl1_older_work_item.id, pdl1_latest_work_item.id], key=str)),
+        )
+        self.assertEqual(
+            str(result_by_order_id[str(gene_order.id)]["id"]), str(gene_latest_work_item.id)
+        )
 
         detail_response = self.client.get(
             reverse("pathology:case-workflow", kwargs={"case_id": self.case.id})
@@ -530,21 +596,106 @@ class PathologyReadAPITestCase(APITestCase):
             requesting_doctor=self.user,
             purpose="PD-L1 follow-up",
         )
-        pdl1_work_item = PathologyWorkItem.objects.create(
+        PathologyWorkItem.objects.create(
             case=self.case,
             examination_order=pdl1_order,
             task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+        )
+        PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.QUALITY_CHECK,
+        )
+        pdl1_latest_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pdl1_order,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+        )
+        PathologyWorkItem.objects.filter(examination_order=pdl1_order).exclude(
+            id=pdl1_latest_work_item.id
+        ).update(created_at=timezone.make_aware(datetime(2025, 1, 1, 10, 0, 0)))
+        pdl1_latest_work_item.created_at = timezone.make_aware(datetime(2025, 1, 1, 10, 10, 0))
+        pdl1_latest_work_item.save(update_fields=["created_at"])
+        self.authenticate_pathology_user()
+
+        response = self.client.get(
+            reverse("pathology:workstation-list"),
+            {"order_type": "PDL1"},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 1)
+        self.assertEqual(str(response.data["results"][0]["id"]), str(pdl1_latest_work_item.id))
+        self.assertEqual(response.data["results"][0]["order_type"], "PDL1")
+
+    def test_gene_order_filter_keeps_only_latest_work_item(self):
+        gene_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            requesting_doctor=self.user,
+            purpose="Gene follow-up",
+        )
+        older_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+        )
+        latest_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=gene_order,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+        )
+        PathologyWorkItem.objects.filter(id=older_work_item.id).update(
+            created_at=timezone.make_aware(datetime(2025, 1, 1, 10, 0, 0))
+        )
+        PathologyWorkItem.objects.filter(id=latest_work_item.id).update(
+            created_at=timezone.make_aware(datetime(2025, 1, 1, 10, 10, 0))
         )
         self.authenticate_pathology_user()
 
         response = self.client.get(
             reverse("pathology:workstation-list"),
-            {"pathology_test_type": "PDL1"},
+            {"order_type": "PATHOLOGY_GENE"},
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["count"], 1)
-        self.assertEqual(str(response.data["results"][0]["id"]), str(pdl1_work_item.id))
+        self.assertEqual(str(response.data["results"][0]["id"]), str(latest_work_item.id))
+        self.assertEqual(response.data["results"][0]["order_type"], "PATHOLOGY_GENE")
+
+    def test_work_items_without_orders_remain_independent(self):
+        patient = Patient.objects.create(
+            hospital=self.hospital,
+            patient_code="TEST-P002",
+            name="Orderless patient",
+            birth_date=date(1965, 1, 1),
+            sex=Patient.Sex.FEMALE,
+            phone_number="010-0000-0001",
+            phone_number_hash="test-phone-hash-orderless",
+        )
+        case = LungCancerCase.objects.create(
+            patient=patient,
+            case_code="TEST-CASE-002",
+            primary_doctor=self.user,
+            current_stage=WorkflowStage.PATHOLOGY_GENE,
+        )
+        work_items = [
+            PathologyWorkItem.objects.create(
+                case=case,
+                task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+            )
+            for _ in range(2)
+        ]
+        self.authenticate_pathology_user()
+
+        response = self.client.get(reverse("pathology:workstation-list"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["count"], 2)
+        self.assertEqual(
+            {str(item["id"]) for item in response.data["results"]},
+            {str(item.id) for item in work_items},
+        )
 
     def test_review_and_diagnosis_reject_ai_result_from_another_order(self):
         pdl1_order = ExaminationOrder.objects.create(
@@ -1151,7 +1302,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         delay.assert_not_called()
 
-    def test_pdl1_confirmation_uses_the_order_linked_to_wsi_and_analysis(self):
+    def test_pdl1_draft_uses_the_order_linked_to_wsi_and_analysis(self):
         ExaminationOrder.objects.create(
             case=self.case,
             order_type=ExaminationOrder.OrderType.PDL1,
@@ -1206,7 +1357,7 @@ class PathologyReadAPITestCase(APITestCase):
         self.authenticate_pathology_user()
 
         response = self.client.post(
-            reverse("pathology:pdl1-result-confirm", kwargs={"case_id": self.case.id}),
+            reverse("pathology:pdl1-result-draft", kwargs={"case_id": self.case.id}),
             {
                 "ai_analysis_id": str(analysis.id),
                 "source_wsi_id": str(wsi.id),
@@ -1220,6 +1371,8 @@ class PathologyReadAPITestCase(APITestCase):
         clinical_result = ClinicalResult.objects.get(id=response.data["id"])
         self.assertEqual(clinical_result.examination_order, order)
         self.assertEqual(clinical_result.reviewed_ai_result, ai_result)
+        self.assertEqual(clinical_result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertIsNone(clinical_result.confirmed_by_user_id)
         self.assertEqual(PDL1Result.objects.get(clinical_result=clinical_result).source_wsi, wsi)
 
     def test_unauthenticated_user_cannot_access_case_diagnoses(self):
@@ -1367,7 +1520,7 @@ class PathologyReadAPITestCase(APITestCase):
             "Updated draft",
         )
 
-    def test_authenticated_user_can_confirm_draft_diagnosis(self):
+    def test_pathology_user_cannot_confirm_draft_diagnosis(self):
         draft = ClinicalResult.objects.create(
             case=self.case,
             workflow_stage=WorkflowStage.PATHOLOGY_GENE,
@@ -1389,16 +1542,13 @@ class PathologyReadAPITestCase(APITestCase):
             format="json",
         )
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data["result_status"], "CONFIRMED")
-        self.assertEqual(response.data["confirmed_by_name"], self.user.name)
-        self.assertIsNotNone(response.data["confirmed_at"])
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        draft.refresh_from_db()
+        self.assertEqual(draft.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertIsNone(draft.confirmed_by_user_id)
         self.work_item.refresh_from_db()
-        self.assertEqual(
-            self.work_item.status,
-            PathologyWorkItem.Status.COMPLETED,
-        )
-        self.assertIsNotNone(self.work_item.completed_at)
+        self.assertNotEqual(self.work_item.status, PathologyWorkItem.Status.COMPLETED)
+        self.assertIsNone(self.work_item.completed_at)
 
     def test_draft_creation_requires_matching_diagnostic_review_work_item(self):
         self.authenticate_pathology_user()

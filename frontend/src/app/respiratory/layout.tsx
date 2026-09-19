@@ -198,10 +198,9 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   return (
     <div className="respiratory-app flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
       <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
-        <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/cases" || pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/cases")} />
-        <ShellNavButton icon="case" label="Case" active={pathname.startsWith("/respiratory/cases/")} onClick={() => void openCaseWorkspace()} />
+        <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/dashboard")} />
+        <ShellNavButton icon="case" label="Case" active={pathname.startsWith("/respiratory/cases")} onClick={() => void openCaseWorkspace()} />
         <ShellNavButton icon="calendar" label="일정" active={pathname.startsWith("/respiratory/schedules")} onClick={() => router.push("/respiratory/schedules")} />
-        <ShellNavButton icon="bell" label="알림" active={showNotifications} onClick={() => setShowNotifications((open) => !open)} count={notifications.unread_count} />
         <div className="mt-auto"><ShellNavButton icon="settings" label="설정" active={pathname.startsWith("/respiratory/settings")} onClick={() => router.push("/respiratory/settings")} /></div>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
@@ -272,22 +271,24 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function ShellNavButton({ icon, label, active, onClick, count }: { icon: "home" | "case" | "calendar" | "bell" | "settings"; label: string; active: boolean; onClick: () => void; count?: number }) {
+function ShellNavButton({ icon, label, active, onClick, count }: { icon: "home" | "case" | "calendar" | "settings"; label: string; active: boolean; onClick: () => void; count?: number }) {
   return (
     <button
       type="button"
       onClick={onClick}
       aria-current={active ? "page" : undefined}
-      className={`${icon === "bell" ? "hidden" : "relative mb-1 flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-2 text-[11px] transition lg:w-14"} ${active ? "bg-[#14b8a6] font-bold text-white shadow-sm shadow-slate-950/30" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
+      aria-label={label}
+      title={label}
+      className={`group relative mb-0.5 flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-medium transition lg:w-14 ${active ? "bg-[#14b8a6] font-semibold text-white shadow-sm shadow-slate-950/30" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
         {icon === "home" && <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>}
         {icon === "case" && <><path d="M3 7h7l2 2h9v11H3z" /><path d="M3 7V5h6l2 2" /></>}
         {icon === "calendar" && <><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M8 3v4M16 3v4M4 10h16M8 14h8M8 17h5" /></>}
-        {icon === "bell" && <><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 21h4" /></>}
         {icon === "settings" && <><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5L9 6a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.5 3h5l.5-3a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5a7 7 0 0 0 .1-1Z" /></>}
       </svg>
       <span>{label}</span>
+      <span role="tooltip" className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block">{label}</span>
       {Boolean(count) && <span className="absolute right-0 top-0 rounded-full bg-rose-500 px-1 text-[9px] text-white">{count && count > 99 ? "99+" : count}</span>}
     </button>
   );

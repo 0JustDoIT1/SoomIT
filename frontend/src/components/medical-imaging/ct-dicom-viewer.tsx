@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ensureCornerstoneInitialized } from "@/app/radiology/_lib/cornerstone-init";
 import { loadCtDicomWebSeries } from "@/app/radiology/_lib/cornerstone-dicomweb-loader";
@@ -17,6 +17,20 @@ type CtDicomViewerProps = {
 };
 
 type ViewKey = "axial" | "coronal" | "sagittal" | "volume3d";
+type MprToolMode = "WL" | "ZOOM" | "PAN" | "LENGTH" | "ROI";
+type MprToolGroup = Pick<import("@cornerstonejs/tools").Types.IToolGroup, "setToolActive" | "setToolPassive">;
+type MprToolBindings = {
+  primary: import("@cornerstonejs/tools").Enums.MouseBindings;
+  secondary: import("@cornerstonejs/tools").Enums.MouseBindings;
+  auxiliary: import("@cornerstonejs/tools").Enums.MouseBindings;
+  wheel: import("@cornerstonejs/tools").Enums.MouseBindings;
+  windowLevel: string;
+  zoom: string;
+  pan: string;
+  stackScroll: string;
+  length: string;
+  rectangleRoi: string;
+};
 
 const TOOL_GROUP_ID = "ct-dicom-viewer-mpr-tools";
 const VOLUME3D_TOOL_GROUP_ID = "ct-dicom-viewer-volume3d-tools";
@@ -71,6 +85,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   // null = 2x2 grid; otherwise the single view shown full-size. Purely a layout
   // switch - the underlying viewports/volume are never rebuilt by this.
   const [focusedView, setFocusedView] = useState<ViewKey | null>(null);
+  const [selectedView, setSelectedView] = useState<ViewKey>("axial");
+  const [activeTool, setActiveTool] = useState<MprToolMode>("WL");
 
   const imageIdsRef = useRef<string[] | null>(null);
   const noduleFocusWorldRef = useRef<[number, number, number] | null>(null);
@@ -78,6 +94,9 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   // lifetime; this ref lets the maximize/restore effect resize them without
   // rebuilding anything.
   const renderingEngineRef = useRef<import("@cornerstonejs/core").RenderingEngine | null>(null);
+  const mprToolGroupRef = useRef<MprToolGroup | null>(null);
+  const mprToolBindingsRef = useRef<MprToolBindings | null>(null);
+  const activeToolRef = useRef<MprToolMode>("WL");
   // Caches the loaded labelmap data across re-renders, keyed by analysis+
   // volume, so it is only downloaded once per series.
   const segmentationCacheRef = useRef<{ key: string; segmentation: CtCornerstoneSegmentation } | null>(null);
@@ -90,8 +109,40 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
     setFocusedView(null);
   };
 
+  const setMprToolMode = useCallback((mode: MprToolMode) => {
+    activeToolRef.current = mode;
+    setActiveTool(mode);
+    const toolGroup = mprToolGroupRef.current;
+    const bindings = mprToolBindingsRef.current;
+    if (!toolGroup || !bindings) return;
+    const primaryTool = {
+      WL: bindings.windowLevel,
+      ZOOM: bindings.zoom,
+      PAN: bindings.pan,
+      LENGTH: bindings.length,
+      ROI: bindings.rectangleRoi,
+    }[mode];
+    [bindings.windowLevel, bindings.zoom, bindings.pan, bindings.stackScroll, bindings.length, bindings.rectangleRoi]
+      .forEach((toolName) => toolGroup.setToolPassive(toolName, { removeAllBindings: true }));
+    const primaryBindings = [{ mouseButton: bindings.primary }];
+    if (primaryTool === bindings.pan) primaryBindings.push({ mouseButton: bindings.auxiliary });
+    if (primaryTool === bindings.zoom) primaryBindings.push({ mouseButton: bindings.secondary });
+    toolGroup.setToolActive(primaryTool, { bindings: primaryBindings });
+    if (primaryTool !== bindings.pan) toolGroup.setToolActive(bindings.pan, { bindings: [{ mouseButton: bindings.auxiliary }] });
+    if (primaryTool !== bindings.zoom) toolGroup.setToolActive(bindings.zoom, { bindings: [{ mouseButton: bindings.secondary }] });
+    toolGroup.setToolActive(bindings.stackScroll, { bindings: [{ mouseButton: bindings.wheel }] });
+  }, []);
+
+  const toggleFocusedView = () => {
+    setFocusedView((current) => current ? null : selectedView);
+  };
+
+  const requestFullscreen = () => {
+    void workspaceRef.current?.requestFullscreen?.();
+  };
+
   const onWorkspaceKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
-    if (event.key === "f" || event.key === "F") { event.preventDefault(); void workspaceRef.current?.requestFullscreen?.(); }
+    if (event.key === "f" || event.key === "F") { event.preventDefault(); requestFullscreen(); }
     if (event.key === "r" || event.key === "R") { event.preventDefault(); resetViewports(); }
   };
 
@@ -171,19 +222,31 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       const volume3dToolGroup = tools.ToolGroupManager.createToolGroup(volume3dToolGroupId);
       if (!toolGroup || !volume3dToolGroup) return;
       cleanupCornerstoneState = () => {
+        mprToolGroupRef.current = null;
+        mprToolBindingsRef.current = null;
         tools.ToolGroupManager.destroyToolGroup(toolGroupId);
         tools.ToolGroupManager.destroyToolGroup(volume3dToolGroupId);
       };
-      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.TrackballRotateTool].forEach(
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.TrackballRotateTool].forEach(
         (ToolClass) => tools.addTool(ToolClass),
       );
-      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool].forEach((ToolClass) =>
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool].forEach((ToolClass) =>
         toolGroup.addTool(ToolClass.toolName),
       );
-      toolGroup.setToolActive(tools.WindowLevelTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Primary }] });
-      toolGroup.setToolActive(tools.PanTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Auxiliary }] });
-      toolGroup.setToolActive(tools.ZoomTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Secondary }] });
-      toolGroup.setToolActive(tools.StackScrollTool.toolName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Wheel }] });
+      mprToolGroupRef.current = toolGroup;
+      mprToolBindingsRef.current = {
+        primary: tools.Enums.MouseBindings.Primary,
+        secondary: tools.Enums.MouseBindings.Secondary,
+        auxiliary: tools.Enums.MouseBindings.Auxiliary,
+        wheel: tools.Enums.MouseBindings.Wheel,
+        windowLevel: tools.WindowLevelTool.toolName,
+        zoom: tools.ZoomTool.toolName,
+        pan: tools.PanTool.toolName,
+        stackScroll: tools.StackScrollTool.toolName,
+        length: tools.LengthTool.toolName,
+        rectangleRoi: tools.RectangleROITool.toolName,
+      };
+      setMprToolMode(activeToolRef.current);
       // The 3D volume-rendering view rotates/pans/zooms instead of windowing by drag.
       [tools.TrackballRotateTool, tools.PanTool, tools.ZoomTool].forEach((ToolClass) =>
         volume3dToolGroup.addTool(ToolClass.toolName),
@@ -317,7 +380,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       renderingEngine?.destroy();
       renderingEngineRef.current = null;
     };
-  }, [loading, error, analysisId, orderId, assetId, loadSegmentation]);
+  }, [loading, error, analysisId, orderId, assetId, loadSegmentation, setMprToolMode]);
 
   // Pure layout switch: maximizing/restoring a view never re-fetches or rebuilds
   // anything - the already-built viewports just need a resize once their
@@ -351,6 +414,14 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   return (
     <div ref={workspaceRef} tabIndex={0} onKeyDown={onWorkspaceKeyDown} className="grid h-full min-h-0 overflow-hidden bg-slate-950 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동">
       <div className="relative min-h-0">
+        <div role="toolbar" aria-label="CT Viewer 도구" className="absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1 rounded-md border border-slate-700/80 bg-slate-950/85 p-1 shadow-lg backdrop-blur">
+          <button type="button" aria-pressed={!focusedView} onClick={() => setFocusedView(null)} className={`rounded px-2 py-1 text-[10px] font-semibold ${!focusedView ? "bg-blue-600 text-white" : "text-slate-200 hover:bg-slate-800"}`}>2×2</button>
+          <button type="button" aria-pressed={Boolean(focusedView)} onClick={toggleFocusedView} className={`rounded px-2 py-1 text-[10px] font-semibold ${focusedView ? "bg-blue-600 text-white" : "text-slate-200 hover:bg-slate-800"}`}>1×1</button>
+          <span aria-hidden="true" className="h-4 w-px bg-slate-700" />
+          {([ ["WL", "WL/WW"], ["ZOOM", "Zoom"], ["PAN", "Pan"], ["LENGTH", "측정"], ["ROI", "ROI"] ] as Array<[MprToolMode, string]>).map(([mode, label]) => <button key={mode} type="button" aria-pressed={activeTool === mode} onClick={() => setMprToolMode(mode)} title={mode === "LENGTH" || mode === "ROI" ? "화면에서만 사용하며 저장되지 않습니다." : undefined} className={`rounded px-2 py-1 text-[10px] font-semibold ${activeTool === mode ? "bg-blue-600 text-white" : "text-slate-200 hover:bg-slate-800"}`}>{label}</button>)}
+          <span aria-hidden="true" className="h-4 w-px bg-slate-700" />
+          <button type="button" onClick={requestFullscreen} className="rounded px-2 py-1 text-[10px] font-semibold text-slate-200 hover:bg-slate-800">전체화면</button>
+        </div>
         <span title="CT Viewer에 포커스를 둔 뒤 사용할 수 있습니다." className="absolute bottom-2 right-2 z-20 rounded bg-black/60 px-2 py-1 text-[9px] text-slate-300">⌨ F 전체 · R 초기화 · 휠 슬라이스</span>
         {focusedView && (
           <button
@@ -388,7 +459,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
               )}
               <button
                 type="button"
-                onClick={() => setFocusedView((current) => (current === key ? null : key))}
+                onClick={() => {
+                  setSelectedView(key);
+                  setFocusedView((current) => (current === key ? null : key));
+                }}
                 className="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-semibold text-white"
               >
                 {VIEW_LABELS[key]} {focusedView === key ? "· 축소" : "· 확대"}

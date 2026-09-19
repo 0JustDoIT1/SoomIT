@@ -29,3 +29,5 @@ graphene-django==3.2.3
 sqlparse==0.5.5
 requests==2.34.2
 pydicom==3.0.2
+openslide-python==1.4.2
+Pillow==11.3.0

@@ -1,6 +1,8 @@
+import logging
 import re
 from concurrent.futures import ThreadPoolExecutor
 from decimal import Decimal, InvalidOperation
+from urllib.error import HTTPError
 
 from celery import shared_task
 from django.db import transaction
@@ -27,6 +29,33 @@ from .services.tnm_t_inference import request_tnm_t_analysis
 from .services.ct_phase2_inference import request_ct_phase2_analysis
 from .services.tnm_n_inference import load_n_input, request_tnm_n_analysis
 from apps.clinical.models import ClinicalResult
+
+
+logger = logging.getLogger(__name__)
+
+
+def _log_tnm_stage_exception(analysis_id, stage, exc):
+    cause = exc
+    while cause.__cause__ is not None:
+        cause = cause.__cause__
+    http_status = cause.code if isinstance(cause, HTTPError) else None
+    response_body = None
+    if isinstance(cause, HTTPError):
+        try:
+            response_body = cause.read(4000).decode("utf-8", errors="replace")
+        except Exception:
+            response_body = "<unavailable>"
+    logger.exception(
+        "TNM analysis stage failed: analysis_id=%s stage=%s exception_type=%s "
+        "exception_message=%s http_status=%s response_body=%s",
+        analysis_id,
+        stage,
+        type(exc).__name__,
+        str(exc),
+        http_status,
+        response_body,
+        exc_info=(type(exc), exc, exc.__traceback__),
+    )
 
 
 def _mark_failed(analysis_id, *, error_message="AI analysis failed."):
@@ -369,25 +398,39 @@ def run_tnm_analysis(analysis_id):
         histology = _confirmed_histology(analysis)
 
         def run_t_chain():
-            t_payload = request_tnm_t_analysis(case_id=analysis.case_id, t_input_uri=t_input_uri)
-            phase2_payload = request_ct_phase2_analysis(
-                case_id=str(analysis.case_id), patient_id=str(analysis.case.patient_id), age=age,
-                gender=gender, histology=histology, phase1_artifact_uri=phase1_artifact_uri,
-                t_tumor_mask_uri=t_payload["tumor_mask_uri"],
-            )
-            n_input = load_n_input(phase2_payload["n_input_uri"])
-            n_payload = request_tnm_n_analysis(patient_id=analysis.case.patient_id, features=n_input["features"])
-            return t_payload, phase2_payload, n_payload
+            stage = "TNM T"
+            try:
+                t_payload = request_tnm_t_analysis(case_id=analysis.case_id, t_input_uri=t_input_uri)
+                stage = "CT Phase2"
+                phase2_payload = request_ct_phase2_analysis(
+                    case_id=str(analysis.case_id), patient_id=str(analysis.case.patient_id), age=age,
+                    gender=gender, histology=histology, phase1_artifact_uri=phase1_artifact_uri,
+                    t_tumor_mask_uri=t_payload["tumor_mask_uri"],
+                )
+                stage = "N input GCS load"
+                n_input = load_n_input(phase2_payload["n_input_uri"])
+                stage = "TNM N"
+                n_payload = request_tnm_n_analysis(patient_id=analysis.case.patient_id, features=n_input["features"])
+                return t_payload, phase2_payload, n_payload
+            except Exception as exc:
+                _log_tnm_stage_exception(analysis.id, stage, exc)
+                raise
 
         def run_m_branch():
-            # Record the prefix as soon as the export lands so the `finally`
-            # cleanup below can still find and delete it even if this branch's
-            # own M call - or the other branch - fails afterward.
-            pet_export["prefix"] = export_pet_series_for_analysis(analysis)
-            return request_tnm_m_analysis(
-                case_id=analysis.case_id, ct_gcs_uri=t_input_uri, pet_dicom_gcs_prefix=pet_export["prefix"],
-                pet_series_instance_uid=analysis.source_image_asset.series_instance_uid,
-            )
+            stage = "PET DICOM export"
+            try:
+                # Record the prefix as soon as the export lands so the `finally`
+                # cleanup below can still find and delete it even if this branch's
+                # own M call - or the other branch - fails afterward.
+                pet_export["prefix"] = export_pet_series_for_analysis(analysis)
+                stage = "TNM M"
+                return request_tnm_m_analysis(
+                    case_id=analysis.case_id, ct_gcs_uri=t_input_uri, pet_dicom_gcs_prefix=pet_export["prefix"],
+                    pet_series_instance_uid=analysis.source_image_asset.series_instance_uid,
+                )
+            except Exception as exc:
+                _log_tnm_stage_exception(analysis.id, stage, exc)
+                raise
 
         with ThreadPoolExecutor(max_workers=2) as executor:
             t_chain_future = executor.submit(run_t_chain)
@@ -414,7 +457,8 @@ def run_tnm_analysis(analysis_id):
             locked.error_message = None
             locked.save(update_fields=["status", "completed_at", "error_message"])
         return "succeeded"
-    except Exception:
+    except Exception as exc:
+        _log_tnm_stage_exception(analysis.id, "TNM orchestration/result save", exc)
         _mark_failed(analysis.id, error_message="PET-CT TNM analysis failed.")
         return "failed"
     finally:

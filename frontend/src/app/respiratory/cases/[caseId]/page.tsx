@@ -9,7 +9,7 @@ import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-
 import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
-import { ResultReviewPanel } from "./result-review-panel";
+import { ResultReviewPanel, WorkflowStatusFlow } from "./result-review-panel";
 import { CaseChatPanel } from "./case-chat-panel";
 import { PathologyGeneReviewPanel } from "./pathology-gene-imaging-workstation";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
@@ -146,7 +146,9 @@ type GeneClinicalResult = {
 };
 
 type Pdl1ClinicalResult = {
+  id?: string;
   workflow_stage: string;
+  result_status?: string;
   result_date: string | null;
   result_detail: {
     pdl1?: {
@@ -444,6 +446,7 @@ export default function RespiratoryCaseDetailPage() {
   const [resultsSyncing, setResultsSyncing] = useState(false);
   const [resultSyncNotice, setResultSyncNotice] = useState("");
   const [stageOrderNotice, setStageOrderNotice] = useState("");
+  const [confirmingPathologyResult, setConfirmingPathologyResult] = useState(false);
 
   const [searchText, setSearchText] = useState("");
   const deferredSearchText = useDeferredValue(searchText);
@@ -1084,6 +1087,11 @@ export default function RespiratoryCaseDetailPage() {
   const confirmedPdl1Result = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED",
   );
+  const submittedPathologyResult = tnmClinicalResults.find(
+    (result) => result.workflow_stage === selectedCase?.current_stage
+      && ["PATHOLOGY_GENE", "PDL1"].includes(result.workflow_stage)
+      && result.result_status === "DRAFT",
+  );
   const activePdl1Order = caseOrders.find(
     (order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status),
   );
@@ -1103,6 +1111,18 @@ export default function RespiratoryCaseDetailPage() {
     orders: caseOrders,
     aiResults: tnmAnalysisResults,
   });
+  const isPdl1PreviewWaiting = selectedInfoMenu === "PDL1"
+    && selectedCase?.current_stage === "PATHOLOGY_GENE"
+    && selectedInfoAccess.state === "WAITING";
+  const showWorkspaceWaitingBanner = selectedInfoAccess.state === "WAITING"
+    && !(selectedInfoMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN")
+    && !(selectedInfoMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "PRESCRIPTION_LIST");
+  const prescriptionActionable = selectedCase?.case_status === "ACTIVE"
+    && selectedCase.current_stage === "PRESCRIPTION";
+  const isFixedWorkspace = selectedInfoMenu === "AI_SUMMARY"
+    || (selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "PRESCRIPTION_LIST")
+    || (selectedMainMenu === "AI" && selectedAiMenu === "PDL1")
+    || (selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE");
   const selectedStageActiveOrder = caseOrders.find(
     (order) => order.order_type === selectedInfoMenu && ["ORDERED", "SCHEDULED"].includes(order.status),
   );
@@ -1196,6 +1216,34 @@ export default function RespiratoryCaseDetailPage() {
       showToast.error("오더는 생성되었지만 다음 단계 전환에 실패했습니다.", { id: toastId });
     } finally {
       setCaseRefreshVersion((current) => current + 1);
+    }
+  };
+
+  const confirmSubmittedPathologyResult = async () => {
+    if (!submittedPathologyResult?.id || confirmingPathologyResult) return;
+    const toastId = `case-pathology-confirm-${caseId}-${submittedPathologyResult.id}`;
+    setConfirmingPathologyResult(true);
+    try {
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/pathology/${submittedPathologyResult.id}/confirm/`,
+        { method: "POST" },
+      );
+      const body = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof body.detail === "string" ? body.detail : "결과 확정에 실패했습니다.");
+      }
+      showToast.success(
+        submittedPathologyResult.workflow_stage === "PDL1"
+          ? "PD-L1 결과가 확정되었습니다."
+          : "병리 결과가 확정되었습니다.",
+        { id: toastId },
+      );
+      await refreshCaseResults();
+    } catch (error) {
+      console.error(error);
+      showToast.error("결과 확정에 실패했습니다.", { id: toastId });
+    } finally {
+      setConfirmingPathologyResult(false);
     }
   };
 
@@ -1582,13 +1630,13 @@ export default function RespiratoryCaseDetailPage() {
 
   return (
     <>
-      <div className="h-full min-h-0 overflow-auto bg-[#f3f7fd] [scrollbar-gutter:stable]" aria-label="Case Workspace">
-      <div className="grid min-h-full min-w-[1100px] grid-cols-[minmax(172px,190px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(184px,200px)_116px_minmax(0,1fr)]">
+      <div className="h-full min-h-0 overflow-hidden bg-[#f3f7fd]" aria-label="Case Workspace">
+      <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(172px,190px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(184px,200px)_116px_minmax(0,1fr)]">
       <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
       <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} orders={caseOrders} aiResults={tnmAnalysisResults} onSelect={handleInfoMenuSelect} />
-      <div className="flex min-h-0 min-w-0 flex-col gap-1.5 overflow-y-auto p-2 [scrollbar-gutter:stable]">
+      <div className="flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden p-2">
       <CaseSummaryHeader key={caseId} caseData={selectedCase} />
       <CaseWorkflowBar
         currentStage={selectedCase.current_stage}
@@ -1835,14 +1883,15 @@ export default function RespiratoryCaseDetailPage() {
             setAiReviewRequest({ analysisType, requestId: Date.now() });
           }}
       />
-      <main className="min-h-0 min-w-0 flex-1 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2.5 shadow-sm [scrollbar-gutter:stable]">
+      <main className={`min-h-0 min-w-0 flex-1 overflow-x-hidden rounded-lg border border-slate-200 bg-white p-2 shadow-sm [scrollbar-gutter:stable] ${isFixedWorkspace ? "flex flex-col overflow-hidden" : "overflow-y-auto"}`}>
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "REGIMEN" && regimenLoadError && <PanelRetryError message={regimenLoadError} retrying={panelRetrying === "REGIMEN"} onRetry={() => retryPanel("REGIMEN")} />}
         {selectedMainMenu === "TREATMENT" && selectedTreatmentMenu === "FINAL_PLAN" && treatmentLoadError && <PanelRetryError message={treatmentLoadError} retrying={panelRetrying === "TREATMENT"} onRetry={() => retryPanel("TREATMENT")} />}
         {selectedMainMenu === "PRESCRIPTION" && prescriptionLoadError && <PanelRetryError message={prescriptionLoadError} retrying={panelRetrying === "PRESCRIPTION"} onRetry={() => retryPanel("PRESCRIPTION")} />}
-        <div className="mb-3 flex h-11 items-center justify-between border-b border-slate-200 px-1">
+        <div className="mb-2 flex min-h-10 items-center justify-between gap-3 border-b border-slate-200 px-1 pb-1">
           <div className="flex min-w-0 items-center gap-3">
-            <span className="h-5 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
+            <span className="h-6 w-1 shrink-0 rounded-full bg-blue-600" aria-hidden="true" />
             <div className="min-w-0">
+              <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">열람 중</p>
               <h1 className="truncate text-sm font-bold text-slate-900">
               {selectedInfoMenu === "AI_SUMMARY"
                 ? "AI 종합 분석"
@@ -1854,16 +1903,22 @@ export default function RespiratoryCaseDetailPage() {
                     selectedPrescriptionMenu
                   )}
               </h1>
-              <p className="truncate text-[10px] text-slate-400">
-              {selectedCase.patient_name} ·{" "}
-              {selectedCase.patient_code} ·{" "}
-              {selectedCase.case_code}
-              </p>
             </div>
+            <span className="hidden shrink-0 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-semibold text-blue-700 lg:inline">현재 Case 단계 · {getStageLabel(selectedCase.current_stage)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}
             {stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}
+            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && submittedPathologyResult && (
+              <button
+                type="button"
+                disabled={confirmingPathologyResult}
+                onClick={() => { void confirmSubmittedPathologyResult(); }}
+                className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
+              >
+                {confirmingPathologyResult ? "확정 중" : "결과 확인/확정"}
+              </button>
+            )}
             {selectedCase?.case_status === "ACTIVE" && canCreatePdl1Order && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
               <StageExaminationOrder caseId={caseId} orderType="PDL1" onCreated={() => { void activatePdl1AfterOrderCreation(); }} />
             )}
@@ -1885,15 +1940,15 @@ export default function RespiratoryCaseDetailPage() {
           </div>
         </div>
 
-        {selectedInfoAccess.state === "WAITING" && (
+        {showWorkspaceWaitingBanner && (
           <div role="status" className="mb-3 flex items-center gap-2 border-l-2 border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <span className="font-bold">결과 대기</span>
-            <span>{selectedInfoAccess.message}</span>
+            <span className="font-bold">{isPdl1PreviewWaiting ? "현재 PD-L1 진행 대기" : "결과 대기"}</span>
+            <span>{isPdl1PreviewWaiting ? "조직·유전자 결과 확인 후 진행 가능" : selectedInfoAccess.message}</span>
           </div>
         )}
 
         {(selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION") && (
-          <TreatmentPrescriptionOverview treatment={caseTreatmentDecision} prescriptions={casePrescriptions} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} />
+          <TreatmentPrescriptionOverview mode={selectedInfoMenu === "PRESCRIPTION" ? "PRESCRIPTION" : "TREATMENT"} treatment={caseTreatmentDecision} prescriptions={casePrescriptions} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptionActionable={prescriptionActionable} />
         )}
 
         {selectedInfoMenu === "OVERVIEW" ? (
@@ -1901,7 +1956,7 @@ export default function RespiratoryCaseDetailPage() {
             <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} orders={caseOrders} ordersLoaded={ordersLoaded} />
           </div>
         ) : selectedInfoMenu === "AI_SUMMARY" ? (
-          <div className="space-y-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-2">
             <KnowledgeRagPanel apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} />
             <AiSummaryPanel
               key={`${caseId}-${aiReviewRequest?.requestId ?? "default"}`}
@@ -1915,15 +1970,15 @@ export default function RespiratoryCaseDetailPage() {
                 XRAY_ANALYSIS: <CaseImageEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="XRAY" />,
                 CT_ANALYSIS: <CaseCtSegmentationEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={ctAnalysisResult?.id} />,
                 PET_CT_TNM_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="PET_CT_TNM" />,
-                PATHOLOGY_GENE_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="HE" />,
-                PDL1_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="PDL1" />,
+                PATHOLOGY_GENE_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="HE" fillHeight />,
+                PDL1_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="PDL1" fillHeight />,
               }}
             />
           </div>
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
-          <fieldset disabled={selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION"} className="contents"><PrescriptionSection className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,0.8fr)] items-start gap-3">
-            <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
+          <fieldset disabled={!prescriptionActionable} className="contents"><PrescriptionSection className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
               <div>
                 <p className="text-xs font-semibold text-emerald-600">
                   처방 조회
@@ -1945,7 +2000,7 @@ export default function RespiratoryCaseDetailPage() {
                 </p>
               )}
 
-              <div className="mt-3 space-y-2">
+              <div className="mt-3 min-h-0 flex-1 space-y-2 overflow-y-auto pb-20 pr-1">
                 {casePrescriptions.map((prescription) => (
                   <article
                     key={prescription.id}
@@ -2150,7 +2205,12 @@ export default function RespiratoryCaseDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-lg border border-sky-100 bg-white p-4 shadow-sm">
+            <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border border-sky-100 bg-white p-4 shadow-sm">
+              <WorkflowStatusFlow
+                stage="PRESCRIPTION"
+                prescriptionStatus={hasFinalPrescription ? "FINAL" : casePrescriptions.find((prescription) => prescription.prescription_status !== "CANCELLED")?.prescription_status}
+                caseStatus={selectedCase?.case_status}
+              />
               <p className="text-xs font-semibold text-sky-600">
                 확정 치료결정 기반
               </p>
@@ -2158,6 +2218,12 @@ export default function RespiratoryCaseDetailPage() {
                 새 처방 생성
               </h2>
 
+              {!prescriptionActionable ? (
+                <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                  <p className="font-semibold">현재 처방 생성 대기</p>
+                  <p className="mt-1 text-xs leading-5">치료계획 최종 확정 후 처방 작성 가능</p>
+                </div>
+              ) : <div className="min-h-0 flex-1 overflow-y-auto pb-20 pr-1">
               <div className="mt-3 space-y-3">
                 <label className="block">
                   <span className="text-xs font-semibold text-slate-600">
@@ -2223,6 +2289,7 @@ export default function RespiratoryCaseDetailPage() {
               <p className="mt-3 text-[11px] leading-5 text-slate-400">
                 생성 조건과 안전성 검사는 기존 처방 검증 기준을 따릅니다.
               </p>
+              </div>}
             </section>
           </PrescriptionSection></fieldset>
         ) : selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "SAFETY_CHECK" ? (
@@ -2231,6 +2298,7 @@ export default function RespiratoryCaseDetailPage() {
         selectedTreatmentMenu === "FINAL_PLAN" ? (
           <TreatmentDecisionPanel
             actionable={selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "TREATMENT"}
+            waitingMessage={selectedInfoAccess.state === "WAITING" ? selectedInfoAccess.message : undefined}
             key={caseId}
             caseId={caseId}
             apiBaseUrl={API_BASE_URL}

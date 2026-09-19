@@ -23,7 +23,7 @@ describe("CaseInfoMenu", () => {
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "ORDERED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("오더 요청됨") });
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "SCHEDULED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("예약됨") });
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("검사/분석 진행 중") });
-    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }], aiResults: [{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("병리과 판독") });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }], aiResults: [{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("병리과 검토") });
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pdl1Confirmed })).toMatchObject({ state: "COMPLETED" });
     expect(getCaseInfoAccessState({ key: "TREATMENT", currentStage: "PDL1", clinicalResults: pdl1Confirmed })).toMatchObject({ state: "ACTIONABLE" });
     for (const status of ["COMPLETED", "CANCELLED"]) {
@@ -75,7 +75,7 @@ describe("CaseInfoMenu", () => {
     expect(pathology).toBeEnabled();
     expect(pathology.getAttribute("title")).toContain("PET-CT/TNM 확정 결과");
     expect(pdl1).toBeEnabled();
-    expect(pdl1.getAttribute("title")).toContain("병리 확정 결과");
+    expect(pdl1.getAttribute("title")).toContain("호흡기내과 확인");
     fireEvent.click(pathology);
     expect(onSelect).toHaveBeenCalledWith("PATHOLOGY_GENE");
   });

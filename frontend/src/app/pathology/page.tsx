@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEv
 import Image from "next/image";
 import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
+import { showToast } from "@/components/ui/toast/toast";
 
 import {
   cancelPathologyGeneAnalysis,
@@ -18,7 +19,7 @@ import {
   uploadPdl1Input,
   uploadPathologyGeneInput,
   submitPathologyForReview,
-  confirmPdl1Result,
+  savePdl1Draft,
   type PathologyWorkstationItem,
   type PathologyCaseWorkflow,
   type PathologyCompletedExamHistory,
@@ -68,9 +69,27 @@ const geneTargets = [
   { symbol: "KEAP1", label: "KEAP1" },
 ];
 
+const pathologyOrderTypeLabels = {
+  PATHOLOGY_GENE: "조직·유전자 검사",
+  PDL1: "PD-L1 검사",
+} as const;
+
+function getPathologyOrderTypeLabel(
+  orderType: string | null | undefined,
+  fallback?: string | null,
+) {
+  if (orderType && Object.hasOwn(pathologyOrderTypeLabels, orderType)) {
+    return pathologyOrderTypeLabels[
+      orderType as keyof typeof pathologyOrderTypeLabels
+    ];
+  }
+
+  return fallback?.trim() || "검사 종류 미확인";
+}
+
 function workflowDisplayStatus(item: PathologyWorkstationItem) {
   if (item.workflow_status === "REVIEW_COMPLETED") {
-    return "의사 판독 완료";
+    return "호흡기내과 확정 완료";
   }
 
   if (
@@ -424,8 +443,18 @@ function SelectedCaseOverview({
   );
 }
 
-function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+function PathologyWsiPreview({ wsiId, alt = "H&E 원본 조직영상 미리보기" }: { wsiId: string; alt?: string }) {
+  const [previewState, setPreviewState] = useState<{
+    wsiId: string;
+    previewUrl: string | null;
+    error: string;
+    unavailable: boolean;
+    loading: boolean;
+  }>({ wsiId, previewUrl: null, error: "", unavailable: false, loading: true });
+  const isCurrentWsi = previewState.wsiId === wsiId;
+  const previewUrl = isCurrentWsi ? previewState.previewUrl : null;
+  const previewError = isCurrentWsi ? previewState.error : "";
+  const loading = !isCurrentWsi || previewState.loading;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -433,18 +462,133 @@ function PathologyWsiPreview({ wsiId }: { wsiId: string }) {
     void fetchPathologyWsiPreview(wsiId, controller.signal)
       .then((blob) => {
         if (!controller.signal.aborted) {
+          if (!blob) {
+            setPreviewState({ wsiId, previewUrl: null, error: "", unavailable: true, loading: false });
+            return;
+          }
           objectUrl = URL.createObjectURL(blob);
-          setPreviewUrl(objectUrl);
+          setPreviewState({ wsiId, previewUrl: objectUrl, error: "", unavailable: false, loading: false });
         }
       })
-      .catch(() => undefined);
+      .catch((reason: unknown) => {
+        if (controller.signal.aborted) return;
+        const message = reason instanceof Error ? reason.message : "알 수 없는 미리보기 오류";
+        console.error(`[PathologyWsiPreview] WSI ${wsiId} preview failed: ${message}`, reason);
+        setPreviewState({ wsiId, previewUrl: null, error: message, unavailable: false, loading: false });
+      });
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
   }, [wsiId]);
 
-  return previewUrl ? <Image src={previewUrl} alt="H&E 원본 조직영상 미리보기" fill unoptimized sizes="100vw" className="object-contain" /> : null;
+  return (
+    <>
+      {previewUrl ? (
+        <Image
+          src={previewUrl}
+          alt={alt}
+          fill
+          unoptimized
+          sizes="100vw"
+          className="object-contain"
+          onError={() => {
+            const message = "미리보기 이미지를 표시하지 못했습니다.";
+            console.error(`[PathologyWsiPreview] WSI ${wsiId} image decode failed`);
+            setPreviewState({ wsiId, previewUrl: null, error: message, unavailable: false, loading: false });
+          }}
+        />
+      ) : null}
+      {loading ? <p role="status" className="absolute inset-0 z-10 grid place-items-center bg-slate-950/70 text-sm text-slate-200">미리보기 불러오는 중...</p> : null}
+      {previewState.unavailable && isCurrentWsi ? <p role="status" className="absolute inset-0 z-10 grid place-items-center text-xs text-slate-400">미리보기 준비 중</p> : null}
+      {previewError ? <p role="status" className="absolute inset-0 z-10 grid place-items-center px-4 text-center text-xs text-slate-400">미리보기 준비 중</p> : null}
+    </>
+  );
+}
+
+function Pdl1AnalysisResults({
+  result,
+  analysis,
+  modelRevision,
+}: {
+  result: NonNullable<NonNullable<PathologyAiAnalysis["result_detail"]>["pdl1"]>;
+  analysis: PathologyAiAnalysis;
+  modelRevision: string;
+}) {
+  const probabilityEntries = [
+    { key: "class_0", label: "Class 0", value: result.probabilities.class_0 },
+    { key: "class_1", label: "Class 1", value: result.probabilities.class_1 },
+    { key: "class_2", label: "Class 2", value: result.probabilities.class_2 },
+  ];
+  const comparableValues = probabilityEntries.map(({ value }) => {
+    const numericValue = Number(value);
+    if (!Number.isFinite(numericValue)) return null;
+    return numericValue >= 0 && numericValue <= 1 ? numericValue * 100 : numericValue;
+  });
+  const maximumProbability = Math.max(...comparableValues.filter((value): value is number => value !== null));
+  const highestProbabilityIndexes = new Set(
+    comparableValues.flatMap((value, index) => value === maximumProbability ? [index] : []),
+  );
+
+  return (
+    <div className="mt-4 space-y-5">
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-[#C9D0F2] bg-[#F1F3FF] px-4 py-4">
+          <dt className="text-xs font-semibold text-[#5364C7]">TPS 예측 구간</dt>
+          <dd className="mt-2 text-2xl font-bold tracking-tight text-[#29366F]">
+            {result.predicted_tps_range_label ?? "-"}
+          </dd>
+        </div>
+        <div className="rounded-xl border border-[#DDE2F7] bg-white px-4 py-4">
+          <dt className="text-xs font-semibold text-slate-500">Confidence</dt>
+          <dd className="mt-2 text-2xl font-bold tracking-tight text-slate-800">
+            {percent(result.confidence)}
+          </dd>
+        </div>
+      </dl>
+
+      <section>
+        <h4 className="text-xs font-semibold text-slate-700">Class별 확률</h4>
+        <dl className="mt-2 grid grid-cols-3 gap-2 sm:gap-3">
+          {probabilityEntries.map(({ key, label, value }, index) => {
+            const isHighest = highestProbabilityIndexes.has(index);
+            return (
+              <div
+                key={key}
+                className={`rounded-lg border px-3 py-3 ${isHighest ? "border-[#AEB8EB] bg-[#F1F3FF]" : "border-slate-200 bg-white"}`}
+              >
+                <dt className={`text-xs ${isHighest ? "font-semibold text-[#5364C7]" : "text-slate-500"}`}>
+                  {label}
+                </dt>
+                <dd className={`mt-1.5 text-base ${isHighest ? "font-bold text-[#3446B8]" : "font-medium text-slate-700"}`}>
+                  {percent(value)}
+                </dd>
+                {isHighest ? <p className="mt-1 text-[10px] font-medium text-[#5364C7]">최고 확률</p> : null}
+              </div>
+            );
+          })}
+        </dl>
+      </section>
+
+      <section className="border-t border-slate-100 pt-3">
+        <h4 className="text-[11px] font-semibold text-slate-500">모델 정보</h4>
+        <dl className="mt-2 grid gap-x-4 gap-y-2 text-xs sm:grid-cols-3">
+          <div>
+            <dt className="text-slate-400">모델명</dt>
+            <dd className="mt-0.5 break-all font-medium text-slate-700">{analysis.model_name || "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-400">모델 버전</dt>
+            <dd className="mt-0.5 break-all font-medium text-slate-700">{analysis.model_version_name || "-"}</dd>
+          </div>
+          <div>
+            <dt className="text-slate-400">실행 revision</dt>
+            <dd className="mt-0.5 break-all font-medium text-slate-700">{modelRevision || "-"}</dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  );
 }
 
 function PathologyCompletedHistory() {
@@ -499,8 +643,8 @@ function PathologyCompletedHistory() {
                   </summary>
                   <div className="grid gap-5 border-t border-[#EEF0F8] px-5 py-4 lg:grid-cols-[180px_minmax(0,1fr)]">
                     <div className="relative flex h-32 items-center justify-center overflow-hidden rounded-lg border border-[#E2E5F2] bg-[#F7F8FC] text-xs text-slate-400">
-                      <span>대표 영상 미리보기</span>
                       {item.latest_wsi ? <PathologyWsiPreview wsiId={item.latest_wsi.id} /> : null}
+                      {!item.latest_wsi ? <span>대표 영상 미리보기</span> : null}
                     </div>
                     <div className="space-y-4 text-sm">
                       <dl className="grid gap-3 text-xs sm:grid-cols-3">
@@ -508,8 +652,8 @@ function PathologyCompletedHistory() {
                           ["검사", item.order_type_label ?? "-"],
                           ["검체", item.specimen?.specimen_code ?? "-"],
                           ["파일", item.latest_wsi?.original_filename ?? "-"],
-                          ["의사 판독", item.diagnostic_review?.status ?? "-"],
-                          ["판독 완료", item.diagnostic_review?.completed_at ? new Date(item.diagnostic_review.completed_at).toLocaleDateString("ko-KR") : "-"],
+                          ["제출 상태", item.diagnostic_review?.status ?? "-"],
+                          ["확정 완료", item.diagnostic_review?.completed_at ? new Date(item.diagnostic_review.completed_at).toLocaleDateString("ko-KR") : "-"],
                         ].map(([label, value]) => (
                           <div key={label}>
                             <dt className="text-slate-400">{label}</dt>
@@ -557,10 +701,12 @@ function WorkArea({
   item,
   sectionNumber,
   onGeneWsiUploaded,
+  onPdl1WsiUploaded,
 }: {
   item: PathologyWorkstationItem;
   sectionNumber: number;
   onGeneWsiUploaded: () => void;
+  onPdl1WsiUploaded: () => void;
 }) {
   const [pdl1Analyses, setPdl1Analyses] = useState<
     PathologyAiAnalysis[]
@@ -575,10 +721,8 @@ function WorkArea({
   const [pdl1RoiLayer, setPdl1RoiLayer] = useState<"Tumor" | "Tumor-JS">("Tumor");
   const [pdl1InputReady, setPdl1InputReady] = useState(Boolean(item.latest_wsi?.pdl1_input_ready));
   const [uploadingPdl1Input, setUploadingPdl1Input] = useState(false);
-  const [pdl1UploadMessage, setPdl1UploadMessage] = useState("");
   const [pathologyGeneWsiFile, setPathologyGeneWsiFile] = useState<File | null>(null);
   const [uploadingPathologyGeneWsi, setUploadingPathologyGeneWsi] = useState(false);
-  const [pathologyGeneUploadMessage, setPathologyGeneUploadMessage] = useState("");
   const [uploadDragTarget, setUploadDragTarget] = useState<"gene" | "pdl1-wsi" | "pdl1-annotation" | null>(null);
   const pathologyGeneWsiInputRef = useRef<HTMLInputElement | null>(null);
   const pdl1WsiInputRef = useRef<HTMLInputElement | null>(null);
@@ -596,8 +740,8 @@ function WorkArea({
   const [runningPathologyGene, setRunningPathologyGene] = useState(false);
   const [cancellingPathologyGene, setCancellingPathologyGene] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
-  const [pdl1Confirmation, setPdl1Confirmation] = useState<{
-    result_status: string; confirmed_at: string; pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
+  const [pdl1Draft, setPdl1Draft] = useState<{
+    result_status: string; confirmed_at: string | null; pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
   } | null>(null);
   const [pdl1TpsPercent, setPdl1TpsPercent] = useState("");
   const [pdl1Interpretation, setPdl1Interpretation] = useState("");
@@ -607,7 +751,6 @@ function WorkArea({
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
-  const [reviewSubmissionError, setReviewSubmissionError] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
@@ -617,6 +760,8 @@ function WorkArea({
   const pdl1Status = runningPdl1 ? "RUNNING" : pdl1?.status;
   const pdl1AnalysisId = pdl1?.id;
   const pdl1AnalysisStatus = pdl1?.status;
+  const pdl1TerminalToastRef = useRef<{ id: string | undefined; status: string | undefined }>({ id: pdl1AnalysisId, status: pdl1AnalysisStatus });
+  const pdl1TerminalToastIdsRef = useRef(new Set<string>());
   const pathologyResult = pathology?.result_detail?.pathology;
   const pdl1Result = pdl1?.result_detail?.pdl1;
   const pdl1ModelRevision = resultPayloadText(
@@ -645,8 +790,11 @@ function WorkArea({
     const timer = window.setTimeout(() => {
       if (item.order_type !== "PDL1" || !item.clinical_result || typeof item.clinical_result !== "object") return;
       const result = item.clinical_result as { result_status?: string; confirmed_at?: string; pdl1?: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string } };
-      if (result.result_status === "CONFIRMED" && result.confirmed_at && result.pdl1) {
-        setPdl1Confirmation({ result_status: result.result_status, confirmed_at: result.confirmed_at, pdl1: result.pdl1 });
+      if (result.result_status === "DRAFT" && result.pdl1) {
+        setPdl1Draft({ result_status: result.result_status, confirmed_at: null, pdl1: result.pdl1 });
+        setPdl1TpsPercent(result.pdl1.tps_percent);
+        setPdl1Interpretation(result.pdl1.interpretation);
+        setPdl1Note(result.pdl1.note ?? "");
       }
     }, 0);
     return () => window.clearTimeout(timer);
@@ -674,6 +822,39 @@ function WorkArea({
 
   const pathologyGeneAnalysisId = pathologyGeneAnalysis?.id;
   const pathologyGeneAnalysisStatus = pathologyGeneAnalysis?.status;
+
+  const pathologyGeneTerminalToastRef = useRef<{ id: string | undefined; status: string | undefined }>({ id: pathologyGeneAnalysisId, status: pathologyGeneAnalysisStatus });
+  const pathologyGeneTerminalToastIdsRef = useRef(new Set<string>());
+
+  useEffect(() => {
+    const previous = pdl1TerminalToastRef.current;
+    if (previous.id === pdl1AnalysisId && pdl1AnalysisId && (previous.status === "PENDING" || previous.status === "RUNNING")) {
+      if (pdl1AnalysisStatus === "SUCCEEDED" && !pdl1TerminalToastIdsRef.current.has(pdl1AnalysisId)) {
+        pdl1TerminalToastIdsRef.current.add(pdl1AnalysisId);
+        showToast.success("AI 분석이 완료되었습니다.");
+      }
+      if (pdl1AnalysisStatus === "FAILED" && !pdl1TerminalToastIdsRef.current.has(pdl1AnalysisId)) {
+        pdl1TerminalToastIdsRef.current.add(pdl1AnalysisId);
+        showToast.error("AI 분석에 실패했습니다.");
+      }
+    }
+    pdl1TerminalToastRef.current = { id: pdl1AnalysisId, status: pdl1AnalysisStatus };
+  }, [pdl1AnalysisId, pdl1AnalysisStatus]);
+
+  useEffect(() => {
+    const previous = pathologyGeneTerminalToastRef.current;
+    if (previous.id === pathologyGeneAnalysisId && pathologyGeneAnalysisId && (previous.status === "PENDING" || previous.status === "RUNNING")) {
+      if (pathologyGeneAnalysisStatus === "SUCCEEDED" && !pathologyGeneTerminalToastIdsRef.current.has(pathologyGeneAnalysisId)) {
+        pathologyGeneTerminalToastIdsRef.current.add(pathologyGeneAnalysisId);
+        showToast.success("AI 분석이 완료되었습니다.");
+      }
+      if (pathologyGeneAnalysisStatus === "FAILED" && !pathologyGeneTerminalToastIdsRef.current.has(pathologyGeneAnalysisId)) {
+        pathologyGeneTerminalToastIdsRef.current.add(pathologyGeneAnalysisId);
+        showToast.error("AI 분석에 실패했습니다.");
+      }
+    }
+    pathologyGeneTerminalToastRef.current = { id: pathologyGeneAnalysisId, status: pathologyGeneAnalysisStatus };
+  }, [pathologyGeneAnalysisId, pathologyGeneAnalysisStatus]);
 
   useEffect(() => {
     if (
@@ -704,13 +885,10 @@ function WorkArea({
     try {
       const result = await runPdl1Analysis(item.case_id);
       setPdl1Analyses((current) => [result, ...current]);
-      setMessage("PD-L1 분석 요청이 등록되었습니다.");
+      showToast.info("AI 분석을 시작했습니다.");
     } catch (reason) {
-      setError(
-        reason instanceof Error
-          ? reason.message
-          : "PD-L1 분석을 시작하지 못했습니다.",
-      );
+      console.error(reason);
+      showToast.error("AI 분석을 시작하지 못했습니다. 다시 시도해 주세요.");
     } finally {
       setRunningPdl1(false);
     }
@@ -720,33 +898,34 @@ function WorkArea({
     if (!item.examination_order?.id || !pdl1WsiFile || !pdl1AnnotationFile) return;
     setUploadingPdl1Input(true);
     setError("");
-    setPdl1UploadMessage("");
     try {
       const result = await uploadPdl1Input(item.examination_order.id, pdl1WsiFile, pdl1AnnotationFile, pdl1RoiLayer);
       setPdl1InputReady(result.upload_ready);
-      setPdl1UploadMessage("PD-L1 입력 파일이 서버에 업로드되었습니다.");
+      onPdl1WsiUploaded();
+      showToast.success("PD-L1 파일 업로드가 완료되었습니다.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "PD-L1 입력 파일 업로드에 실패했습니다.");
+      console.error(reason);
+      showToast.error("PD-L1 파일 업로드에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setUploadingPdl1Input(false);
     }
   }
 
-  async function handlePdl1Confirm() {
+  async function handlePdl1DraftSave() {
     if (!pdl1AnalysisId || !item.latest_wsi?.id || confirmingPdl1) return;
     setConfirmingPdl1(true);
     setError("");
     try {
-      const result = await confirmPdl1Result(item.case_id, {
+      const result = await savePdl1Draft(item.case_id, {
         ai_analysis_id: pdl1AnalysisId,
         source_wsi_id: item.latest_wsi.id,
         tps_percent: pdl1TpsPercent,
         interpretation: pdl1Interpretation,
         note: pdl1Note,
       });
-      setPdl1Confirmation(result);
+      setPdl1Draft(result);
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "PD-L1 결과를 확정하지 못했습니다.");
+      setError(reason instanceof Error ? reason.message : "PD-L1 결과를 저장하지 못했습니다.");
     } finally {
       setConfirmingPdl1(false);
     }
@@ -757,14 +936,14 @@ function WorkArea({
     if (item.order_type !== "PATHOLOGY_GENE" || !orderId || !pathologyGeneWsiFile) return;
     setUploadingPathologyGeneWsi(true);
     setError("");
-    setPathologyGeneUploadMessage("");
     try {
       const result = await uploadPathologyGeneInput(orderId, pathologyGeneWsiFile);
       setPathologyGeneWsiId(result.wsi_id);
       onGeneWsiUploaded();
-      setPathologyGeneUploadMessage("H&E WSI 파일이 서버에 업로드되었습니다.");
+      showToast.success("WSI 업로드가 완료되었습니다.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "H&E WSI 업로드에 실패했습니다.");
+      console.error(reason);
+      showToast.error("WSI 업로드에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setUploadingPathologyGeneWsi(false);
     }
@@ -772,18 +951,15 @@ function WorkArea({
 
   function handleGeneWsiSelection(file: File | null) {
     setPathologyGeneWsiFile(file);
-    setPathologyGeneUploadMessage("");
     setError("");
   }
 
   function handlePdl1WsiSelection(file: File | null) {
     setPdl1WsiFile(file);
-    setPdl1UploadMessage("");
   }
 
   function handlePdl1AnnotationSelection(file: File | null) {
     setPdl1AnnotationFile(file);
-    setPdl1UploadMessage("");
   }
 
   function handleUploadDrop(
@@ -803,9 +979,10 @@ function WorkArea({
     try {
       const result = await runPathologyGeneAnalysis(item.case_id, pathologyGeneWsiId);
       setPathologyGeneAnalysis(result);
-      setMessage("조직·유전자 분석 요청이 등록되었습니다.");
+      showToast.info("AI 분석을 시작했습니다.");
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "조직·유전자 분석 요청에 실패했습니다.");
+      console.error(reason);
+      showToast.error("AI 분석을 시작하지 못했습니다. 다시 시도해 주세요.");
     } finally {
       setRunningPathologyGene(false);
     }
@@ -870,6 +1047,7 @@ function WorkArea({
     currentAnalysis?.status === "SUCCEEDED" &&
     currentAnalysis.analysis_type === expectedAnalysisType &&
     item.workflow_status !== "REVIEW_COMPLETED" &&
+    (!isPdl1 || Boolean(pdl1Draft)) &&
     !alreadySubmitted &&
     !submittingReview;
   const testTitle = isPathologyGene
@@ -913,8 +1091,6 @@ function WorkArea({
     if (!canSubmitForReview || !currentAnalysis) return;
 
     setSubmittingReview(true);
-    setReviewSubmissionError("");
-
     try {
       await submitPathologyForReview(
         item.case_id,
@@ -922,12 +1098,10 @@ function WorkArea({
         currentAnalysis.id,
       );
       setReviewSubmitted(true);
+      showToast.success("병리 검사 결과를 제출했습니다.");
     } catch (reason) {
-      setReviewSubmissionError(
-        reason instanceof Error
-          ? reason.message
-          : "의사에게 제출하지 못했습니다.",
-      );
+      console.error(reason);
+      showToast.error("병리 검사 결과 제출에 실패했습니다. 다시 시도해 주세요.");
     } finally {
       setSubmittingReview(false);
     }
@@ -1051,7 +1225,9 @@ function WorkArea({
                 </div>
 
                 <div>
-                  <dt className="text-slate-500">MPP</dt>
+                  <dt className="text-slate-500">
+                    MPP <span className="text-[10px] text-slate-400">(해상도)</span>
+                  </dt>
                   <dd className="mt-1 font-semibold">
                     {item.latest_wsi.mpp == null
                       ? "-"
@@ -1067,15 +1243,25 @@ function WorkArea({
                 </div>
               </dl>
 
-              <div className="relative mt-3 flex min-h-96 flex-col items-center justify-center rounded-lg border border-[#C7CBE5] bg-slate-950 text-slate-200 shadow-inner">
-                <PathologyWsiPreview wsiId={item.latest_wsi.id} />
-                <p className="font-semibold">
-                  조직영상 미리보기
-                </p>
-
-                <p className="mt-2 text-xs text-slate-400">
-                  WSI Viewer 연결 준비 중
-                </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+              <div className="relative flex min-h-96 flex-col items-center justify-center rounded-lg border border-[#C7CBE5] bg-slate-950 text-slate-200 shadow-inner">
+                <p className="absolute left-3 top-3 z-10 rounded bg-slate-950/75 px-3 py-2 text-xs font-semibold text-white">원본 H&amp;E</p>
+                <PathologyWsiPreview wsiId={item.latest_wsi.id} alt="원본 H&E 조직영상 미리보기" />
+              </div>
+              <section className="flex min-h-96 flex-col rounded-lg border border-[#DDE2F7] bg-[#F8F8FF] text-slate-600">
+                <p className="border-b border-[#E2E5F2] bg-white px-3 py-2 text-xs font-semibold text-slate-700">AI Heatmap</p>
+                <div className="flex flex-1 items-center justify-center px-5 py-6 text-center text-sm">
+                  {pathologyGeneAnalysis?.status === "PENDING" || pathologyGeneAnalysis?.status === "RUNNING" ? (
+                    <p>AI 분석 중입니다. 완료 후 Heatmap이 표시됩니다.</p>
+                  ) : pathologyGeneAnalysis?.status === "SUCCEEDED" ? (
+                    <p>분석 결과에 Heatmap 이미지가 포함되어 있지 않습니다.</p>
+                  ) : pathologyGeneAnalysis?.status === "FAILED" ? (
+                    <p>AI 분석 결과를 확인할 수 없습니다.</p>
+                  ) : (
+                    <p>AI 분석 후 Heatmap이 표시됩니다.</p>
+                  )}
+                </div>
+              </section>
               </div>
             </>
           ) : (
@@ -1142,7 +1328,6 @@ function WorkArea({
                   </>
                 )}
               </div>
-              {pathologyGeneUploadMessage ? <p role="status" className="mt-2 text-xs text-emerald-700">{pathologyGeneUploadMessage}</p> : null}
               {error ? <p role="alert" className="mt-2 text-xs text-red-700">{error}</p> : null}
             </section>
             <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
@@ -1220,6 +1405,22 @@ function WorkArea({
                 <p className="mt-2 text-[11px] text-slate-500">클릭하거나 여기에 파일을 끌어다 놓으세요</p>
                 <input ref={pdl1WsiInputRef} type="file" accept=".svs,.tif,.tiff" disabled={uploadingPdl1Input || pdl1InputReady} className="sr-only" onChange={(event) => handlePdl1WsiSelection(event.target.files?.[0] ?? null)} />
               </div>
+              {item.latest_wsi?.id ? (
+                <div className="overflow-hidden rounded-lg border border-[#DDE2F7] bg-white">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#E8EAF5] px-3 py-2">
+                    <p className="min-w-0 truncate text-xs font-semibold text-slate-700" title={item.latest_wsi.original_filename}>
+                      {item.latest_wsi.original_filename}
+                    </p>
+                    <p className="shrink-0 text-[11px] text-slate-500">
+                      {item.latest_wsi.slide_code} · {item.latest_wsi.stain}
+                      {item.latest_wsi.mpp == null ? "" : ` · ${item.latest_wsi.mpp} μm/px`}
+                    </p>
+                  </div>
+                  <div className="relative min-h-56 bg-slate-950">
+                    <PathologyWsiPreview wsiId={item.latest_wsi.id} alt="PD-L1 원본 WSI 미리보기" />
+                  </div>
+                </div>
+              ) : null}
               <div
                 role="button"
                 tabIndex={0}
@@ -1252,7 +1453,6 @@ function WorkArea({
               <button type="button" disabled={!pdl1WsiFile || !pdl1AnnotationFile || uploadingPdl1Input || pdl1InputReady} onClick={handlePdl1Upload} className="w-fit rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F] disabled:bg-slate-300">
                 {uploadingPdl1Input ? "업로드 중..." : pdl1InputReady ? "업로드 완료" : "서버에 업로드"}
               </button>
-              {pdl1UploadMessage ? <p role="status" className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{pdl1UploadMessage}</p> : null}
               {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
             </div>
             <div className="mt-3 flex items-center justify-between rounded-xl border border-[#DDE2F7] bg-white p-3">
@@ -1316,36 +1516,17 @@ function WorkArea({
             ) : null}
 
             {currentAnalysis?.status === "SUCCEEDED" && isPdl1 && pdl1Result ? (
-              <dl className="mt-4 grid grid-cols-2 gap-3 text-sm lg:grid-cols-4">
-                {[
-                  ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
-                  ["Confidence", percent(pdl1Result.confidence)],
-                  ["Class 0 확률", percent(pdl1Result.probabilities.class_0)],
-                  ["Class 1 확률", percent(pdl1Result.probabilities.class_1)],
-                  ["Class 2 확률", percent(pdl1Result.probabilities.class_2)],
-                  ["Model revision", pdl1ModelRevision],
-                  ["모델명", pdl1?.model_name ?? "-"],
-                  ["모델 버전", pdl1?.model_version_name ?? "-"],
-                ].map(([label, value]) => (
-                  <div
-                    key={label}
-                    className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3"
-                  >
-                    <dt className="text-xs text-slate-500">{label}</dt>
-                    <dd className="mt-2 font-bold text-slate-900">{value}</dd>
-                  </div>
-                ))}
-              </dl>
+              <Pdl1AnalysisResults result={pdl1Result} analysis={currentAnalysis} modelRevision={pdl1ModelRevision} />
             ) : null}
 
             {isPdl1 && currentAnalysis?.status === "SUCCEEDED" ? (
               <section className="mt-4 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-4">
-                <h4 className="text-sm font-bold text-slate-800">PD-L1 결과 확정</h4>
-                {pdl1Confirmation ? (
+                <h4 className="text-sm font-bold text-slate-800">PD-L1 결과 작성</h4>
+                {pdl1Draft ? (
                   <div className="mt-3 text-sm text-slate-700">
-                    <p className="font-semibold text-emerald-700">확정 완료</p>
-                    <p className="mt-1">TPS {pdl1Confirmation.pdl1.tps_percent}% · {pdl1Confirmation.pdl1.interpretation}</p>
-                    <p className="mt-1 text-xs text-slate-500">확정 시각: {new Date(pdl1Confirmation.confirmed_at).toLocaleString()}</p>
+                    <p className="font-semibold text-emerald-700">분석 결과 저장 완료</p>
+                    <p className="mt-1">TPS {pdl1Draft.pdl1.tps_percent}% · {pdl1Draft.pdl1.interpretation}</p>
+                    <p className="mt-1 text-xs text-slate-500">의사에게 제출하면 호흡기내과에서 최종 확인합니다.</p>
                   </div>
                 ) : isPathologyDoctor ? (
                   <div className="mt-3 grid gap-3">
@@ -1353,10 +1534,10 @@ function WorkArea({
                     <label className="text-xs font-semibold text-slate-700">해석/판정<textarea value={pdl1Interpretation} onChange={(event) => setPdl1Interpretation(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
                     <label className="text-xs font-semibold text-slate-700">병리 소견<textarea value={pdl1Note} onChange={(event) => setPdl1Note(event.target.value)} className="mt-1 block w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm" /></label>
                     <p className="text-xs text-slate-500">근거 WSI: {item.latest_wsi?.original_filename ?? "연결된 PD-L1 WSI가 없습니다."}</p>
-                    <button type="button" disabled={!pdl1TpsPercent || !pdl1Interpretation.trim() || !item.latest_wsi?.id || confirmingPdl1} onClick={handlePdl1Confirm} className="w-fit rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{confirmingPdl1 ? "확정 중" : "PD-L1 결과 확정"}</button>
+                    <button type="button" disabled={!pdl1TpsPercent || !pdl1Interpretation.trim() || !item.latest_wsi?.id || confirmingPdl1} onClick={handlePdl1DraftSave} className="w-fit rounded-lg bg-[#3446B8] px-4 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{confirmingPdl1 ? "저장 중" : "PD-L1 결과 저장"}</button>
                   </div>
                 ) : (
-                  <p className="mt-3 text-xs text-slate-500">PD-L1 최종 확정은 병리과 의사만 수행할 수 있습니다.</p>
+                  <p className="mt-3 text-xs text-slate-500">PD-L1 결과 작성은 병리과 의사가 수행합니다.</p>
                 )}
               </section>
             ) : null}
@@ -1382,16 +1563,15 @@ function WorkArea({
             <div>
               <p className="text-sm font-semibold text-slate-800">
                 {item.workflow_status === "REVIEW_COMPLETED"
-                  ? "의사 판독 완료"
+                  ? "호흡기내과 확정 완료"
                   : alreadySubmitted
                     ? "의사에게 제출 완료"
-                    : "AI 분석 결과를 의사 판독 대상으로 제출합니다."}
+                    : "분석 결과를 호흡기내과 의사에게 제출합니다."}
               </p>
               <p className="mt-1 text-xs text-slate-500">
-                {reviewSubmissionError ||
-                  (alreadySubmitted
-                    ? "동일한 판독 작업은 중복 생성되지 않습니다."
-                    : "완료된 현재 검사 결과만 제출할 수 있습니다.")}
+                {alreadySubmitted
+                  ? "동일한 제출은 중복 생성되지 않습니다."
+                  : "완료된 현재 검사 결과만 제출할 수 있습니다."}
               </p>
             </div>
             <button
@@ -1519,21 +1699,7 @@ function WorkArea({
 
               {isPdl1 ? (
                 pdl1Result ? (
-                  <dl className="grid gap-3 text-sm sm:grid-cols-3">
-                    {[
-                      ["TPS 예측 구간", pdl1Result.predicted_tps_range_label ?? "-"],
-                      ["Confidence", percent(pdl1Result.confidence)],
-                      ["Model revision", pdl1ModelRevision],
-                      ["Class 0 확률", percent(pdl1Result.probabilities?.class_0)],
-                      ["Class 1 확률", percent(pdl1Result.probabilities?.class_1)],
-                      ["Class 2 확률", percent(pdl1Result.probabilities?.class_2)],
-                    ].map(([label, value]) => (
-                      <div key={label} className="rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
-                        <dt className="text-slate-500">{label}</dt>
-                        <dd className="mt-1 font-bold text-slate-900">{value}</dd>
-                      </div>
-                    ))}
-                  </dl>
+                  pdl1 ? <Pdl1AnalysisResults result={pdl1Result} analysis={pdl1} modelRevision={pdl1ModelRevision} /> : null
                 ) : (
                   <StateMessage variant="empty" title="저장된 AI 결과 상세가 없습니다." />
                 )
@@ -1558,16 +1724,15 @@ function WorkArea({
               <div>
                 <p className="text-sm font-semibold text-slate-700">
                   {item.workflow_status === "REVIEW_COMPLETED"
-                    ? "의사 판독 완료"
+                    ? "호흡기내과 확정 완료"
                     : alreadySubmitted
                       ? "의사에게 제출 완료"
-                      : "AI 분석 결과를 의사 판독 대상으로 제출합니다."}
+                      : "분석 결과를 호흡기내과 의사에게 제출합니다."}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
-                  {reviewSubmissionError ||
-                    (alreadySubmitted
-                      ? "동일한 판독 작업은 중복 생성되지 않습니다."
-                      : "완료된 현재 검사 결과만 제출할 수 있습니다.")}
+                  {alreadySubmitted
+                    ? "동일한 제출은 중복 생성되지 않습니다."
+                    : "완료된 현재 검사 결과만 제출할 수 있습니다."}
                 </p>
               </div>
 
@@ -1909,11 +2074,11 @@ export default function PathologyDashboardPage() {
                         </option>
 
                         <option value="PATHOLOGY_GENE">
-                          조직·유전자 검사
+                          {pathologyOrderTypeLabels.PATHOLOGY_GENE}
                         </option>
 
                         <option value="PDL1">
-                          PD-L1 검사
+                          {pathologyOrderTypeLabels.PDL1}
                         </option>
 
                       </select>
@@ -2041,7 +2206,10 @@ export default function PathologyDashboardPage() {
                           </td>
 
                           <td className="px-3 py-2.5">
-                            병리검사
+                            {getPathologyOrderTypeLabel(
+                              item.order_type,
+                              item.order_type_label ?? item.current_exam_or_task,
+                            )}
                           </td>
 
                           <td className="px-3 py-2.5">
@@ -2199,6 +2367,7 @@ export default function PathologyDashboardPage() {
                   item={currentWorkflowOrder}
                   sectionNumber={1}
                   onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                  onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
                 />
               ) : selectedWorkflow.orders.length === 0 ? (
                 <StateMessage

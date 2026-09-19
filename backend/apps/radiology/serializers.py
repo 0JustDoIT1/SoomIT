@@ -141,6 +141,11 @@ class RadiologyImageAssetCreateSerializer(serializers.ModelSerializer):
 
     def validate_storage_uri(self, value):
         order = self.context["order"]
+        if order.order_type in {
+            ExaminationOrder.OrderType.CT,
+            ExaminationOrder.OrderType.PET_CT_TNM,
+        }:
+            return value
         if CaseImageAsset.objects.filter(
             examination_order=order,
             storage_uri=value,

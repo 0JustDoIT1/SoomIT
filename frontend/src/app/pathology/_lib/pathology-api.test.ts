@@ -28,7 +28,6 @@ describe("pathology API base URL", () => {
       casePathologyDiagnosesApiUrl,
       casePathologyReportsApiUrl,
       pathologyDiagnosisApiUrl,
-      pathologyDiagnosisConfirmApiUrl,
       specimenSlidesApiUrl,
     } = await import("./pathology-api");
 
@@ -50,9 +49,6 @@ describe("pathology API base URL", () => {
     );
     expect(pathologyDiagnosisApiUrl("diagnosis/1")).toBe(
       "https://api.example.test/api/pathology/diagnoses/diagnosis%2F1/",
-    );
-    expect(pathologyDiagnosisConfirmApiUrl("diagnosis/1")).toBe(
-      "https://api.example.test/api/pathology/diagnoses/diagnosis%2F1/confirm/",
     );
   });
 });

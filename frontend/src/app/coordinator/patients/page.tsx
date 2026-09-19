@@ -6,6 +6,7 @@ import Script from "next/script";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "react-day-picker/locale";
+import { showToast } from "@/components/ui/toast/toast";
 
 type Patient = {
   id: string;
@@ -266,7 +267,7 @@ export default function PatientsPage() {
       const data = await fetchPatientDetail(patientId);
       setSelectedPatient(data);
     } catch (err) {
-      alert(
+      showToast.error(
         err instanceof Error
           ? err.message
           : "환자 상세 조회 중 오류가 발생했습니다."
@@ -297,7 +298,7 @@ export default function PatientsPage() {
       if (!response.ok) throw new Error("문진 내용을 불러오지 못했습니다.");
       setQuestionnaire(await response.json());
       setQuestionnairePatientName(patient.name);
-    } catch (err) { alert(err instanceof Error ? err.message : "문진 내용을 불러오지 못했습니다."); }
+    } catch (err) { showToast.error(err instanceof Error ? err.message : "문진 내용을 불러오지 못했습니다."); }
     finally { setQuestionnaireLoading(false); }
   };
 
@@ -390,6 +391,7 @@ export default function PatientsPage() {
       await fetchPatients();
       setIsCreateOpen(false);
       setCreateForm(initialCreateForm);
+      showToast.success("환자가 등록되었습니다.");
     } catch (err) {
       setCreateError(
         err instanceof Error
@@ -468,6 +470,7 @@ export default function PatientsPage() {
       );
       setSelectedPatient(updatedPatient);
       setIsUpdateOpen(false);
+      showToast.success("환자 정보가 수정되었습니다.");
     } catch (err) {
       setUpdateError(
         err instanceof Error

@@ -1,4 +1,6 @@
-﻿from django.db import transaction
+﻿import logging
+
+from django.db import transaction
 from django.db.models import Case, Count, IntegerField, Prefetch, Q, When
 from django.shortcuts import get_object_or_404
 from django.http import HttpResponse
@@ -20,7 +22,13 @@ from apps.accounts.permissions import IsActiveStaff, IsPathologyStaff, IsTechnol
 from apps.ai_results.models import AiAnalysis, AiResult, AnalysisType, ModelVersion
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.cases.services.pathology_orders import ACTIVE_ORDER_STATUSES
-from apps.clinical.models import ClinicalResult, PDL1Result
+from apps.clinical.models import (
+    ClinicalResult,
+    GeneFinding,
+    GeneResult,
+    PathologyResult,
+    PDL1Result,
+)
 from apps.radiology.views import _PassthroughContentNegotiation
 
 from .models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
@@ -30,10 +38,9 @@ from .serializers import (
     PDL1AnalysisRunSerializer,
     PDL1InputUploadSerializer,
     PathologyDiagnosisSerializer,
-    PathologyDiagnosisConfirmSerializer,
     PathologyDiagnosisWriteSerializer,
     PathologyReviewSubmissionSerializer,
-    PDL1ResultConfirmSerializer,
+    PDL1ResultDraftSerializer,
     PathologyReportSerializer,
     PathologySpecimenSerializer,
     PathologyWorkItemSerializer,
@@ -49,10 +56,13 @@ from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
 from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
 from .services.pathology_storage import (
     PathologyStorageError,
+    create_and_upload_wsi_preview,
     download_pathology_wsi_preview,
     read_svs_mpp,
     upload_pathology_wsi,
 )
+
+logger = logging.getLogger(__name__)
 
 PATHOLOGY_STAFF_PERMISSIONS = [IsAuthenticated, IsActiveStaff, IsTechnologist, IsPathologyStaff]
 
@@ -144,7 +154,6 @@ def _workstation_queryset(request):
     ).order_by("-created_at")
     confirmed_queryset = ClinicalResult.objects.filter(
         workflow_stage__in=["PATHOLOGY_GENE", "PDL1"],
-        result_status=ClinicalResult.ResultStatus.CONFIRMED,
     ).select_related(
         "pathology_detail", "pdl1_detail__source_wsi", "confirmed_by_user", "examination_order",
         "source_image_asset__examination_order",
@@ -258,36 +267,12 @@ class PathologyDiagnosisDetailAPIView(PathologyDiagnosisAPIViewMixin, APIView):
         return Response(PathologyDiagnosisSerializer(diagnosis).data)
 
 
-class PathologyDiagnosisConfirmAPIView(PathologyDiagnosisDetailAPIView):
-    @transaction.atomic
-    def post(self, request, diagnosis_id):
-        diagnosis = self.get_object(diagnosis_id)
-        serializer = PathologyDiagnosisConfirmSerializer(
-            data=request.data,
-            context={"diagnosis": diagnosis},
+class PathologyClinicalConfirmationDisabledAPIView(PathologyDoctorAPIViewMixin, APIView):
+    def post(self, request, *args, **kwargs):
+        return Response(
+            {"detail": "Final clinical confirmation is performed by pulmonology after submission."},
+            status=status.HTTP_403_FORBIDDEN,
         )
-        serializer.is_valid(raise_exception=True)
-        work_item = serializer.context["work_item"]
-
-        if diagnosis.result_status != ClinicalResult.ResultStatus.CONFIRMED:
-            diagnosis.result_status = ClinicalResult.ResultStatus.CONFIRMED
-            diagnosis.confirmed_by_user = request.user
-            diagnosis.confirmed_at = timezone.now()
-            diagnosis.save(
-                update_fields=[
-                    "result_status",
-                    "confirmed_by_user",
-                    "confirmed_at",
-                    "updated_at",
-                ],
-            )
-        if work_item.status != PathologyWorkItem.Status.COMPLETED:
-            work_item.status = PathologyWorkItem.Status.COMPLETED
-            work_item.completed_at = diagnosis.confirmed_at or timezone.now()
-            work_item.save(
-                update_fields=["status", "completed_at", "updated_at"],
-            )
-        return Response(PathologyDiagnosisSerializer(diagnosis).data)
 
 
 class CasePathologyAiAnalysisListAPIView(PathologyReadAPIViewMixin, ListAPIView):
@@ -334,6 +319,10 @@ class PathologyOrderPathologyGeneInputUploadAPIView(PathologyStaffAPIViewMixin, 
                 order_id=order.id,
                 uploaded_file=wsi_file,
             )
+            try:
+                create_and_upload_wsi_preview(wsi_uri=wsi_uri, wsi_source=wsi_file)
+            except PathologyStorageError:
+                logger.exception("Failed to create pathology gene WSI preview: wsi_uri=%s", wsi_uri)
 
             wsi_file.seek(0)
             file_sha256 = sha256(wsi_file.read()).hexdigest()
@@ -560,6 +549,10 @@ class PathologyOrderPDL1InputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
                 data=annotation_bytes, hospital_id=hospital_id, case_id=case_id, order_id=order.id,
                 kind="annotation", filename=annotation_file.name, content_type=annotation_file.content_type,
             )
+            try:
+                create_and_upload_wsi_preview(wsi_uri=wsi_uri, wsi_source=wsi_bytes)
+            except PathologyStorageError:
+                logger.exception("Failed to create PD-L1 WSI preview: wsi_uri=%s", wsi_uri)
         except PDL1StorageError:
             if wsi_uri:
                 delete_pdl1_input(wsi_uri)
@@ -709,22 +702,25 @@ class PathologyWorkstationListAPIView(PathologyReadAPIViewMixin, ListAPIView):
                 )
             ).distinct()
 
-        representatives = []
-        seen_case_ids = set()
         ordered_work_items = sorted(
             queryset,
             key=lambda item: (
                 _pathology_order(item).created_at
                 if _pathology_order(item) is not None
                 else item.created_at,
-                item.updated_at,
+                item.created_at,
+                str(item.pk),
             ),
             reverse=True,
         )
+        representatives = []
+        seen_order_ids = set()
         for work_item in ordered_work_items:
-            if work_item.case_id in seen_case_ids:
-                continue
-            seen_case_ids.add(work_item.case_id)
+            order = _pathology_order(work_item)
+            if order is not None:
+                if order.id in seen_order_ids:
+                    continue
+                seen_order_ids.add(order.id)
             representatives.append(work_item)
 
         representatives = [
@@ -881,10 +877,10 @@ class PathologyCompletedExamHistoryAPIView(PathologyStaffAPIViewMixin, APIView):
         )
 
 
-class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
+class PDL1ResultDraftAPIView(PathologyDoctorAPIViewMixin, APIView):
     @transaction.atomic
     def post(self, request, case_id):
-        serializer = PDL1ResultConfirmSerializer(data=request.data)
+        serializer = PDL1ResultDraftSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         hospital_id = pathology_hospital_id(request)
         case = get_object_or_404(
@@ -928,7 +924,7 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
             .first()
         )
         if clinical_result and clinical_result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
-            return Response({"detail": "PD-L1 result is already confirmed."}, status=status.HTTP_409_CONFLICT)
+            return Response({"detail": "PD-L1 result is already confirmed by pulmonology."}, status=status.HTTP_409_CONFLICT)
         if clinical_result is None:
             clinical_result = ClinicalResult.objects.create(
                 case=case,
@@ -936,9 +932,7 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
                 workflow_stage=WorkflowStage.PDL1,
                 source_image_asset=wsi.image_asset,
                 reviewed_ai_result=ai_result,
-                result_status=ClinicalResult.ResultStatus.CONFIRMED,
-                confirmed_by_user=request.user,
-                confirmed_at=timezone.now(),
+                result_status=ClinicalResult.ResultStatus.DRAFT,
             )
             detail = PDL1Result.objects.create(
                 clinical_result=clinical_result,
@@ -950,10 +944,7 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
         else:
             clinical_result.source_image_asset = wsi.image_asset
             clinical_result.reviewed_ai_result = ai_result
-            clinical_result.result_status = ClinicalResult.ResultStatus.CONFIRMED
-            clinical_result.confirmed_by_user = request.user
-            clinical_result.confirmed_at = timezone.now()
-            clinical_result.save(update_fields=["source_image_asset", "reviewed_ai_result", "result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+            clinical_result.save(update_fields=["source_image_asset", "reviewed_ai_result", "updated_at"])
             detail = getattr(clinical_result, "pdl1_detail", None)
             if detail is None:
                 detail = PDL1Result.objects.create(clinical_result=clinical_result)
@@ -966,8 +957,8 @@ class PDL1ResultConfirmAPIView(PathologyDoctorAPIViewMixin, APIView):
             "id": str(clinical_result.id),
             "workflow_stage": clinical_result.workflow_stage,
             "result_status": clinical_result.result_status,
-            "confirmed_by_user_id": str(request.user.id),
-            "confirmed_at": clinical_result.confirmed_at,
+            "confirmed_by_user_id": None,
+            "confirmed_at": None,
             "pdl1": {"tps_percent": detail.tps_percent, "interpretation": detail.interpretation, "note": detail.note, "source_wsi_id": str(detail.source_wsi_id)},
         }, status=status.HTTP_201_CREATED)
 
@@ -978,13 +969,14 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
         ExaminationOrder.OrderType.PDL1: AnalysisType.PDL1_ANALYSIS,
     }
 
+    @transaction.atomic
     def post(self, request, case_id):
         serializer = PathologyReviewSubmissionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         hospital_id = pathology_hospital_id(request)
 
         case = get_object_or_404(
-            LungCancerCase.objects.select_related("patient"),
+            LungCancerCase.objects.select_for_update(of=("self",)).select_related("patient"),
             id=case_id,
             patient__hospital_id=hospital_id,
         )
@@ -1059,6 +1051,38 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
                 {"ai_analysis_id": "?꾩옱 寃?ъ쓽 理쒖떊 AI 遺꾩꽍留??쒖텧?????덉뒿?덈떎."}
             )
 
+        clinical_result = (
+            ClinicalResult.objects.select_for_update()
+            .filter(
+                case=case,
+                examination_order=order,
+                workflow_stage=order.order_type,
+            )
+            .first()
+        )
+        if clinical_result and clinical_result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response(
+                {"detail": "This result is already confirmed by pulmonology."},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if order.order_type == ExaminationOrder.OrderType.PATHOLOGY_GENE:
+            clinical_result = self._prepare_pathology_gene_draft(
+                case=case,
+                order=order,
+                analysis=analysis,
+                clinical_result=clinical_result,
+            )
+        elif (
+            clinical_result is None
+            or clinical_result.result_status != ClinicalResult.ResultStatus.DRAFT
+            or not hasattr(clinical_result, "pdl1_detail")
+            or clinical_result.reviewed_ai_result_id != analysis.ai_result.id
+        ):
+            raise ValidationError(
+                {"detail": "Save the PD-L1 result before submitting it to the doctor."}
+            )
+
         try:
             review_work_item, created = submit_for_review(work_item)
         except ReviewSubmissionError as exc:
@@ -1073,6 +1097,60 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
             },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
+
+    @staticmethod
+    def _prepare_pathology_gene_draft(*, case, order, analysis, clinical_result):
+        ai_result = analysis.ai_result
+        pathology_ai = getattr(ai_result, "pathology_detail", None)
+        if pathology_ai is None:
+            raise ValidationError(
+                {"ai_analysis_id": "A pathology subtype result is required before submission."}
+            )
+
+        if clinical_result is None:
+            clinical_result = ClinicalResult.objects.create(
+                case=case,
+                examination_order=order,
+                workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+                source_image_asset=analysis.source_image_asset,
+                reviewed_ai_result=ai_result,
+                result_status=ClinicalResult.ResultStatus.DRAFT,
+            )
+        else:
+            clinical_result.source_image_asset = analysis.source_image_asset
+            clinical_result.reviewed_ai_result = ai_result
+            clinical_result.save(
+                update_fields=["source_image_asset", "reviewed_ai_result", "updated_at"]
+            )
+
+        PathologyResult.objects.update_or_create(
+            clinical_result=clinical_result,
+            defaults={
+                "malignancy_status": pathology_ai.malignancy_assessment,
+                "histologic_type": pathology_ai.predicted_histologic_type,
+                "subtype": pathology_ai.predicted_subtype,
+            },
+        )
+        gene_result, _ = GeneResult.objects.get_or_create(
+            clinical_result=clinical_result,
+        )
+        gene_result.gene_findings.all().delete()
+        assessment_map = {
+            "PREDICTED_POSITIVE": GeneFinding.Assessment.LIKELY_POSITIVE,
+            "PREDICTED_NEGATIVE": GeneFinding.Assessment.LIKELY_NEGATIVE,
+            "INDETERMINATE": GeneFinding.Assessment.INDETERMINATE,
+        }
+        GeneFinding.objects.bulk_create(
+            [
+                GeneFinding(
+                    gene_result=gene_result,
+                    gene_symbol=finding.gene_symbol,
+                    assessment=assessment_map[finding.predicted_status],
+                )
+                for finding in ai_result.gene_ai_results.all()
+            ]
+        )
+        return clinical_result
 
 
 class PathologyWorkItemDetailAPIView(RetrieveAPIView):

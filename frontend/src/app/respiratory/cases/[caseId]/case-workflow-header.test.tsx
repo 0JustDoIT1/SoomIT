@@ -2,10 +2,16 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { CASE_STAGES, CaseWorkflowBar } from "./case-workflow-header";
+import { CASE_STAGES, CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { CurrentActionQueue } from "./current-action-queue";
 
 describe("Case workflow first stage", () => {
+  it("labels the actual Case stage independently from the viewed workspace", () => {
+    render(<CaseSummaryHeader caseData={{ patient_name: "김환자", patient_code: "P001", case_code: "C001", primary_doctor_name: "이의사", current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" }} />);
+    expect(screen.getByText("현재 Case 단계")).toBeTruthy();
+    expect(screen.getByText("조직/유전자")).toBeTruthy();
+  });
+
   it("groups PATHOLOGY_GENE with pathology and distinguishes progressed, current and upcoming stages", () => {
     const { container } = render(<CaseWorkflowBar currentStage="PATHOLOGY_GENE" />);
     expect(screen.getByText("조직/유전자")).toBeTruthy();
@@ -35,6 +41,7 @@ describe("Case workflow first stage", () => {
 
   it("shows the specified empty state without inventing work", () => {
     render(<CurrentActionQueue actions={[]} onNavigate={vi.fn()} />);
+    expect(screen.getByText("Case 전체 업무")).toBeTruthy();
     expect(screen.getByText("현재 확인 가능한 검토 작업이 없습니다.")).toBeTruthy();
   });
 

@@ -5,14 +5,16 @@ import type { AuthorizedFetch, RegimenCandidate, TreatmentDecision } from "./tre
 import { DecisionModal, DecisionMethodSelect, DecisionStatus, decisionTriggerClass } from "./decision-ui";
 import { TreatmentEvidencePanel } from "./treatment-evidence-panel";
 import { TreatmentOpinionPanel } from "./treatment-opinion-panel";
+import { WorkflowStatusFlow } from "./result-review-panel";
 import { showToast } from "@/components/ui/toast/toast";
 
-type Props = { actionable?: boolean; caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; onTreatmentChanged?: (decision: TreatmentDecision, confirmed: boolean) => void; onTreatmentConfirmed?: (decision: TreatmentDecision) => void };
+type Props = { actionable?: boolean; waitingMessage?: string; caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; onTreatmentChanged?: (decision: TreatmentDecision, confirmed: boolean) => void; onTreatmentConfirmed?: (decision: TreatmentDecision) => void };
 const TYPES = [["CHEMOTHERAPY", "항암화학요법"], ["TARGETED_THERAPY", "표적치료"], ["IMMUNOTHERAPY", "면역치료"], ["COMBINATION", "병합치료"], ["RADIATION", "방사선치료"], ["SURGERY", "수술"], ["SUPPORTIVE_CARE", "완화치료"], ["OBSERVATION", "경과관찰"], ["OTHER", "기타"]] as const;
 
-export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, authorizedFetch, onTreatmentChanged, onTreatmentConfirmed }: Props) {
+export function TreatmentDecisionPanel({ actionable = true, waitingMessage, caseId, apiBaseUrl, authorizedFetch, onTreatmentChanged, onTreatmentConfirmed }: Props) {
   const [open, setOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
+  const [decisionStatus, setDecisionStatus] = useState<string | undefined>();
   const [candidates, setCandidates] = useState<RegimenCandidate[]>([]);
   const [selected, setSelected] = useState("");
   const [treatmentType, setTreatmentType] = useState("");
@@ -39,6 +41,7 @@ export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, 
         if (!active) return;
         setCandidates(nextCandidates);
         setConfirmed(nextDecision?.decision_status === "CONFIRMED");
+        setDecisionStatus(nextDecision?.decision_status ?? undefined);
         setSelected(nextDecision?.selected_regimen ?? ""); setTreatmentType(nextDecision?.treatment_type ?? "");
         setAiAction(nextDecision?.ai_recommendation_action ?? "NOT_USED"); setPlan(nextDecision?.treatment_plan ?? "");
         setTargetedPlan(nextDecision?.targeted_therapy_plan ?? ""); setRationale(nextDecision?.rationale ?? "");
@@ -69,6 +72,7 @@ export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, 
       if (!confirmResponse.ok) throw new Error(confirmedPayload.detail || "치료계획 확정에 실패했습니다.");
       const confirmedDecision = confirmedPayload as TreatmentDecision;
       setConfirmed(true);
+      setDecisionStatus("CONFIRMED");
       setOpen(false);
       showToast.success("치료계획이 확정되었습니다.", { id: toastId });
       if (onTreatmentConfirmed) onTreatmentConfirmed(confirmedDecision);
@@ -84,11 +88,12 @@ export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, 
 
   if (loading) return <section className="rounded-lg bg-white p-4 text-sm text-slate-500">치료결정 정보를 불러오는 중입니다.</section>;
   const canSave = Boolean(treatmentType && plan.trim());
-  return <div className="space-y-4">
+  return <div className="space-y-3">
+    <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,13fr)_minmax(280px,7fr)]">
     <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
       <header><p className="text-xs font-semibold text-emerald-600">호흡기내과 치료 결정</p><h2 className="mt-1 text-lg font-bold text-slate-800">최종 치료계획</h2><p className="mt-1 text-xs text-slate-500">확정 임상 결과와 치료요법 후보를 검토한 뒤 담당의가 저장·확정합니다.</p></header>
-      <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{plan || "등록된 치료계획이 없습니다."}</p>
-      <DecisionStatus error={!open ? error : undefined} message={confirmed ? "치료계획 확정 완료" : !actionable ? "선행 단계 완료 후 치료계획을 확정할 수 있습니다." : undefined} />
+      <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{plan || (actionable ? "등록된 치료계획이 없습니다." : "현재 치료계획을 작성할 수 없습니다.")}</p>
+      <DecisionStatus error={!open ? error : undefined} message={confirmed ? "치료계획 확정 완료" : undefined} />
       {!confirmed && <button type="button" disabled={!actionable} onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-4"}>결과 입력 및 처리</button>}
       {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. 저장 후 확정하여 처방 단계로 진행합니다." busy={busy} error={error} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
 
@@ -103,7 +108,8 @@ export function TreatmentDecisionPanel({ actionable = true, caseId, apiBaseUrl, 
 
       </DecisionModal>}
     </section>
-    <TreatmentEvidencePanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} />
-    <TreatmentOpinionPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} />
+    <aside className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"><WorkflowStatusFlow stage="TREATMENT" treatmentStatus={decisionStatus ?? (actionable ? "READY" : undefined)} />{!actionable && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><p className="font-semibold">현재 치료결정 진행 대기</p><p className="mt-1 leading-4">{waitingMessage || "선행 결과 확정 후 치료계획 작성 가능"}</p></div>}<div className="mt-3 border-t border-slate-100 pt-3 text-[11px]"><p className="font-semibold text-slate-700">치료계획 작성</p><p className="mt-1 text-slate-500">{actionable ? "작성 및 확정 가능" : "선행 결과 대기"}</p></div></aside>
+    </div>
+    <div className="grid items-start gap-3 lg:grid-cols-2"><TreatmentEvidencePanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /><TreatmentOpinionPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /></div>
   </div>;
 }

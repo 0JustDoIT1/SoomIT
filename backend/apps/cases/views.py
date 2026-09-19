@@ -16,7 +16,7 @@ from django.utils import timezone
 from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff, get_token_hospital_id
 from apps.accounts.models import User
 from apps.notifications.services import create_in_app_staff_notifications
-from apps.pathology.models import PathologySpecimen, WholeSlideImage
+from apps.pathology.models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from apps.patients.models import Appointment
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
@@ -66,6 +66,7 @@ from .services.pathology_orders import (
     create_follow_up_pathology_order,
     has_active_pathology_order,
     has_confirmed_pathology_gene_result,
+    has_pathology_gene_review_completed,
 )
 
 
@@ -388,11 +389,8 @@ class DoctorCaseDicomWebInstanceAPIView(APIView):
         asset = _doctor_dicom_asset_or_404(request, case_id, asset_id)
         if not asset.study_instance_uid or not asset.series_instance_uid:
             return Response({"detail": "DICOM Series metadata is not ready."}, status=status.HTTP_409_CONFLICT)
-        accept = request.headers.get("Accept")
-        if accept not in {"application/dicom", 'multipart/related; type="application/dicom"'}:
-            accept = "application/dicom"
         try:
-            result = retrieve_instance(asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid, accept=accept)
+            result = retrieve_instance(asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid)
         except OrthancDicomWebError:
             return Response({"detail": "DICOM instance를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
         response = HttpResponse(result.content, content_type=result.content_type)
@@ -592,7 +590,7 @@ class DoctorFollowUpPathologyOrderAPIView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        pathology_gene_completed = has_confirmed_pathology_gene_result(case)
+        pathology_gene_completed = has_pathology_gene_review_completed(case)
         return Response(
             {
                 "pathology_gene_review_completed": pathology_gene_completed,
@@ -791,6 +789,96 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
                 "decided_at": decision.decided_at,
             },
         })
+
+
+class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    @transaction.atomic
+    def post(self, request, case_id, result_id):
+        case = LungCancerCase.objects.select_for_update().filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
+        if case is None:
+            return Response(
+                {"detail": "The active case assigned to this doctor was not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        result = ClinicalResult.objects.select_for_update().filter(
+            id=result_id,
+            case=case,
+            workflow_stage__in=[WorkflowStage.PATHOLOGY_GENE, WorkflowStage.PDL1],
+        ).first()
+        if result is None:
+            return Response(
+                {"detail": "The submitted pathology result was not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response(
+                {"detail": "The result is already confirmed."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if case.current_stage != result.workflow_stage:
+            return Response(
+                {"detail": "Only a result for the current workflow stage can be confirmed."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if result.examination_order_id is None:
+            return Response(
+                {"detail": "The pathology result is not linked to an examination order."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        review = (
+            PathologyWorkItem.objects.select_for_update()
+            .filter(
+                case=case,
+                examination_order_id=result.examination_order_id,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+                status__in=[
+                    PathologyWorkItem.Status.PENDING,
+                    PathologyWorkItem.Status.IN_PROGRESS,
+                ],
+            )
+            .order_by("-created_at")
+            .first()
+        )
+        if review is None:
+            return Response(
+                {"detail": "The pathology result has not been submitted to the doctor."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        confirmed_at = timezone.now()
+        result.result_status = ClinicalResult.ResultStatus.CONFIRMED
+        result.confirmed_by_user = request.user
+        result.confirmed_at = confirmed_at
+        result.save(
+            update_fields=[
+                "result_status",
+                "confirmed_by_user",
+                "confirmed_at",
+                "updated_at",
+            ]
+        )
+        review.status = PathologyWorkItem.Status.COMPLETED
+        review.completed_at = confirmed_at
+        review.save(update_fields=["status", "completed_at", "updated_at"])
+
+        return Response(
+            {
+                "id": str(result.id),
+                "workflow_stage": result.workflow_stage,
+                "result_status": result.result_status,
+                "confirmed_by_user_id": str(result.confirmed_by_user_id),
+                "confirmed_at": result.confirmed_at,
+            }
+        )
 
 
 class DoctorXrayWorkflowAPIView(APIView):

@@ -93,6 +93,37 @@ class DoctorFollowUpPathologyOrderAPITests(TestCase):
         self.subtype_order.refresh_from_db()
         self.assertEqual(self.subtype_order.order_type, ExaminationOrder.OrderType.PATHOLOGY_GENE)
 
+    def test_submitted_diagnostic_review_allows_follow_up_pdl1_order(self):
+        review_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=self.subtype_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+
+        response = self.client.post(self.url, self.payload("PDL1"), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertNotEqual(response.data["examination_order_id"], str(review_item.examination_order_id))
+        self.assertTrue(self.client.get(self.url).data["pathology_gene_review_completed"])
+
+    def test_rejects_follow_up_pdl1_order_outside_pathology_stage(self):
+        PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=self.subtype_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        response = self.client.post(self.url, self.payload("PDL1"), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case, order_type=ExaminationOrder.OrderType.PDL1,
+        ).count(), 0)
+
     def test_blocks_same_type_active_duplicate(self):
         self.confirm_subtype()
         self.client.post(self.url, self.payload("PDL1"), format="json")

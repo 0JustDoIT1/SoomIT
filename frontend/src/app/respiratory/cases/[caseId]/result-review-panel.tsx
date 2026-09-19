@@ -1,9 +1,9 @@
 import { resultStatusLabel } from "./decision-status-labels";
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
-import type { ReactNode } from "react";
+import { useCallback, useState, type ReactNode } from "react";
 import { CaseImageEvidence } from "./case-image-evidence";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
-import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
+import { CaseCtSegmentationEvidence, type CtEvidenceInfo } from "./case-ct-segmentation-evidence";
 
 type ResultRecord = Record<string, unknown>;
 type ClinicalResult = { workflow_stage: string; exam_name?: string; result_status?: string; result_status_label?: string; result_date?: string | null; result_detail?: unknown };
@@ -18,6 +18,8 @@ const STAGE_CONFIG: Record<string, { title: string; description: string; departm
 };
 
 export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi, showEvidence = true, showWorkspaceHeader = true, compactRail = false, lastSyncedAt, syncingResults = false, onRefreshResults, syncNotice = "", caseId, apiBaseUrl, authorizedFetch, specialistAction }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void; showEvidence?: boolean; showWorkspaceHeader?: boolean; compactRail?: boolean; lastSyncedAt?: Date | null; syncingResults?: boolean; onRefreshResults?: () => void; syncNotice?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; specialistAction?: ReactNode }) {
+  const [ctEvidenceInfo, setCtEvidenceInfo] = useState<CtEvidenceInfo>({});
+  const onCtEvidenceInfoChange = useCallback((info: CtEvidenceInfo) => setCtEvidenceInfo((current) => ({ ...current, ...info })), []);
   const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
   const ctDetail = stage === "CT" ? asRecord(asRecord(aiResult?.result_detail)?.ct) : null;
@@ -27,7 +29,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const clinicalRole = imaging || stage === "PET_CT_TNM" ? "호흡기내과 최종 판단" : "병리과 판독";
   const isImageWorkspace = showEvidence && (stage === "XRAY" || stage === "CT");
   return (
-    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex min-h-[min(720px,calc(100dvh-240px))] flex-col" : ""}`}>
+    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex min-h-[min(700px,calc(100dvh-190px))] flex-col" : ""}`}>
       {showWorkspaceHeader && <header className={`flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 ${isImageWorkspace ? "py-2" : "py-2.5"}`}>
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
@@ -46,10 +48,10 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
           <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
           <p className="whitespace-nowrap text-[10px] text-slate-400">영상 조작은 뷰어 안에서 바로 수행합니다.</p>
         </div>
-        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
+        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
-      <aside className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-y-auto border border-slate-200 bg-white p-2 [scrollbar-gutter:stable] [&>section:nth-of-type(1)]:order-2 [&>section:nth-of-type(2)]:order-1 [&>section:nth-of-type(3)]:order-3" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
+      <aside className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-y-auto border border-slate-200 bg-white p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
         <SourcePanel compact={isImageWorkspace} eyebrow={imaging ? "호흡기내과" : config.department} title={clinicalRole} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
           {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
           {specialistAction && !clinicalError && clinicalResult?.result_status !== "CONFIRMED" && <div className="flex justify-center px-3 pb-3">{specialistAction}</div>}
@@ -57,11 +59,16 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         <SourcePanel compact={isImageWorkspace} eyebrow="AI 분석" title="AI 분석 후보" meta={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
           {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
         </SourcePanel>
-        <AiTraceabilityCard aiResult={aiResult} />
+        <WorkflowStatusFlow
+          stage={stage}
+          aiStatus={aiResult?.status}
+          clinicalStatus={clinicalResult?.result_status}
+          hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+        />
+        {stage === "CT" ? <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /> : <>{isImageWorkspace && <ResultStatusCard clinicalRole={clinicalRole} clinicalStatus={clinicalResult?.result_status_label ?? clinicalResult?.result_status} aiStatus={aiResult?.status_label ?? aiResult?.status} />}<AiTraceabilityCard aiResult={aiResult} /></>}
+        {stage === "CT" && (onRefreshResults || lastSyncedAt) && <CtResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
+        {stage !== "CT" && !isImageWorkspace && (onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
         {!isImageWorkspace && <AiInputTraceabilityCard aiResult={aiResult} />}
-        <ReviewWorkflowRail imaging={imaging} aiStatus={aiResult?.status} clinicalStatus={clinicalResult?.result_status} />
-        {!isImageWorkspace && (onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
-        {isImageWorkspace && <ResultStatusCard clinicalRole={clinicalRole} clinicalStatus={clinicalResult?.result_status_label ?? clinicalResult?.result_status} aiStatus={aiResult?.status_label ?? aiResult?.status} />}
       </aside>
       </div>
 
@@ -92,6 +99,20 @@ function CtAiSummary({ detail }: { detail: unknown }) {
 
 function SourcePanel({ eyebrow, title, meta, tone, children, compact = false }: { eyebrow: string; title: string; meta: string; tone: "specialist" | "ai"; children: React.ReactNode; compact?: boolean }) {
   return <section className={compact ? "shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white" : "min-w-0"}><header className={`flex shrink-0 items-start justify-between gap-3 border-b px-3 py-2.5 ${compact ? "min-h-[54px]" : "min-h-[74px]"} ${tone === "specialist" ? "border-emerald-100 bg-emerald-50/30" : "border-blue-100 bg-blue-50/30"}`}><div><p className={`text-[10px] font-semibold ${tone === "specialist" ? "text-emerald-700" : "text-blue-700"}`}>{eyebrow}</p><h2 className="mt-1 text-sm font-bold text-slate-900">{title}</h2>{tone === "ai" && !compact && <p className="mt-1 text-[10px] text-slate-400">의료진 확정 결과가 아닌 참고 자료입니다.</p>}</div><p className="max-w-32 truncate text-right text-[10px] text-slate-400">{meta}</p></header><div className={compact ? "max-h-[280px] overflow-y-auto" : "min-h-[190px]"}>{children}</div></section>;
+}
+
+function AnalysisImageInfoCard({ aiResult, evidenceInfo }: { aiResult?: AiResult; evidenceInfo: CtEvidenceInfo }) {
+  const items = [
+    ["모델", aiResult?.model_name ?? ""],
+    ["버전", aiResult?.model_version_name ?? ""],
+    ["Series UID", evidenceInfo.seriesInstanceUid ?? aiResult?.input_context?.source_asset?.series_instance_uid ?? ""],
+    ["이미지 수", evidenceInfo.imageCount !== undefined ? `${evidenceInfo.imageCount}장` : ""],
+    ["분할 결과", evidenceInfo.segmentationAvailable ? "사용 가능" : ""],
+    ["분석 시작", formatDateTime(aiResult?.started_at)],
+    ["분석 완료", formatDateTime(aiResult?.completed_at)],
+  ].flatMap(([label, value]) => value && value !== "-" ? [[label, value] as [string, string]] : []);
+  if (!items.length) return null;
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><p className="text-[10px] font-bold text-slate-700">분석 · 영상 정보</p><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">{items.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-slate-400">{label}</dt><dd className="mt-0.5 truncate font-medium text-slate-700" title={value}>{value}</dd></div>)}</dl></section>;
 }
 
 function ResultStatusCard({ clinicalStatus, aiStatus, clinicalRole }: { clinicalStatus?: string; aiStatus?: string; clinicalRole: string }) {
@@ -127,22 +148,91 @@ function AiInputTraceabilityCard({ aiResult }: { aiResult?: AiResult }) {
 
 function TraceItem({ label, value }: { label: string; value?: string | null }) { return <div><dt className="text-slate-400">{label}</dt><dd className="truncate font-medium text-slate-700">{value || "정보 없음"}</dd></div>; }
 
-function ReviewWorkflowRail({ imaging, aiStatus, clinicalStatus }: { imaging: boolean; aiStatus?: string; clinicalStatus?: string }) {
-  const aiCompleted = aiStatus === "SUCCEEDED";
-  const aiFailed = aiStatus === "FAILED" || aiStatus === "ERROR";
-  const clinicalCompleted = clinicalStatus === "CONFIRMED";
-  // Imaging clinical results are the pulmonologist's decision, not a radiology sign-off.
-  // No radiology review status is supplied by this API; do not infer one.
-  const steps = [
-    { label: "AI 분석", status: resultStatusLabel(aiStatus), completed: aiCompleted, failed: aiFailed },
-    { label: imaging ? "영상의학과 판독" : "병리과 판독", status: imaging ? "판독 상태 정보 없음" : resultStatusLabel(clinicalStatus), completed: !imaging && clinicalCompleted, failed: false },
-    { label: imaging ? "호흡기내과 최종 판단" : "호흡기내과 치료 판단", status: imaging ? resultStatusLabel(clinicalStatus) : clinicalCompleted ? "검토 필요" : "병리 결과 대기", completed: imaging && clinicalCompleted, failed: false },
+type WorkflowStatusFlowStage = "XRAY" | "CT" | "PET_CT_TNM" | "PATHOLOGY_GENE" | "PDL1" | "TREATMENT" | "PRESCRIPTION";
+type WorkflowFlowState = "completed" | "active" | "pending" | "failed";
+type WorkflowFlowStep = { label: string; status: string; state: WorkflowFlowState };
+
+function aiFlowState(status?: string): WorkflowFlowState {
+  if (status === "SUCCEEDED") return "completed";
+  if (status === "FAILED" || status === "ERROR") return "failed";
+  return status ? "active" : "pending";
+}
+
+function sourceStep(label: string, hasSourceAsset: boolean, hasAiStatus: boolean): WorkflowFlowStep {
+  // An analysis record can only be created from registered input, but do not
+  // claim registration when neither an input asset nor an analysis exists.
+  return { label, status: hasSourceAsset || hasAiStatus ? "등록 완료" : "등록 상태 정보 없음", state: hasSourceAsset || hasAiStatus ? "completed" : "pending" };
+}
+
+function buildWorkflowSteps({ stage, aiStatus, clinicalStatus, hasSourceAsset, treatmentStatus, prescriptionStatus, caseStatus }: {
+  stage: WorkflowStatusFlowStage;
+  aiStatus?: string;
+  clinicalStatus?: string;
+  hasSourceAsset?: boolean;
+  treatmentStatus?: string;
+  prescriptionStatus?: string;
+  caseStatus?: string;
+}): WorkflowFlowStep[] {
+  const ai = { label: "AI 분석", status: resultStatusLabel(aiStatus), state: aiFlowState(aiStatus) } as WorkflowFlowStep;
+  const confirmed = clinicalStatus === "CONFIRMED";
+  const submitted = clinicalStatus === "DRAFT" || confirmed;
+  const hasAiStatus = Boolean(aiStatus);
+
+  if (stage === "XRAY") return [
+    sourceStep("영상 등록", Boolean(hasSourceAsset), hasAiStatus),
+    ai,
+    { label: "호흡기내과 최종 판단", status: confirmed ? "확정 완료" : ai.state === "completed" ? "판단 대기" : "결과 대기", state: confirmed ? "completed" : ai.state === "completed" ? "active" : "pending" },
   ];
-  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-bold text-slate-700">판독 상태 흐름</p><ol className="mt-2 space-y-2">{steps.map((step, index) => <li key={step.label} className="flex items-center gap-2 text-[10px]"><span data-workflow-state={step.completed ? "completed" : step.failed ? "failed" : "pending"} className={`flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold ${step.completed ? "bg-emerald-500 text-white" : step.failed ? "bg-rose-500 text-white" : "border border-slate-300 bg-white text-slate-400"}`}>{index + 1}</span><span className="font-medium text-slate-700">{step.label}</span><span className="ml-auto text-slate-500">{step.status}</span></li>)}</ol></section>;
+  if (stage === "CT") return [
+    sourceStep("CT 영상 등록", Boolean(hasSourceAsset), hasAiStatus),
+    ai,
+    { label: "호흡기내과 최종 판단", status: confirmed ? "확정 완료" : ai.state === "completed" ? "판단 대기" : "결과 대기", state: confirmed ? "completed" : ai.state === "completed" ? "active" : "pending" },
+  ];
+  if (stage === "PET_CT_TNM") return [
+    sourceStep("CT·PET 영상 준비", Boolean(hasSourceAsset), hasAiStatus),
+    { label: "T/N/M 분석", status: resultStatusLabel(aiStatus), state: aiFlowState(aiStatus) },
+    { label: "TNM 검토", status: confirmed ? "검토 완료" : clinicalStatus === "DRAFT" ? "검토 중" : ai.state === "completed" ? "검토 대기" : "분석 대기", state: confirmed ? "completed" : clinicalStatus === "DRAFT" || ai.state === "completed" ? "active" : "pending" },
+    { label: "호흡기내과 최종 확정", status: confirmed ? "확정 완료" : submitted ? "확정 대기" : "검토 대기", state: confirmed ? "completed" : submitted ? "active" : "pending" },
+  ];
+  if (stage === "PATHOLOGY_GENE" || stage === "PDL1") {
+    const registrationLabel = stage === "PATHOLOGY_GENE" ? "검체·WSI 등록" : "WSI/데이터 등록";
+    return [
+      sourceStep(registrationLabel, Boolean(hasSourceAsset), hasAiStatus),
+      ai,
+      { label: stage === "PATHOLOGY_GENE" ? "호흡기내과 확인" : "호흡기내과 확정", status: confirmed ? "확정 완료" : submitted ? "확인 대기" : "제출 대기", state: confirmed ? "completed" : submitted ? "active" : "pending" },
+    ];
+  }
+  if (stage === "TREATMENT") return [
+    { label: "이전 결과 종합", status: treatmentStatus ? "종합 완료" : "상태 정보 없음", state: treatmentStatus ? "completed" : "pending" },
+    { label: "치료계획 작성", status: treatmentStatus === "DRAFT" || treatmentStatus === "CONFIRMED" ? "작성 완료" : "작성 대기", state: treatmentStatus === "DRAFT" || treatmentStatus === "CONFIRMED" ? "completed" : "active" },
+    { label: "치료계획 확정", status: treatmentStatus === "CONFIRMED" ? "확정 완료" : "확정 대기", state: treatmentStatus === "CONFIRMED" ? "completed" : "pending" },
+  ];
+  return [
+    { label: "처방 작성", status: prescriptionStatus ? "작성 완료" : "작성 대기", state: prescriptionStatus ? "completed" : "active" },
+    { label: "처방 확정", status: prescriptionStatus === "FINAL" ? "확정 완료" : "확정 대기", state: prescriptionStatus === "FINAL" ? "completed" : "pending" },
+    { label: "Case 종료 또는 의뢰", status: caseStatus === "CLOSED" || caseStatus === "REFERRED_OUT" ? "처리 완료" : "처리 대기", state: caseStatus === "CLOSED" || caseStatus === "REFERRED_OUT" ? "completed" : "pending" },
+  ];
+}
+
+export function WorkflowStatusFlow({ stage, aiStatus, clinicalStatus, hasSourceAsset = false, treatmentStatus, prescriptionStatus, caseStatus }: {
+  stage: string;
+  aiStatus?: string;
+  clinicalStatus?: string;
+  hasSourceAsset?: boolean;
+  treatmentStatus?: string;
+  prescriptionStatus?: string;
+  caseStatus?: string;
+}) {
+  const steps = buildWorkflowSteps({ stage: stage as WorkflowStatusFlowStage, aiStatus, clinicalStatus, hasSourceAsset, treatmentStatus, prescriptionStatus, caseStatus });
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-bold text-slate-700">판단 상태 흐름</p><ol className="mt-2 space-y-2">{steps.map((step, index) => <li key={step.label} className="flex items-center gap-2 text-[10px]"><span data-workflow-state={step.state} className={`flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold ${step.state === "completed" ? "bg-emerald-500 text-white" : step.state === "active" ? "border border-blue-300 bg-blue-50 text-blue-700" : step.state === "failed" ? "bg-rose-500 text-white" : "border border-slate-300 bg-white text-slate-400"}`}>{index + 1}</span><span className="font-medium text-slate-700">{step.label}</span><span className="ml-auto text-slate-500">{step.status}</span></li>)}</ol></section>;
 }
 
 export function ResultSyncStatus({ lastSyncedAt, syncing, onRefresh, notice = "" }: { lastSyncedAt?: Date | null; syncing: boolean; onRefresh?: () => void; notice?: string }) {
   return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold text-slate-700">결과 동기화</p><p className="mt-1 text-[10px] text-slate-500">{syncing ? "결과를 갱신하는 중입니다." : lastSyncedAt ? `마지막 갱신 ${lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}` : "자동 갱신: 30초"}</p></div>{onRefresh && <button type="button" onClick={onRefresh} disabled={syncing} className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{syncing ? "갱신 중" : "지금 새로고침"}</button>}</div>{notice && <p role="status" className="mt-2 rounded bg-emerald-50 px-2 py-1.5 text-[10px] font-semibold text-emerald-700">{notice}</p>}</section>;
+}
+
+function CtResultSyncStatus({ lastSyncedAt, syncing, onRefresh, notice = "" }: { lastSyncedAt?: Date | null; syncing: boolean; onRefresh?: () => void; notice?: string }) {
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold text-slate-700">결과 동기화</p><p className="mt-1 text-[10px] text-slate-500">30초 자동 갱신 · {syncing ? "갱신 중" : "대기 중"}</p>{lastSyncedAt && <p className="mt-0.5 text-[10px] text-slate-500">마지막 갱신 {lastSyncedAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</p>}</div>{onRefresh && <button type="button" onClick={onRefresh} disabled={syncing} className="rounded border border-blue-200 bg-blue-50 px-2 py-1.5 text-[10px] font-semibold text-blue-700 disabled:cursor-not-allowed disabled:opacity-50">{syncing ? "갱신 중" : "지금 새로고침"}</button>}</div>{notice && <p role="status" className="mt-2 rounded bg-emerald-50 px-2 py-1.5 text-[10px] font-semibold text-emerald-700">{notice}</p>}</section>;
 }
 
 function StatusBadge({ label, value, status, tone }: { label: string; value?: string; status?: string; tone: "specialist" | "ai" }) {

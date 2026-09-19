@@ -633,11 +633,7 @@ class RadiologyOrderXrayImageUploadAPIView(RadiologyPermissionMixin, APIView):
 
 
 class RadiologyOrderCtSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
-    """Upload one CT Series' original DICOM files to Orthanc and register a READY asset.
-
-    Idempotent per (order, series_instance_uid): if a READY asset already exists for
-    the requested Series, it is returned as-is without re-uploading to Orthanc.
-    """
+    """Upload one CT Series' original DICOM files to Orthanc and register a READY asset."""
 
     @transaction.atomic
     def post(self, request, order_id):
@@ -652,14 +648,6 @@ class RadiologyOrderCtSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
         uploaded_files = serializer.validated_data["files"]
         series_instance_uid = serializer.validated_data["series_instance_uid"]
 
-        existing_asset = CaseImageAsset.objects.filter(
-            examination_order=order,
-            series_instance_uid=series_instance_uid,
-            status=CaseImageAsset.Status.READY,
-        ).first()
-        if existing_asset is not None:
-            return Response(RadiologyImageAssetCreateSerializer(existing_asset).data, status=status.HTTP_200_OK)
-
         try:
             headers = parse_ct_headers(uploaded_files)
             validate_ct_series(headers, expected_series_instance_uid=series_instance_uid)
@@ -672,12 +660,9 @@ class RadiologyOrderCtSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
             return Response({"detail": "CT 영상을 Orthanc에 저장하지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
 
         storage_uri = f"orthanc://series/{upload_result.orthanc_series_id}"
-        if CaseImageAsset.objects.filter(storage_uri=storage_uri).exists():
-            return Response(
-                {"detail": "동일한 영상 자산이 이미 등록되어 있습니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+        orthanc_series_already_referenced = CaseImageAsset.objects.filter(
+            orthanc_series_id=upload_result.orthanc_series_id,
+        ).exists()
         try:
             asset = CaseImageAsset.objects.create(
                 case=order.case,
@@ -695,10 +680,11 @@ class RadiologyOrderCtSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
                 metadata=None,
             )
         except Exception:
-            try:
-                delete_orthanc_series(upload_result.orthanc_series_id)
-            except OrthancError:
-                pass
+            if not orthanc_series_already_referenced:
+                try:
+                    delete_orthanc_series(upload_result.orthanc_series_id)
+                except OrthancError:
+                    pass
             raise
         return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
 
@@ -715,9 +701,6 @@ class RadiologyOrderPetSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
         serializer.is_valid(raise_exception=True)
         files = serializer.validated_data["files"]
         series_uid = serializer.validated_data["series_instance_uid"]
-        existing = CaseImageAsset.objects.filter(examination_order=order, series_instance_uid=series_uid, status=CaseImageAsset.Status.READY).first()
-        if existing:
-            return Response(RadiologyImageAssetCreateSerializer(existing).data, status=status.HTTP_200_OK)
         try:
             headers = parse_ct_headers(files)
             validate_pet_series(headers, expected_series_instance_uid=series_uid)
@@ -728,12 +711,9 @@ class RadiologyOrderPetSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
         except OrthancError:
             return Response({"detail": "PET 영상을 Orthanc에 저장하지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
         storage_uri = f"orthanc://series/{result.orthanc_series_id}"
-        if CaseImageAsset.objects.filter(storage_uri=storage_uri).exists():
-            try:
-                delete_orthanc_series(result.orthanc_series_id)
-            except OrthancError:
-                pass
-            return Response({"detail": "동일한 영상 자산이 이미 등록되어 있습니다."}, status=status.HTTP_400_BAD_REQUEST)
+        orthanc_series_already_referenced = CaseImageAsset.objects.filter(
+            orthanc_series_id=result.orthanc_series_id,
+        ).exists()
         try:
             asset = CaseImageAsset.objects.create(
                 case=order.case, examination_order=order,
@@ -745,10 +725,11 @@ class RadiologyOrderPetSeriesUploadAPIView(RadiologyPermissionMixin, APIView):
                 metadata=None,
             )
         except Exception:
-            try:
-                delete_orthanc_series(result.orthanc_series_id)
-            except OrthancError:
-                pass
+            if not orthanc_series_already_referenced:
+                try:
+                    delete_orthanc_series(result.orthanc_series_id)
+                except OrthancError:
+                    pass
             raise
         return Response(RadiologyImageAssetCreateSerializer(asset).data, status=status.HTTP_201_CREATED)
 
