@@ -108,7 +108,7 @@ class DoseRuleTests(SimpleTestCase):
             labs = mock("LabResult.objects")
             serializers = mock("DoctorPrescriptionSerializer")
             view = DoctorPrescriptionAPIView()
-            case = NS(patient=object())
+            case = NS(patient=object(), current_stage="PRESCRIPTION")
             stack.enter_context(patch.object(view, "get_case", return_value=case))
             regimen = NS(induction_cycles=4)
             decision.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = NS(selected_regimen=regimen)

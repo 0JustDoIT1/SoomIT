@@ -574,7 +574,7 @@ class PathologyReadAPITestCase(APITestCase):
         )
         self.assertEqual(submit_response.status_code, status.HTTP_400_BAD_REQUEST)
 
-        self.client.force_authenticate(user=self.user)
+        self.authenticate_pathology_user()
         diagnosis_response = self.client.post(
             reverse("pathology:case-diagnosis-list", kwargs={"case_id": self.case.id}),
             {
