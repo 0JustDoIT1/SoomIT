@@ -8,7 +8,16 @@ class AppointmentAvailabilityDate {
     return AppointmentAvailabilityDate(
       date: DateTime.parse(json['date'] as String),
       slots: (json['slots'] as List<dynamic>)
-          .map((slot) => DateTime.parse(slot as String).toLocal())
+          .where((slot) {
+            final data = slot as Map<String, dynamic>;
+            return (data['remaining_count'] as int? ?? 0) > 0;
+          })
+          .map((slot) {
+            final data = slot as Map<String, dynamic>;
+            return DateTime.parse(
+              data['start_at'] as String,
+            ).toLocal();
+          })
           .toList(),
     );
   }

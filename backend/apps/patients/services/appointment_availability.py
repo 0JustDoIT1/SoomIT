@@ -160,12 +160,15 @@ def build_available_slots(
         end_date=end_date,
     )
 
-    weekly_availability = (
-        schedule_data.get(
-            "weekly_availability",
-            [],
-        )
-    )
+    weekly_availability = [
+        {
+            "weekday": weekday,
+            "start_time": "09:00:00",
+            "end_time": "18:00:00",
+            "enabled": True,
+        }
+        for weekday in range(5)
+    ]
     unavailable_data = schedule_data.get(
         "unavailable",
         [],

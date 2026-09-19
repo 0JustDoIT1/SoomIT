@@ -612,8 +612,10 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
   }
 
   String _formatTime(DateTime dateTime) {
-    final hour = dateTime.hour.toString().padLeft(2, '0');
-    final minute = dateTime.minute.toString().padLeft(2, '0');
+    final koreaTime = dateTime.toUtc().add(const Duration(hours: 9));
+
+    final hour = koreaTime.hour.toString().padLeft(2, '0');
+    final minute = koreaTime.minute.toString().padLeft(2, '0');
 
     return '$hour:$minute';
   }
