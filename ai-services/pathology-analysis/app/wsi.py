@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import logging
 import random
+import time
 from io import BytesIO
 from pathlib import Path
 
@@ -10,6 +12,17 @@ import timm
 import torch
 from PIL import Image
 from timm.data import create_transform, resolve_data_config
+
+
+logger = logging.getLogger("uvicorn.error")
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=pathology_analysis stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 def otsu_threshold(gray: np.ndarray) -> int:
@@ -129,6 +142,7 @@ class Uni2hEmbedder:
         thumbnail_size: int,
         seed: int,
     ) -> tuple[torch.Tensor, list[tuple[int, int, int]], int]:
+        stage_started = time.perf_counter()
         slide = openslide.OpenSlide(str(slide_path))
         try:
             mask, thumb_size = tissue_mask(slide, thumbnail_size)
@@ -142,11 +156,15 @@ class Uni2hEmbedder:
                 max_patches=max_patches,
                 seed=seed,
             )
+            log_latency("wsi_open_and_patch_selection", stage_started)
             if not coordinates:
                 raise ValueError("no tissue patches were found in the WSI")
             batches: list[torch.Tensor] = []
             use_amp = self.device.type == "cuda"
+            read_and_transform_seconds = 0.0
+            gpu_embed_seconds = 0.0
             for start in range(0, len(coordinates), self.batch_size):
+                batch_started = time.perf_counter()
                 images = [
                     self.transform(
                         slide.read_region((x, y), patch_level, (tile_size, tile_size)).convert("RGB")
@@ -154,6 +172,8 @@ class Uni2hEmbedder:
                     for x, y, patch_level in coordinates[start : start + self.batch_size]
                 ]
                 batch = torch.stack(images).to(self.device)
+                read_and_transform_seconds += time.perf_counter() - batch_started
+                gpu_started = time.perf_counter()
                 with torch.inference_mode(), torch.autocast(
                     device_type=self.device.type,
                     dtype=torch.float16,
@@ -161,6 +181,19 @@ class Uni2hEmbedder:
                 ):
                     embedding = self.model(batch)
                 batches.append(embedding.float().cpu())
+                gpu_embed_seconds += time.perf_counter() - gpu_started
+            logger.info(
+                "latency service=pathology_analysis stage=patch_read_and_transform elapsed_seconds=%.3f",
+                read_and_transform_seconds,
+            )
+            logger.info(
+                "latency service=pathology_analysis stage=embedding_gpu_inference elapsed_seconds=%.3f",
+                gpu_embed_seconds,
+            )
+            logger.info(
+                "latency service=pathology_analysis stage=patch_count value=%d",
+                len(coordinates),
+            )
             return torch.cat(batches, dim=0), coordinates, level
         finally:
             slide.close()
