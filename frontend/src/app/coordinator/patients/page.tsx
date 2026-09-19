@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, staffAuthenticatedFetch } from "@/lib/api";
 import Image from "next/image";
 import Script from "next/script";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -293,7 +293,7 @@ export default function PatientsPage() {
     if (!patient.latest_questionnaire_id) return;
     setQuestionnaireLoading(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/patients/${patient.id}/questionnaire/`);
+      const response = await staffAuthenticatedFetch(`${API_BASE_URL}/api/patients/${patient.id}/questionnaire/`);
       if (!response.ok) throw new Error("문진 내용을 불러오지 못했습니다.");
       setQuestionnaire(await response.json());
       setQuestionnairePatientName(patient.name);
