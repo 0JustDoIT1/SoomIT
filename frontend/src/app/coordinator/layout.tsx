@@ -64,15 +64,18 @@ export default function CoordinatorLayout({
       {/* 상단 고정 영역 */}
       <header className="sticky top-0 z-50 bg-white">
         {/* 1. Header */}
-        <div className="border-b border-slate-200">
-          <div className="mx-auto flex h-[72px] w-full max-w-[1760px] items-center justify-between px-4 sm:px-6">
+        <div className="relative overflow-hidden border-b border-slate-200/15 bg-gradient-to-r from-[#131D38] to-[#17223F]">
+          <span aria-hidden="true" className="pointer-events-none absolute right-8 top-5 h-[2px] w-[2px] rounded-full bg-slate-100/15" />
+          <span aria-hidden="true" className="pointer-events-none absolute right-16 top-11 h-[1px] w-[1px] rounded-full bg-slate-100/10" />
+          <span aria-hidden="true" className="pointer-events-none absolute right-28 top-7 h-[2px] w-[2px] rounded-full bg-slate-100/10" />
+          <div className="relative mx-auto flex h-[72px] w-full max-w-[1760px] items-center justify-between px-4 sm:px-6">
             {/* Logo + Department */}
             <div>
               <div>
-                <p className="text-[15px] font-bold text-slate-800">
+                <p className="text-[15px] font-semibold text-white">
                   원무과
                 </p>
-                <p className="mt-0.5 text-[11px] text-slate-400">
+                <p className="mt-0.5 text-[11px] text-white/60">
                   Patient Coordination
                 </p>
               </div>
@@ -83,7 +86,7 @@ export default function CoordinatorLayout({
               {/* 알림 - 기능은 추후 연결 */}
               <button
                 type="button"
-                className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-500 transition hover:bg-pink-50 hover:text-pink-500"
+                className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-200 transition hover:bg-white/10 hover:text-white"
                 aria-label="알림"
               >
                 <svg
@@ -104,10 +107,10 @@ export default function CoordinatorLayout({
                 <span className="absolute right-[7px] top-[7px] h-1.5 w-1.5 rounded-full bg-pink-400" />
               </button>
 
-              <div className="h-7 w-px bg-slate-200" />
+              <div className="h-7 w-px bg-white/15" />
 
               <div className="text-right">
-                <p className="text-sm font-semibold text-slate-700">
+                <p className="text-sm font-semibold text-slate-100">
                   {userName}
                 </p>
               </div>
@@ -115,7 +118,7 @@ export default function CoordinatorLayout({
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-lg border border-pink-200 bg-white/80 px-3 py-2 text-xs font-semibold text-slate-600 shadow-sm transition hover:border-pink-300 hover:bg-white hover:text-pink-600"
+                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-white/10 hover:text-white"
               >
                 로그아웃
               </button>

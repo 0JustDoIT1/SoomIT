@@ -322,7 +322,7 @@ export default function CoordinatorDashboardPage() {
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(240px,1fr)]">
       <section className="min-w-0 overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm">
-        <div className="flex h-12 items-center justify-between gap-3 border-b border-slate-100 px-4">
+        <div className="flex h-10 items-center justify-between gap-3 border-b border-slate-200 bg-[#EEE8F8] px-4">
           <h2 className="text-base font-semibold text-slate-900">처리 필요한 예약 요청</h2>
           <CountBadge count={pendingRequests.length} />
         </div>
@@ -372,7 +372,7 @@ export default function CoordinatorDashboardPage() {
       </section>
 
       <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-        <div className="flex h-12 items-center justify-between gap-3 border-b border-slate-100 px-4">
+        <div className="flex h-10 items-center justify-between gap-3 border-b border-slate-200 bg-[#E8EEF3] px-4">
           <h2 className="text-base font-semibold text-slate-800">검사 오더 현황</h2>
           <CountBadge count={examinationOrders.length} />
         </div>
@@ -411,9 +411,9 @@ export default function CoordinatorDashboardPage() {
             </div>
           )}
       </section>
-      <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50/40 shadow-sm lg:col-span-2 2xl:col-span-1">
-        <div className="flex h-12 items-center justify-between gap-3 border-b border-slate-100/80 px-3">
-          <h2 className="text-base font-medium text-slate-700">최근 활동</h2>
+      <section className="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm lg:col-span-2 2xl:col-span-1">
+        <div className="flex h-10 items-center justify-between gap-3 border-b border-slate-200 bg-[#ECECEC] px-3">
+          <h2 className="text-base font-medium text-slate-600">최근 활동</h2>
           <CountBadge count={recentActivities.length} muted />
         </div>
         {recentActivities.length ? (
@@ -423,7 +423,7 @@ export default function CoordinatorDashboardPage() {
                 <time dateTime={activity.occurredAt} className="text-[11px] tabular-nums text-slate-400">
                   {formatDateTime(activity.occurredAt)}
                 </time>
-                <p className="mt-0.5 text-sm font-medium text-slate-700">
+                <p className="mt-0.5 text-sm font-medium text-slate-600">
                   {activity.title}
                 </p>
                 <p className="mt-0.5 truncate text-xs text-slate-500">{activity.patientName} · {activity.patientCode}</p>
@@ -508,7 +508,7 @@ function ApprovalBadge() {
 
 function OrderTypeLabel({ type }: { type: ExaminationOrder["order_type"] }) {
   const pathology = type === "PATHOLOGY_GENE" || type === "PDL1";
-  return <span className={`inline-flex border-l-2 pl-2 text-sm font-medium ${pathology ? "border-violet-300 text-violet-800" : "border-slate-300 text-slate-800"}`}>{ORDER_LABELS[type]}</span>;
+  return <span className="inline-flex border-l-2 border-slate-300 pl-2 text-sm font-medium text-slate-700">{ORDER_LABELS[type]}</span>;
 }
 
 function FlowProgress({ stage }: { stage: string | null }) {
