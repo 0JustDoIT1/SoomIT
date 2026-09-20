@@ -1326,7 +1326,7 @@ function WorkArea({
           <>
             <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
               <h3 className="text-sm font-bold">H&amp;E WSI 업로드</h3>
-              <div className="mt-3 flex flex-col items-start gap-2">
+              <div className="mt-3 flex w-full flex-col gap-3">
                 {pathologyGeneWsiReady ? (
                   <>
                     <span className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white">
@@ -1349,11 +1349,11 @@ function WorkArea({
                       onDragOver={(event) => event.preventDefault()}
                       onDragLeave={(event) => { event.preventDefault(); setUploadDragTarget(null); }}
                       onDrop={(event) => handleUploadDrop(event, handleGeneWsiSelection)}
-                      className={`flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-5 text-center transition-colors ${uploadDragTarget === "gene" ? "border-[#3446B8] bg-[#F1F3FF]" : "border-[#C7CBE5] bg-[#FBFBFF] hover:border-[#8B96E8]"} ${uploadingPathologyGeneWsi ? "cursor-not-allowed opacity-60" : ""}`}
+                      className={`flex min-h-44 w-full cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed px-4 py-6 text-center shadow-sm transition-colors ${uploadDragTarget === "gene" ? "border-[#3446B8] bg-[#F1F3FF]" : "border-[#C7CBE5] bg-[#FBFBFF] hover:border-[#8B96E8]"} ${uploadingPathologyGeneWsi ? "cursor-not-allowed opacity-60" : ""}`}
                     >
-                      <span className="text-2xl font-light text-[#5364C7]" aria-hidden="true">＋</span>
-                      <p className="mt-1 text-xs font-semibold text-slate-700">H&amp;E WSI 파일 추가</p>
-                      <p className="mt-1 text-[11px] text-slate-500">클릭하거나 여기에 파일을 끌어다 놓으세요</p>
+                      <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#DDE2F7] bg-white text-2xl font-light leading-none text-[#5364C7] shadow-sm" aria-hidden="true">＋</span>
+                      <p className="mt-2 text-sm font-semibold text-slate-700">H&amp;E WSI 추가</p>
+                      <p className="mt-1 text-[11px] text-slate-500">클릭하거나 파일을 여기에 끌어다 놓으세요.</p>
                       <input
                         ref={pathologyGeneWsiInputRef}
                         type="file"
@@ -1363,15 +1363,17 @@ function WorkArea({
                         onChange={(event) => handleGeneWsiSelection(event.target.files?.[0] ?? null)}
                       />
                     </div>
-                    {pathologyGeneWsiFile ? <p className="text-xs text-slate-600">{pathologyGeneWsiFile.name}</p> : null}
-                    <button
-                      type="button"
-                      disabled={!pathologyGeneWsiFile || uploadingPathologyGeneWsi || !item.examination_order?.id}
-                      onClick={handlePathologyGeneWsiUpload}
-                      className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
-                    >
-                      {uploadingPathologyGeneWsi ? "업로드 중..." : "서버에 업로드"}
-                    </button>
+                    <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <p className="text-slate-500">{pathologyGeneWsiFile ? `선택 파일: ${pathologyGeneWsiFile.name}` : "업로드할 H&E WSI 파일을 선택하세요."}</p>
+                      <button
+                        type="button"
+                        disabled={!pathologyGeneWsiFile || uploadingPathologyGeneWsi || !item.examination_order?.id}
+                        onClick={handlePathologyGeneWsiUpload}
+                        className="shrink-0 rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
+                      >
+                        {uploadingPathologyGeneWsi ? "업로드 중..." : "서버에 올리기"}
+                      </button>
+                    </div>
                   </>
                 )}
               </div>
@@ -1419,7 +1421,7 @@ function WorkArea({
         {isPdl1 ? (
           <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
             <h3 className="text-sm font-bold"><span className="mr-2 text-xs text-[#3446B8]">01</span>입력 데이터</h3>
-            <div className="mt-3 grid gap-3 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
+            <div className="mt-3 flex flex-col gap-3 rounded-xl border border-[#DDE2F7] bg-[#F7F8FC] p-3">
               <div
                 role="button"
                 tabIndex={0}
@@ -1430,18 +1432,18 @@ function WorkArea({
                 onDragOver={(event) => event.preventDefault()}
                 onDragLeave={(event) => { event.preventDefault(); setUploadDragTarget(null); }}
                 onDrop={(event) => { if (!pdl1InputReady) handleUploadDrop(event, handlePdl1WsiSelection); }}
-                className={`relative flex min-h-40 flex-col items-center justify-center rounded-lg border p-4 text-center transition-colors ${pdl1InputReady ? "cursor-not-allowed border-slate-200 bg-slate-50" : uploadDragTarget === "pdl1-wsi" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1WsiFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-[#8B96E8]"}`}
+                className={`relative flex min-h-44 w-full flex-col items-center justify-center rounded-lg border border-dashed p-5 text-center shadow-sm transition-colors ${pdl1InputReady ? "cursor-not-allowed border-slate-200 bg-slate-50" : uploadDragTarget === "pdl1-wsi" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1WsiFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-[#FBFBFF] hover:border-[#8B96E8]"}`}
               >
                 <span className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2 text-left">
                   <span className="text-xs font-semibold text-slate-700">WSI 파일</span>
                   {pdl1InputReady ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">업로드 완료 · 변경 불가</span> : pdl1WsiFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
                 </span>
-                <span className="mt-2 flex flex-col items-center gap-1">
-                  <span className="text-3xl font-light leading-none text-[#5364C7]" aria-hidden="true">＋</span>
-                  <span className="text-sm font-semibold text-slate-700">WSI 파일 추가</span>
+                <span className="flex flex-col items-center gap-1">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#DDE2F7] bg-white text-2xl font-light leading-none text-[#5364C7] shadow-sm" aria-hidden="true">＋</span>
+                  <span className="mt-1 text-sm font-semibold text-slate-700">WSI 파일 추가</span>
                   <span className="max-w-full truncate text-xs text-slate-600">{pdl1WsiFile?.name ?? "선택된 파일이 없습니다."}</span>
                 </span>
-                <p className="mt-2 text-[11px] text-slate-500">클릭하거나 여기에 파일을 끌어다 놓으세요</p>
+                <p className="mt-2 text-[11px] text-slate-500">클릭하거나 파일을 여기에 끌어다 놓으세요.</p>
                 <input ref={pdl1WsiInputRef} type="file" accept=".svs,.tif,.tiff" disabled={uploadingPdl1Input || pdl1InputReady} className="sr-only" onChange={(event) => handlePdl1WsiSelection(event.target.files?.[0] ?? null)} />
               </div>
               <div
@@ -1454,18 +1456,18 @@ function WorkArea({
                 onDragOver={(event) => event.preventDefault()}
                 onDragLeave={(event) => { event.preventDefault(); setUploadDragTarget(null); }}
                 onDrop={(event) => { if (!pdl1InputReady) handleUploadDrop(event, handlePdl1AnnotationSelection); }}
-                className={`relative flex min-h-40 flex-col items-center justify-center rounded-lg border p-4 text-center transition-colors ${pdl1InputReady ? "cursor-not-allowed border-slate-200 bg-slate-50" : uploadDragTarget === "pdl1-annotation" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1AnnotationFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-white hover:border-[#8B96E8]"}`}
+                className={`relative flex min-h-44 w-full flex-col items-center justify-center rounded-lg border border-dashed p-5 text-center shadow-sm transition-colors ${pdl1InputReady ? "cursor-not-allowed border-slate-200 bg-slate-50" : uploadDragTarget === "pdl1-annotation" ? "border-[#8B96E8] bg-[#F1F3FF]" : pdl1AnnotationFile ? "border-emerald-300 bg-emerald-50" : "border-slate-200 bg-[#FBFBFF] hover:border-[#8B96E8]"}`}
               >
                 <span className="absolute left-3 right-3 top-3 flex items-center justify-between gap-2 text-left">
                   <span className="text-xs font-semibold text-slate-700">HALO annotation 파일</span>
                   {pdl1InputReady ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">업로드 완료 · 변경 불가</span> : pdl1AnnotationFile ? <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">선택 완료</span> : <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">미선택</span>}
                 </span>
-                <span className="mt-2 flex flex-col items-center gap-1">
-                  <span className="text-3xl font-light leading-none text-[#5364C7]" aria-hidden="true">＋</span>
-                  <span className="text-sm font-semibold text-slate-700">HALO annotation 추가</span>
+                <span className="flex flex-col items-center gap-1">
+                  <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#DDE2F7] bg-white text-2xl font-light leading-none text-[#5364C7] shadow-sm" aria-hidden="true">＋</span>
+                  <span className="mt-1 text-sm font-semibold text-slate-700">HALO annotation 추가</span>
                   <span className="max-w-full truncate text-xs text-slate-600">{pdl1AnnotationFile?.name ?? "선택된 파일이 없습니다."}</span>
                 </span>
-                <p className="mt-2 text-[11px] text-slate-500">클릭하거나 여기에 파일을 끌어다 놓으세요</p>
+                <p className="mt-2 text-[11px] text-slate-500">클릭하거나 파일을 여기에 끌어다 놓으세요.</p>
                 <input ref={pdl1AnnotationInputRef} type="file" accept=".annotations" disabled={uploadingPdl1Input || pdl1InputReady} className="sr-only" onChange={(event) => handlePdl1AnnotationSelection(event.target.files?.[0] ?? null)} />
               </div>
               <label className="text-xs font-semibold text-slate-700">ROI layer
@@ -1473,9 +1475,12 @@ function WorkArea({
                   <option value="Tumor">Tumor</option><option value="Tumor-JS">Tumor-JS</option>
                 </select>
               </label>
-              <button type="button" disabled={!pdl1WsiFile || !pdl1AnnotationFile || uploadingPdl1Input || pdl1InputReady} onClick={handlePdl1Upload} className="w-fit rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F] disabled:bg-slate-300">
-                {uploadingPdl1Input ? "업로드 중..." : pdl1InputReady ? "업로드 완료" : "서버에 업로드"}
-              </button>
+              <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
+                <p className="text-slate-500">{pdl1InputReady ? "PD-L1 입력 파일이 서버에 등록되었습니다." : pdl1WsiFile || pdl1AnnotationFile ? `선택 파일: ${[pdl1WsiFile?.name, pdl1AnnotationFile?.name].filter(Boolean).join(" · ")}` : "업로드할 WSI와 HALO annotation 파일을 선택하세요."}</p>
+                <button type="button" disabled={!pdl1WsiFile || !pdl1AnnotationFile || uploadingPdl1Input || pdl1InputReady} onClick={handlePdl1Upload} className="shrink-0 rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#29399F] disabled:bg-slate-300">
+                  {uploadingPdl1Input ? "업로드 중..." : pdl1InputReady ? "업로드 완료" : "서버에 올리기"}
+                </button>
+              </div>
               {error ? <p role="alert" className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
             </div>
             <div className="mt-3 flex items-center justify-between rounded-xl border border-[#DDE2F7] bg-white p-3">

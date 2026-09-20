@@ -316,7 +316,7 @@ export default function CoordinatorDashboardPage() {
           {summary.map((item) => (
             <div key={item.label} className="px-4 py-3 sm:px-5">
               <p className="text-xs font-medium text-slate-500">{item.label}</p>
-          <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-[#C65F83]" : "text-slate-700"}`}>{item.count}</p>
+          <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-pink-500" : "text-slate-700"}`}>{item.count}</p>
             </div>
           ))}
         </div>
@@ -346,7 +346,7 @@ export default function CoordinatorDashboardPage() {
                   {pendingRequests.map((request) => (
                     <tr
                       key={request.id}
-                      className="text-slate-700 transition hover:bg-[#F1EEFA]/60"
+                      className="text-slate-700 transition hover:bg-[#F5F7FA]"
                     >
                       <td className="px-3 py-2.5">
                         <p className="font-semibold text-slate-800">{request.patientName}</p>
@@ -369,14 +369,14 @@ export default function CoordinatorDashboardPage() {
             <EmptyState>처리할 예약 요청이 없습니다.</EmptyState>
           )}
           <div className="border-t border-slate-100 px-4 py-2.5 text-right">
-            <button type="button" onClick={() => router.push("/coordinator/appointments")} className="text-xs font-medium text-[#C65F83] hover:text-[#A94B6D]">
+            <button type="button" onClick={() => router.push("/coordinator/appointments")} className="text-xs font-medium text-pink-500 hover:text-pink-600">
               전체 요청 보기 <span aria-hidden="true">→</span>
             </button>
           </div>
       </section>
 
       <section className="min-w-0 overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm">
-        <div className="flex h-10 items-center justify-between gap-3 border-b border-[#E1E5EB] bg-[#F1EEFA] px-4">
+        <div className="flex h-10 items-center justify-between gap-3 border-b border-[#E1E5EB] bg-[#EEF1F7] px-4">
           <h2 className="text-base font-semibold text-slate-800">검사 오더 현황</h2>
           <CountBadge count={examinationOrders.length} />
         </div>
@@ -451,7 +451,7 @@ export default function CoordinatorDashboardPage() {
                   key={appointment.id}
                   type="button"
                   onClick={() => router.push("/coordinator/appointments")}
-                  className="grid w-full grid-cols-1 items-center gap-3 px-4 py-3 text-left transition hover:bg-[#F1EEFA]/60 sm:grid-cols-[minmax(150px,1.2fr)_100px_minmax(120px,1fr)_minmax(160px,1.5fr)] sm:px-5"
+                  className="grid w-full grid-cols-1 items-center gap-3 px-4 py-3 text-left transition hover:bg-[#F5F7FA] sm:grid-cols-[minmax(150px,1.2fr)_100px_minmax(120px,1fr)_minmax(160px,1.5fr)] sm:px-5"
                 >
                   <span className="min-w-0">
                     <span className="block truncate font-semibold text-slate-800">{patient?.name ?? appointment.patient_name}</span>
@@ -500,7 +500,7 @@ function RequestTypeBadge({ type }: { type: RequestRow["requestType"] }) {
     CANCEL: "예약 취소",
   };
   const tone: Record<RequestRow["requestType"], string> = {
-    NEW: "border-[#C65F83] text-[#A94B6D]",
+    NEW: "border-pink-400 text-pink-600",
     CHANGE: "border-[#B8C1D2] text-[#536784]",
     CANCEL: "border-[#D7D9DE] text-[#6B7280]",
   };
@@ -508,7 +508,7 @@ function RequestTypeBadge({ type }: { type: RequestRow["requestType"] }) {
 }
 
 function ApprovalBadge() {
-  return <span className="inline-flex whitespace-nowrap rounded-sm border border-[#D8D1F0] bg-[#F1EEFA] px-1.5 py-0.5 text-[11px] font-medium text-[#6B5BB5]"><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#C65F83]" aria-hidden="true" />승인 대기</span>;
+  return <span className="inline-flex whitespace-nowrap rounded-sm border border-slate-200 bg-slate-50 px-1.5 py-0.5 text-[11px] font-medium text-slate-600"><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-pink-400" aria-hidden="true" />승인 대기</span>;
 }
 
 function OrderTypeLabel({ type }: { type: ExaminationOrder["order_type"] }) {
@@ -526,7 +526,7 @@ function FlowProgress({ stage }: { stage: string | null }) {
         {FLOW_STAGES.map((flowStage, index) => (
           <span
             key={flowStage}
-            className={`h-1.5 w-3 rounded-full ${index === currentIndex ? "bg-[#7C6AD9]" : "bg-slate-200"}`}
+            className={`h-1.5 w-3 rounded-full ${index === currentIndex ? "bg-pink-400" : "bg-slate-200"}`}
           />
         ))}
       </span>
