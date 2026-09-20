@@ -18,8 +18,8 @@ class ExamResultScreen extends StatefulWidget {
 
 class _ExamResultScreenState extends State<ExamResultScreen>
     with SingleTickerProviderStateMixin {
-  static const bool _useMockResults = true;
-  static const bool _useMockSchedules = true;
+  static const bool _useMockResults = false;
+  static const bool _useMockSchedules = false;
 
   static const Color _primary = Color(0xFF3198F4);
   static const Color _primaryDark = Color(0xFF2F8DFE);

@@ -149,10 +149,15 @@ class _HomeScreenState extends State<HomeScreen> {
             gradient: const LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [Color(0xFFEAF7FF), Color(0xFFDDF2FF)],
+              colors: [
+                Color(0xFFEAF7FF),
+                Color(0xFFDDF2FF),
+              ],
             ),
 
-            border: Border.all(color: const Color(0xFFE1F1FC)),
+            border: Border.all(
+              color: const Color(0xFFE1F1FC),
+            ),
           ),
 
           child: Stack(
@@ -166,7 +171,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 185,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.22),
+                    color: Colors.white.withValues(
+                      alpha: 0.22,
+                    ),
                   ),
                 ),
               ),
@@ -180,7 +187,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 120,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(100),
-                    color: Colors.white.withValues(alpha: 0.14),
+                    color: Colors.white.withValues(
+                      alpha: 0.14,
+                    ),
                   ),
                 ),
               ),
@@ -198,11 +207,17 @@ class _HomeScreenState extends State<HomeScreen> {
                         children: [
                           const TextSpan(
                             text: '안녕하세요,\n',
-                            style: TextStyle(color: _textPrimary),
+                            style: TextStyle(
+                              color: _textPrimary,
+                            ),
                           ),
                           TextSpan(
-                            text: name.isEmpty ? '환자님!' : '$name님!',
-                            style: const TextStyle(color: _strongBlue),
+                            text: name.isEmpty
+                                ? '환자님!'
+                                : '$name님!',
+                            style: const TextStyle(
+                              color: _strongBlue,
+                            ),
                           ),
                         ],
                       ),
@@ -238,8 +253,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   width: 148,
                   height: 148,
                   fit: BoxFit.contain,
-                  errorBuilder: (context, error, stackTrace) {
-                    return const SizedBox(width: 140, height: 140);
+                  errorBuilder: (
+                    context,
+                    error,
+                    stackTrace,
+                  ) {
+                    return const SizedBox(
+                      width: 140,
+                      height: 140,
+                    );
                   },
                 ),
               ),
@@ -251,7 +273,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Icon(
                   Icons.favorite_rounded,
                   size: 17,
-                  color: Colors.white.withValues(alpha: 0.82),
+                  color: Colors.white.withValues(
+                    alpha: 0.82,
+                  ),
                 ),
               ),
             ],
@@ -275,7 +299,9 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Row(
             children: [
-              _SectionIcon(icon: Icons.calendar_month_rounded),
+              _SectionIcon(
+                icon: Icons.calendar_month_rounded,
+              ),
 
               SizedBox(width: 10),
 
@@ -303,16 +329,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _buildHealthCard(
                   icon: Icons.medication_rounded,
 
-                  iconBackground: const Color(0xFFE8F3FF),
+                  iconBackground: const Color(
+                    0xFFE8F3FF,
+                  ),
 
-                  iconColor: const Color(0xFF4A9FF8),
+                  iconColor: const Color(
+                    0xFF4A9FF8,
+                  ),
 
                   title: '복약 관리',
 
                   subtitle: '오늘 복용할 약을\n확인해보세요',
 
                   onTap: () {
-                    _openLinkedFeature(const MedicationScreen());
+                    _openLinkedFeature(
+                      Scaffold(
+                        backgroundColor:
+                            const Color(0xFFF5FAFF),
+                        appBar: AppBar(
+                          backgroundColor: Colors.white,
+                          surfaceTintColor: Colors.white,
+                          elevation: 0,
+                          title: const Text(
+                            '복약 관리',
+                            style: TextStyle(
+                              color: _textPrimary,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        body: const MedicationScreen(),
+                      ),
+                    );
                   },
                 ),
               ),
@@ -326,16 +375,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _buildHealthCard(
                   icon: Icons.assignment_outlined,
 
-                  iconBackground: const Color(0xFFE5FBF5),
+                  iconBackground: const Color(
+                    0xFFE5FBF5,
+                  ),
 
-                  iconColor: const Color(0xFF21C7B7),
+                  iconColor: const Color(
+                    0xFF21C7B7,
+                  ),
 
                   title: '문진표',
 
                   subtitle: '진료 전 문진을\n작성해보세요',
 
                   onTap: () {
-                    _openLinkedFeature(const QuestionnaireScreen());
+                    _openLinkedFeature(
+                      const QuestionnaireScreen(),
+                    );
                   },
                 ),
               ),
@@ -349,16 +404,22 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: _buildHealthCard(
                   icon: Icons.favorite_rounded,
 
-                  iconBackground: const Color(0xFFF1EBFF),
+                  iconBackground: const Color(
+                    0xFFF1EBFF,
+                  ),
 
-                  iconColor: const Color(0xFF8670F2),
+                  iconColor: const Color(
+                    0xFF8670F2,
+                  ),
 
                   title: '건강 리포트',
 
                   subtitle: '증상 변화를\n한눈에 확인해보세요',
 
                   onTap: () {
-                    _openLinkedFeature(const SymptomScreen());
+                    _openLinkedFeature(
+                      const SymptomScreen(),
+                    );
                   },
                 ),
               ),
@@ -390,12 +451,19 @@ class _HomeScreenState extends State<HomeScreen> {
         child: Container(
           height: 170,
 
-          padding: const EdgeInsets.fromLTRB(11, 13, 10, 13),
+          padding: const EdgeInsets.fromLTRB(
+            11,
+            13,
+            10,
+            13,
+          ),
 
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
 
-            border: Border.all(color: const Color(0xFFEDF2F7)),
+            border: Border.all(
+              color: const Color(0xFFEDF2F7),
+            ),
           ),
 
           child: Column(
@@ -410,17 +478,24 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   color: iconBackground,
 
-                  borderRadius: BorderRadius.circular(14),
+                  borderRadius: BorderRadius.circular(
+                    14,
+                  ),
                 ),
 
-                child: Icon(icon, color: iconColor, size: 24),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 24,
+                ),
               ),
 
               const Spacer(),
 
               // 제목
               Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
+                crossAxisAlignment:
+                    CrossAxisAlignment.center,
                 children: [
                   Expanded(
                     child: Text(
@@ -491,7 +566,11 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Row(
             children: [
-              Icon(Icons.calendar_month_rounded, color: _strongBlue, size: 25),
+              Icon(
+                Icons.calendar_month_rounded,
+                color: _strongBlue,
+                size: 25,
+              ),
 
               SizedBox(width: 9),
 
@@ -512,7 +591,8 @@ class _HomeScreenState extends State<HomeScreen> {
             future: _appointmentsFuture,
 
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState ==
+                  ConnectionState.waiting) {
                 return _buildLoadingCard();
               }
 
@@ -524,9 +604,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               }
 
-              final appointments = snapshot.data ?? [];
+              final appointments =
+                  snapshot.data ?? [];
 
-              final nextAppointment = _findNextAppointment(appointments);
+              final nextAppointment =
+                  _findNextAppointment(
+                appointments,
+              );
 
               if (nextAppointment == null) {
                 return _buildEmptyState(
@@ -536,7 +620,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               }
 
-              return AppointmentCard(appointment: nextAppointment);
+              return AppointmentCard(
+                appointment: nextAppointment,
+              );
             },
           ),
         ],
@@ -560,7 +646,11 @@ class _HomeScreenState extends State<HomeScreen> {
         children: [
           const Row(
             children: [
-              Icon(Icons.science_outlined, color: _strongBlue, size: 25),
+              Icon(
+                Icons.science_outlined,
+                color: _strongBlue,
+                size: 25,
+              ),
 
               SizedBox(width: 9),
 
@@ -581,7 +671,8 @@ class _HomeScreenState extends State<HomeScreen> {
             future: _examSchedulesFuture,
 
             builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
+              if (snapshot.connectionState ==
+                  ConnectionState.waiting) {
                 return _buildLoadingCard();
               }
 
@@ -593,7 +684,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 );
               }
 
-              final schedules = snapshot.data ?? [];
+              final schedules =
+                  snapshot.data ?? [];
 
               if (schedules.isEmpty) {
                 return _buildEmptyState(
@@ -604,9 +696,16 @@ class _HomeScreenState extends State<HomeScreen> {
               }
 
               final sorted = [...schedules]
-                ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+                ..sort(
+                  (a, b) => a.scheduledAt
+                      .compareTo(
+                    b.scheduledAt,
+                  ),
+                );
 
-              return ExamCard(schedule: sorted.first);
+              return ExamCard(
+                schedule: sorted.first,
+              );
             },
           ),
         ],
@@ -626,7 +725,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Container(
       width: double.infinity,
 
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 18,
+      ),
 
       decoration: BoxDecoration(
         color: const Color(0xFFF8FBFE),
@@ -645,14 +747,18 @@ class _HomeScreenState extends State<HomeScreen> {
               shape: BoxShape.circle,
             ),
 
-            child: Icon(icon, color: const Color(0xFFAAB9C9)),
+            child: Icon(
+              icon,
+              color: const Color(0xFFAAB9C9),
+            ),
           ),
 
           const SizedBox(width: 14),
 
           Expanded(
             child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
 
               children: [
                 Text(
@@ -689,7 +795,10 @@ class _HomeScreenState extends State<HomeScreen> {
       height: 90,
 
       child: Center(
-        child: CircularProgressIndicator(strokeWidth: 2.5, color: _primaryBlue),
+        child: CircularProgressIndicator(
+          strokeWidth: 2.5,
+          color: _primaryBlue,
+        ),
       ),
     );
   }
@@ -704,11 +813,17 @@ class _HomeScreenState extends State<HomeScreen> {
 
       borderRadius: BorderRadius.circular(24),
 
-      border: Border.all(color: const Color(0xFFEAF1F7)),
+      border: Border.all(
+        color: const Color(0xFFEAF1F7),
+      ),
 
       boxShadow: [
         BoxShadow(
-          color: const Color(0xFF4D86B9).withValues(alpha: 0.05),
+          color: const Color(
+            0xFF4D86B9,
+          ).withValues(
+            alpha: 0.05,
+          ),
 
           blurRadius: 18,
 
@@ -722,7 +837,9 @@ class _HomeScreenState extends State<HomeScreen> {
   // 환자 연결 확인
   // =========================================================
 
-  Future<void> _openLinkedFeature(Widget screen) async {
+  Future<void> _openLinkedFeature(
+    Widget screen,
+  ) async {
     try {
       final profile = await _profileFuture;
 
@@ -746,17 +863,23 @@ class _HomeScreenState extends State<HomeScreen> {
         return;
       }
 
-      await Navigator.of(
-        context,
-      ).push(MaterialPageRoute<void>(builder: (_) => screen));
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => screen,
+        ),
+      );
     } catch (_) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('환자 정보를 확인하지 못했습니다.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '환자 정보를 확인하지 못했습니다.',
+          ),
+        ),
+      );
     }
   }
 
@@ -764,19 +887,29 @@ class _HomeScreenState extends State<HomeScreen> {
   // 가장 가까운 예약 찾기
   // =========================================================
 
-  Appointment? _findNextAppointment(List<Appointment> appointments) {
+  Appointment? _findNextAppointment(
+    List<Appointment> appointments,
+  ) {
     final now = DateTime.now();
 
     final upcoming =
         appointments
             .where(
               (appointment) =>
-                  appointment.scheduledAt.isAfter(now) &&
-                  appointment.appointmentStatus != 'CANCELLED' &&
-                  appointment.visitStatus == 'SCHEDULED',
+                  appointment.scheduledAt.isAfter(
+                    now,
+                  ) &&
+                  appointment.appointmentStatus !=
+                      'CANCELLED' &&
+                  appointment.visitStatus ==
+                      'SCHEDULED',
             )
             .toList()
-          ..sort((a, b) => a.scheduledAt.compareTo(b.scheduledAt));
+          ..sort(
+            (a, b) => a.scheduledAt.compareTo(
+              b.scheduledAt,
+            ),
+          );
 
     if (upcoming.isEmpty) {
       return null;
@@ -793,7 +926,9 @@ class _HomeScreenState extends State<HomeScreen> {
 class _SectionIcon extends StatelessWidget {
   final IconData icon;
 
-  const _SectionIcon({required this.icon});
+  const _SectionIcon({
+    required this.icon,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -807,7 +942,11 @@ class _SectionIcon extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
       ),
 
-      child: Icon(icon, size: 21, color: const Color(0xFF3198F4)),
+      child: Icon(
+        icon,
+        size: 21,
+        color: const Color(0xFF3198F4),
+      ),
     );
   }
 }

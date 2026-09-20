@@ -3,27 +3,29 @@ import 'package:flutter/material.dart';
 import 'models/exam_result.dart';
 
 class ExamResultDetailScreen extends StatelessWidget {
-  const ExamResultDetailScreen({super.key, required this.exam});
+  const ExamResultDetailScreen({
+    super.key,
+    required this.exam,
+  });
 
   final ExamResult exam;
 
-  static const Color _background = Color(0xFFF5FAFF);
-  static const Color _primary = Color(0xFF2F8DFE);
+  static const Color _primary = Color(0xFF3198F4);
+  static const Color _primaryDark = Color(0xFF2F8DFE);
   static const Color _textPrimary = Color(0xFF191F28);
   static const Color _textSecondary = Color(0xFF6B7684);
-  static const Color _border = Color(0xFFE8EDF3);
+  static const Color _border = Color(0xFFE7EDF3);
 
   @override
   Widget build(BuildContext context) {
     final detailSections = exam.resultSections
-        .where((section) => !_isDoctorOpinion(section) && !_isNextPlan(section))
+        .where(
+          (section) => !_isExcludedSection(section),
+        )
         .toList();
 
-    final doctorOpinion = _findDoctorOpinion();
-    final nextPlan = _findNextPlan();
-
     return Scaffold(
-      backgroundColor: _background,
+      backgroundColor: const Color(0xFFF5F9FD),
       appBar: AppBar(
         backgroundColor: Colors.white,
         elevation: 0,
@@ -31,58 +33,53 @@ class ExamResultDetailScreen extends StatelessWidget {
         foregroundColor: _textPrimary,
         title: const Text(
           '검사 결과 상세',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
       body: SafeArea(
         child: SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+          padding: const EdgeInsets.fromLTRB(
+            20,
+            18,
+            20,
+            32,
+          ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // =================================================
+              // 검사 기본 정보
+              // =================================================
               _buildExamSummaryCard(),
+
+              const SizedBox(height: 26),
+
+              // =================================================
+              // 상세 결과
+              // =================================================
+              _buildSectionTitle('상세 결과'),
+
+              const SizedBox(height: 12),
+
+              if (detailSections.isEmpty)
+                _buildEmptyResultCard()
+              else
+                ..._buildDetailWidgets(
+                  detailSections,
+                ),
 
               const SizedBox(height: 18),
 
-              _buildResultSummaryCard(),
-
-              const SizedBox(height: 24),
-
-              _buildSectionTitle(
-                icon: Icons.description_outlined,
-                title: '상세 결과',
-              ),
-
-              const SizedBox(height: 10),
-
-              _buildDetailResultCard(detailSections),
-
-              if (doctorOpinion != null) ...[
-                const SizedBox(height: 24),
-                _buildSectionTitle(
-                  icon: Icons.medical_services_outlined,
-                  title: '의료진 소견',
-                ),
-                const SizedBox(height: 10),
-                _buildDoctorOpinionCard(doctorOpinion),
-              ],
-
-              if (nextPlan != null) ...[
-                const SizedBox(height: 24),
-                _buildSectionTitle(
-                  icon: Icons.calendar_month_outlined,
-                  title: '다음 계획',
-                ),
-                const SizedBox(height: 10),
-                _buildNextPlanCard(nextPlan),
-              ],
-
-              const SizedBox(height: 20),
-
+              // =================================================
+              // 안내
+              // =================================================
               _buildNoticeCard(),
 
-              const SizedBox(height: 24),
+              const SizedBox(height: 26),
 
               _buildBackButton(context),
             ],
@@ -92,27 +89,47 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────
-  // 상단 검사 정보
-  // ─────────────────────────────────────────
+  // ===========================================================
+  // 섹션 제목
+  // ===========================================================
+  Widget _buildSectionTitle(String title) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 18,
+        fontWeight: FontWeight.w800,
+        color: _textPrimary,
+      ),
+    );
+  }
 
+  // ===========================================================
+  // 검사 정보 카드
+  // ===========================================================
   Widget _buildExamSummaryCard() {
-    final hospital = exam.hospitalName?.trim();
-    final department = exam.departmentName?.trim();
-    final doctor = exam.doctorName?.trim();
-
-    final hospitalDepartment = [
-      if (hospital != null && hospital.isNotEmpty) hospital,
-      if (department != null && department.isNotEmpty) department,
-    ].join(' · ');
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _border,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(
+              0xFF172033,
+            ).withValues(
+              alpha: 0.035,
+            ),
+            blurRadius: 16,
+            offset: const Offset(
+              0,
+              6,
+            ),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -120,26 +137,32 @@ class ExamResultDetailScreen extends StatelessWidget {
           Row(
             children: [
               Container(
-                width: 44,
-                height: 44,
+                width: 48,
+                height: 48,
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEAF5FF),
-                  borderRadius: BorderRadius.circular(13),
+                  color: const Color(
+                    0xFFEAF5FF,
+                  ),
+                  borderRadius: BorderRadius.circular(
+                    14,
+                  ),
                 ),
-                child: const Icon(
-                  Icons.biotech_outlined,
-                  size: 24,
-                  color: _primary,
+                child: Icon(
+                  _examIcon(),
+                  size: 25,
+                  color: _primaryDark,
                 ),
               ),
 
-              const SizedBox(width: 12),
+              const SizedBox(
+                width: 12,
+              ),
 
               Expanded(
                 child: Text(
-                  exam.examName,
+                  _displayExamName(),
                   style: const TextStyle(
-                    fontSize: 17,
+                    fontSize: 19,
                     fontWeight: FontWeight.w800,
                     color: _textPrimary,
                   ),
@@ -147,54 +170,53 @@ class ExamResultDetailScreen extends StatelessWidget {
               ),
 
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFEAF8F1),
-                  borderRadius: BorderRadius.circular(8),
+                  color: const Color(
+                    0xFFEAF8F1,
+                  ),
+                  borderRadius: BorderRadius.circular(
+                    9,
+                  ),
                 ),
                 child: Text(
                   exam.resultStatusLabel,
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
-                    color: Color(0xFF20A66A),
+                    color: Color(
+                      0xFF20A66A,
+                    ),
                   ),
                 ),
               ),
             ],
           ),
 
-          const SizedBox(height: 16),
-
-          _buildInfoRow(
-            icon: Icons.category_outlined,
-            label: '검사 종류',
-            value: exam.examName,
+          const SizedBox(
+            height: 16,
           ),
 
-          const SizedBox(height: 10),
-
-          _buildInfoRow(
-            icon: Icons.calendar_today_outlined,
-            label: '결과 확정일',
-            value: _formatDateTime(exam.resultDate),
-          ),
-
-          if (hospitalDepartment.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _buildInfoRow(
-              icon: Icons.local_hospital_outlined,
-              label: '병원·진료과',
-              value: hospitalDepartment,
+          _infoRow(
+            Icons.calendar_month_outlined,
+            '결과 확정일',
+            _formatDateTime(
+              exam.resultDate,
             ),
-          ],
+          ),
 
-          if (doctor != null && doctor.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _buildInfoRow(
-              icon: Icons.person_outline_rounded,
-              label: '담당의',
-              value: doctor,
+          if (exam.hospitalName != null &&
+              exam.hospitalName!.trim().isNotEmpty) ...[
+            const SizedBox(
+              height: 10,
+            ),
+            _infoRow(
+              Icons.local_hospital_outlined,
+              '검사 병원',
+              exam.hospitalName!,
             ),
           ],
         ],
@@ -202,27 +224,45 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildInfoRow({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
+  // ===========================================================
+  // 정보 한 줄
+  // ===========================================================
+  Widget _infoRow(
+    IconData icon,
+    String label,
+    String value,
+  ) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 17, color: const Color(0xFF8B95A1)),
-
-        const SizedBox(width: 8),
-
-        SizedBox(
-          width: 76,
-          child: Text(
-            label,
-            style: const TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
+        Icon(
+          icon,
+          size: 18,
+          color: const Color(
+            0xFF7D8DA1,
           ),
         ),
 
-        const SizedBox(width: 8),
+        const SizedBox(
+          width: 9,
+        ),
+
+        SizedBox(
+          width: 78,
+          child: Text(
+            label,
+            style: const TextStyle(
+              fontSize: 13,
+              color: Color(
+                0xFF8B95A1,
+              ),
+            ),
+          ),
+        ),
+
+        const SizedBox(
+          width: 8,
+        ),
 
         Expanded(
           child: Text(
@@ -230,6 +270,7 @@ class ExamResultDetailScreen extends StatelessWidget {
             textAlign: TextAlign.right,
             style: const TextStyle(
               fontSize: 13,
+              height: 1.4,
               fontWeight: FontWeight.w600,
               color: _textPrimary,
             ),
@@ -239,210 +280,336 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────
-  // 결과 한줄 요약
-  // ─────────────────────────────────────────
+  // ===========================================================
+  // 검사별 상세 결과
+  // ===========================================================
+  List<Widget> _buildDetailWidgets(
+    List<ExamResultSection> sections,
+  ) {
+    // =========================================================
+    // 조직(유전자)검사
+    //
+    // 조직검사 + 유전자검사 + PD-L1
+    // =========================================================
+    if (exam.isPathologyGroup) {
+      final pathology = sections
+          .where(
+            (section) =>
+                section.type.startsWith(
+              'PATHOLOGY_',
+            ),
+          )
+          .toList();
 
-  Widget _buildResultSummaryCard() {
+      final genes = sections
+          .where(
+            (section) =>
+                section.type.startsWith(
+              'GENE_',
+            ),
+          )
+          .toList();
+
+      final pdl1 = sections
+          .where(
+            (section) =>
+                section.type.startsWith(
+              'PDL1_',
+            ),
+          )
+          .toList();
+
+      final widgets = <Widget>[];
+
+      // -------------------------
+      // 조직검사
+      // -------------------------
+      if (pathology.isNotEmpty) {
+        widgets.add(
+          _buildGroupCard(
+            title: '조직검사',
+            icon: Icons.biotech_outlined,
+            sections: pathology,
+          ),
+        );
+      }
+
+      // -------------------------
+      // 유전자검사
+      // -------------------------
+      if (genes.isNotEmpty) {
+        if (widgets.isNotEmpty) {
+          widgets.add(
+            const SizedBox(
+              height: 12,
+            ),
+          );
+        }
+
+        widgets.add(
+          _buildGroupCard(
+            title: '유전자검사',
+            icon: Icons.hub_outlined,
+            sections: genes,
+          ),
+        );
+      }
+
+      // -------------------------
+      // PD-L1
+      // -------------------------
+      if (pdl1.isNotEmpty) {
+        if (widgets.isNotEmpty) {
+          widgets.add(
+            const SizedBox(
+              height: 12,
+            ),
+          );
+        }
+
+        widgets.add(
+          _buildGroupCard(
+            title: 'PD-L1',
+            icon: Icons.science_outlined,
+            sections: pdl1,
+          ),
+        );
+      }
+
+      if (widgets.isNotEmpty) {
+        return widgets;
+      }
+    }
+
+    // =========================================================
+    // PET-CT
+    //
+    // TNM 결과는 PET-CT 안에서 보여줌
+    // =========================================================
+    if (exam.examType == 'PET_CT_TNM') {
+      return [
+        _buildGroupCard(
+          title: '병기 평가 결과',
+          icon: Icons.analytics_outlined,
+          sections: sections,
+        ),
+      ];
+    }
+
+    // =========================================================
+    // X-ray / CT
+    // =========================================================
+    return [
+      _buildResultCard(
+        sections,
+      ),
+    ];
+  }
+
+  // ===========================================================
+  // X-ray / CT 결과 카드
+  // ===========================================================
+  Widget _buildResultCard(
+    List<ExamResultSection> sections,
+  ) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF7E6),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFFFE1A8)),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 17,
+        vertical: 4,
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 34,
-            height: 34,
-            decoration: const BoxDecoration(
-              color: Color(0xFFFFB020),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.info_outline_rounded,
-              size: 20,
-              color: Colors.white,
-            ),
-          ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(
+          18,
+        ),
+        border: Border.all(
+          color: _border,
+        ),
+      ),
+      child: Column(
+        children: List.generate(
+          sections.length,
+          (index) {
+            final section =
+                sections[index];
 
-          const SizedBox(width: 12),
-
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            return Column(
               children: [
-                const Text(
-                  '결과 한줄 요약',
-                  style: TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                _resultRow(
+                  section.label,
+                  section.summary,
+                ),
+                if (index !=
+                    sections.length - 1)
+                  const Divider(
+                    height: 1,
+                    color: Color(
+                      0xFFEEF2F6,
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  // ===========================================================
+  // 조직 / 유전자 / PD-L1 / TNM 카드
+  // ===========================================================
+  Widget _buildGroupCard({
+    required String title,
+    required IconData icon,
+    required List<ExamResultSection> sections,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(
+          18,
+        ),
+        border: Border.all(
+          color: _border,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              16,
+              15,
+              16,
+              13,
+            ),
+            child: Row(
+              children: [
+                Container(
+                  width: 34,
+                  height: 34,
+                  decoration: BoxDecoration(
+                    color: const Color(
+                      0xFFEAF5FF,
+                    ),
+                    borderRadius:
+                        BorderRadius.circular(
+                      10,
+                    ),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 18,
+                    color: _primaryDark,
                   ),
                 ),
 
-                const SizedBox(height: 6),
+                const SizedBox(
+                  width: 10,
+                ),
 
                 Text(
-                  _resultSummaryText(),
+                  title,
                   style: const TextStyle(
-                    fontSize: 14,
-                    height: 1.55,
-                    color: Color(0xFF4E5968),
+                    fontSize: 15,
+                    fontWeight:
+                        FontWeight.w800,
+                    color: _textPrimary,
                   ),
                 ),
               ],
             ),
           ),
+
+          const Divider(
+            height: 1,
+            color: Color(
+              0xFFEEF2F6,
+            ),
+          ),
+
+          Padding(
+            padding:
+                const EdgeInsets.symmetric(
+              horizontal: 17,
+              vertical: 4,
+            ),
+            child: Column(
+              children: List.generate(
+                sections.length,
+                (index) {
+                  final section =
+                      sections[index];
+
+                  return Column(
+                    children: [
+                      _resultRow(
+                        section.label,
+                        section.summary,
+                      ),
+                      if (index !=
+                          sections.length - 1)
+                        const Divider(
+                          height: 1,
+                          color: Color(
+                            0xFFEEF2F6,
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
         ],
       ),
     );
   }
 
-  String _resultSummaryText() {
-    for (final section in exam.resultSections) {
-      if (!_isDoctorOpinion(section) && !_isNextPlan(section)) {
-        return section.summary;
-      }
-    }
-
-    return exam.resultSummary;
-  }
-
-  // ─────────────────────────────────────────
-  // 공통 섹션 제목
-  // ─────────────────────────────────────────
-
-  Widget _buildSectionTitle({required IconData icon, required String title}) {
-    return Row(
-      children: [
-        Container(
-          width: 30,
-          height: 30,
-          decoration: BoxDecoration(
-            color: const Color(0xFFEAF5FF),
-            borderRadius: BorderRadius.circular(9),
-          ),
-          child: Icon(icon, size: 18, color: _primary),
-        ),
-
-        const SizedBox(width: 9),
-
-        Text(
-          title,
-          style: const TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.w800,
-            color: _textPrimary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  // ─────────────────────────────────────────
-  // 상세 결과
-  // ─────────────────────────────────────────
-
-  Widget _buildDetailResultCard(List<ExamResultSection> sections) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
+  // ===========================================================
+  // 결과 Row
+  // ===========================================================
+  Widget _resultRow(
+    String label,
+    String value,
+  ) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(
+        vertical: 14,
       ),
-      child: sections.isEmpty
-          ? Text(
-              exam.resultSummary,
+      child: Row(
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Text(
+              label,
               style: const TextStyle(
                 fontSize: 14,
-                height: 1.6,
+                fontWeight:
+                    FontWeight.w600,
                 color: _textSecondary,
               ),
-            )
-          : Column(
-              children: List.generate(sections.length, (index) {
-                final section = sections[index];
-
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      section.label,
-                      style: const TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w800,
-                        color: _textPrimary,
-                      ),
-                    ),
-
-                    const SizedBox(height: 8),
-
-                    Text(
-                      section.summary,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.6,
-                        color: _textSecondary,
-                      ),
-                    ),
-
-                    if (index != sections.length - 1) ...[
-                      const SizedBox(height: 16),
-                      const Divider(height: 1, color: _border),
-                      const SizedBox(height: 16),
-                    ],
-                  ],
-                );
-              }),
-            ),
-    );
-  }
-
-  // ─────────────────────────────────────────
-  // 의료진 소견
-  // ─────────────────────────────────────────
-
-  Widget _buildDoctorOpinionCard(ExamResultSection section) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF5FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.medical_services_outlined,
-              size: 20,
-              color: _primary,
             ),
           ),
 
-          const SizedBox(width: 12),
+          const SizedBox(
+            width: 18,
+          ),
 
-          Expanded(
+          Flexible(
             child: Text(
-              section.summary,
+              value,
+              textAlign: TextAlign.right,
               style: const TextStyle(
-                fontSize: 14,
-                height: 1.65,
-                color: Color(0xFF4E5968),
+                fontSize: 15,
+                height: 1.4,
+                fontWeight:
+                    FontWeight.w800,
+                color: _textPrimary,
               ),
             ),
           ),
@@ -451,46 +618,45 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────
-  // 다음 계획
-  // ─────────────────────────────────────────
-
-  Widget _buildNextPlanCard(ExamResultSection section) {
+  // ===========================================================
+  // 상세 결과 없음
+  // ===========================================================
+  Widget _buildEmptyResultCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 18,
+        vertical: 28,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _border),
+        borderRadius: BorderRadius.circular(
+          18,
+        ),
+        border: Border.all(
+          color: _border,
+        ),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: const Column(
         children: [
-          Container(
-            width: 38,
-            height: 38,
-            decoration: BoxDecoration(
-              color: const Color(0xFFEAF8F1),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Icon(
-              Icons.event_available_outlined,
-              size: 20,
-              color: Color(0xFF20A66A),
+          Icon(
+            Icons.description_outlined,
+            size: 34,
+            color: Color(
+              0xFFB0B8C1,
             ),
           ),
 
-          const SizedBox(width: 12),
+          SizedBox(
+            height: 10,
+          ),
 
-          Expanded(
-            child: Text(
-              section.summary,
-              style: const TextStyle(
-                fontSize: 14,
-                height: 1.65,
-                color: Color(0xFF4E5968),
-              ),
+          Text(
+            '등록된 상세 검사 결과가 없습니다.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 14,
+              color: _textSecondary,
             ),
           ),
         ],
@@ -498,25 +664,41 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────
-  // 안내
-  // ─────────────────────────────────────────
-
+  // ===========================================================
+  // 안내 카드
+  // ===========================================================
   Widget _buildNoticeCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(
+        15,
+      ),
       decoration: BoxDecoration(
-        color: const Color(0xFFF1F7FF),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFDCEBFF)),
+        color: const Color(
+          0xFFF3F8FF,
+        ),
+        borderRadius: BorderRadius.circular(
+          14,
+        ),
+        border: Border.all(
+          color: const Color(
+            0xFFDCEBFF,
+          ),
+        ),
       ),
       child: const Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline_rounded, size: 19, color: _primary),
+          Icon(
+            Icons.info_outline_rounded,
+            size: 20,
+            color: _primary,
+          ),
 
-          SizedBox(width: 9),
+          SizedBox(
+            width: 10,
+          ),
 
           Expanded(
             child: Text(
@@ -524,7 +706,7 @@ class ExamResultDetailScreen extends StatelessWidget {
               style: TextStyle(
                 fontSize: 13,
                 height: 1.5,
-                color: Color(0xFF4E5968),
+                color: _textSecondary,
               ),
             ),
           ),
@@ -533,86 +715,168 @@ class ExamResultDetailScreen extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────
-  // 하단 버튼
-  // ─────────────────────────────────────────
-
-  Widget _buildBackButton(BuildContext context) {
+  // ===========================================================
+  // 목록으로 돌아가기
+  // ===========================================================
+  Widget _buildBackButton(
+    BuildContext context,
+  ) {
     return SizedBox(
       width: double.infinity,
-      height: 52,
+      height: 50,
       child: ElevatedButton(
         onPressed: () {
           Navigator.pop(context);
         },
         style: ElevatedButton.styleFrom(
-          backgroundColor: _primary,
+          backgroundColor: _primaryDark,
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(
+              14,
+            ),
           ),
         ),
         child: const Text(
           '목록으로 돌아가기',
-          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w800,
+          ),
         ),
       ),
     );
   }
 
-  // ─────────────────────────────────────────
-  // section 분류
-  // ─────────────────────────────────────────
+  // ===========================================================
+  // 환자앱 표시 검사명
+  // ===========================================================
+  String _displayExamName() {
+    switch (exam.examType) {
+      case 'PATHOLOGY_GENE':
+      case 'PDL1':
+        return '조직(유전자)검사';
 
-  bool _isDoctorOpinion(ExamResultSection section) {
-    return section.type == 'DOCTOR_OPINION' || section.label == '의료진 소견';
-  }
+      case 'PET_CT_TNM':
+        return 'PET-CT';
 
-  bool _isNextPlan(ExamResultSection section) {
-    return section.type == 'NEXT_PLAN' || section.label == '다음 계획';
-  }
+      case 'XRAY':
+        return '흉부 X-ray';
 
-  ExamResultSection? _findDoctorOpinion() {
-    for (final section in exam.resultSections) {
-      if (_isDoctorOpinion(section)) {
-        return section;
-      }
+      case 'CT':
+        return '흉부 CT';
+
+      default:
+        return exam.examName;
     }
-
-    return null;
   }
 
-  ExamResultSection? _findNextPlan() {
-    for (final section in exam.resultSections) {
-      if (_isNextPlan(section)) {
-        return section;
-      }
+  // ===========================================================
+  // 아이콘
+  // ===========================================================
+  IconData _examIcon() {
+    switch (exam.examType) {
+      case 'XRAY':
+        return Icons.image_outlined;
+
+      case 'CT':
+        return Icons.view_in_ar_outlined;
+
+      case 'PET_CT_TNM':
+        return Icons.analytics_outlined;
+
+      case 'PATHOLOGY_GENE':
+      case 'PDL1':
+        return Icons.biotech_outlined;
+
+      default:
+        return Icons.science_outlined;
     }
-
-    return null;
   }
 
-  // ─────────────────────────────────────────
+  // ===========================================================
+  // 환자에게 보여주지 않는 결과
+  // ===========================================================
+  static bool _isExcludedSection(
+    ExamResultSection section,
+  ) {
+    final value =
+        '${section.type} ${section.label}'
+            .toUpperCase();
+
+    return value.contains(
+          'DOCTOR_OPINION',
+        ) ||
+        value.contains(
+          'MEDICAL_OPINION',
+        ) ||
+        value.contains(
+          '의료진 소견',
+        ) ||
+        value.contains(
+          'NEXT_PLAN',
+        ) ||
+        value.contains(
+          '다음 계획',
+        ) ||
+        value.contains(
+          'FOLLOW_UP',
+        ) ||
+        value.contains(
+          'RECOMMENDATION',
+        ) ||
+        value.contains(
+          'FINDING_SUMMARY',
+        ) ||
+        value.contains(
+          'DIAGNOSIS_SUMMARY',
+        ) ||
+        value.contains(
+          'INTERPRETATION',
+        ) ||
+        value.contains(
+          '결과 해석',
+        );
+  }
+
+  // ===========================================================
   // 날짜
-  // ─────────────────────────────────────────
-
-  String _formatDateTime(DateTime date) {
+  // ===========================================================
+  String _formatDateTime(
+    DateTime date,
+  ) {
     final local = date.toLocal();
 
-    final period = local.hour < 12 ? '오전' : '오후';
+    final month =
+        local.month.toString().padLeft(
+              2,
+              '0',
+            );
+
+    final day =
+        local.day.toString().padLeft(
+              2,
+              '0',
+            );
+
+    final minute =
+        local.minute.toString().padLeft(
+              2,
+              '0',
+            );
+
+    final period =
+        local.hour < 12 ? '오전' : '오후';
 
     final hour = local.hour == 0
         ? 12
         : local.hour > 12
-        ? local.hour - 12
-        : local.hour;
+            ? local.hour - 12
+            : local.hour;
 
-    final minute = local.minute.toString().padLeft(2, '0');
-
-    return '${local.year}.'
-        '${local.month.toString().padLeft(2, '0')}.'
-        '${local.day.toString().padLeft(2, '0')} '
-        '$period $hour:$minute';
+    return '${local.year}.$month.$day '
+        '$period '
+        '${hour.toString().padLeft(2, '0')}:$minute';
   }
 }

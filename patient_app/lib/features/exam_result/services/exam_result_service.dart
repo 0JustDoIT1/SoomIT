@@ -7,9 +7,10 @@ class ExamResultService {
       '/api/clinical/results/',
     );
 
-    final List<dynamic> data = response.data as List<dynamic>;
+    final List<dynamic> data =
+        response.data as List<dynamic>;
 
-    final results = data
+    final rawResults = data
         .map(
           (json) => ExamResult.fromJson(
             json as Map<String, dynamic>,
@@ -17,84 +18,227 @@ class ExamResultService {
         )
         .toList();
 
-    return _mergePathologyResults(results);
+    return _mergeResults(rawResults);
   }
 
-  List<ExamResult> _mergePathologyResults(
+  List<ExamResult> _mergeResults(
     List<ExamResult> results,
   ) {
-    final normalResults = results
-        .where((result) => !result.isPathologyGroup)
-        .toList();
+    final List<ExamResult> output = [];
 
+    // =========================================================
+    // 조직(유전자)검사 그룹
+    //
+    // PATHOLOGY_GENE + PDL1
+    // → 환자앱에서는 하나로 합침
+    // =========================================================
     final pathologyResults = results
-        .where((result) => result.isPathologyGroup)
+        .where(
+          (result) => result.isPathologyGroup,
+        )
         .toList();
 
-    if (pathologyResults.isEmpty) {
-      return normalResults;
+    if (pathologyResults.isNotEmpty) {
+      output.add(
+        _mergePathologyGroup(
+          pathologyResults,
+        ),
+      );
     }
 
-    // API가 최신 결과 순으로 내려오므로
-    // 가장 최근 조직/유전자 계열 결과를 기준으로 사용한다.
-    pathologyResults.sort(
-      (a, b) => b.resultDate.compareTo(a.resultDate),
+    // =========================================================
+    // X-ray / CT / PET-CT
+    // =========================================================
+    for (final result in results) {
+      if (result.isPathologyGroup) {
+        continue;
+      }
+
+      output.add(
+        _normalizeResult(result),
+      );
+    }
+
+    // 최신 결과 먼저
+    output.sort(
+      (a, b) =>
+          b.resultDate.compareTo(a.resultDate),
     );
 
-    final base = pathologyResults.first;
+    return output;
+  }
 
-    final sections = <ExamResultSection>[];
+  // ===========================================================
+  // 조직 + 유전자 + PD-L1 합치기
+  // ===========================================================
+  ExamResult _mergePathologyGroup(
+    List<ExamResult> items,
+  ) {
+    items.sort(
+      (a, b) =>
+          b.resultDate.compareTo(a.resultDate),
+    );
 
-    for (final result in pathologyResults) {
-      for (final section in result.resultSections) {
-        final alreadyExists = sections.any(
-          (item) => item.type == section.type,
-        );
+    final latest = items.first;
 
-        if (!alreadyExists) {
-          sections.add(section);
+    final List<ExamResultSection> sections = [];
+
+    for (final item in items) {
+      for (final section
+          in item.resultSections) {
+        if (_isExcludedSection(section)) {
+          continue;
         }
+
+        sections.add(section);
       }
     }
 
-    const sectionOrder = {
-      'PATHOLOGY': 0,
-      'GENE': 1,
-      'PDL1': 2,
-    };
+    return ExamResult(
+      id: latest.id,
 
-    sections.sort(
-      (a, b) => (sectionOrder[a.type] ?? 99)
-          .compareTo(sectionOrder[b.type] ?? 99),
-    );
-
-    final sectionLabels = sections
-        .map((section) => section.label)
-        .where((label) => label.isNotEmpty)
-        .join(' · ');
-
-    final merged = ExamResult(
-      id: base.id,
       examType: 'PATHOLOGY_GENE',
+
       examName: '조직(유전자)검사',
-      resultStatus: base.resultStatus,
-      resultStatusLabel: base.resultStatusLabel,
-      resultDate: base.resultDate,
-      resultSummary: sectionLabels.isNotEmpty
-          ? '$sectionLabels 결과를 확인할 수 있습니다.'
-          : '조직(유전자)검사 결과가 등록되어 있습니다.',
+
+      resultStatus:
+          latest.resultStatus,
+
+      resultStatusLabel:
+          latest.resultStatusLabel,
+
+      resultDate:
+          latest.resultDate,
+
+      resultSummary:
+          '조직검사, 유전자검사 및 PD-L1 결과가 확인되었습니다.',
+
       resultSections: sections,
+
+      hospitalName:
+          latest.hospitalName,
+
+      departmentName:
+          latest.departmentName,
+
+      doctorName:
+          latest.doctorName,
     );
+  }
 
-    final mergedResults = [
-      ...normalResults,
-      merged,
-    ];
+  // ===========================================================
+  // 화면에 표시할 검사 이름 통일
+  // ===========================================================
+  ExamResult _normalizeResult(
+    ExamResult result,
+  ) {
+    String examName = result.examName;
 
-    mergedResults.sort(
-      (a, b) => b.resultDate.compareTo(a.resultDate),
+    switch (result.examType) {
+      case 'XRAY':
+        examName = '흉부 X-ray';
+        break;
+
+      case 'CT':
+        examName = '흉부 CT';
+        break;
+
+      case 'PET_CT_TNM':
+        // TNM은 PET-CT 상세 결과에 포함
+        examName = 'PET-CT';
+        break;
+    }
+
+    final visibleSections = result.resultSections
+        .where(
+          (section) =>
+              !_isExcludedSection(section),
+        )
+        .toList();
+
+    return ExamResult(
+      id: result.id,
+
+      examType:
+          result.examType,
+
+      examName:
+          examName,
+
+      resultStatus:
+          result.resultStatus,
+
+      resultStatusLabel:
+          result.resultStatusLabel,
+
+      resultDate:
+          result.resultDate,
+
+      resultSummary:
+          result.resultSummary,
+
+      resultSections:
+          visibleSections,
+
+      hospitalName:
+          result.hospitalName,
+
+      departmentName:
+          result.departmentName,
+
+      doctorName:
+          result.doctorName,
     );
+  }
 
-    return mergedResults;
+  // ===========================================================
+  // 환자앱에서 제외
+  // ===========================================================
+  bool _isExcludedSection(
+    ExamResultSection section,
+  ) {
+    final value =
+        '${section.type} ${section.label}'
+            .toUpperCase();
+
+    return value.contains(
+          'DOCTOR_OPINION',
+        ) ||
+        value.contains(
+          'MEDICAL_OPINION',
+        ) ||
+        value.contains(
+          '의료진 소견',
+        ) ||
+        value.contains(
+          'NEXT_PLAN',
+        ) ||
+        value.contains(
+          'FOLLOW_UP',
+        ) ||
+        value.contains(
+          '다음 계획',
+        ) ||
+        value.contains(
+          'RECOMMENDATION',
+        ) ||
+        value.contains(
+          '권고 조치',
+        ) ||
+        value.contains(
+          'FINDING_SUMMARY',
+        ) ||
+        value.contains(
+          '진단 요약',
+        ) ||
+        value.contains(
+          'DIAGNOSIS_SUMMARY',
+        ) ||
+        value.contains(
+          'INTERPRETATION',
+        ) ||
+        value.contains(
+          '결과 해석',
+        );
   }
 }

@@ -78,15 +78,20 @@ class DoctorCtResultWriteSerializer(serializers.Serializer):
         return attrs
 
 class PatientClinicalResultSerializer(serializers.ModelSerializer):
-    workflow_stage = serializers.CharField()
+    workflow_stage = serializers.CharField(read_only=True)
+
     exam_name = serializers.SerializerMethodField()
+
     result_status_label = serializers.CharField(
         source="get_result_status_display",
         read_only=True,
     )
+
     result_summary = serializers.SerializerMethodField()
-    result_sections = serializers.SerializerMethodField()
     result_date = serializers.SerializerMethodField()
+
+    # 환자 앱 상세 결과
+    result_sections = serializers.SerializerMethodField()
 
     class Meta:
         model = ClinicalResult
@@ -105,9 +110,9 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
         exam_names = {
             "XRAY": "흉부 X-ray 검사",
             "CT": "흉부 CT 검사",
-            "PET_CT_TNM": "PET-CT",
-            "PATHOLOGY_GENE": "조직(유전자)검사",
-            "PDL1": "조직(유전자)검사",
+            "PET_CT_TNM": "PET-CT 및 TNM 병기 평가",
+            "PATHOLOGY_GENE": "조직·유전자 검사",
+            "PDL1": "PD-L1 검사",
         }
 
         return exam_names.get(
@@ -116,89 +121,288 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
         )
 
     def get_result_date(self, obj):
-        # 확정된 결과는 확정일을 우선 사용
         if obj.confirmed_at:
             return obj.confirmed_at
 
         return obj.updated_at
 
-    def get_result_sections(self, obj):
-        sections = []
-
-        if hasattr(obj, "pathology_detail"):
-            sections.append({
-                "type": "PATHOLOGY",
-                "label": "조직검사",
-                "summary": (
-                    obj.pathology_detail.diagnosis_summary
-                    or obj.pathology_detail.get_malignancy_status_display()
-                ),
-            })
-
-        if hasattr(obj, "gene_detail"):
-            sections.append({
-                "type": "GENE",
-                "label": "유전자검사",
-                "summary": (
-                    obj.gene_detail.interpretation
-                    or "유전자 검사 결과가 등록되었습니다."
-                ),
-            })
-
-        if hasattr(obj, "pdl1_detail"):
-            sections.append({
-                "type": "PDL1",
-                "label": "PD-L1",
-                "summary": (
-                    obj.pdl1_detail.interpretation
-                    or "PD-L1 검사 결과가 등록되었습니다."
-                ),
-            })
-
-        return sections
-
+    # =========================================================
+    # 검사 결과 목록에 보여줄 짧은 결과
+    #
+    # finding_summary
+    # diagnosis_summary
+    # interpretation
+    # 같은 서술형 내용은 사용하지 않음.
+    # =========================================================
     def get_result_summary(self, obj):
+
         # X-ray
         if hasattr(obj, "xray_detail"):
-            return (
-                obj.xray_detail.finding_summary
-                or obj.xray_detail.get_assessment_display()
-            )
+            return obj.xray_detail.get_assessment_display()
 
         # CT
         if hasattr(obj, "ct_detail"):
-            return (
-                obj.ct_detail.finding_summary
-                or obj.ct_detail.get_overall_assessment_display()
-            )
+            ct = obj.ct_detail
 
-        # 병리
-        if hasattr(obj, "pathology_detail"):
-            return (
-                obj.pathology_detail.diagnosis_summary
-                or obj.pathology_detail.get_malignancy_status_display()
-            )
+            assessment = ct.get_overall_assessment_display()
 
-        # TNM
+            if ct.overall_malignancy_risk is not None:
+                return (
+                    f"{assessment} · "
+                    f"악성 위험도 {ct.overall_malignancy_risk}%"
+                )
+
+            return assessment
+
+        # PET-CT / TNM
         if hasattr(obj, "tnm_detail"):
-            return f"병기 {obj.tnm_detail.stage_group}"
+            stage = obj.tnm_detail.stage_group
 
-        # 유전자
+            if stage:
+                return f"최종 병기 {stage}"
+
+            return "병기 평가 완료"
+
+        # 조직검사
+        if hasattr(obj, "pathology_detail"):
+            pathology = obj.pathology_detail
+
+            result = pathology.get_malignancy_status_display()
+
+            if pathology.histologic_type:
+                return f"{result} · {pathology.histologic_type}"
+
+            return result
+
+        # 유전자만 존재하는 경우
         if hasattr(obj, "gene_detail"):
-            return (
-                obj.gene_detail.interpretation
-                or "유전자 검사 결과가 등록되었습니다."
+            findings = list(
+                obj.gene_detail.gene_findings.all()
             )
+
+            if findings:
+                first = findings[0]
+
+                if len(findings) == 1:
+                    return (
+                        f"{first.gene_symbol} "
+                        f"{first.get_assessment_display()}"
+                    )
+
+                return f"유전자 결과 {len(findings)}건 확인"
+
+            return "유전자 검사 결과 확인"
 
         # PD-L1
         if hasattr(obj, "pdl1_detail"):
-            return (
-                obj.pdl1_detail.interpretation
-                or "PD-L1 검사 결과가 등록되었습니다."
+            pdl1 = obj.pdl1_detail
+
+            if pdl1.tps_percent is not None:
+                return f"PD-L1 TPS {pdl1.tps_percent}%"
+
+            return "PD-L1 검사 결과 확인"
+
+        return "검사 결과 확인"
+
+    # =========================================================
+    # 환자 앱 상세 결과
+    #
+    # 의료진 서술형 소견 제외
+    #
+    # 제외:
+    # - finding_summary
+    # - diagnosis_summary
+    # - interpretation
+    # - recommended_action
+    # - note
+    #
+    # 구조화된 확정 결과만 전달
+    # =========================================================
+    def get_result_sections(self, obj):
+        sections = []
+
+        # =====================================================
+        # 1. X-ray
+        # =====================================================
+        if hasattr(obj, "xray_detail"):
+            xray = obj.xray_detail
+
+            sections.append({
+                "type": "XRAY_ASSESSMENT",
+                "label": "최종 판정",
+                "summary": xray.get_assessment_display(),
+            })
+
+            return sections
+
+        # =====================================================
+        # 2. CT
+        # =====================================================
+        if hasattr(obj, "ct_detail"):
+            ct = obj.ct_detail
+
+            sections.append({
+                "type": "CT_ASSESSMENT",
+                "label": "종합 판정",
+                "summary": ct.get_overall_assessment_display(),
+            })
+
+            if ct.overall_malignancy_risk is not None:
+                sections.append({
+                    "type": "CT_MALIGNANCY_RISK",
+                    "label": "악성 위험도",
+                    "summary": f"{ct.overall_malignancy_risk}%",
+                })
+
+            # ---------------------------------------------
+            # 결절 정보
+            # ---------------------------------------------
+            observations = list(
+                ct.nodule_observations.all()
             )
 
-        return "검사 결과가 등록되었습니다."
+            for index, observation in enumerate(
+                observations,
+                start=1,
+            ):
+                location_parts = []
 
+                if observation.lobe:
+                    location_parts.append(
+                        observation.get_lobe_display()
+                    )
+
+                if observation.location_description:
+                    location_parts.append(
+                        observation.location_description
+                    )
+
+                if location_parts:
+                    location_label = (
+                        "결절 위치"
+                        if len(observations) == 1
+                        else f"결절 {index} 위치"
+                    )
+
+                    sections.append({
+                        "type": f"CT_NODULE_LOCATION_{index}",
+                        "label": location_label,
+                        "summary": " · ".join(location_parts),
+                    })
+
+                if observation.max_diameter_mm is not None:
+                    size_label = (
+                        "결절 크기"
+                        if len(observations) == 1
+                        else f"결절 {index} 크기"
+                    )
+
+                    sections.append({
+                        "type": f"CT_NODULE_SIZE_{index}",
+                        "label": size_label,
+                        "summary": (
+                            f"{observation.max_diameter_mm} mm"
+                        ),
+                    })
+
+            return sections
+
+        # =====================================================
+        # 3. PET-CT / TNM
+        # =====================================================
+        if hasattr(obj, "tnm_detail"):
+            tnm = obj.tnm_detail
+
+            sections.extend([
+                {
+                    "type": "TNM_T",
+                    "label": "T 범주",
+                    "summary": tnm.t_category,
+                },
+                {
+                    "type": "TNM_N",
+                    "label": "N 범주",
+                    "summary": tnm.n_category,
+                },
+                {
+                    "type": "TNM_M",
+                    "label": "M 범주",
+                    "summary": tnm.m_category,
+                },
+                {
+                    "type": "TNM_STAGE",
+                    "label": "최종 병기",
+                    "summary": tnm.stage_group,
+                },
+            ])
+
+            return sections
+
+        # =====================================================
+        # 4. 조직 + 유전자
+        #
+        # PATHOLOGY_GENE는
+        # PathologyResult + GeneResult가 함께 들어갈 수 있음
+        # =====================================================
+        if hasattr(obj, "pathology_detail"):
+            pathology = obj.pathology_detail
+
+            sections.append({
+                "type": "PATHOLOGY_MALIGNANCY",
+                "label": "악성 여부",
+                "summary": (
+                    pathology.get_malignancy_status_display()
+                ),
+            })
+
+            if pathology.histologic_type:
+                sections.append({
+                    "type": "PATHOLOGY_HISTOLOGY",
+                    "label": "조직형",
+                    "summary": pathology.histologic_type,
+                })
+
+            if pathology.subtype:
+                sections.append({
+                    "type": "PATHOLOGY_SUBTYPE",
+                    "label": "세부 아형",
+                    "summary": pathology.subtype,
+                })
+
+        # 유전자
+        if hasattr(obj, "gene_detail"):
+            gene = obj.gene_detail
+
+            findings = gene.gene_findings.all()
+
+            for finding in findings:
+                sections.append({
+                    "type": "GENE_FINDING",
+                    "label": finding.gene_symbol,
+                    "summary": (
+                        finding.get_assessment_display()
+                    ),
+                })
+
+        if sections:
+            return sections
+
+        # =====================================================
+        # 5. PD-L1
+        # =====================================================
+        if hasattr(obj, "pdl1_detail"):
+            pdl1 = obj.pdl1_detail
+
+            if pdl1.tps_percent is not None:
+                sections.append({
+                    "type": "PDL1_TPS",
+                    "label": "PD-L1 TPS",
+                    "summary": f"{pdl1.tps_percent}%",
+                })
+
+            return sections
+
+        return sections
 # 호흡기내과 - Case 검사 결과 상세 조회용
 class DoctorClinicalResultSerializer(serializers.ModelSerializer):
     workflow_stage = serializers.CharField(read_only=True)

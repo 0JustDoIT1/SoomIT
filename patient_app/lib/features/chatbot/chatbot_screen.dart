@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../auth/services/patient_auth_service.dart';
 import 'services/chatbot_service.dart';
 
 class ChatbotScreen extends StatefulWidget {
@@ -16,21 +17,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
 
   final ChatbotService _chatbotService = ChatbotService();
 
-  bool _isReplying = false;
+  final PatientAuthService _authService = PatientAuthService();
 
-  /*
-   * 테스트용 JWT
-   *
-   * 지금은 로그인 기능을 구현하기 전이므로
-   * Django shell에서 발급한 access token을
-   * 임시로 넣어서 API 연결만 확인한다.
-   *
-   * 실제 로그인 구현 후에는 반드시 삭제할 것.
-   */
-  static const String _testAccessToken = String.fromEnvironment(
-    'CHATBOT_TEST_ACCESS_TOKEN',
-    defaultValue: '',
-  );
+  bool _isReplying = false;
 
   final List<_ChatMessage> _messages = [
     const _ChatMessage(
@@ -54,6 +43,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
+
     super.dispose();
   }
 
@@ -69,6 +59,74 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         curve: Curves.easeOut,
       );
     });
+  }
+
+  Future<String> _requestChatbotAnswer({
+    required String message,
+    required List<Map<String, String>> history,
+  }) async {
+    var accessToken = await _authService.getAccessToken();
+
+    /*
+     * access token이 없는 경우
+     * 저장된 refresh token을 이용해 세션 복구를 시도한다.
+     */
+    if (accessToken == null || accessToken.isEmpty) {
+      final refreshed = await _authService.refreshStoredSession();
+
+      if (refreshed) {
+        accessToken = await _authService.getAccessToken();
+      }
+    }
+
+    if (accessToken == null || accessToken.isEmpty) {
+      throw Exception('로그인 인증정보를 확인할 수 없습니다.');
+    }
+
+    try {
+      return await _chatbotService.sendMessage(
+        message: message,
+        history: history,
+        accessToken: accessToken,
+      );
+    } catch (error) {
+      final errorMessage = error.toString();
+
+      /*
+       * access token이 만료된 경우
+       * refresh token으로 한 번 갱신한 뒤 재요청한다.
+       */
+      final isAuthenticationError =
+          errorMessage.contains('인증이 필요합니다.') ||
+          errorMessage.contains('401') ||
+          errorMessage.contains('Unauthorized');
+
+      if (!isAuthenticationError) {
+        rethrow;
+      }
+
+      final refreshed = await _authService.refreshStoredSession();
+
+      if (!refreshed) {
+        throw Exception('로그인 세션이 만료되었습니다. 다시 로그인해주세요.');
+      }
+
+      final newAccessToken = await _authService.getAccessToken();
+
+      if (newAccessToken == null || newAccessToken.isEmpty) {
+        throw Exception('새 인증정보를 불러오지 못했습니다.');
+      }
+
+      /*
+       * 토큰 갱신 성공 후
+       * 동일한 챗봇 요청을 한 번만 다시 보낸다.
+       */
+      return _chatbotService.sendMessage(
+        message: message,
+        history: history,
+        accessToken: newAccessToken,
+      );
+    }
   }
 
   Future<void> _sendMessage([String? preset]) async {
@@ -97,14 +155,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     _scrollToBottom();
 
     try {
-      if (_testAccessToken.isEmpty) {
-        throw Exception('챗봇 테스트 인증값이 설정되지 않았습니다.');
-      }
-
-      final answer = await _chatbotService.sendMessage(
+      final answer = await _requestChatbotAnswer(
         message: text,
         history: history,
-        accessToken: _testAccessToken,
       );
 
       if (!mounted) {
@@ -155,9 +208,20 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   String _getErrorMessage(Object error) {
     final message = error.toString().replaceFirst('Exception: ', '');
 
-    if (message.contains('인증이 필요합니다.')) {
-      return '테스트 인증이 만료되었어요.\n'
-          '새 access token을 발급한 뒤 다시 시도해주세요.';
+    if (message.contains('로그인 인증정보를 확인할 수 없습니다.')) {
+      return '로그인 정보를 확인할 수 없어요.\n'
+          '다시 로그인한 뒤 이용해주세요.';
+    }
+
+    if (message.contains('로그인 세션이 만료되었습니다.') ||
+        message.contains('인증이 필요합니다.')) {
+      return '로그인 세션이 만료되었어요.\n'
+          '다시 로그인한 뒤 이용해주세요.';
+    }
+
+    if (message.contains('새 인증정보를 불러오지 못했습니다.')) {
+      return '로그인 정보를 갱신하지 못했어요.\n'
+          '다시 로그인해주세요.';
     }
 
     if (message.contains('AI 서비스에 연결할 수 없습니다.')) {
@@ -168,10 +232,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     if (message.contains('AI 서비스가 아직 설정되지 않았습니다.')) {
       return '현재 AI 서비스 설정을 확인하고 있어요.\n'
           '백엔드 Genkit 설정을 확인해주세요.';
-    }
-
-    if (message.contains('테스트용 JWT')) {
-      return message;
     }
 
     return '챗봇 답변을 불러오지 못했어요.\n'
@@ -495,9 +555,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               ),
             ),
           ),
-
           const SizedBox(width: 8),
-
           _buildSendButton(),
         ],
       ),
