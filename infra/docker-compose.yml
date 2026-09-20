@@ -25,6 +25,7 @@ services:
     <<: *django-base
     volumes:
       - ../backend/gcs-key.json:/app/gcs-key.json:ro
+      - ../backend/soomit-patient-firebase-admin.json:/app/soomit-patient-firebase-admin.json:ro
     command: ['celery', '-A', 'config', 'worker', '-l', 'info']
 
   celery_beat:
