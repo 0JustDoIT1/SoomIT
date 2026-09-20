@@ -507,7 +507,7 @@ function ApprovalBadge() {
 }
 
 function OrderTypeLabel({ type }: { type: ExaminationOrder["order_type"] }) {
-  const pathology = type === "PATHOLOGY_GENE" || type === "PDL1";
+  
   return <span className="inline-flex border-l-2 border-slate-300 pl-2 text-sm font-medium text-slate-700">{ORDER_LABELS[type]}</span>;
 }
 

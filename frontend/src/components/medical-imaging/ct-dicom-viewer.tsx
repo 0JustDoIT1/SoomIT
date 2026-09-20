@@ -411,78 +411,256 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
     sagittal: sagittalOverlayRef,
   };
 
+
+  const toolItems: Array<[MprToolMode, string, string]> = [
+    ["WL", "WL/WW", "Window / Level"],
+    ["ZOOM", "Zoom", "Zoom"],
+    ["PAN", "Pan", "Pan"],
+    ["LENGTH", "측정", "Length measurement"],
+    ["ROI", "ROI", "Rectangle ROI"],
+  ];
+
+  const progressPercent =
+    seriesProgress.total > 0
+      ? Math.round((seriesProgress.loaded / seriesProgress.total) * 100)
+      : 0;
   return (
-    <div ref={workspaceRef} tabIndex={0} onKeyDown={onWorkspaceKeyDown} className="grid h-full min-h-0 overflow-hidden bg-slate-950 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동">
-      <div className="relative min-h-0">
-        <div role="toolbar" aria-label="CT Viewer 도구" className="absolute left-2 top-2 z-30 flex max-w-[calc(100%-1rem)] flex-wrap items-center gap-1 rounded-md border border-slate-700/80 bg-slate-950/85 p-1 shadow-lg backdrop-blur">
-          <button type="button" aria-pressed={!focusedView} onClick={() => setFocusedView(null)} className={`rounded px-2 py-1 text-[10px] font-semibold ${!focusedView ? "bg-blue-600 text-white" : "text-slate-200 hover:bg-slate-800"}`}>2×2</button>
-          <button type="button" aria-pressed={Boolean(focusedView)} onClick={toggleFocusedView} className={`rounded px-2 py-1 text-[10px] font-semibold ${focusedView ? "bg-blue-600 text-white" : "text-slate-200 hover:bg-slate-800"}`}>1×1</button>
-          <span aria-hidden="true" className="h-4 w-px bg-slate-700" />
-          {([ ["WL", "WL/WW"], ["ZOOM", "Zoom"], ["PAN", "Pan"], ["LENGTH", "측정"], ["ROI", "ROI"] ] as Array<[MprToolMode, string]>).map(([mode, label]) => <button key={mode} type="button" aria-pressed={activeTool === mode} onClick={() => setMprToolMode(mode)} title={mode === "LENGTH" || mode === "ROI" ? "화면에서만 사용하며 저장되지 않습니다." : undefined} className={`rounded px-2 py-1 text-[10px] font-semibold ${activeTool === mode ? "bg-blue-600 text-white" : "text-slate-200 hover:bg-slate-800"}`}>{label}</button>)}
-          <span aria-hidden="true" className="h-4 w-px bg-slate-700" />
-          <button type="button" onClick={requestFullscreen} className="rounded px-2 py-1 text-[10px] font-semibold text-slate-200 hover:bg-slate-800">전체화면</button>
-        </div>
-        <span title="CT Viewer에 포커스를 둔 뒤 사용할 수 있습니다." className="absolute bottom-2 right-2 z-20 rounded bg-black/60 px-2 py-1 text-[9px] text-slate-300">⌨ F 전체 · R 초기화 · 휠 슬라이스</span>
-        {focusedView && (
-          <button
-            type="button"
-            onClick={() => setFocusedView(null)}
-            className="absolute right-2 top-2 z-20 rounded bg-black/60 px-2 py-1 text-[9px] font-semibold text-white"
-          >
-            전체보기
-          </button>
-        )}
-
-        {seriesProgress.total > 0 && seriesProgress.loaded < seriesProgress.total && (
-          <div className="absolute left-1/2 top-3 z-20 w-56 -translate-x-1/2 rounded bg-black/80 px-3 py-2 text-[10px] font-semibold text-white shadow-lg">
-            CT 데이터 로딩 {seriesProgress.loaded}/{seriesProgress.total}
-            <div className="mt-1 h-1.5 overflow-hidden rounded bg-slate-700">
-              <div
-                className="h-full rounded bg-blue-500 transition-[width]"
-                style={{ width: `${Math.round((seriesProgress.loaded / seriesProgress.total) * 100)}%` }}
-              />
-            </div>
-          </div>
-        )}
-
-        <div className={`absolute inset-0 ${focusedView ? "" : "grid grid-cols-2 grid-rows-2 gap-px bg-slate-800"}`}>
-          {views.map(({ key, ref }) => (
-            <div
-              key={key}
-              className={`bg-slate-950 ${
-                focusedView ? (focusedView === key ? "absolute inset-0" : "hidden") : "relative"
+    <div
+      ref={workspaceRef}
+      tabIndex={0}
+      onKeyDown={onWorkspaceKeyDown}
+      className="grid h-full min-h-0 grid-rows-[42px_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동"
+    >
+      {/* PACS toolbar */}
+      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-2.5">
+        <div
+          role="toolbar"
+          aria-label="CT Viewer 도구"
+          className="flex min-w-0 items-center gap-1 overflow-x-auto"
+        >
+          <div className="flex shrink-0 items-center rounded-md border border-slate-700 bg-slate-900 p-0.5">
+            <button
+              type="button"
+              aria-pressed={!focusedView}
+              onClick={() => setFocusedView(null)}
+              className={`h-7 rounded px-2 text-[9px] font-semibold transition ${
+                !focusedView
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
               }`}
             >
-              <div ref={ref} className="absolute inset-0" aria-label={`CT ${VIEW_LABELS[key]} viewer`} />
-              {overlayRefs[key] && (
-                <canvas ref={overlayRefs[key]} className="pointer-events-none absolute inset-0" />
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  setSelectedView(key);
-                  setFocusedView((current) => (current === key ? null : key));
-                }}
-                className="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-[8px] font-semibold text-white"
-              >
-                {VIEW_LABELS[key]} {focusedView === key ? "· 축소" : "· 확대"}
-              </button>
-            </div>
+              2×2
+            </button>
+
+            <button
+              type="button"
+              aria-pressed={Boolean(focusedView)}
+              onClick={toggleFocusedView}
+              className={`h-7 rounded px-2 text-[9px] font-semibold transition ${
+                focusedView
+                  ? "bg-blue-600 text-white shadow-sm"
+                  : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
+              }`}
+            >
+              1×1
+            </button>
+          </div>
+
+          <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-slate-700" />
+
+          {toolItems.map(([mode, label, title]) => (
+            <button
+              key={mode}
+              type="button"
+              aria-pressed={activeTool === mode}
+              onClick={() => setMprToolMode(mode)}
+              title={
+                mode === "LENGTH" || mode === "ROI"
+                  ? `${title} · 화면에서만 사용하며 저장되지 않습니다.`
+                  : title
+              }
+              className={`h-7 shrink-0 rounded-md border px-2 text-[9px] font-semibold transition ${
+                activeTool === mode
+                  ? "border-blue-500 bg-blue-600 text-white shadow-sm"
+                  : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800"
+              }`}
+            >
+              {label}
+            </button>
           ))}
+
+          <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-slate-700" />
+
+          <button
+            type="button"
+            onClick={resetViewports}
+            title="모든 Viewport 초기화 (R)"
+            className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800"
+          >
+            초기화
+          </button>
+
+          <button
+            type="button"
+            onClick={requestFullscreen}
+            title="전체화면 (F)"
+            className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800"
+          >
+            전체화면
+          </button>
+        </div>
+
+        <div className="hidden shrink-0 items-center gap-2 text-[8px] text-slate-500 xl:flex">
+          <span>휠 Slice</span>
+          <span>·</span>
+          <span>우클릭 Zoom</span>
+          <span>·</span>
+          <span>중클릭 Pan</span>
+        </div>
+      </div>
+
+      {/* Viewports */}
+      <div className="relative min-h-0 overflow-hidden bg-[#02050d]">
+        {seriesProgress.total > 0 &&
+          seriesProgress.loaded < seriesProgress.total && (
+            <div className="pointer-events-none absolute left-1/2 top-2 z-40 w-52 -translate-x-1/2 rounded-md border border-slate-700 bg-slate-950/95 px-3 py-2 shadow-xl backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-[9px] font-semibold text-slate-200">
+                  CT Series 로딩
+                </span>
+                <span className="text-[8px] tabular-nums text-slate-400">
+                  {seriesProgress.loaded}/{seriesProgress.total}
+                </span>
+              </div>
+              <div className="mt-1.5 h-1 overflow-hidden rounded-full bg-slate-800">
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-[width]"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+        <div
+          className={`absolute inset-0 ${
+            focusedView
+              ? ""
+              : "grid grid-cols-2 grid-rows-2 gap-px bg-slate-800"
+          }`}
+        >
+          {views.map(({ key, ref }) => {
+            const selected = selectedView === key;
+            const focused = focusedView === key;
+            const is3d = key === "volume3d";
+
+            return (
+              <section
+                key={key}
+                className={`overflow-hidden bg-[#03060d] ${
+                  focusedView
+                    ? focused
+                      ? "absolute inset-0"
+                      : "hidden"
+                    : "relative"
+                } ${selected ? "ring-1 ring-inset ring-blue-500/60" : ""}`}
+                onMouseDown={() => setSelectedView(key)}
+              >
+                <div
+                  ref={ref}
+                  className="absolute inset-0"
+                  aria-label={`CT ${VIEW_LABELS[key]} viewer`}
+                />
+
+                {overlayRefs[key] && (
+                  <canvas
+                    ref={overlayRefs[key]}
+                    className="pointer-events-none absolute inset-0"
+                  />
+                )}
+
+                {/* viewport HUD */}
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex items-start justify-between p-2">
+                  <div className="flex items-center gap-1.5">
+                    <span className="rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[8px] font-bold text-white backdrop-blur-sm">
+                      {VIEW_LABELS[key]}
+                    </span>
+
+                    {!is3d && analysisId && (
+                      <span className="rounded-md border border-violet-400/20 bg-violet-500/10 px-1.5 py-1 text-[7px] font-semibold text-violet-200 backdrop-blur-sm">
+                        SEG
+                      </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setSelectedView(key);
+                      setFocusedView((current) =>
+                        current === key ? null : key,
+                      );
+                    }}
+                    className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-md border border-white/10 bg-black/55 text-[12px] font-semibold text-slate-200 backdrop-blur-sm transition hover:bg-black/75 hover:text-white"
+                    title={focused ? "2×2 보기로 돌아가기" : `${VIEW_LABELS[key]} 확대`}
+                    aria-label={focused ? "전체 CT 보기" : `${VIEW_LABELS[key]} 확대`}
+                  >
+                    {focused ? "↙" : "⛶"}
+                  </button>
+                </div>
+
+                {/* bottom viewport information */}
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex items-end justify-between p-2">
+                  <div className="rounded-md border border-white/10 bg-black/45 px-2 py-1 text-[7px] text-slate-400 backdrop-blur-sm">
+                    {is3d
+                      ? "좌클릭 Rotate · 우클릭 Zoom"
+                      : activeTool === "WL"
+                        ? "Drag WL/WW · Wheel Slice"
+                        : activeTool === "ZOOM"
+                          ? "Drag Zoom · Wheel Slice"
+                          : activeTool === "PAN"
+                            ? "Drag Pan · Wheel Slice"
+                            : activeTool === "LENGTH"
+                              ? "Length measurement"
+                              : "Rectangle ROI"}
+                  </div>
+
+                  {selected && !focused && (
+                    <span className="rounded-full border border-blue-400/30 bg-blue-500/10 px-1.5 py-0.5 text-[7px] font-semibold text-blue-300 backdrop-blur-sm">
+                      ACTIVE
+                    </span>
+                  )}
+                </div>
+              </section>
+            );
+          })}
         </div>
 
         {loading && (
-          <div className="absolute inset-0 grid place-items-center text-xs font-semibold text-slate-300">
-            CT Series를 불러오는 중입니다.
+          <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#02050d]/85 backdrop-blur-[1px]">
+            <div className="rounded-lg border border-slate-800 bg-slate-950/90 px-5 py-4 text-center shadow-xl">
+              <div className="mx-auto h-7 w-7 animate-pulse rounded-full border border-slate-700 bg-slate-900" />
+              <p className="mt-3 text-[10px] font-semibold text-slate-200">
+                CT Series를 불러오는 중입니다.
+              </p>
+            </div>
           </div>
         )}
+
+        {building && !loading && (
+          <div className="pointer-events-none absolute bottom-2 left-1/2 z-40 -translate-x-1/2 rounded-md border border-slate-700 bg-black/75 px-2.5 py-1.5 text-[8px] font-medium text-slate-300 backdrop-blur">
+            MPR / 3D Viewer 구성 중
+          </div>
+        )}
+
         {!loading && (error || viewerError) && (
-          <div role="alert" className="absolute bottom-2 left-2 right-2 rounded bg-rose-950/80 px-2 py-1 text-[10px] text-rose-200">
+          <div
+            role="alert"
+            className="absolute bottom-2 left-2 right-2 z-50 rounded-md border border-rose-800/60 bg-rose-950/90 px-3 py-2 text-[9px] text-rose-200 shadow-lg"
+          >
             {error || viewerError}
           </div>
-        )}
-        {building && !loading && (
-          <div className="absolute bottom-2 left-2 z-20 rounded bg-black/70 px-2 py-1 text-[9px] text-slate-300">뷰어 구성 중…</div>
         )}
       </div>
     </div>

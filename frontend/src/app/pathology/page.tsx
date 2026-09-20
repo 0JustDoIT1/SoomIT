@@ -520,7 +520,11 @@ function PathologyTissueHeatmap({
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | null = null;
+    queueMicrotask(() => {
+  if (!controller.signal.aborted) {
     setLoading(true);
+  }
+});
     void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
       .then((blob) => {
         if (!controller.signal.aborted && blob?.size) {

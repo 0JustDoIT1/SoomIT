@@ -434,7 +434,7 @@ export default function RespiratoryCaseDetailPage() {
   const searchParams = useSearchParams();
   const params = useParams();
   const router = useRouter();
-  const { authorizedFetch } = useRespiratoryAuth();
+  const { user, authorizedFetch } = useRespiratoryAuth();
 
   const caseId = params.caseId as string;
 
@@ -453,7 +453,7 @@ export default function RespiratoryCaseDetailPage() {
 
   const [selectedMainMenu, setSelectedMainMenu] =
   useState<MainMenu>("AI");
-  const [selectedInfoMenu, setSelectedInfoMenu] = useState<CaseInfoKey>("PET_CT_TNM");
+  const [selectedInfoMenu, setSelectedInfoMenu] = useState<CaseInfoKey>("OVERVIEW");
   const [aiReviewRequest, setAiReviewRequest] = useState<{ analysisType: string; requestId: number } | null>(null);
 
   const [expandedMainMenu, setExpandedMainMenu] =
@@ -1040,17 +1040,50 @@ export default function RespiratoryCaseDetailPage() {
   };
 
   const currentCaseStage = selectedCase?.current_stage;
+  const previousCaseIdRef = useRef(caseId);
+  const previousCaseStageRef = useRef<string | undefined>(undefined);
+
   useEffect(() => {
     if (!currentCaseStage) return;
+
     const stage = currentCaseStage as CaseInfoKey;
-    if (!(["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"] as CaseInfoKey[]).includes(stage)) return;
-    setSelectedInfoMenu(stage);
-    const navigation = getCaseMenuNavigation(stage);
-    if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
-    if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
-    if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
-    if (stage === "TREATMENT") setSelectedTreatmentMenu("FINAL_PLAN");
-  }, [caseId, currentCaseStage]);
+    const workflowStages = [
+      "XRAY",
+      "CT",
+      "PET_CT_TNM",
+      "PATHOLOGY_GENE",
+      "PDL1",
+      "TREATMENT",
+      "PRESCRIPTION",
+    ] as CaseInfoKey[];
+
+    if (!workflowStages.includes(stage)) return;
+
+    const caseChanged = previousCaseIdRef.current !== caseId;
+    const previousStage = previousCaseStageRef.current;
+
+    previousCaseIdRef.current = caseId;
+    previousCaseStageRef.current = currentCaseStage;
+
+    // Case를 처음 열거나 다른 Case로 이동하면 항상 '전체 요약'에서 시작한다.
+    if (caseChanged || previousStage === undefined) {
+      setSelectedInfoMenu("OVERVIEW");
+      return;
+    }
+
+    // 같은 Case 안에서 실제 workflow stage가 다음 단계로 바뀐 경우에만
+    // 사용자가 직전 단계 화면을 보고 있었다면 새 단계로 자연스럽게 이동한다.
+    // 사용자가 '전체 요약'이나 다른 과거 결과를 열어 보고 있으면 강제로 덮어쓰지 않는다.
+    if (previousStage !== currentCaseStage && selectedInfoMenu === previousStage) {
+      setSelectedInfoMenu(stage);
+
+      const navigation = getCaseMenuNavigation(stage);
+      if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
+      if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
+      if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
+      if (stage === "TREATMENT") setSelectedTreatmentMenu("FINAL_PLAN");
+    }
+  }, [caseId, currentCaseStage, selectedInfoMenu]);
 
   const latestPdl1Result =
     pdl1Results.length > 0
@@ -1631,13 +1664,17 @@ export default function RespiratoryCaseDetailPage() {
   return (
     <>
       <div className="h-full min-h-0 overflow-hidden bg-[#f3f7fd]" aria-label="Case Workspace">
-      <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(172px,190px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(184px,200px)_116px_minmax(0,1fr)]">
+      <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(228px,244px)_116px_minmax(0,1fr)]">
       <div className="fixed bottom-20 right-4 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
       <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} orders={caseOrders} aiResults={tnmAnalysisResults} onSelect={handleInfoMenuSelect} />
       <div className="flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden p-2">
-      <CaseSummaryHeader key={caseId} caseData={selectedCase} />
+      <CaseSummaryHeader
+        key={caseId}
+        caseData={selectedCase}
+        doctorDisplayName={user?.name}
+      />
       <CaseWorkflowBar
         currentStage={selectedCase.current_stage}
         hasPdl1Result={Boolean(confirmedPdl1Result)}
@@ -1893,15 +1930,17 @@ export default function RespiratoryCaseDetailPage() {
             <div className="min-w-0">
               <p className="text-[9px] font-semibold uppercase tracking-wide text-slate-400">열람 중</p>
               <h1 className="truncate text-sm font-bold text-slate-900">
-              {selectedInfoMenu === "AI_SUMMARY"
-                ? "AI 종합 분석"
-                : getDetailTitle(
-                    selectedMainMenu,
-                    selectedResultMenu,
-                    selectedAiMenu,
-                    selectedTreatmentMenu,
-                    selectedPrescriptionMenu
-                  )}
+              {selectedInfoMenu === "OVERVIEW"
+                ? "전체 요약"
+                : selectedInfoMenu === "AI_SUMMARY"
+                  ? "AI 종합 분석"
+                  : getDetailTitle(
+                      selectedMainMenu,
+                      selectedResultMenu,
+                      selectedAiMenu,
+                      selectedTreatmentMenu,
+                      selectedPrescriptionMenu
+                    )}
               </h1>
             </div>
             <span className="hidden shrink-0 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-semibold text-blue-700 lg:inline">현재 Case 단계 · {getStageLabel(selectedCase.current_stage)}</span>

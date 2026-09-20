@@ -7,7 +7,7 @@ import { RecentPatients, useRecentPatients, type RecentPatient } from "@/compone
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
 
-import { RadiologyDetail, RadiologyPatientSummary, RadiologyWorkflowBadge } from "./_components/radiology-detail";
+import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
 import { RadiologyCompletedHistory } from "./_components/radiology-completed-history";
 import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
@@ -157,7 +157,7 @@ function RadiologyCaseDetail({
             <span className="mr-2 text-xs text-violet-600">01</span>
             {currentWorkflowExam.examination_order.order_type_label}
           </p>
-          <RadiologyWorkflowBadge status={currentWorkflowExam.workflow_status} label={currentWorkflowExam.workflow_status_label} />
+          <StatusBadge status={currentWorkflowExam.workflow_status} label={currentWorkflowExam.workflow_status_label} />
         </div>
         <RadiologyDetail
           key={currentWorkflowExam.examination_order.id}

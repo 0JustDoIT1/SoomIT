@@ -127,22 +127,89 @@ class CaseChatRecipientListAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, case_id):
-        case = get_object_or_404(LungCancerCase.objects.select_related("patient__hospital"), id=case_id)
+        case = get_object_or_404(
+            LungCancerCase.objects.select_related(
+                "patient__hospital",
+                "primary_doctor__department_role__department",
+            ),
+            id=case_id,
+        )
+
         if not can_access_case_chat(request.user, case):
             raise PermissionDenied("이 Case의 채팅 수신자를 조회할 권한이 없습니다.")
-        candidates = User.objects.filter(
-            account_status=User.AccountStatus.ACTIVE,
-            department_role__department__hospital=case.patient.hospital,
-        ).select_related("department_role__department").exclude(id=request.user.id).order_by("name")
-        return Response([
-            {
-                "id": str(user.id),
-                "name": user.name,
-                "department": user.department_role.department.code,
-                "role": user.department_role.role,
-            }
-            for user in candidates if can_access_case_chat(user, case)
-        ])
+
+        purpose = (request.query_params.get("purpose") or "chat").strip().lower()
+
+        # 협진 요청용 목록:
+        # 같은 병원의 ACTIVE 호흡기내과 DOCTOR만 반환한다.
+        # Case 채팅 접근 권한과는 별개로 '협진 대상 후보'를 조회하는 목적이므로
+        # can_access_case_chat(candidate, case) 필터를 적용하지 않는다.
+        if purpose == "consultation":
+            requester_department = getattr(
+                getattr(request.user, "department_role", None),
+                "department",
+                None,
+            )
+
+            # 현재 호흡기내과 화면에서 호출하는 API이므로
+            # 우선 로그인 사용자의 부서 코드를 사용하고,
+            # 값이 없거나 다른 부서라면 프로젝트 표준 코드인 PULMONOLOGY로 제한한다.
+            target_department_code = (
+                requester_department.code
+                if requester_department is not None
+                and requester_department.code
+                in {"PULMONOLOGY", "RESPIRATORY"}
+                else "PULMONOLOGY"
+            )
+
+            candidates = (
+                User.objects.filter(
+                    account_status=User.AccountStatus.ACTIVE,
+                    department_role__department__hospital=case.patient.hospital,
+                    department_role__department__code=target_department_code,
+                    department_role__role="DOCTOR",
+                )
+                .select_related("department_role__department")
+                .exclude(id=request.user.id)
+                .order_by("name")
+            )
+
+            return Response(
+                [
+                    {
+                        "id": str(user.id),
+                        "name": user.name,
+                        "department": user.department_role.department.code,
+                        "role": user.department_role.role,
+                    }
+                    for user in candidates
+                ]
+            )
+
+        # 일반/개인 Case 채팅 수신자 목록:
+        # 기존과 동일하게 이 Case 채팅에 실제 접근 가능한 의료진만 노출한다.
+        candidates = (
+            User.objects.filter(
+                account_status=User.AccountStatus.ACTIVE,
+                department_role__department__hospital=case.patient.hospital,
+            )
+            .select_related("department_role__department")
+            .exclude(id=request.user.id)
+            .order_by("name")
+        )
+
+        return Response(
+            [
+                {
+                    "id": str(user.id),
+                    "name": user.name,
+                    "department": user.department_role.department.code,
+                    "role": user.department_role.role,
+                }
+                for user in candidates
+                if can_access_case_chat(user, case)
+            ]
+        )
 
 
 class InternalCaseChatMessageCreateAPIView(APIView):

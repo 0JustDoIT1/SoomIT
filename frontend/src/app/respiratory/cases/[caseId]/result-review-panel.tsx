@@ -29,7 +29,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const clinicalRole = imaging || stage === "PET_CT_TNM" ? "호흡기내과 최종 판단" : "병리과 판독";
   const isImageWorkspace = showEvidence && (stage === "XRAY" || stage === "CT");
   return (
-    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex min-h-[min(700px,calc(100dvh-190px))] flex-col" : ""}`}>
+    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex h-[calc(100dvh-168px)] min-h-[540px] max-h-[780px] flex-col" : ""}`}>
       {showWorkspaceHeader && <header className={`flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 ${isImageWorkspace ? "py-2" : "py-2.5"}`}>
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
@@ -42,30 +42,54 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </div>
       </header>}
 
-      <div className={isImageWorkspace ? "grid min-h-0 flex-1 gap-px bg-slate-200 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]" : ""}>
-      {showEvidence && <div className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 p-2" : "border-b border-slate-200 bg-slate-50/50 px-4 py-3"}>
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
-          <p className="whitespace-nowrap text-[10px] text-slate-400">영상 조작은 뷰어 안에서 바로 수행합니다.</p>
-        </div>
+      <div className={isImageWorkspace ? "grid min-h-0 flex-1 gap-px overflow-hidden bg-slate-200 xl:grid-cols-[minmax(0,3.35fr)_minmax(286px,1fr)]" : ""}>
+      {showEvidence && <div className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 p-1.5" : "border-b border-slate-200 bg-slate-50/50 px-4 py-3"}>
+        {!isImageWorkspace && (
+          <div className="mb-2 flex items-center justify-between gap-3">
+            <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
+            <p className="whitespace-nowrap text-[10px] text-slate-400">영상 조작은 뷰어 안에서 바로 수행합니다.</p>
+          </div>
+        )}
         <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
-      <aside className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-y-auto border border-slate-200 bg-white p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
+      <aside className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
         <SourcePanel compact={isImageWorkspace} eyebrow={imaging ? "호흡기내과" : config.department} title={clinicalRole} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
-          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
+          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" compact={isImageWorkspace} /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
           {specialistAction && !clinicalError && clinicalResult?.result_status !== "CONFIRMED" && <div className="flex justify-center px-3 pb-3">{specialistAction}</div>}
         </SourcePanel>
-        <SourcePanel compact={isImageWorkspace} eyebrow="AI 분석" title="AI 분석 후보" meta={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
-          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
+
+        <SourcePanel compact={isImageWorkspace} eyebrow="AI 분석" title="AI 분석 후보" meta={isImageWorkspace ? formatDateTime(aiResult?.completed_at) : [aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
+          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
         </SourcePanel>
-        <WorkflowStatusFlow
-          stage={stage}
-          aiStatus={aiResult?.status}
-          clinicalStatus={clinicalResult?.result_status}
-          hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
-        />
-        {stage === "CT" ? <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /> : <>{isImageWorkspace && <ResultStatusCard clinicalRole={clinicalRole} clinicalStatus={clinicalResult?.result_status_label ?? clinicalResult?.result_status} aiStatus={aiResult?.status_label ?? aiResult?.status} />}<AiTraceabilityCard aiResult={aiResult} /></>}
+
+        {isImageWorkspace ? (
+          <>
+            <ImagingWorkflowSummary
+              stage={stage}
+              aiStatus={aiResult?.status}
+              clinicalStatus={clinicalResult?.result_status}
+              clinicalRole={clinicalRole}
+              hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+            />
+            {stage === "CT" ? (
+              <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} />
+            ) : (
+              <AiTraceabilityCard aiResult={aiResult} collapsible />
+            )}
+          </>
+        ) : (
+          <>
+            <WorkflowStatusFlow
+              stage={stage}
+              aiStatus={aiResult?.status}
+              clinicalStatus={clinicalResult?.result_status}
+              hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+            />
+            {stage === "CT" ? <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /> : <AiTraceabilityCard aiResult={aiResult} />}
+          </>
+        )}
+
         {stage === "CT" && (onRefreshResults || lastSyncedAt) && <CtResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
         {stage !== "CT" && !isImageWorkspace && (onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
         {!isImageWorkspace && <AiInputTraceabilityCard aiResult={aiResult} />}
@@ -98,7 +122,7 @@ function CtAiSummary({ detail }: { detail: unknown }) {
 }
 
 function SourcePanel({ eyebrow, title, meta, tone, children, compact = false }: { eyebrow: string; title: string; meta: string; tone: "specialist" | "ai"; children: React.ReactNode; compact?: boolean }) {
-  return <section className={compact ? "shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white" : "min-w-0"}><header className={`flex shrink-0 items-start justify-between gap-3 border-b px-3 py-2.5 ${compact ? "min-h-[54px]" : "min-h-[74px]"} ${tone === "specialist" ? "border-emerald-100 bg-emerald-50/30" : "border-blue-100 bg-blue-50/30"}`}><div><p className={`text-[10px] font-semibold ${tone === "specialist" ? "text-emerald-700" : "text-blue-700"}`}>{eyebrow}</p><h2 className="mt-1 text-sm font-bold text-slate-900">{title}</h2>{tone === "ai" && !compact && <p className="mt-1 text-[10px] text-slate-400">의료진 확정 결과가 아닌 참고 자료입니다.</p>}</div><p className="max-w-32 truncate text-right text-[10px] text-slate-400">{meta}</p></header><div className={compact ? "max-h-[280px] overflow-y-auto" : "min-h-[190px]"}>{children}</div></section>;
+  return <section className={compact ? "shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" : "min-w-0"}><header className={`flex shrink-0 items-start justify-between gap-3 border-b px-3 ${compact ? "min-h-[46px] py-2" : "min-h-[74px] py-2.5"} ${tone === "specialist" ? "border-emerald-100 bg-emerald-50/40" : "border-blue-100 bg-blue-50/40"}`}><div><p className={`text-[9px] font-semibold ${tone === "specialist" ? "text-emerald-700" : "text-blue-700"}`}>{eyebrow}</p><h2 className={`${compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"} font-bold text-slate-900`}>{title}</h2>{tone === "ai" && !compact && <p className="mt-1 text-[10px] text-slate-400">의료진 확정 결과가 아닌 참고 자료입니다.</p>}</div><p className="max-w-28 truncate text-right text-[9px] text-slate-400">{meta}</p></header><div className={compact ? "" : "min-h-[190px]"}>{children}</div></section>;
 }
 
 function AnalysisImageInfoCard({ aiResult, evidenceInfo }: { aiResult?: AiResult; evidenceInfo: CtEvidenceInfo }) {
@@ -115,16 +139,19 @@ function AnalysisImageInfoCard({ aiResult, evidenceInfo }: { aiResult?: AiResult
   return <section className="shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><p className="text-[10px] font-bold text-slate-700">분석 · 영상 정보</p><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-2 text-[10px]">{items.map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-slate-400">{label}</dt><dd className="mt-0.5 truncate font-medium text-slate-700" title={value}>{value}</dd></div>)}</dl></section>;
 }
 
-function ResultStatusCard({ clinicalStatus, aiStatus, clinicalRole }: { clinicalStatus?: string; aiStatus?: string; clinicalRole: string }) {
-  return <section className="shrink-0 rounded-xl border border-slate-200 bg-white p-3"><p className="text-[10px] font-bold text-slate-700">검토 상태</p><div className="mt-2 grid grid-cols-2 gap-2"><div className="rounded-lg bg-emerald-50 px-2.5 py-2"><p className="text-[9px] font-semibold text-emerald-700">{clinicalRole}</p><p className="mt-1 truncate text-[11px] font-bold text-slate-800">{resultStatusLabel(clinicalStatus)}</p></div><div className="rounded-lg bg-blue-50 px-2.5 py-2"><p className="text-[9px] font-semibold text-blue-700">AI 분석</p><p className="mt-1 truncate text-[11px] font-bold text-slate-800">{resultStatusLabel(aiStatus)}</p></div></div><p className="mt-2 text-[10px] leading-4 text-slate-500">AI 결과는 의료진 확정 결과와 함께 검토합니다.</p></section>;
-}
-
-function AiTraceabilityCard({ aiResult }: { aiResult?: AiResult }) {
+function AiTraceabilityCard({ aiResult, collapsible = false }: { aiResult?: AiResult; collapsible?: boolean }) {
   const succeeded = aiResult?.status === "SUCCEEDED";
   const asset = aiResult?.input_context?.source_asset;
   const inputSeries = asset?.series_instance_uid ? `Series ${asset.series_instance_uid}` : asset?.image_type ? `${asset.image_type} · Series 정보 없음` : "정보 없음";
   const components = formatModelComponents(aiResult?.model_components);
-  return <section className="shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="flex items-center justify-between gap-3"><p className="text-[10px] font-bold text-slate-700">AI 분석 정보</p><span className={`rounded px-2 py-1 text-[9px] font-semibold ${succeeded ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{resultStatusLabel(aiResult?.status ?? aiResult?.status_label)}</span></div><dl className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1 text-[10px]"><div><dt className="text-slate-400">모델</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">버전</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_version_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">분석 시각</dt><dd className="truncate font-medium text-slate-700">{formatDateTime(aiResult?.completed_at)}</dd></div><div><dt className="text-slate-400">입력 Series</dt><dd className="truncate font-medium text-slate-700">{inputSeries}</dd></div>{components && <div className="col-span-2"><dt className="text-slate-400">모델 구성</dt><dd className="truncate font-medium text-slate-700">{components}</dd></div>}</dl><p className="mt-2 rounded bg-amber-50 px-2 py-1.5 text-[10px] leading-4 text-amber-800">AI 결과는 확정 진단이 아닌 참고 자료입니다. 의료진 검토가 필요합니다.</p></section>;
+
+  const content = <><dl className="grid grid-cols-2 gap-x-3 gap-y-1.5 px-3 pb-3 text-[9px]"><div><dt className="text-slate-400">모델</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">버전</dt><dd className="truncate font-medium text-slate-700">{aiResult?.model_version_name ?? "정보 없음"}</dd></div><div><dt className="text-slate-400">분석 시각</dt><dd className="truncate font-medium text-slate-700">{formatDateTime(aiResult?.completed_at)}</dd></div><div><dt className="text-slate-400">입력 Series</dt><dd className="truncate font-medium text-slate-700">{inputSeries}</dd></div>{components && <div className="col-span-2"><dt className="text-slate-400">모델 구성</dt><dd className="truncate font-medium text-slate-700">{components}</dd></div>}</dl><p className="mx-3 mb-3 rounded-md bg-amber-50 px-2 py-1.5 text-[9px] leading-4 text-amber-800">AI 결과는 확정 진단이 아닌 참고 자료입니다. 의료진 검토가 필요합니다.</p></>;
+
+  if (collapsible) {
+    return <details className="group shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"><summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-[10px] font-bold text-slate-700 marker:content-none"><span>모델 정보</span><span className="flex items-center gap-2"><span className={`rounded px-2 py-0.5 text-[8px] font-semibold ${succeeded ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{resultStatusLabel(aiResult?.status ?? aiResult?.status_label)}</span><span aria-hidden="true" className="text-slate-400 transition group-open:rotate-180">⌄</span></span></summary>{content}</details>;
+  }
+
+  return <section className="shrink-0 rounded-xl border border-slate-200 bg-slate-50/70 p-3"><div className="flex items-center justify-between gap-3"><p className="text-[10px] font-bold text-slate-700">AI 분석 정보</p><span className={`rounded px-2 py-1 text-[9px] font-semibold ${succeeded ? "bg-blue-50 text-blue-700" : "bg-slate-100 text-slate-500"}`}>{resultStatusLabel(aiResult?.status ?? aiResult?.status_label)}</span></div><div className="-mx-3 mt-2">{content}</div></section>;
 }
 
 function formatModelComponents(value: unknown) {
@@ -214,6 +241,40 @@ function buildWorkflowSteps({ stage, aiStatus, clinicalStatus, hasSourceAsset, t
   ];
 }
 
+function ImagingWorkflowSummary({ stage, aiStatus, clinicalStatus, clinicalRole, hasSourceAsset }: {
+  stage: string;
+  aiStatus?: string;
+  clinicalStatus?: string;
+  clinicalRole: string;
+  hasSourceAsset: boolean;
+}) {
+  const steps = buildWorkflowSteps({
+    stage: stage as WorkflowStatusFlowStage,
+    aiStatus,
+    clinicalStatus,
+    hasSourceAsset,
+  });
+
+  return <section className="shrink-0 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
+    <div className="flex items-center justify-between gap-3">
+      <p className="text-[10px] font-bold text-slate-700">진행 상태</p>
+      <div className="flex items-center gap-2 text-[8px] font-semibold">
+        <span className="text-emerald-700">{clinicalRole} · {resultStatusLabel(clinicalStatus)}</span>
+        <span className="text-blue-700">AI · {resultStatusLabel(aiStatus)}</span>
+      </div>
+    </div>
+    <ol className="mt-2 grid grid-cols-3 gap-1.5">
+      {steps.slice(0, 3).map((step, index) => (
+        <li key={step.label} className="min-w-0 rounded-md bg-slate-50 px-2 py-2 text-center">
+          <span data-workflow-state={step.state} className={`mx-auto flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold ${step.state === "completed" ? "bg-emerald-500 text-white" : step.state === "active" ? "border border-blue-300 bg-blue-50 text-blue-700" : step.state === "failed" ? "bg-rose-500 text-white" : "border border-slate-300 bg-white text-slate-400"}`}>{index + 1}</span>
+          <p className="mt-1 truncate text-[8px] font-semibold text-slate-600" title={step.label}>{step.label}</p>
+          <p className="mt-0.5 truncate text-[8px] text-slate-400" title={step.status}>{step.status}</p>
+        </li>
+      ))}
+    </ol>
+  </section>;
+}
+
 export function WorkflowStatusFlow({ stage, aiStatus, clinicalStatus, hasSourceAsset = false, treatmentStatus, prescriptionStatus, caseStatus }: {
   stage: string;
   aiStatus?: string;
@@ -242,8 +303,8 @@ function StatusBadge({ label, value, status, tone }: { label: string; value?: st
   return <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold ${colors}`}>{label} · {resultStatusLabel(status ?? value)}</span>;
 }
 
-function ResultValues({ values, accent }: { values: [string, string][]; accent: "specialist" | "ai" }) {
-  return <dl className="grid grid-cols-2 gap-2 p-4">{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border px-3 py-2.5 ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className="whitespace-nowrap text-[10px] text-slate-500">{label}</dt><dd className="mt-1 break-words text-xs font-semibold text-slate-800">{value}</dd></div>)}</dl>;
+function ResultValues({ values, accent, compact = false }: { values: [string, string][]; accent: "specialist" | "ai"; compact?: boolean }) {
+  return <dl className={`grid grid-cols-2 ${compact ? "gap-1.5 p-3" : "gap-2 p-4"}`}>{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border ${compact ? "px-2.5 py-2" : "px-3 py-2.5"} ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className={`whitespace-nowrap ${compact ? "text-[9px]" : "text-[10px]"} text-slate-500`}>{label}</dt><dd className={`${compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs"} break-words font-semibold text-slate-800`}>{value}</dd></div>)}</dl>;
 }
 function EmptyResult({ title, text, nextAction }: { title: string; text: string; nextAction?: string }) { return <div className="px-4 py-4 text-center"><div><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 max-w-md text-[11px] leading-4 text-slate-500">{text}</p>{nextAction && <p className="mt-2 max-w-md rounded-md bg-slate-50 px-2 py-1.5 text-[10px] leading-4 text-slate-600">{nextAction}</p>}</div></div>; }
 function PanelError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry?: () => void }) { return <div role="alert" className="flex min-h-[190px] items-center justify-center bg-rose-50/50 px-5"><div className="text-center"><p className="text-xs text-rose-700">{message}</p>{onRetry && <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-700 disabled:opacity-50">{retrying ? "재시도 중" : "이 결과 다시 시도"}</button>}</div></div>; }
