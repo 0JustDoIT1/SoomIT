@@ -303,12 +303,13 @@ export default function CoordinatorDashboardPage() {
   }
 
   return (
-    <div className="space-y-5 bg-[#F4F6F9]">
+    <div className="space-y-5 bg-[#F0F3F8]">
       <header>
         <h1 className="text-2xl font-bold text-slate-900">대시보드</h1>
         <p className="mt-1 text-sm text-slate-500">오늘 예약과 처리 대기 업무를 확인합니다.</p>
       </header>
 
+      <div className="space-y-4 rounded-md border border-slate-200 bg-white p-4">
       <section aria-label="상단 업무 요약" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-5">
           {summary.map((item) => (
@@ -434,6 +435,7 @@ export default function CoordinatorDashboardPage() {
           <p className="px-4 py-5 text-sm text-slate-500">최근 활동이 없습니다.</p>
         )}
       </section>
+      </div>
       </div>
 
       <section>

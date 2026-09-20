@@ -220,6 +220,247 @@ class PathologyReadAPITestCase(APITestCase):
             kwargs={"case_id": self.case.id},
         )
 
+    def prepare_pdl1_review_submission(self):
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.user,
+            purpose="PD-L1 follow-up",
+            status=ExaminationOrder.Status.ORDERED,
+        )
+        specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            examination_order=order,
+            specimen_code="SPECIMEN-PDL1-SUBMIT",
+            specimen_type=PathologySpecimen.SpecimenType.BIOPSY,
+            status=PathologySpecimen.Status.READY,
+            created_by_user=self.user,
+        )
+        asset = CaseImageAsset.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            image_type=CaseImageAsset.ImageType.WSI,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gs://test-bucket/pdl1-slide.svs",
+            file_format="SVS",
+            status=CaseImageAsset.Status.READY,
+        )
+        wsi = WholeSlideImage.objects.create(
+            specimen=specimen,
+            image_asset=asset,
+            slide_code="SLIDE-PDL1-SUBMIT",
+            version=1,
+            stain=WholeSlideImage.Stain.PDL1,
+            original_filename="pdl1-slide.svs",
+            sha256="b" * 64,
+            uploaded_by_user=self.user,
+        )
+        self.work_item.examination_order = order
+        self.work_item.specimen = specimen
+        self.work_item.wsi = wsi
+        self.work_item.task_type = PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS
+        self.work_item.status = PathologyWorkItem.Status.COMPLETED
+        self.work_item.save(
+            update_fields=["examination_order", "specimen", "wsi", "task_type", "status", "updated_at"]
+        )
+        self.pdl1_analysis.examination_order = order
+        self.pdl1_analysis.source_image_asset = asset
+        self.pdl1_analysis.save(update_fields=["examination_order", "source_image_asset"])
+        self.pdl1_ai_result.result_payload = {
+            "predicted_class": 2,
+            "predicted_tps_range": PDL1AiResult.TpsRange.GE_50,
+            "predicted_tps_range_label": "≥50%",
+            "confidence": 0.995406985,
+            "probabilities": {
+                "class_0": 0.0001,
+                "class_1": 0.004493015,
+                "class_2": 0.995406985,
+            },
+            "model_revision": "pdl1-revision-test",
+        }
+        self.pdl1_ai_result.save(update_fields=["result_payload"])
+        self.authenticate_pathology_user()
+        url = reverse("pathology:case-submit-for-review", kwargs={"case_id": self.case.id})
+        return url, order, specimen, asset, wsi
+
+    def test_pdl1_review_submission_creates_clinical_draft_from_succeeded_ai_result(self):
+        url, order, _, asset, wsi = self.prepare_pdl1_review_submission()
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.pdl1_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        clinical_result = ClinicalResult.objects.get(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+        )
+        self.assertEqual(clinical_result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(clinical_result.source_image_asset, asset)
+        self.assertEqual(clinical_result.reviewed_ai_result, self.pdl1_ai_result)
+        detail = clinical_result.pdl1_detail
+        self.assertIsNone(detail.tps_percent)
+        self.assertEqual(detail.interpretation, "AI predicted TPS range: ≥50%")
+        self.assertIn("confidence=0.995406985", detail.note)
+        self.assertIn("class_2=0.995406985", detail.note)
+        self.assertIn("pdl1-amd-mil (final_model)", detail.note)
+        self.assertIn("pdl1-revision-test", detail.note)
+        self.assertEqual(detail.source_wsi, wsi)
+        review = PathologyWorkItem.objects.get(id=response.data["review_work_item_id"])
+        self.assertEqual(review.task_type, PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW)
+
+    def test_pdl1_review_submission_preserves_current_ai_draft(self):
+        url, order, _, _, wsi = self.prepare_pdl1_review_submission()
+        draft = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            source_image_asset=self.pdl1_analysis.source_image_asset,
+            reviewed_ai_result=self.pdl1_ai_result,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PDL1Result.objects.create(
+            clinical_result=draft,
+            tps_percent="62.50",
+            interpretation="Existing current-analysis draft",
+            note="Keep this existing draft",
+            source_wsi=wsi,
+        )
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.pdl1_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        draft.refresh_from_db()
+        self.assertEqual(draft.reviewed_ai_result, self.pdl1_ai_result)
+        self.assertEqual(draft.pdl1_detail.tps_percent, 62.5)
+        self.assertEqual(draft.pdl1_detail.interpretation, "Existing current-analysis draft")
+        self.assertEqual(draft.pdl1_detail.note, "Keep this existing draft")
+
+    def test_pdl1_review_submission_refreshes_stale_draft_to_latest_ai_result(self):
+        url, order, _, _, wsi = self.prepare_pdl1_review_submission()
+        stale_draft = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            source_image_asset=self.pdl1_analysis.source_image_asset,
+            reviewed_ai_result=self.pdl1_ai_result,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        PDL1Result.objects.create(
+            clinical_result=stale_draft,
+            tps_percent="5.00",
+            interpretation="Stale analysis result",
+            note="Stale note",
+            source_wsi=wsi,
+        )
+        latest_analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            source_image_asset=self.pdl1_analysis.source_image_asset,
+            model_version=self.pdl1_model_version,
+            analysis_type=AnalysisType.PDL1_ANALYSIS,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        latest_ai_result = AiResult.objects.create(
+            ai_analysis=latest_analysis,
+            schema_version="pdl1-v1",
+            result_payload={
+                "predicted_class": 1,
+                "predicted_tps_range": PDL1AiResult.TpsRange.FROM_1_TO_49,
+                "predicted_tps_range_label": "1–49%",
+                "confidence": 0.75,
+                "probabilities": {"class_0": 0.1, "class_1": 0.75, "class_2": 0.15},
+            },
+        )
+        PDL1AiResult.objects.create(
+            ai_result=latest_ai_result,
+            predicted_class=1,
+            predicted_tps_range=PDL1AiResult.TpsRange.FROM_1_TO_49,
+            confidence=0.75,
+            probabilities={"class_0": 0.1, "class_1": 0.75, "class_2": 0.15},
+        )
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": latest_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        stale_draft.refresh_from_db()
+        self.assertEqual(stale_draft.reviewed_ai_result, latest_ai_result)
+        self.assertEqual(stale_draft.source_image_asset, latest_analysis.source_image_asset)
+        self.assertIsNone(stale_draft.pdl1_detail.tps_percent)
+        self.assertEqual(stale_draft.pdl1_detail.interpretation, "AI predicted TPS range: 1–49%")
+        self.assertEqual(stale_draft.pdl1_detail.source_wsi, wsi)
+        self.assertIn("confidence=0.75", stale_draft.pdl1_detail.note)
+
+    def test_pdl1_review_submission_rejects_pending_and_running_analysis(self):
+        url, _, _, _, _ = self.prepare_pdl1_review_submission()
+        for analysis_status in (AiAnalysis.Status.PENDING, AiAnalysis.Status.RUNNING):
+            with self.subTest(analysis_status=analysis_status):
+                self.pdl1_analysis.status = analysis_status
+                self.pdl1_analysis.save(update_fields=["status"])
+                response = self.client.post(
+                    url,
+                    {"work_item_id": self.work_item.id, "ai_analysis_id": self.pdl1_analysis.id},
+                    format="json",
+                )
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.pdl1_analysis.status = AiAnalysis.Status.SUCCEEDED
+        self.pdl1_analysis.save(update_fields=["status"])
+
+    def test_pdl1_review_submission_rejects_non_latest_analysis(self):
+        url, order, _, asset, _ = self.prepare_pdl1_review_submission()
+        AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            source_image_asset=asset,
+            model_version=self.pdl1_model_version,
+            analysis_type=AnalysisType.PDL1_ANALYSIS,
+            status=AiAnalysis.Status.PENDING,
+        )
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.pdl1_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_pdl1_review_submission_does_not_overwrite_confirmed_result(self):
+        url, order, _, _, _ = self.prepare_pdl1_review_submission()
+        confirmed = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            reviewed_ai_result=self.pdl1_ai_result,
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            confirmed_by_user=self.user,
+            confirmed_at=timezone.now(),
+        )
+
+        response = self.client.post(
+            url,
+            {"work_item_id": self.work_item.id, "ai_analysis_id": self.pdl1_analysis.id},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
+        confirmed.refresh_from_db()
+        self.assertEqual(confirmed.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(confirmed.reviewed_ai_result, self.pdl1_ai_result)
+        self.assertFalse(hasattr(confirmed, "pdl1_detail"))
+
     def test_pathology_staff_can_submit_succeeded_analysis_for_review(self):
         url = self.prepare_review_submission()
 

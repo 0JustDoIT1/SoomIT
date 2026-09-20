@@ -49,7 +49,11 @@ from .serializers import (
     PathologyGeneInputUploadSerializer,
 )
 from .services.pdl1_sample_catalog import PDL1SampleCatalogError, list_pdl1_test_samples
-from .services.review_submission import ReviewSubmissionError, submit_for_review
+from .services.review_submission import (
+    ReviewSubmissionError,
+    prepare_pdl1_clinical_draft,
+    submit_for_review,
+)
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
 from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
@@ -1074,15 +1078,16 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
                 analysis=analysis,
                 clinical_result=clinical_result,
             )
-        elif (
-            clinical_result is None
-            or clinical_result.result_status != ClinicalResult.ResultStatus.DRAFT
-            or not hasattr(clinical_result, "pdl1_detail")
-            or clinical_result.reviewed_ai_result_id != analysis.ai_result.id
-        ):
-            raise ValidationError(
-                {"detail": "Save the PD-L1 result before submitting it to the doctor."}
-            )
+        elif order.order_type == ExaminationOrder.OrderType.PDL1:
+            try:
+                clinical_result = prepare_pdl1_clinical_draft(
+                    case=case,
+                    order=order,
+                    analysis=analysis,
+                    clinical_result=clinical_result,
+                )
+            except ReviewSubmissionError as exc:
+                raise ValidationError({"ai_analysis_id": str(exc)}) from exc
 
         try:
             review_work_item, created = submit_for_review(work_item)
