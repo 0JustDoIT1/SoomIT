@@ -8,6 +8,8 @@ import {
   useRef,
   useState,
 } from 'react';
+import { DayPicker } from 'react-day-picker';
+import { ko } from 'react-day-picker/locale';
 import { useRespiratoryAuth } from '../_components/respiratory-auth-provider';
 
 const ALLOWED_PROFILE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -48,6 +50,19 @@ type Profile = {
 const apiBase = (
   process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000'
 ).replace(/\/+$/, '');
+
+const birthDateStartMonth = new Date(1900, 0, 1);
+
+function parseBirthDate(value: string) {
+  if (!value) return undefined;
+  const [year, month, day] = value.split('-').map(Number);
+  if (!year || !month || !day) return undefined;
+  return new Date(year, month - 1, day);
+}
+
+function formatBirthDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
 
 type NotificationType = 'EXAMINATION_ORDER' | 'CASE_CHAT';
 type NotificationSetting = { notification_type: NotificationType; enabled: boolean };
@@ -792,19 +807,87 @@ function DateField({
   value: string;
   onChange: (value: string) => void;
 }) {
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pickerMonth, setPickerMonth] = useState(new Date());
+
   return (
     <label className="block text-sm font-medium text-slate-700">
       {label}
       <div className="relative mt-1.5">
-        <input
-          type="date"
-          value={value}
-          onChange={(event) => onChange(event.target.value)}
-          className="h-11 w-full rounded-xl border border-slate-200 px-3 pr-9 text-sm text-slate-800 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
-        />
+        <button
+          type="button"
+          onClick={() => {
+            setPickerMonth(parseBirthDate(value) ?? new Date());
+            setPickerOpen((current) => !current);
+          }}
+          aria-expanded={pickerOpen}
+          aria-haspopup="dialog"
+          className={`h-11 w-full rounded-xl border border-slate-200 px-3 pr-9 text-left text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100 ${
+            value ? 'text-slate-800' : 'text-slate-400'
+          }`}
+        >
+          {value || '생년월일을 선택하세요'}
+        </button>
         <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">
           <CalendarIcon />
         </span>
+        {pickerOpen && (
+          <div
+            role="dialog"
+            aria-label="생년월일 선택"
+            className="absolute left-0 top-full z-20 mt-2 rounded-xl border border-slate-200 bg-white p-3 shadow-lg"
+          >
+            <DayPicker
+              mode="single"
+              month={pickerMonth}
+              onMonthChange={setPickerMonth}
+              selected={parseBirthDate(value)}
+              onSelect={(date) => {
+                if (!date) return;
+                onChange(formatBirthDate(date));
+                setPickerOpen(false);
+              }}
+              locale={ko}
+              captionLayout="dropdown"
+              startMonth={birthDateStartMonth}
+              endMonth={new Date()}
+              disabled={{ after: new Date() }}
+              formatters={{
+                formatMonthDropdown: (date) => `${date.getMonth() + 1}월`,
+                formatYearDropdown: (date) => `${date.getFullYear()}년`,
+                formatWeekdayName: (date) =>
+                  ['일', '월', '화', '수', '목', '금', '토'][date.getDay()],
+              }}
+              classNames={{
+                root: 'text-sm text-slate-700',
+                months: 'flex',
+                month: 'space-y-3',
+                month_caption: 'flex h-8 items-center justify-center',
+                dropdowns: 'flex items-center gap-2',
+                dropdown_root: 'relative inline-flex',
+                dropdown:
+                  'absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0',
+                caption_label:
+                  'inline-flex h-8 items-center rounded-md border border-slate-200 bg-white px-2 py-1 text-sm',
+                chevron: 'ml-1',
+                nav: 'hidden',
+                month_grid: 'border-collapse',
+                weekdays: 'border-b border-slate-100',
+                weekday: 'h-8 w-9 text-center text-xs font-medium text-slate-400',
+                week: '',
+                day: 'h-9 w-9 text-center',
+                day_button:
+                  'h-8 w-8 rounded-md text-sm transition hover:bg-blue-50 hover:text-blue-600 disabled:cursor-not-allowed disabled:text-slate-300',
+                selected:
+                  '[&>button]:bg-blue-500 [&>button]:text-white [&>button]:hover:bg-blue-500 [&>button]:hover:text-white',
+                today: '[&>button]:font-semibold [&>button]:text-blue-600',
+                outside: '[&>button]:text-slate-300',
+                disabled:
+                  '[&>button]:text-slate-300 [&>button]:hover:bg-transparent [&>button]:hover:text-slate-300',
+              }}
+            />
+          </div>
+        )}
       </div>
     </label>
   );
