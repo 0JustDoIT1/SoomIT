@@ -1,12 +1,14 @@
 steps:
   - name: gcr.io/cloud-builders/docker
+    entrypoint: bash
     args:
-      - build
-      - --file
-      - Dockerfile.phase2
-      - --tag
-      - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:$_IMAGE_TAG
-      - .
+      - -ceu
+      - |
+        CACHE_IMAGE=gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:buildcache
+        docker pull "$CACHE_IMAGE" || true
+        docker build --cache-from "$CACHE_IMAGE" --file Dockerfile.phase2 --tag gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:$_IMAGE_TAG .
+        docker tag gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:$_IMAGE_TAG "$CACHE_IMAGE"
+        docker push "$CACHE_IMAGE"
 images:
   - gcr.io/$PROJECT_ID/ct-analysis-phase2-serve:$_IMAGE_TAG
 substitutions:

@@ -1,6 +1,14 @@
 steps:
   - name: gcr.io/cloud-builders/docker
-    args: [build, --file, Dockerfile.core, --tag, gcr.io/$PROJECT_ID/tnm-serve:$_IMAGE_TAG, .]
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        CACHE_IMAGE=gcr.io/$PROJECT_ID/tnm-serve:buildcache
+        docker pull "$CACHE_IMAGE" || true
+        docker build --cache-from "$CACHE_IMAGE" --file Dockerfile.core --tag gcr.io/$PROJECT_ID/tnm-serve:$_IMAGE_TAG .
+        docker tag gcr.io/$PROJECT_ID/tnm-serve:$_IMAGE_TAG "$CACHE_IMAGE"
+        docker push "$CACHE_IMAGE"
 images: [gcr.io/$PROJECT_ID/tnm-serve:$_IMAGE_TAG]
 substitutions: {_IMAGE_TAG: latest}
 timeout: 1800s

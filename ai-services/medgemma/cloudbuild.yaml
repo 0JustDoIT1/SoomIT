@@ -5,9 +5,13 @@ steps:
     args:
       - -ceu
       - |
+        docker pull gcr.io/$PROJECT_ID/medgemma-serve:buildcache || true
         DOCKER_BUILDKIT=1 docker build \
+          --cache-from gcr.io/$PROJECT_ID/medgemma-serve:buildcache \
           --secret id=hf_token,env=HF_TOKEN \
           --tag gcr.io/$PROJECT_ID/medgemma-serve:$_IMAGE_TAG .
+        docker tag gcr.io/$PROJECT_ID/medgemma-serve:$_IMAGE_TAG gcr.io/$PROJECT_ID/medgemma-serve:buildcache
+        docker push gcr.io/$PROJECT_ID/medgemma-serve:buildcache
 images:
   - gcr.io/$PROJECT_ID/medgemma-serve:$_IMAGE_TAG
 substitutions:
