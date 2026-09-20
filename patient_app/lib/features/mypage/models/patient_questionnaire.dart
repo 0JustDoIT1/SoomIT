@@ -1,11 +1,18 @@
 class PatientQuestionnaire {
   final String id;
+
   final String questionnaireType;
+
   final String questionnaireVersion;
+
   final Map<String, dynamic> responses;
+
   final bool isCompleted;
+
   final DateTime? completedAt;
+
   final DateTime createdAt;
+
   final DateTime updatedAt;
 
   const PatientQuestionnaire({
@@ -19,26 +26,25 @@ class PatientQuestionnaire {
     required this.updatedAt,
   });
 
-  factory PatientQuestionnaire.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory PatientQuestionnaire.fromJson(Map<String, dynamic> json) {
     return PatientQuestionnaire(
-      id: json['id'] as String,
-      questionnaireType: json['questionnaire_type'] as String,
-      questionnaireVersion: json['questionnaire_version'] as String,
-      responses: Map<String, dynamic>.from(
-        json['responses'] as Map,
-      ),
-      isCompleted: json['is_completed'] as bool,
+      id: json['id'].toString(),
+
+      questionnaireType: json['questionnaire_type']?.toString() ?? '',
+
+      questionnaireVersion: json['questionnaire_version']?.toString() ?? '',
+
+      responses: Map<String, dynamic>.from((json['responses'] as Map?) ?? {}),
+
+      isCompleted: json['is_completed'] as bool? ?? false,
+
       completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'] as String)
+          ? DateTime.parse(json['completed_at'].toString())
           : null,
-      createdAt: DateTime.parse(
-        json['created_at'] as String,
-      ),
-      updatedAt: DateTime.parse(
-        json['updated_at'] as String,
-      ),
+
+      createdAt: DateTime.parse(json['created_at'].toString()),
+
+      updatedAt: DateTime.parse(json['updated_at'].toString()),
     );
   }
 }

@@ -1478,6 +1478,10 @@ class PatientMedicationIntakeTakenAPIView(
                 "scheduled_at"
             ]
         )
+        taken_at = (
+            serializer.validated_data.get("taken_at")
+            or timezone.now()
+        )
 
         patient_account = (
             get_linked_patient_account(request)
@@ -1516,7 +1520,7 @@ class PatientMedicationIntakeTakenAPIView(
                         .Status
                         .TAKEN
                     ),
-                    "taken_at": timezone.now(),
+                    "taken_at": taken_at,
                 },
             )
         )
@@ -1525,7 +1529,7 @@ class PatientMedicationIntakeTakenAPIView(
             intake_log.status = (
                 MedicationIntakeLog.Status.TAKEN
             )
-            intake_log.taken_at = timezone.now()
+            intake_log.taken_at = taken_at
             intake_log.save(
                 update_fields=[
                     "status",
@@ -1722,6 +1726,144 @@ class PatientSymptomLogListCreateAPIView(
     request=PatientAppointmentCancelRequestSerializer,
     responses=AppointmentSerializer,
 )
+@extend_schema(
+    tags=["환자앱-증상"],
+    summary="환자 당일 증상 기록 수정",
+    description=(
+        "현재 환자가 오늘 작성한 증상 기록의 "
+        "심각도와 설명을 수정합니다."
+    ),
+)
+class PatientSymptomLogDetailAPIView(
+    APIView
+):
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
+
+    def patch(
+        self,
+        request,
+        id,
+    ):
+        patient_account = (
+            get_linked_patient_account(
+                request
+            )
+        )
+
+        patient = (
+            patient_account.patient
+        )
+
+        try:
+            symptom = (
+                SymptomLog.objects.get(
+                    id=id,
+                    patient=patient,
+                )
+            )
+        except SymptomLog.DoesNotExist:
+            return Response(
+                {
+                    "detail": (
+                        "증상 기록을 찾을 수 없습니다."
+                    ),
+                },
+                status=(
+                    status.HTTP_404_NOT_FOUND
+                ),
+            )
+
+        now = timezone.now()
+
+        (
+            today,
+            _,
+            _,
+        ) = _korea_day_window(
+            now
+        )
+
+        (
+            record_date,
+            _,
+            _,
+        ) = _korea_day_window(
+            symptom.logged_at
+        )
+
+        if record_date != today:
+            return Response(
+                {
+                    "detail": (
+                        "오늘 작성한 증상 기록만 "
+                        "수정할 수 있습니다."
+                    ),
+                },
+                status=(
+                    status.HTTP_400_BAD_REQUEST
+                ),
+            )
+
+        update_data = {}
+
+        if "severity" in request.data:
+            update_data["severity"] = (
+                request.data["severity"]
+            )
+
+        if (
+            "symptom_description"
+            in request.data
+        ):
+            update_data[
+                "symptom_description"
+            ] = request.data[
+                "symptom_description"
+            ]
+
+        serializer = (
+            SymptomLogSerializer(
+                symptom,
+                data=update_data,
+                partial=True,
+            )
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        severity = (
+            serializer.validated_data.get(
+                "severity",
+                symptom.severity,
+            )
+        )
+
+        risk_level = (
+            calculate_symptom_risk(
+                symptom_type=(
+                    symptom.symptom_type
+                ),
+                severity=severity,
+            )
+        )
+
+        updated = serializer.save(
+            risk_level=risk_level,
+        )
+
+        return Response(
+            SymptomLogSerializer(
+                updated
+            ).data,
+            status=status.HTTP_200_OK,
+        )
 class PatientAppointmentCancelRequestAPIView(APIView):
 
     authentication_classes = [

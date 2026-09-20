@@ -36,28 +36,50 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
   @override
   Widget build(BuildContext context) {
     return SafeArea(
-      child: FutureBuilder<List<Appointment>>(
-        future: _appointmentsFuture,
-        builder: (context, snapshot) {
-          // API 로딩 중
-          if (snapshot.connectionState == ConnectionState.waiting) {
-            return const Center(child: CircularProgressIndicator());
-          }
+      child: Column(
+        children: [
+          _buildTopHeader(),
+          Expanded(
+            child: Container(
+              width: double.infinity,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF5F9FD),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(24),
+                  topRight: Radius.circular(24),
+                ),
+              ),
+              clipBehavior: Clip.antiAlias,
+              child: FutureBuilder<List<Appointment>>(
+                future: _appointmentsFuture,
+                builder: (context, snapshot) {
+                  // API 로딩 중
+                  if (snapshot.connectionState == ConnectionState.waiting) {
+                    return const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF2F8DFE),
+                      ),
+                    );
+                  }
 
-          // API 오류
-          if (snapshot.hasError) {
-            return _buildErrorState();
-          }
+                  // API 오류
+                  if (snapshot.hasError) {
+                    return _buildErrorState();
+                  }
 
-          final appointments = snapshot.data ?? [];
+                  final appointments = snapshot.data ?? [];
 
-          // 예약 데이터 없음
-          if (appointments.isEmpty) {
-            return _buildEmptyState();
-          }
+                  // 예약 데이터 없음
+                  if (appointments.isEmpty) {
+                    return _buildEmptyState();
+                  }
 
-          return _buildContent(appointments);
-        },
+                  return _buildContent(appointments);
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -77,14 +99,10 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _buildPageTitle(),
-
-            const SizedBox(height: 20),
-
             if (upcomingAppointment != null)
               _buildUpcomingAppointment(upcomingAppointment)
             else
@@ -163,24 +181,36 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
     ).showSnackBar(const SnackBar(content: Text('예약 요청이 완료되었습니다.')));
   }
 
-  Widget _buildPageTitle() {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          '진료 예약',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF191F28),
+  Widget _buildTopHeader() {
+    return Container(
+      width: double.infinity,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE8EEF5), width: 1)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            '진료 예약',
+            style: TextStyle(
+              fontSize: 22,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF191F28),
+            ),
           ),
-        ),
-        SizedBox(height: 6),
-        Text(
-          '진료 및 검사 일정을 확인해보세요.',
-          style: TextStyle(fontSize: 14, color: Color(0xFF8B95A1)),
-        ),
-      ],
+          SizedBox(height: 6),
+          Text(
+            '진료 및 예약 일정을 확인해보세요.',
+            style: TextStyle(
+              fontSize: 13,
+              height: 1.4,
+              color: Color(0xFF8B95A1),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -508,14 +538,10 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
   Widget _buildEmptyState() {
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 60, 20, 24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _buildPageTitle(),
-
-          const SizedBox(height: 60),
-
           const Center(
             child: Column(
               children: [
@@ -621,7 +647,6 @@ class _AppointmentScreenState extends State<AppointmentScreen> {
               (appointment) =>
                   appointment.scheduledAt.isAfter(now) &&
                   appointment.appointmentStatus != 'CANCELLED' &&
-                  appointment.cancellationRequestedAt == null &&
                   appointment.visitStatus == 'SCHEDULED',
             )
             .toList()

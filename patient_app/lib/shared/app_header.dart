@@ -1,85 +1,115 @@
-// 상단 appbar
-
 import 'package:flutter/material.dart';
 
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
+  final VoidCallback onMenuPressed;
+  final VoidCallback onNotificationPressed;
+
+  final bool hasUnreadNotification;
+
   const AppHeader({
     super.key,
-    this.onMenuPressed,
-    this.onNotificationPressed,
+    required this.onMenuPressed,
+    required this.onNotificationPressed,
+    this.hasUnreadNotification = false,
   });
 
-  final VoidCallback? onMenuPressed;
-  final VoidCallback? onNotificationPressed;
+  static const Color _primaryBlue = Color(0xFF3198F4);
 
   @override
-  Size get preferredSize => const Size.fromHeight(kToolbarHeight);
+  Size get preferredSize => const Size.fromHeight(82);
 
   @override
   Widget build(BuildContext context) {
     return AppBar(
+      automaticallyImplyLeading: false,
+      elevation: 0,
+      scrolledUnderElevation: 0,
       backgroundColor: Colors.white,
-      elevation: 0.5,
+      surfaceTintColor: Colors.white,
+      toolbarHeight: 82,
+      titleSpacing: 20,
 
-      leading: IconButton(
-        icon: const Icon(
-          Icons.menu_rounded,
-          color: Color(0xFF191F28),
-        ),
-        onPressed: onMenuPressed,
-      ),
-
-      title: const Row(
-        mainAxisSize: MainAxisSize.min,
+      title: Row(
         children: [
-          Icon(
-            Icons.air_rounded,
-            color: Color(0xFF2B66F6),
-            size: 22,
+          Image.asset(
+            'assets/images/APP_ICON.png',
+            width: 47,
+            height: 47,
+            fit: BoxFit.contain,
           ),
-          SizedBox(width: 6),
-          Text(
+
+          const SizedBox(width: 9),
+
+          const Text(
             '숨-잇',
             style: TextStyle(
-              color: Color(0xFF191F28),
-              fontWeight: FontWeight.bold,
-              fontSize: 18,
+              color: _primaryBlue,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -1,
             ),
           ),
         ],
       ),
 
-      centerTitle: true,
-
       actions: [
+        _HeaderButton(
+          icon: Icons.qr_code_scanner_rounded,
+          onTap: onMenuPressed,
+        ),
+
+        const SizedBox(width: 8),
+
         Stack(
-          alignment: Alignment.center,
+          clipBehavior: Clip.none,
           children: [
-            IconButton(
-              icon: const Icon(
-                Icons.notifications_none_rounded,
-                color: Color(0xFF191F28),
-              ),
-              onPressed: onNotificationPressed,
+            _HeaderButton(
+              icon: Icons.notifications_none_rounded,
+              onTap: onNotificationPressed,
             ),
 
-            Positioned(
-              right: 10,
-              top: 10,
-              child: Container(
-                width: 8,
-                height: 8,
-                decoration: const BoxDecoration(
-                  color: Color(0xFFFF3B30),
-                  shape: BoxShape.circle,
+            if (hasUnreadNotification)
+              Positioned(
+                right: 7,
+                top: 7,
+                child: Container(
+                  width: 8,
+                  height: 8,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFF5A5F),
+                    shape: BoxShape.circle,
+                  ),
                 ),
               ),
-            ),
           ],
         ),
 
-        const SizedBox(width: 4),
+        const SizedBox(width: 16),
       ],
+    );
+  }
+}
+
+class _HeaderButton extends StatelessWidget {
+  final IconData icon;
+  final VoidCallback onTap;
+
+  const _HeaderButton({required this.icon, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFF6FAFF),
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: SizedBox(
+          width: 46,
+          height: 46,
+          child: Icon(icon, size: 26, color: const Color(0xFF2F8DFE)),
+        ),
+      ),
     );
   }
 }

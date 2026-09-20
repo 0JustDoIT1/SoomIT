@@ -9,9 +9,7 @@ class ExamResultSection {
     required this.summary,
   });
 
-  factory ExamResultSection.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory ExamResultSection.fromJson(Map<String, dynamic> json) {
     return ExamResultSection(
       type: json['type'] as String? ?? '',
       label: json['label'] as String? ?? '',
@@ -29,8 +27,11 @@ class ExamResult {
   final String resultStatusLabel;
 
   final DateTime resultDate;
-
   final String resultSummary;
+
+  final String? hospitalName;
+  final String? departmentName;
+  final String? doctorName;
 
   final List<ExamResultSection> resultSections;
 
@@ -42,6 +43,9 @@ class ExamResult {
     required this.resultStatusLabel,
     required this.resultDate,
     required this.resultSummary,
+    this.hospitalName,
+    this.departmentName,
+    this.doctorName,
     this.resultSections = const [],
   });
 
@@ -56,17 +60,18 @@ class ExamResult {
       resultStatusLabel:
           json['result_status_label'] as String? ??
           json['result_status'] as String,
-      resultDate: DateTime.parse(
-        json['result_date'] as String,
-      ),
-      resultSummary:
-          json['result_summary'] as String? ??
-          '검사 결과가 등록되어 있습니다.',
+      resultDate: DateTime.parse(json['result_date'] as String),
+      resultSummary: json['result_summary'] as String? ?? '검사 결과가 등록되어 있습니다.',
+
+      hospitalName: json['hospital_name'] as String?,
+      departmentName: json['department_name'] as String?,
+      doctorName: json['doctor_name'] as String?,
+
       resultSections: rawSections is List
           ? rawSections
-              .whereType<Map<String, dynamic>>()
-              .map(ExamResultSection.fromJson)
-              .toList()
+                .whereType<Map<String, dynamic>>()
+                .map(ExamResultSection.fromJson)
+                .toList()
           : const [],
     );
   }
@@ -74,6 +79,5 @@ class ExamResult {
   bool get isConfirmed => resultStatus == 'CONFIRMED';
 
   bool get isPathologyGroup =>
-      examType == 'PATHOLOGY_GENE' ||
-      examType == 'PDL1';
+      examType == 'PATHOLOGY_GENE' || examType == 'PDL1';
 }

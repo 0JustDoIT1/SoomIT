@@ -1,4 +1,5 @@
 import 'package:local_auth/local_auth.dart';
+import 'package:local_auth_android/local_auth_android.dart';
 
 class BiometricAuthService {
   BiometricAuthService._();
@@ -25,13 +26,20 @@ class BiometricAuthService {
     }
   }
 
-  /// 지문으로 앱 잠금 해제
+  /// 생체인증으로 앱 잠금 해제
   Future<bool> authenticate() async {
     try {
       return await _localAuthentication.authenticate(
-        localizedReason: '숨-잇 앱 잠금을 해제해주세요.',
+        localizedReason: '본인 확인 후 숨-잇 앱 잠금을 해제해주세요.',
         biometricOnly: true,
         persistAcrossBackgrounding: true,
+        authMessages: const <AuthMessages>[
+          AndroidAuthMessages(
+            signInTitle: '생체 인증',
+            signInHint: '본인 확인',
+            cancelButton: '취소',
+          ),
+        ],
       );
     } catch (_) {
       return false;
@@ -43,7 +51,7 @@ class BiometricAuthService {
     try {
       await _localAuthentication.stopAuthentication();
     } catch (_) {
-      // 이미 종료된 경우 별도로 처리하지 않습니다.
+      // 이미 종료된 경우 처리하지 않음
     }
   }
 }

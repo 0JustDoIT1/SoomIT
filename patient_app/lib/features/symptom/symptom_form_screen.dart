@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'services/symptom_service.dart';
 import 'symptom_constants.dart';
+import 'package:dio/dio.dart';
 
 class SymptomFormScreen extends StatefulWidget {
   const SymptomFormScreen({super.key});
@@ -75,9 +76,9 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
       final severity = _severity.round();
 
       // 최종 위험도는 Django 서버에서 판정
-      final createdSymptom = await _symptomService.createSymptomLog(
+      final createdSymptom = await _symptomService.createSymptom(
         symptomType: _selectedSymptomType,
-        symptomDescription: _descriptionController.text.trim().isEmpty
+        description: _descriptionController.text.trim().isEmpty
             ? null
             : _descriptionController.text.trim(),
         severity: severity,
@@ -129,37 +130,63 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
       ).showSnackBar(const SnackBar(content: Text('증상이 기록되었습니다.')));
 
       Navigator.pop(context, true);
-    } on DailySymptomDuplicateException catch (e) {
+    } on DioException catch (e) {
       if (!mounted) return;
 
-      await showDialog<void>(
-        context: context,
-        builder: (dialogContext) {
-          return AlertDialog(
-            icon: const Icon(
-              Icons.info_outline,
-              color: Color(0xFF2B66F6),
-              size: 40,
-            ),
-            title: const Text(
-              '오늘 기록 완료',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontWeight: FontWeight.w700),
-            ),
-            content: Text(
-              '${e.detail}\n하루에 같은 증상은 한 번만 기록할 수 있습니다.',
-              textAlign: TextAlign.center,
-            ),
-            actions: [
-              FilledButton(
-                onPressed: () {
-                  Navigator.pop(dialogContext);
-                },
-                child: const Text('확인'),
+      if (e.response?.statusCode == 409) {
+        final responseData = e.response?.data;
+
+        String detail = '오늘 이미 같은 증상을 기록했어요.';
+
+        if (responseData is Map) {
+          final serverDetail = responseData['detail'];
+
+          if (serverDetail != null) {
+            detail = serverDetail.toString();
+          }
+        }
+
+        await showDialog<void>(
+          context: context,
+          builder: (dialogContext) {
+            return AlertDialog(
+              icon: const Icon(
+                Icons.info_outline,
+                color: Color(0xFF2B66F6),
+                size: 40,
               ),
-            ],
-          );
-        },
+              title: const Text(
+                '오늘 기록 완료',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              content: Text(
+                '$detail\n하루에 같은 증상은 한 번만 기록할 수 있습니다.',
+                textAlign: TextAlign.center,
+              ),
+              actions: [
+                FilledButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                  },
+                  child: const Text('확인'),
+                ),
+              ],
+            );
+          },
+        );
+
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '증상 기록 저장에 실패했습니다.\n$e',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;

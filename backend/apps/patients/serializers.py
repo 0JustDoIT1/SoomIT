@@ -199,26 +199,66 @@ class PatientAppointmentRequestSerializer(
     scheduled_at = serializers.DateTimeField()
 
     def validate_scheduled_at(self, value):
+        from datetime import timedelta
         from django.utils import timezone
+
+        now = timezone.localtime(timezone.now())
+        scheduled_at = timezone.localtime(value)
+
+        today = now.date()
+        target_date = scheduled_at.date()
+        tomorrow = today + timedelta(days=1)
+
+        first_bookable_date = (
+            today + timedelta(days=2)
+            if now.hour >= 18
+            else today + timedelta(days=1)
+        )
+
+        last_bookable_date = (
+            first_bookable_date + timedelta(days=29)
+        )
 
         if value <= timezone.now():
             raise serializers.ValidationError(
                 "예약 시간은 현재 시간 이후여야 합니다."
             )
 
+        if target_date <= today:
+            raise serializers.ValidationError(
+                "당일 예약은 불가능합니다."
+            )
+
         if (
-            value.minute % 30 != 0
-            or value.second != 0
-            or value.microsecond != 0
+            target_date == tomorrow
+            and now.hour >= 18
+        ):
+            raise serializers.ValidationError(
+                "다음 날 예약은 전날 오후 6시까지 가능합니다."
+            )
+
+        if target_date > last_bookable_date:
+            raise serializers.ValidationError(
+                "예약은 예약 가능한 첫날부터 30일 이내만 가능합니다."
+            )
+
+        if (
+            scheduled_at.minute % 30 != 0
+            or scheduled_at.second != 0
+            or scheduled_at.microsecond != 0
         ):
             raise serializers.ValidationError(
                 "예약 시간은 30분 단위여야 합니다."
             )
 
         return value
- 
-class PatientAppointmentChangeRequestSerializer(serializers.Serializer):
+
+
+class PatientAppointmentChangeRequestSerializer(
+    serializers.Serializer
+):
     new_scheduled_at = serializers.DateTimeField()
+
     reason = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -227,14 +267,51 @@ class PatientAppointmentChangeRequestSerializer(serializers.Serializer):
     )
 
     def validate_new_scheduled_at(self, value):
+        from datetime import timedelta
         from django.utils import timezone
+
+        now = timezone.localtime(timezone.now())
+        scheduled_at = timezone.localtime(value)
+
+        today = now.date()
+        target_date = scheduled_at.date()
+        tomorrow = today + timedelta(days=1)
+
+        first_bookable_date = (
+            today + timedelta(days=2)
+            if now.hour >= 18
+            else today + timedelta(days=1)
+        )
+
+        last_bookable_date = (
+            first_bookable_date + timedelta(days=29)
+        )
 
         if value <= timezone.now():
             raise serializers.ValidationError(
                 "변경할 예약 시간은 현재 시간 이후여야 합니다."
             )
 
+        if target_date <= today:
+            raise serializers.ValidationError(
+                "당일 예약으로 변경할 수 없습니다."
+            )
+
+        if (
+            target_date == tomorrow
+            and now.hour >= 18
+        ):
+            raise serializers.ValidationError(
+                "다음 날 예약 변경은 전날 오후 6시까지 가능합니다."
+            )
+
+        if target_date > last_bookable_date:
+            raise serializers.ValidationError(
+                "예약 변경은 예약 가능한 첫날부터 30일 이내만 가능합니다."
+            )
+
         return value
+
 
 class PatientAppointmentCancelRequestSerializer(serializers.Serializer):
     cancellation_reason = serializers.CharField(
@@ -1008,6 +1085,21 @@ class MedicationScheduleSerializer(serializers.ModelSerializer):
 class MedicationIntakeTakenSerializer(serializers.Serializer):
     medication_schedule_id = serializers.UUIDField()
     scheduled_at = serializers.DateTimeField()
+    taken_at = serializers.DateTimeField(
+        required=False,
+        allow_null=True,
+    )
+
+    def validate_taken_at(self, value):
+        if value is None:
+            return value
+
+        if value > timezone.now():
+            raise serializers.ValidationError(
+                "실제 복용 시간은 현재 시간 이후일 수 없습니다."
+            )
+
+        return value
 
 class MedicationIntakeLogSerializer(serializers.ModelSerializer):
     medication_schedule_id = serializers.UUIDField(
