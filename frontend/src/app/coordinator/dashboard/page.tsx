@@ -303,23 +303,26 @@ export default function CoordinatorDashboardPage() {
   }
 
   return (
-    <div className="space-y-5 bg-[#F0F3F8]">
+    <div className="space-y-5 bg-[#EEF3F8]">
       <header>
         <h1 className="text-2xl font-bold text-slate-900">대시보드</h1>
         <p className="mt-1 text-sm text-slate-500">오늘 예약과 처리 대기 업무를 확인합니다.</p>
       </header>
 
-      <div className="space-y-4 rounded-md border border-slate-200 bg-white p-4">
+      <div className="space-y-4 rounded-md border border-[#DDE5EE] bg-[#F8FAFC] p-4">
+      <h2 className="text-sm font-semibold text-[#24364B]">오늘 업무</h2>
       <section aria-label="상단 업무 요약" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-5">
           {summary.map((item) => (
             <div key={item.label} className="px-4 py-3 sm:px-5">
               <p className="text-xs font-medium text-slate-500">{item.label}</p>
-              <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-[#7C6AD9]" : "text-slate-700"}`}>{item.count}</p>
+          <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-[#C65F83]" : "text-slate-700"}`}>{item.count}</p>
             </div>
           ))}
         </div>
       </section>
+
+      <div aria-hidden="true" className="my-5 border-t border-[#E5EAF0]" />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(240px,1fr)]">
       <section className="min-w-0 overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm">
@@ -366,7 +369,7 @@ export default function CoordinatorDashboardPage() {
             <EmptyState>처리할 예약 요청이 없습니다.</EmptyState>
           )}
           <div className="border-t border-slate-100 px-4 py-2.5 text-right">
-            <button type="button" onClick={() => router.push("/coordinator/appointments")} className="text-xs font-medium text-[#7C6AD9] hover:text-[#6555B5]">
+            <button type="button" onClick={() => router.push("/coordinator/appointments")} className="text-xs font-medium text-[#C65F83] hover:text-[#A94B6D]">
               전체 요청 보기 <span aria-hidden="true">→</span>
             </button>
           </div>
@@ -497,7 +500,7 @@ function RequestTypeBadge({ type }: { type: RequestRow["requestType"] }) {
     CANCEL: "예약 취소",
   };
   const tone: Record<RequestRow["requestType"], string> = {
-    NEW: "border-[#B8ADE7] text-[#7462C9]",
+    NEW: "border-[#C65F83] text-[#A94B6D]",
     CHANGE: "border-[#B8C1D2] text-[#536784]",
     CANCEL: "border-[#D7D9DE] text-[#6B7280]",
   };
@@ -505,7 +508,7 @@ function RequestTypeBadge({ type }: { type: RequestRow["requestType"] }) {
 }
 
 function ApprovalBadge() {
-  return <span className="inline-flex whitespace-nowrap rounded-sm border border-[#D8D1F0] bg-[#F1EEFA] px-1.5 py-0.5 text-[11px] font-medium text-[#6B5BB5]">승인 대기</span>;
+  return <span className="inline-flex whitespace-nowrap rounded-sm border border-[#D8D1F0] bg-[#F1EEFA] px-1.5 py-0.5 text-[11px] font-medium text-[#6B5BB5]"><span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-[#C65F83]" aria-hidden="true" />승인 대기</span>;
 }
 
 function OrderTypeLabel({ type }: { type: ExaminationOrder["order_type"] }) {
