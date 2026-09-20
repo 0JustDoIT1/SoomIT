@@ -509,10 +509,6 @@ function ApprovalBadge() {
 }
 
 function OrderTypeLabel({ type }: { type: ExaminationOrder["order_type"] }) {
-<<<<<<< HEAD
-=======
-  
->>>>>>> 0904ed9f4cbfbfe29ec1c845160f52d5e2abea20
   return <span className="inline-flex border-l-2 border-slate-300 pl-2 text-sm font-medium text-slate-700">{ORDER_LABELS[type]}</span>;
 }
 

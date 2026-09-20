@@ -516,7 +516,12 @@ function PathologyTissueHeatmap({
   analysisId?: string;
   emptyMessage?: string;
 }) {
-  const [heatmap, setHeatmap] = useState({ wsiId, imageUrl: null as string | null, loaded: false });
+  const [heatmap, setHeatmap] = useState({
+    wsiId,
+    imageUrl: null as string | null,
+    loaded: false,
+  });
+
   const isCurrentWsi = heatmap.wsiId === wsiId;
   const imageUrl = isCurrentWsi ? heatmap.imageUrl : null;
   const loading = !isCurrentWsi || !heatmap.loaded;
@@ -524,66 +529,58 @@ function PathologyTissueHeatmap({
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | null = null;
-<<<<<<< HEAD
+
     void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
       .then((blob) => {
         if (!controller.signal.aborted && blob?.size) {
           objectUrl = URL.createObjectURL(blob);
-          setHeatmap({ wsiId, imageUrl: objectUrl, loaded: true });
+          setHeatmap({
+            wsiId,
+            imageUrl: objectUrl,
+            loaded: true,
+          });
         } else if (!controller.signal.aborted) {
-          setHeatmap({ wsiId, imageUrl: null, loaded: true });
+          setHeatmap({
+            wsiId,
+            imageUrl: null,
+            loaded: true,
+          });
         }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setHeatmap({ wsiId, imageUrl: null, loaded: true });
+        if (!controller.signal.aborted) {
+          setHeatmap({
+            wsiId,
+            imageUrl: null,
+            loaded: true,
+          });
+        }
       });
+
     return () => {
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [wsiId]);
-=======
-        queueMicrotask(() => {
-          if (!controller.signal.aborted) {
-            setLoading(true);
-            setImageUrl(null);
-          }
-        });
-
-        void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
-          .then((blob) => {
-            if (!controller.signal.aborted && blob?.size) {
-              objectUrl = URL.createObjectURL(blob);
-              setImageUrl(objectUrl);
-            } else if (!controller.signal.aborted) {
-              setImageUrl(null);
-            }
-          })
-          .catch(() => {
-            if (!controller.signal.aborted) setImageUrl(null);
-          })
-          .finally(() => {
-            if (!controller.signal.aborted) setLoading(false);
-          });
-
-
-  return () => {
-    controller.abort();
-    if (objectUrl) URL.revokeObjectURL(objectUrl);
-  };
-}, [analysisId, wsiId]);
->>>>>>> 0904ed9f4cbfbfe29ec1c845160f52d5e2abea20
+  }, [analysisId, wsiId]);
 
   return (
     <div className="relative flex h-full min-h-[320px] w-full flex-1 items-center justify-center overflow-hidden p-0 text-center text-sm text-slate-500">
       {imageUrl ? (
-        <Image src={imageUrl} alt="Tissue CLAM attention heatmap" fill unoptimized sizes="100vw" className="h-full w-full object-contain" />
+        <Image
+          src={imageUrl}
+          alt="Tissue CLAM attention heatmap"
+          fill
+          unoptimized
+          sizes="100vw"
+          className="h-full w-full object-contain"
+        />
       ) : (
         loading ? "AI Heatmap 불러오는 중입니다." : emptyMessage
       )}
     </div>
   );
 }
+
 
 function Pdl1AnalysisResults({
   result,
