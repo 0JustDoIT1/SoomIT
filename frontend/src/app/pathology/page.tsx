@@ -1,13 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import Image from "next/image";
 import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
 import { showToast } from "@/components/ui/toast/toast";
 
 import {
-  cancelPathologyGeneAnalysis,
   fetchPathologyCaseWorkflow,
   fetchPathologyCompletedExams,
   fetchPathologyGeneAnalyses,
@@ -252,8 +251,10 @@ function PathologyGeneResultGroups({
 
 function AnalysisProgress({
   status,
+  label,
 }: {
   status: string | undefined;
+  label?: string;
 }) {
   if (status !== "PENDING" && status !== "RUNNING") {
     return null;
@@ -261,7 +262,7 @@ function AnalysisProgress({
 
   return (
     <div className="mt-4 rounded-lg border-l-2 border-[#3446B8] bg-[#F1F3FF] px-3 py-3">
-      <p className="text-xs font-semibold text-[#3446B8]">분석 중</p>
+      <p className="text-xs font-semibold text-[#3446B8]">{label ?? "분석 중"}</p>
 
       <div className="mt-2 h-1.5 overflow-hidden bg-blue-100">
         <div className="h-full w-1/2 animate-pulse bg-[#3446B8]" />
@@ -509,9 +510,11 @@ function PathologyWsiPreview({ wsiId, alt = "H&E 원본 조직영상 미리보�
 
 function PathologyTissueHeatmap({
   wsiId,
+  analysisId,
   emptyMessage = "AI Heatmap을 사용할 수 없습니다.",
 }: {
   wsiId: string;
+  analysisId?: string;
   emptyMessage?: string;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -520,36 +523,40 @@ function PathologyTissueHeatmap({
   useEffect(() => {
     const controller = new AbortController();
     let objectUrl: string | null = null;
-    queueMicrotask(() => {
-  if (!controller.signal.aborted) {
-    setLoading(true);
-  }
-});
-    void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
-      .then((blob) => {
-        if (!controller.signal.aborted && blob?.size) {
-          objectUrl = URL.createObjectURL(blob);
-          setImageUrl(objectUrl);
-        } else if (!controller.signal.aborted) {
-          setImageUrl(null);
-        }
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) setImageUrl(null);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => {
-      controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
-    };
-  }, [wsiId]);
+        queueMicrotask(() => {
+          if (!controller.signal.aborted) {
+            setLoading(true);
+            setImageUrl(null);
+          }
+        });
+
+        void fetchPathologyWsiTissueHeatmap(wsiId, controller.signal)
+          .then((blob) => {
+            if (!controller.signal.aborted && blob?.size) {
+              objectUrl = URL.createObjectURL(blob);
+              setImageUrl(objectUrl);
+            } else if (!controller.signal.aborted) {
+              setImageUrl(null);
+            }
+          })
+          .catch(() => {
+            if (!controller.signal.aborted) setImageUrl(null);
+          })
+          .finally(() => {
+            if (!controller.signal.aborted) setLoading(false);
+          });
+
+
+  return () => {
+    controller.abort();
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  };
+}, [analysisId, wsiId]);
 
   return (
-    <div className="relative flex min-h-56 w-full flex-1 items-center justify-center px-5 py-6 text-center text-sm text-slate-500">
+    <div className="relative flex min-h-0 w-full flex-1 items-center justify-center overflow-hidden p-0 text-center text-sm text-slate-500">
       {imageUrl ? (
-        <Image src={imageUrl} alt="Tissue CLAM attention heatmap" fill unoptimized sizes="100vw" className="object-contain" />
+        <Image src={imageUrl} alt="Tissue CLAM attention heatmap" fill unoptimized sizes="100vw" className="h-full w-full object-contain" />
       ) : (
         loading ? "AI Heatmap 불러오는 중입니다." : emptyMessage
       )}
@@ -748,16 +755,28 @@ function PathologyCompletedHistory() {
   );
 }
 
+function hasPathologyGeneResult(analysis: PathologyAiAnalysis | null | undefined) {
+  const detail = analysis?.result_detail;
+  return Boolean(
+    analysis?.status === "SUCCEEDED" &&
+      detail?.pathology &&
+      detail.result_payload &&
+      typeof detail.result_payload === "object",
+  );
+}
+
 function WorkArea({
   item,
   sectionNumber,
   onGeneWsiUploaded,
   onPdl1WsiUploaded,
+  onGeneAnalysisCompleted,
 }: {
   item: PathologyWorkstationItem;
   sectionNumber: number;
   onGeneWsiUploaded: () => void;
   onPdl1WsiUploaded: () => void;
+  onGeneAnalysisCompleted: () => void;
 }) {
   const [pdl1Analyses, setPdl1Analyses] = useState<
     PathologyAiAnalysis[]
@@ -788,8 +807,12 @@ function WorkArea({
   const [pathologyGeneAnalysis, setPathologyGeneAnalysis] = useState<PathologyAiAnalysis | null>(
     item.order_type === "PATHOLOGY_GENE" ? item.latest_gene_analysis : null,
   );
+  const [successfulPathologyGeneAnalysis, setSuccessfulPathologyGeneAnalysis] = useState<PathologyAiAnalysis | null>(
+    item.order_type === "PATHOLOGY_GENE" && hasPathologyGeneResult(item.latest_gene_analysis)
+      ? item.latest_gene_analysis
+      : null,
+  );
   const [runningPathologyGene, setRunningPathologyGene] = useState(false);
-  const [cancellingPathologyGene, setCancellingPathologyGene] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
   const [pdl1Draft, setPdl1Draft] = useState<{
     result_status: string; confirmed_at: string | null; pdl1: { tps_percent: string; interpretation: string; note: string | null; source_wsi_id: string };
@@ -805,8 +828,11 @@ function WorkArea({
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  const pathology =
-    item.order_type === "PATHOLOGY_GENE" ? pathologyGeneAnalysis : null;
+  const pathologyGeneResultAnalysis = successfulPathologyGeneAnalysis ??
+    (hasPathologyGeneResult(pathologyGeneAnalysis) ? pathologyGeneAnalysis : null);
+  const pathology = item.order_type === "PATHOLOGY_GENE"
+    ? pathologyGeneResultAnalysis ?? pathologyGeneAnalysis
+    : null;
   const pdl1 = pdl1Analyses[0] ?? null;
   const pdl1Status = runningPdl1 ? "RUNNING" : pdl1?.status;
   const pdl1AnalysisId = pdl1?.id;
@@ -819,10 +845,9 @@ function WorkArea({
     pdl1?.result_detail?.result_payload,
     "model_revision",
   );
-  const geneResults =
-    pathologyGeneAnalysis?.result_detail?.genes ?? [];
+  const geneResults = pathology?.result_detail?.genes ?? [];
   const pathologyGeneResultStatus = pathologyGeneStatus(
-    pathologyGeneAnalysis?.result_detail?.result_payload,
+    pathology?.result_detail?.result_payload,
   );
 
   useEffect(() => {
@@ -876,6 +901,7 @@ function WorkArea({
 
   const pathologyGeneTerminalToastRef = useRef<{ id: string | undefined; status: string | undefined }>({ id: pathologyGeneAnalysisId, status: pathologyGeneAnalysisStatus });
   const pathologyGeneTerminalToastIdsRef = useRef(new Set<string>());
+  const pathologyGeneWorkflowRefreshIdsRef = useRef(new Set<string>());
 
   useEffect(() => {
     const previous = pdl1TerminalToastRef.current;
@@ -910,21 +936,35 @@ function WorkArea({
   useEffect(() => {
     if (
       item.order_type !== "PATHOLOGY_GENE" ||
-      !pathologyGeneAnalysisId ||
-      (pathologyGeneAnalysisStatus !== "PENDING" &&
-        pathologyGeneAnalysisStatus !== "RUNNING")
+      !pathologyGeneAnalysisId
     ) return;
+    const isRunning = pathologyGeneAnalysisStatus === "PENDING" ||
+      pathologyGeneAnalysisStatus === "RUNNING";
     let cancelled = false;
     const refresh = () => fetchPathologyGeneAnalyses(item.case_id)
       .then((analyses) => {
         const analysis = analyses.find((entry) => entry.id === pathologyGeneAnalysisId);
-        if (!cancelled && analysis) setPathologyGeneAnalysis(analysis);
+        if (cancelled) return;
+        if (analysis) setPathologyGeneAnalysis(analysis);
+        const latestSuccessful = analyses.find(hasPathologyGeneResult);
+        if (latestSuccessful) setSuccessfulPathologyGeneAnalysis(latestSuccessful);
+        if (
+          analysis &&
+          hasPathologyGeneResult(analysis) &&
+          !pathologyGeneWorkflowRefreshIdsRef.current.has(analysis.id)
+        ) {
+          pathologyGeneWorkflowRefreshIdsRef.current.add(analysis.id);
+          onGeneAnalysisCompleted();
+        }
       })
       .catch(() => undefined);
     void refresh();
-    const timer = window.setInterval(() => { void refresh(); }, 3000);
-    return () => { cancelled = true; window.clearInterval(timer); };
-  }, [item.case_id, item.order_type, pathologyGeneAnalysisId, pathologyGeneAnalysisStatus]);
+    const timer = isRunning ? window.setInterval(() => { void refresh(); }, 3000) : null;
+    return () => {
+      cancelled = true;
+      if (timer) window.clearInterval(timer);
+    };
+  }, [item.case_id, item.order_type, onGeneAnalysisCompleted, pathologyGeneAnalysisId, pathologyGeneAnalysisStatus]);
 
   async function handlePdl1Run() {
     if (!pdl1InputReady) return;
@@ -1023,7 +1063,12 @@ function WorkArea({
   }
 
   async function handlePathologyGeneRun() {
-    if (!pathologyGeneWsiId || runningPathologyGene) return;
+    if (
+      !pathologyGeneWsiId ||
+      runningPathologyGene ||
+      pathologyGeneAnalysis?.status === "PENDING" ||
+      pathologyGeneAnalysis?.status === "RUNNING"
+    ) return;
     setRunningPathologyGene(true);
     setError("");
     setMessage("");
@@ -1039,28 +1084,6 @@ function WorkArea({
     }
   }
 
-  async function handlePathologyGeneCancel() {
-    if (
-      !pathologyGeneAnalysisId ||
-      (pathologyGeneAnalysisStatus !== "PENDING" && pathologyGeneAnalysisStatus !== "RUNNING") ||
-      cancellingPathologyGene
-    ) return;
-
-    setCancellingPathologyGene(true);
-    setError("");
-    setMessage("");
-    try {
-      const result = await cancelPathologyGeneAnalysis(item.case_id, pathologyGeneAnalysisId);
-      setPathologyGeneAnalysis(result);
-      setRunningPathologyGene(false);
-      setMessage("조직·유전자 분석이 취소되었습니다.");
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "조직·유전자 분석 취소에 실패했습니다.");
-    } finally {
-      setCancellingPathologyGene(false);
-    }
-  }
-
   const currentTestType = item.order_type;
   const isPathologyGene = currentTestType === "PATHOLOGY_GENE";
   const isPdl1 = currentTestType === "PDL1";
@@ -1070,18 +1093,18 @@ function WorkArea({
     runningPathologyGene ||
     pathologyGeneAnalysisStatus === "PENDING" ||
     pathologyGeneAnalysisStatus === "RUNNING";
-  const canViewPathologyGeneResult =
-    pathologyGeneAnalysisStatus === "SUCCEEDED";
+  const canViewPathologyGeneResult = Boolean(pathologyGeneResultAnalysis);
   const canRunPathologyGene = pathologyGeneWsiReady &&
     !pathologyGeneAnalysisRunning &&
-    !canViewPathologyGeneResult;
-  const canCancelPathologyGene = Boolean(pathologyGeneAnalysisId) &&
-    (pathologyGeneAnalysisStatus === "PENDING" || pathologyGeneAnalysisStatus === "RUNNING");
+    (canViewPathologyGeneResult ||
+      !pathologyGeneAnalysis ||
+      pathologyGeneAnalysis.status === "FAILED" ||
+      pathologyGeneAnalysis.status === "CANCELLED");
   const pathologyGeneWsiFilename = pathologyGeneWsiReady
     ? pathologyGeneWsiFile?.name ?? item.latest_wsi?.original_filename ?? null
     : null;
   const currentAnalysis = isPathologyGene
-    ? pathologyGeneAnalysis
+    ? pathologyGeneResultAnalysis ?? pathologyGeneAnalysis
     : isPdl1
       ? pdl1
       : null;
@@ -1302,12 +1325,14 @@ function WorkArea({
               <section className="flex min-h-96 flex-col rounded-lg border border-[#DDE2F7] bg-[#F8F8FF] text-slate-600">
                 <p className="border-b border-[#E2E5F2] bg-white px-3 py-2 text-xs font-semibold text-slate-700">AI Heatmap</p>
                 <div className="flex flex-1 items-center justify-center px-5 py-6 text-center text-sm">
-                  {pathologyGeneAnalysis?.status === "PENDING" || pathologyGeneAnalysis?.status === "RUNNING" ? (
+                  {!pathologyGeneResultAnalysis && (pathologyGeneAnalysis?.status === "PENDING" || pathologyGeneAnalysis?.status === "RUNNING") ? (
                     <p>AI 분석 중입니다. 완료 후 Heatmap이 표시됩니다.</p>
-                  ) : pathologyGeneAnalysis?.status === "SUCCEEDED" ? (
-                    item.latest_wsi && pathologyGeneAnalysis.source_image_asset_id === item.latest_wsi.image_asset_id ? (
+                  ) : pathologyGeneResultAnalysis ? (
+                    item.latest_wsi && pathologyGeneResultAnalysis.source_image_asset_id === item.latest_wsi.image_asset_id ? (
                       <PathologyTissueHeatmap
+                        key={pathologyGeneResultAnalysis.id}
                         wsiId={item.latest_wsi.id}
+                        analysisId={pathologyGeneResultAnalysis.id}
                         emptyMessage="분석 결과에 Heatmap 이미지가 포함되어 있지 않습니다."
                       />
                     ) : <p>분석 결과에 Heatmap 이미지가 포함되어 있지 않습니다.</p>
@@ -1387,7 +1412,7 @@ function WorkArea({
               {error ? <p role="alert" className="mt-2 text-xs text-red-700">{error}</p> : null}
             </section>
             <section className="rounded-xl border border-[#DDE2F7] bg-white p-4 shadow-sm">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col items-start gap-3">
             <div>
               <h3 className="text-sm font-bold">
                 <span className="mr-2 text-xs text-[#3446B8]">
@@ -1401,33 +1426,25 @@ function WorkArea({
               </p>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap items-center gap-2">
             <button
               type="button"
               disabled={!canRunPathologyGene}
               onClick={handlePathologyGeneRun}
-              className="rounded-md bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white hover:bg-[#29399F] disabled:bg-slate-300"
+              className={`rounded-md px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300 ${canViewPathologyGeneResult ? "bg-[#C75B63] hover:bg-[#AD4550]" : "bg-[#3446B8] hover:bg-[#29399F]"}`}
             >
-              {pathologyGeneAnalysisRunning ? "분석 실행 중" : "분석 실행"}
+              {pathologyGeneAnalysisRunning
+                ? canViewPathologyGeneResult ? "재분석 중..." : "분석 중..."
+                : canViewPathologyGeneResult ? "재분석" : "분석 실행"}
             </button>
-            {canCancelPathologyGene ? (
-              <button
-                type="button"
-                disabled={cancellingPathologyGene}
-                onClick={handlePathologyGeneCancel}
-                className="rounded-md bg-red-600 px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300"
-              >
-                {cancellingPathologyGene ? "취소 중..." : "분석 취소"}
-              </button>
-            ) : null}
+            <AnalysisStatus status={canViewPathologyGeneResult ? "SUCCEEDED" : pathologyGeneAnalysisStatus} />
             </div>
           </div>
 
-          <AnalysisProgress status={pathology?.status} />
-
-          <div className="mt-3">
-            <AnalysisStatus status={pathology?.status} />
-          </div>
+          <AnalysisProgress
+            status={pathologyGeneAnalysisStatus}
+            label={canViewPathologyGeneResult ? "재분석 중..." : undefined}
+          />
 
         </section>
           </>
@@ -1741,9 +1758,11 @@ function WorkArea({
                         </p>
                       </div>
                       <div className="relative flex min-h-64 items-center justify-center overflow-hidden rounded-xl border border-dashed border-slate-300 bg-slate-50">
-                        {item.latest_wsi && pathologyGeneAnalysis?.source_image_asset_id === item.latest_wsi.image_asset_id ? (
+                        {item.latest_wsi && pathologyGeneResultAnalysis?.source_image_asset_id === item.latest_wsi.image_asset_id ? (
                           <PathologyTissueHeatmap
+                            key={pathologyGeneResultAnalysis?.id}
                             wsiId={item.latest_wsi.id}
+                            analysisId={pathologyGeneResultAnalysis?.id}
                             emptyMessage="AI Heatmap 연결 예정"
                           />
                         ) : <p className="text-sm font-semibold text-slate-500">AI Heatmap 연결 예정</p>}
@@ -1847,6 +1866,10 @@ export default function PathologyDashboardPage() {
     PathologyCaseWorkflow | null
   >(null);
   const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
+  const refreshCurrentWorkflow = useCallback(
+    () => setWorkflowRefreshVersion((version) => version + 1),
+    [],
+  );
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
 
@@ -2429,6 +2452,7 @@ export default function PathologyDashboardPage() {
                   sectionNumber={1}
                   onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
                   onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                  onGeneAnalysisCompleted={refreshCurrentWorkflow}
                 />
               ) : selectedWorkflow.orders.length === 0 ? (
                 <StateMessage

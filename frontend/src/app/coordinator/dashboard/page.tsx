@@ -303,7 +303,7 @@ export default function CoordinatorDashboardPage() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 bg-[#F4F6F9]">
       <header>
         <h1 className="text-2xl font-bold text-slate-900">대시보드</h1>
         <p className="mt-1 text-sm text-slate-500">오늘 예약과 처리 대기 업무를 확인합니다.</p>
