@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore, type ReactNode } from "react";
+import { showToast } from "@/components/ui/toast/toast";
 
 const tabs = [
   {
@@ -49,6 +50,7 @@ export default function CoordinatorLayout({
   );
 
   function handleLogout() {
+    showToast.dismiss();
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");

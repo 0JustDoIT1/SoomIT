@@ -1,3 +1,5 @@
+import { showToast } from "@/components/ui/toast/toast";
+
 export const SYSTEM_ADMIN_SESSION_KEYS = {
   accessToken: "systemAdminAccessToken",
   refreshToken: "systemAdminRefreshToken",
@@ -27,5 +29,6 @@ export function getSystemAdminUser(): SystemAdminUser | null {
 }
 
 export function clearSystemAdminSession() {
+  showToast.dismiss();
   Object.values(SYSTEM_ADMIN_SESSION_KEYS).forEach((key) => sessionStorage.removeItem(key));
 }

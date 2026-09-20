@@ -4,7 +4,6 @@ import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { RespiratoryAuthProvider, useRespiratoryAuth } from "./_components/respiratory-auth-provider";
-import { RespiratoryToastProvider } from "./_components/respiratory-toast-provider";
 import { API_BASE_URL } from "@/lib/api";
 import { requestCaseNavigation } from "./_lib/case-navigation-guard";
 
@@ -24,7 +23,7 @@ export default function RespiratoryLayout({
 }: {
   children: ReactNode;
 }) {
-  return <RespiratoryAuthProvider><RespiratoryToastProvider><AuthenticatedLayout>{children}</AuthenticatedLayout></RespiratoryToastProvider></RespiratoryAuthProvider>;
+  return <RespiratoryAuthProvider><AuthenticatedLayout>{children}</AuthenticatedLayout></RespiratoryAuthProvider>;
 }
 
 function AuthenticatedLayout({ children }: { children: ReactNode }) {

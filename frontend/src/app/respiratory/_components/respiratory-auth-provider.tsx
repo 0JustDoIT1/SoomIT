@@ -11,6 +11,7 @@ import {
 } from "react";
 import { useRouter } from "next/navigation";
 import { staffAuthenticatedFetch } from "../../../lib/api";
+import { showToast } from "@/components/ui/toast/toast";
 import type { LoginUser } from "@/types/auth";
 
 type ContextValue = {
@@ -84,6 +85,7 @@ export function RespiratoryAuthProvider({
 
   const logout =
     useCallback(() => {
+      showToast.dismiss();
       sessionStorage.removeItem(
         "accessToken",
       );

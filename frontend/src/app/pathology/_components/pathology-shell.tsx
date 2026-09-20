@@ -3,6 +3,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { showToast } from "@/components/ui/toast/toast";
 
 function subscribeToSessionStorage() {
   return () => undefined;
@@ -29,6 +30,7 @@ export function PathologyShell({ children }: { children: ReactNode }) {
   );
 
   function handleLogout() {
+    showToast.dismiss();
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");

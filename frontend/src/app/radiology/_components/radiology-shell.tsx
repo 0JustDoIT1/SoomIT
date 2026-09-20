@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
+import { showToast } from "@/components/ui/toast/toast";
 
 function subscribeToSessionStorage() {
   return () => undefined;
@@ -28,6 +29,7 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
   );
 
   function handleLogout() {
+    showToast.dismiss();
     sessionStorage.removeItem("accessToken");
     sessionStorage.removeItem("refreshToken");
     sessionStorage.removeItem("user");

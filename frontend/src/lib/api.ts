@@ -2,6 +2,7 @@ import type {
   LoginRequest,
   LoginResponse,
 } from "@/types/auth";
+import { showToast } from "@/components/ui/toast/toast";
 
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "";
@@ -43,6 +44,7 @@ export async function login(
 }
 
 function clearStaffSession() {
+  showToast.dismiss();
   sessionStorage.removeItem("accessToken");
   sessionStorage.removeItem("refreshToken");
   sessionStorage.removeItem("user");

@@ -1,3 +1,5 @@
+import { showToast } from "@/components/ui/toast/toast";
+
 export const HOSPITAL_ADMIN_SESSION_KEYS = {
   accessToken: "hospitalAdminAccessToken",
   refreshToken: "hospitalAdminRefreshToken",
@@ -26,5 +28,6 @@ export function getHospitalAdminUser(): HospitalAdminUser | null {
 }
 
 export function clearHospitalAdminSession() {
+  showToast.dismiss();
   Object.values(HOSPITAL_ADMIN_SESSION_KEYS).forEach((key) => sessionStorage.removeItem(key));
 }
