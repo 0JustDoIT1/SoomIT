@@ -1,64 +1,173 @@
 "use client";
 
-import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  createContext,
+  type ReactNode,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
 import { staffAuthenticatedFetch } from "../../../lib/api";
 import type { LoginUser } from "@/types/auth";
 
-type ContextValue = { user: LoginUser | null; isAuthenticated: boolean; isReady: boolean; logout: () => void; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response> };
+type ContextValue = {
+  user: LoginUser | null;
+  isAuthenticated: boolean;
+  isReady: boolean;
+  logout: () => void;
+  authorizedFetch: (
+    input: RequestInfo | URL,
+    init?: RequestInit,
+  ) => Promise<Response>;
+};
+
 const Context = createContext<ContextValue | null>(null);
 
-export function RespiratoryAuthProvider({ children }: { children: ReactNode }) {
+export function RespiratoryAuthProvider({
+  children,
+}: {
+  children: ReactNode;
+}) {
   const router = useRouter();
-  const [user, setUser] = useState<LoginUser | null>(null);
-  const [isReady, setIsReady] = useState(false);
+
+  const [user, setUser] =
+    useState<LoginUser | null>(null);
+
+  const [isReady, setIsReady] =
+    useState(false);
 
   useEffect(() => {
     let nextUser: LoginUser | null = null;
-    const storedUser = sessionStorage.getItem("user");
-    const accessToken = sessionStorage.getItem("accessToken");
 
-    if (storedUser && accessToken) {
+    const storedUser =
+      sessionStorage.getItem("user");
+
+    const accessToken =
+      sessionStorage.getItem(
+        "accessToken",
+      );
+
+    if (
+      storedUser &&
+      accessToken
+    ) {
       try {
-        nextUser = JSON.parse(storedUser) as LoginUser;
+        nextUser =
+          JSON.parse(
+            storedUser,
+          ) as LoginUser;
       } catch {
-        sessionStorage.removeItem("user");
+        sessionStorage.removeItem(
+          "user",
+        );
       }
     }
 
-    const initializationTimer = window.setTimeout(() => {
-      setUser(nextUser);
-      setIsReady(true);
-      if (!nextUser) router.replace("/login");
-    }, 0);
+    const initializationTimer =
+      window.setTimeout(() => {
+        setUser(nextUser);
+        setIsReady(true);
 
-    return () => window.clearTimeout(initializationTimer);
+        if (!nextUser) {
+          router.replace("/login");
+        }
+      }, 0);
+
+    return () =>
+      window.clearTimeout(
+        initializationTimer,
+      );
   }, [router]);
 
-  const logout = useCallback(() => {
-    sessionStorage.removeItem("accessToken");
-    sessionStorage.removeItem("refreshToken");
-    sessionStorage.removeItem("user");
-    setUser(null);
-    router.replace("/login");
-  }, [router]);
+  const logout =
+    useCallback(() => {
+      sessionStorage.removeItem(
+        "accessToken",
+      );
 
-  const authorizedFetch = useCallback((input: RequestInfo | URL, init: RequestInit = {}) => {
-    const headers = new Headers(init.headers);
-    headers.set("Accept", "application/json");
-    return staffAuthenticatedFetch(input, {
-      ...init,
-      headers,
-      cache: "no-store",
-    });
-  }, []);
+      sessionStorage.removeItem(
+        "refreshToken",
+      );
 
-  const value = useMemo(
-    () => ({ user, isAuthenticated: Boolean(user), isReady, logout, authorizedFetch }),
-    [authorizedFetch, isReady, logout, user],
+      sessionStorage.removeItem(
+        "user",
+      );
+
+      setUser(null);
+
+      router.replace("/login");
+    }, [router]);
+
+  const authorizedFetch =
+    useCallback(
+      (
+        input:
+          | RequestInfo
+          | URL,
+        init:
+          RequestInit = {},
+      ) => {
+        const headers =
+          new Headers(
+            init.headers,
+          );
+
+        headers.set(
+          "Accept",
+          "application/json",
+        );
+
+        return staffAuthenticatedFetch(
+          input,
+          {
+            ...init,
+            headers,
+            cache: "no-store",
+          },
+        );
+      },
+      [],
+    );
+
+  const value =
+    useMemo(
+      () => ({
+        user,
+        isAuthenticated:
+          Boolean(user),
+        isReady,
+        logout,
+        authorizedFetch,
+      }),
+      [
+        authorizedFetch,
+        isReady,
+        logout,
+        user,
+      ],
+    );
+
+  return (
+    <Context.Provider
+      value={value}
+    >
+      {children}
+    </Context.Provider>
   );
-
-  return <Context.Provider value={value}>{children}</Context.Provider>;
 }
 
-export function useRespiratoryAuth() { const value = useContext(Context); if (!value) throw new Error("RespiratoryAuthProvider가 필요합니다."); return value; }
+export function useRespiratoryAuth() {
+  const value =
+    useContext(Context);
+
+  if (!value) {
+    throw new Error(
+      "RespiratoryAuthProvider가 필요합니다.",
+    );
+  }
+
+  return value;
+}

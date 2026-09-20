@@ -205,7 +205,7 @@ export async function fetchPathologyWsiTissueHeatmap(
 ): Promise<Blob | null> {
   const response = await staffAuthenticatedFetch(
     url(`/api/pathology/wsis/${encodeURIComponent(wsiId)}/tissue-heatmap/`),
-    { signal, headers: { Accept: "image/jpeg" } },
+    { signal, cache: "no-store", headers: { Accept: "image/jpeg" } },
   );
   if (response.status === 404) return null;
   if (!response.ok) {

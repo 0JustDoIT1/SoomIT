@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { RespiratoryAuthProvider, useRespiratoryAuth } from "./_components/respiratory-auth-provider";
 import { RespiratoryToastProvider } from "./_components/respiratory-toast-provider";
@@ -10,6 +11,13 @@ import { requestCaseNavigation } from "./_lib/case-navigation-guard";
 type StaffNotification = { id: string; notification_type: string; title: string; message: string; payload: Record<string, unknown> | null; case_id: string | null; case_code: string | null; created_at: string; read_at: string | null };
 type NotificationResponse = { unread_count: number; results: StaffNotification[] };
 type SearchCase = { id: string; patient_name: string; patient_code: string; case_code: string };
+type ConsultationSummary = { id: string; status: string };
+
+function asList<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (value && typeof value === "object" && "results" in value && Array.isArray(value.results)) return value.results as T[];
+  return [];
+}
 
 export default function RespiratoryLayout({
   children,
@@ -22,10 +30,11 @@ export default function RespiratoryLayout({
 function AuthenticatedLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { authorizedFetch, isAuthenticated, isReady, logout } = useRespiratoryAuth();
+  const { user, authorizedFetch, isAuthenticated, isReady, logout } = useRespiratoryAuth();
   const [isDark, setIsDark] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationResponse>({ unread_count: 0, results: [] });
+  const [consultationWaitingCount, setConsultationWaitingCount] = useState(0);
   const [notificationError, setNotificationError] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchCase[]>([]);
@@ -44,6 +53,17 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
     } catch (error) {
       // Preserve the last known notification state on a transient background failure.
       if (!silent) setNotificationError(error instanceof Error ? error.message : "알림을 불러오지 못했습니다.");
+    }
+  }, [authorizedFetch]);
+
+  const loadConsultationWaitingCount = useCallback(async () => {
+    try {
+      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/consultations/me/`);
+      if (!response.ok) return;
+      const consultations = asList<ConsultationSummary>(await response.json());
+      setConsultationWaitingCount(consultations.filter((item) => item.status === "REQUESTED").length);
+    } catch {
+      // Keep the last known count when the optional navigation badge cannot refresh.
     }
   }, [authorizedFetch]);
 
@@ -76,14 +96,14 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
-    const initialTimer = window.setTimeout(() => void loadNotifications(), 0);
+    const initialTimer = window.setTimeout(() => void Promise.all([loadNotifications(), loadConsultationWaitingCount()]), 0);
     let disposed = false;
     let polling = false;
     const pollNotifications = async () => {
       if (disposed || polling || document.hidden) return;
       polling = true;
       try {
-        await loadNotifications(true);
+        await Promise.all([loadNotifications(true), loadConsultationWaitingCount()]);
       } finally {
         polling = false;
       }
@@ -99,7 +119,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [isReady, isAuthenticated, loadNotifications]);
+  }, [isReady, isAuthenticated, loadConsultationWaitingCount, loadNotifications]);
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
@@ -197,11 +217,21 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
 
   return (
     <div className="respiratory-app flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
-      <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
-        <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/dashboard")} />
-        <ShellNavButton icon="case" label="Case" active={pathname.startsWith("/respiratory/cases")} onClick={() => void openCaseWorkspace()} />
-        <ShellNavButton icon="calendar" label="일정" active={pathname.startsWith("/respiratory/schedules")} onClick={() => router.push("/respiratory/schedules")} />
-        <div className="mt-auto"><ShellNavButton icon="settings" label="설정" active={pathname.startsWith("/respiratory/settings")} onClick={() => router.push("/respiratory/settings")} /></div>
+      <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] px-1 py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
+        <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm lg:h-11 lg:w-11" title="SoomIT">
+          <Image src="/images/logo_small.png" alt="SoomIT" width={34} height={34} priority className="h-8 w-8 object-contain lg:h-9 lg:w-9" />
+        </div>
+        <nav className="flex w-full flex-col items-center gap-1" aria-label="업무 메뉴">
+          <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/dashboard")} />
+          <ShellNavButton icon="case" label="Case" active={pathname.startsWith("/respiratory/cases")} onClick={() => void openCaseWorkspace()} />
+          <ShellNavButton icon="calendar" label="일정" active={pathname.startsWith("/respiratory/schedules")} onClick={() => router.push("/respiratory/schedules")} />
+          <ShellNavButton icon="consultation" label="협진" active={pathname.startsWith("/respiratory/consultations")} onClick={() => router.push("/respiratory/consultations")} count={consultationWaitingCount} />
+          <ShellNavButton icon="notification" label="알림" active={pathname.startsWith("/respiratory/notifications")} onClick={() => router.push("/respiratory/notifications")} count={notifications.unread_count} />
+        </nav>
+        <nav className="mt-auto flex w-full flex-col items-center gap-1 border-t border-white/15 pt-3" aria-label="유틸리티 메뉴">
+          <ShellNavButton icon="help" label="도움말" active={false} onClick={() => undefined} disabled />
+          <ShellNavButton icon="settings" label="설정" active={pathname.startsWith("/respiratory/settings")} onClick={() => router.push("/respiratory/settings")} />
+        </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
       <header className="relative z-30 flex h-[60px] shrink-0 items-center justify-between gap-3 border-b border-blue-100 bg-white px-3 shadow-sm xl:px-5">
@@ -250,7 +280,19 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
             </section>}
           </div>
 
-          <button type="button" onClick={() => router.push("/respiratory/settings")} className="hidden text-right sm:block"><span className="block text-xs font-bold text-slate-800">담당의</span><span className="block text-[10px] text-slate-500">호흡기내과</span></button>
+          <button
+            type="button"
+            onClick={() => router.push("/respiratory/settings")}
+            className="hidden text-right sm:block"
+            aria-label="로그인 의료진 정보"
+          >
+            <span className="block max-w-[120px] truncate text-xs font-bold text-slate-800">
+              {user?.name || "의료진"}
+            </span>
+            <span className="block text-[10px] text-slate-500">
+              호흡기내과
+            </span>
+          </button>
           <button type="button" onClick={toggleTheme} aria-label={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"} className="rounded-lg px-2 py-2 text-sm text-slate-500 hover:bg-blue-50">{isDark ? "☀" : "◐"}</button>
 
           <button
@@ -271,24 +313,29 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   );
 }
 
-function ShellNavButton({ icon, label, active, onClick, count }: { icon: "home" | "case" | "calendar" | "settings"; label: string; active: boolean; onClick: () => void; count?: number }) {
+function ShellNavButton({ icon, label, active, onClick, count, disabled = false }: { icon: "home" | "case" | "calendar" | "consultation" | "notification" | "help" | "settings"; label: string; active: boolean; onClick: () => void; count?: number; disabled?: boolean }) {
   return (
     <button
       type="button"
       onClick={onClick}
+      disabled={disabled}
       aria-current={active ? "page" : undefined}
+      aria-disabled={disabled || undefined}
       aria-label={label}
-      title={label}
-      className={`group relative mb-0.5 flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-medium transition lg:w-14 ${active ? "bg-[#14b8a6] font-semibold text-white shadow-sm shadow-slate-950/30" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
+      title={disabled ? `${label} 준비 중` : label}
+      className={`group relative flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-medium transition lg:w-14 ${disabled ? "cursor-not-allowed text-cyan-50/35" : active ? "bg-[#14b8a6] font-semibold text-white shadow-sm shadow-slate-950/30" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
     >
       <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
         {icon === "home" && <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>}
         {icon === "case" && <><path d="M3 7h7l2 2h9v11H3z" /><path d="M3 7V5h6l2 2" /></>}
         {icon === "calendar" && <><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M8 3v4M16 3v4M4 10h16M8 14h8M8 17h5" /></>}
+        {icon === "consultation" && <><path d="M4 5h16v11H8l-4 4V5Z" /><path d="M8 9h8M8 12h5" /></>}
+        {icon === "notification" && <><path d="M18 10a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 22h4" /></>}
+        {icon === "help" && <><circle cx="12" cy="12" r="8" /><path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-1.2 1-1.7 1.4-1.7 2.7" /><path d="M12 17h.01" /></>}
         {icon === "settings" && <><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5L9 6a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.5 3h5l.5-3a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5a7 7 0 0 0 .1-1Z" /></>}
       </svg>
       <span>{label}</span>
-      <span role="tooltip" className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block">{label}</span>
+      <span role="tooltip" className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block">{disabled ? `${label} 준비 중` : label}</span>
       {Boolean(count) && <span className="absolute right-0 top-0 rounded-full bg-rose-500 px-1 text-[9px] text-white">{count && count > 99 ? "99+" : count}</span>}
     </button>
   );

@@ -57,86 +57,306 @@ export function EvidenceViewerPanel({
     await viewerRef.current.requestFullscreen();
   };
 
+  const zoomIn = () => {
+    setZoom((value) => Math.min(3, Number((value + 0.2).toFixed(1))));
+  };
+
+  const zoomOut = () => {
+    setZoom((value) => Math.max(0.6, Number((value - 0.2).toFixed(1))));
+  };
+
+  const resetViewer = () => {
+    setZoom(1);
+    setSelectedDetectionIndex(null);
+  };
+
   const onViewerKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
     if (event.key === "f" || event.key === "F") { event.preventDefault(); void openFullscreen(); }
-    if (event.key === "+" || event.key === "=") { event.preventDefault(); setZoom((value) => Math.min(3, Number((value + 0.2).toFixed(1)))); }
-    if (event.key === "-") { event.preventDefault(); setZoom((value) => Math.max(0.6, Number((value - 0.2).toFixed(1)))); }
-    if (event.key === "r" || event.key === "R") { event.preventDefault(); setZoom(1); setSelectedDetectionIndex(null); }
+    if (event.key === "+" || event.key === "=") { event.preventDefault(); zoomIn(); }
+    if (event.key === "-") { event.preventDefault(); zoomOut(); }
+    if (event.key === "r" || event.key === "R") { event.preventDefault(); resetViewer(); }
   };
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[26px_36px_minmax(0,1fr)] overflow-hidden border border-slate-800 bg-slate-950">
-      <span className="sr-only">{activeAsset?.storage_type || "-"} · {activeAsset?.status || "-"}</span>
-      <header className="flex items-center justify-between gap-3 border-b border-slate-800 bg-slate-900 px-3 text-slate-100">
-        <div className="flex min-w-0 items-center gap-2"><h3 className="whitespace-nowrap text-[11px] font-bold text-slate-100">영상 미리보기</h3><span title="Viewer에 포커스를 둔 뒤 사용할 수 있습니다." className="hidden whitespace-nowrap text-[9px] text-slate-400 sm:inline">⌨ F 전체 · +/− 확대 · R 초기화</span></div>
+    <section className="grid h-full min-h-0 grid-rows-[40px_minmax(0,1fr)] overflow-hidden rounded-md border border-slate-800 bg-[#050812] shadow-inner">
+      <span className="sr-only">
+        {activeAsset?.storage_type || "-"} · {activeAsset?.status || "-"}
+      </span>
+
+      <header className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-2.5 text-slate-100">
+        <div className="flex min-w-0 items-center gap-2">
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-[9px] font-bold text-blue-300">
+            XR
+          </div>
+
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <h3 className="truncate text-[10px] font-bold text-slate-100">
+                X-ray Viewer
+              </h3>
+              {analysisStatus && (
+                <span className="hidden rounded-full border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[8px] font-semibold text-blue-300 sm:inline">
+                  AI {analysisStatus}
+                </span>
+              )}
+            </div>
+            <p className="hidden truncate text-[8px] text-slate-500 md:block">
+              F 전체화면 · +/- 확대 · R 초기화
+            </p>
+          </div>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-1">
+          <span className="hidden min-w-10 text-center text-[8px] tabular-nums text-slate-400 sm:inline">
+            {Math.round(zoom * 100)}%
+          </span>
+
+          <ViewerToolButton
+            label="축소"
+            disabled={!imageUrl || zoom <= 0.6}
+            onClick={zoomOut}
+          >
+            −
+          </ViewerToolButton>
+
+          <ViewerToolButton
+            label="확대"
+            disabled={!imageUrl || zoom >= 3}
+            onClick={zoomIn}
+          >
+            +
+          </ViewerToolButton>
+
+          <ViewerToolButton
+            label="초기화"
+            disabled={!imageUrl}
+            onClick={resetViewer}
+          >
+            R
+          </ViewerToolButton>
+
+          {activeAsset?.image_type === "XRAY" && detections.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowAllDetections((current) => !current)}
+              aria-pressed={showAllDetections}
+              className={`h-7 whitespace-nowrap rounded-md border px-2 text-[8px] font-semibold transition ${
+                showAllDetections
+                  ? "border-rose-400/70 bg-rose-500/15 text-rose-200"
+                  : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600 hover:bg-slate-700"
+              }`}
+              title={showAllDetections ? "주요 병변만 표시" : "전체 병변 표시"}
+            >
+              병변 {showAllDetections ? "전체" : "주요"} {visibleDetections.length}/{detections.length}
+            </button>
+          )}
+
+          <ViewerToolButton
+            label="전체화면"
+            disabled={!imageUrl}
+            onClick={() => void openFullscreen()}
+            wide
+          >
+            전체화면
+          </ViewerToolButton>
+        </div>
       </header>
 
-      <div className="row-start-3 grid min-h-0 grid-cols-1 bg-slate-950">
-        <div ref={viewerRef} tabIndex={0} onKeyDown={onViewerKeyDown} className="relative flex min-h-0 items-center justify-center overflow-hidden bg-slate-950 text-white outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="원본 영상 뷰어. F 전체화면, 더하기·빼기 확대·축소, R 초기화">
-          {imageUrl && <div className="pointer-events-none absolute inset-x-3 top-3 z-10 flex items-start justify-between gap-3 text-[10px] text-slate-100"><span className="rounded bg-black/65 px-2 py-1">{activeAsset?.image_type || "IMAGE"} · {activeAsset?.file_format || "-"}</span><span className="rounded bg-black/65 px-2 py-1 text-right">{activeAsset?.acquired_at ? new Date(activeAsset.acquired_at).toLocaleString("ko-KR") : "Study date unavailable"}</span></div>}
+      <div className="relative min-h-0 overflow-hidden bg-[#02050d]">
+        <div
+          ref={viewerRef}
+          tabIndex={0}
+          onKeyDown={onViewerKeyDown}
+          className="relative flex h-full min-h-0 items-center justify-center overflow-hidden bg-[#02050d] text-white outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+          aria-label="원본 영상 뷰어. F 전체화면, 더하기·빼기 확대·축소, R 초기화"
+        >
+          {imageUrl && (
+            <>
+              <div className="pointer-events-none absolute left-2.5 top-2.5 z-30 flex max-w-[60%] flex-wrap items-center gap-1.5">
+                <HudChip strong>
+                  {activeAsset?.image_type || "IMAGE"}
+                </HudChip>
+                <HudChip>
+                  {activeAsset?.file_format || "형식 미상"}
+                </HudChip>
+                {assets.length > 1 && (
+                  <HudChip>
+                    Series {assets.findIndex((asset) => asset.id === activeAsset?.id) + 1}/{assets.length}
+                  </HudChip>
+                )}
+              </div>
+
+              <div className="pointer-events-none absolute right-2.5 top-2.5 z-30 max-w-[38%] text-right">
+                <div className="inline-flex rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[8px] text-slate-300 backdrop-blur-sm">
+                  {activeAsset?.acquired_at
+                    ? new Date(activeAsset.acquired_at).toLocaleString("ko-KR")
+                    : "촬영일 정보 없음"}
+                </div>
+              </div>
+            </>
+          )}
+
           {loading ? (
-            <p role="status" className="text-xs font-semibold text-slate-300">원본 영상을 불러오는 중입니다.</p>
+            <ViewerState
+              title="원본 영상을 불러오는 중입니다."
+              description="영상 데이터를 준비하고 있습니다."
+            />
           ) : error ? (
-            <div role="alert" className="px-6 text-center">
-              <p className="text-xs font-semibold text-rose-200">원본 영상을 불러오지 못했습니다.</p>
-              <p className="mt-1 text-[10px] leading-4 text-slate-400">{error}</p>
+            <div role="alert" className="max-w-sm px-6 text-center">
+              <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full border border-rose-400/30 bg-rose-500/10 text-sm text-rose-300">
+                !
+              </div>
+              <p className="mt-3 text-xs font-semibold text-rose-200">
+                원본 영상을 불러오지 못했습니다.
+              </p>
+              <p className="mt-1 text-[10px] leading-4 text-slate-400">
+                {error}
+              </p>
               {onRetry && (
-                <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 rounded border border-rose-300 px-3 py-1.5 text-[10px] font-semibold text-rose-100 disabled:opacity-50">
-                  {retrying ? "재시도 중" : "영상만 다시 시도"}
+                <button
+                  type="button"
+                  disabled={retrying}
+                  onClick={onRetry}
+                  className="mt-3 rounded-md border border-rose-400/40 bg-rose-500/10 px-3 py-1.5 text-[10px] font-semibold text-rose-200 transition hover:bg-rose-500/20 disabled:opacity-50"
+                >
+                  {retrying ? "재시도 중" : "영상 다시 시도"}
                 </button>
               )}
             </div>
           ) : imageUrl ? (
-            <div className="relative inline-block h-full max-w-full transition-transform" style={{ transform: `scale(${zoom})` }}>
+            <div
+              className="relative inline-block h-full max-w-full origin-center transition-transform duration-150"
+              style={{ transform: `scale(${zoom})` }}
+            >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imageUrl} alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`} className="block h-full max-w-full object-contain" />
-              {activeAsset?.image_type === "XRAY" && detectionImageSize && visibleDetections.map((detection, index) => <DetectionBox key={`${detection.class_name}-${index}`} detection={detection} index={index} width={detectionImageSize.width} height={detectionImageSize.height} selected={selectedDetectionIndex === index} onSelect={() => setSelectedDetectionIndex(index)} />)}
+              <img
+                src={imageUrl}
+                alt={`${activeAsset?.image_type ?? "검사"} 원본 영상`}
+                className="block h-full max-w-full select-none object-contain"
+                draggable={false}
+              />
+
+              {activeAsset?.image_type === "XRAY" &&
+                detectionImageSize &&
+                visibleDetections.map((detection, index) => (
+                  <DetectionBox
+                    key={`${detection.class_name}-${index}`}
+                    detection={detection}
+                    index={index}
+                    width={detectionImageSize.width}
+                    height={detectionImageSize.height}
+                    selected={selectedDetectionIndex === index}
+                    onSelect={() => setSelectedDetectionIndex(index)}
+                  />
+                ))}
             </div>
           ) : (
-            <div className="px-6 text-center">
-              <p className="text-xs font-semibold text-slate-200">표시 가능한 원본 영상이 없습니다.</p>
-              <p className="mt-1 text-[10px] leading-4 text-slate-400">
-                {activeAsset ? "현재 저장소 형식은 영상 제공 API 연결 후 이 영역에 표시됩니다." : "Case 영상 API가 연결되면 이 영역에서 원본 영상을 바로 확인할 수 있습니다."}
-              </p>
+            <ViewerState
+              title="표시 가능한 원본 영상이 없습니다."
+              description={
+                activeAsset
+                  ? "현재 저장소 형식은 영상 제공 API 연결 후 이 영역에 표시됩니다."
+                  : "Case 영상 API가 연결되면 이 영역에서 원본 영상을 바로 확인할 수 있습니다."
+              }
+            />
+          )}
+
+          {imageUrl && (
+            <div className="pointer-events-none absolute bottom-2.5 left-2.5 z-30 flex items-center gap-1.5">
+              <span className="rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[8px] font-semibold text-slate-300 backdrop-blur-sm">
+                {Math.round(zoom * 100)}%
+              </span>
+              {activeAsset?.image_type === "XRAY" && detections.length > 0 && (
+                <span className="rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[8px] text-slate-400 backdrop-blur-sm">
+                  AI 병변 {visibleDetections.length}개 표시
+                </span>
+              )}
             </div>
           )}
-          {imageUrl && <span className="absolute bottom-2 left-2 rounded bg-black/60 px-2 py-1 text-[9px]">{activeAsset?.image_type || "영상"} · {activeAsset?.file_format || "형식 미상"}</span>}
+
+          {imageUrl && activeAsset?.image_type === "XRAY" && detections.length > 0 && (
+            <p className="pointer-events-none absolute bottom-2.5 right-2.5 z-30 hidden rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[8px] text-slate-500 backdrop-blur-sm lg:block">
+              병변 박스를 클릭하면 선택 상태로 강조됩니다.
+            </p>
+          )}
         </div>
 
         <aside className="hidden" aria-label="원본 영상 목록 및 촬영 정보">
-          <div className="mb-2 flex items-center justify-between gap-3">
-            <p className="text-[10px] font-bold text-slate-800">영상 정보</p>
-            <span className="text-[9px] text-slate-400">{assets.length}건</span>
-          </div>
-          {assets.length === 0 ? (
-            <div className="py-6 text-center text-[10px] leading-4 text-slate-400"><p>연결된 영상이 없습니다.</p><p className="mt-1">영상이 연결되면 Series와 촬영 정보를 이 영역에서 확인합니다.</p></div>
-          ) : (
-            <div className="space-y-1.5">
-              {assets.map((asset) => (
-                <button key={asset.id} type="button" onClick={() => setActiveAssetId(asset.id)} className={`w-full rounded-lg border px-2 py-2 text-left text-[9px] ${asset.id === activeAsset?.id ? "border-blue-300 bg-blue-50 text-blue-800 shadow-sm" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}>
-                  <span className="block truncate text-[10px] font-bold">{asset.image_type || "영상"} · {asset.file_format || "-"}</span>
-                  <span className="mt-1 block truncate text-slate-500">상태 {asset.status || "-"}</span>
-                  <span className="mt-1 block truncate text-slate-500">저장소 {asset.storage_type || "-"}</span>
-                  {asset.acquired_at && <span className="mt-1 block truncate text-slate-500">촬영 {new Date(asset.acquired_at).toLocaleString("ko-KR")}</span>}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="mt-3 border-t border-slate-100 pt-3">
-            <p className="text-[10px] font-bold text-slate-700">데이터 품질</p>
-            <p className="mt-1 text-[10px] text-slate-500">영상 로딩 {imageUrl ? "완료" : "대기"} · Series {assets.length ? "확인됨" : "없음"}</p>
-            <p className="mt-1 text-[10px] text-slate-500">AI 분석 {analysisStatus || "결과 없음"} · 입력 품질 정보 미제공</p>
-          </div>
-          {activeAsset?.image_type === "XRAY" && detections.length > 0 && <div className="mt-3 border-t border-slate-100 pt-3"><p className="text-[10px] font-bold text-slate-700">AI 병변 연결</p><div className="mt-2 space-y-1">{visibleDetections.map((detection, index) => <button key={`${detection.class_name}-${index}`} type="button" onClick={() => setSelectedDetectionIndex(index)} className={`w-full rounded border px-2 py-1.5 text-left text-[10px] ${selectedDetectionIndex === index ? "border-rose-400 bg-rose-50 text-rose-800" : "border-slate-200 text-slate-600 hover:bg-slate-50"}`}><span className="font-bold">L{index + 1}</span> · {detection.class_name} · {(detection.score * 100).toFixed(1)}%</button>)}</div></div>}
+          {assets.map((asset) => (
+            <button
+              key={asset.id}
+              type="button"
+              onClick={() => setActiveAssetId(asset.id)}
+            >
+              {asset.image_type || "영상"}
+            </button>
+          ))}
         </aside>
       </div>
-
-      <footer className="row-start-2 relative flex min-w-0 items-center gap-1.5 overflow-x-auto border-y border-slate-800 bg-slate-900 px-3 py-1">
-        <button type="button" disabled={!imageUrl} onClick={openFullscreen} className="whitespace-nowrap rounded border border-blue-300 px-2 py-1 text-[9px] font-semibold text-blue-700 disabled:border-slate-200 disabled:text-slate-400">크게 보기</button>
-        {activeAsset?.image_type === "XRAY" && detections.length > 0 && <span className="flex items-center gap-1"><span className="text-[9px] text-slate-500">{showAllDetections ? "전체 병변" : "주요 병변"} {visibleDetections.length}/{detections.length}</span><button type="button" onClick={() => setShowAllDetections((current) => !current)} className="rounded bg-rose-50 px-1.5 py-1 text-[9px] font-semibold text-rose-700">{showAllDetections ? "주요만" : "전체 보기"}</button></span>}
-        {activeAsset?.image_type === "XRAY" && <span className="ml-auto whitespace-nowrap text-[9px] text-slate-400">AI 병변을 클릭해 영상에서 강조할 수 있습니다.</span>}
-      </footer>
     </section>
+  );
+}
+
+function ViewerToolButton({
+  label,
+  disabled = false,
+  onClick,
+  children,
+  wide = false,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+  wide?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      title={label}
+      aria-label={label}
+      className={`flex h-7 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-[9px] font-bold text-slate-200 transition hover:border-slate-600 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35 ${
+        wide ? "px-2.5" : "w-7"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HudChip({
+  children,
+  strong = false,
+}: {
+  children: React.ReactNode;
+  strong?: boolean;
+}) {
+  return (
+    <span
+      className={`rounded-md border border-white/10 bg-black/55 px-2 py-1 text-[8px] backdrop-blur-sm ${
+        strong ? "font-bold text-white" : "font-medium text-slate-300"
+      }`}
+    >
+      {children}
+    </span>
+  );
+}
+
+function ViewerState({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="max-w-sm px-6 text-center">
+      <div className="mx-auto h-8 w-8 animate-pulse rounded-full border border-slate-700 bg-slate-900" />
+      <p className="mt-3 text-xs font-semibold text-slate-200">{title}</p>
+      <p className="mt-1 text-[10px] leading-4 text-slate-500">{description}</p>
+    </div>
   );
 }
 
@@ -156,7 +376,7 @@ function DetectionBox({ detection, index, width, height, selected, onSelect }: {
   const boxWidth = Math.max(0, Math.min(100 - left, ((x2 - x1) / width) * 100));
   const boxHeight = Math.max(0, Math.min(100 - top, ((y2 - y1) / height) * 100));
   if (!boxWidth || !boxHeight) return null;
-  return <button type="button" aria-label={`L${index + 1} ${detection.class_name}`} onClick={onSelect} className={`absolute border-2 bg-rose-500/10 shadow-[0_0_0_1px_rgba(255,255,255,.65)] ${selected ? "z-20 border-amber-300 ring-2 ring-amber-200" : "border-rose-500"}`} style={{ left: `${left}%`, top: `${top}%`, width: `${boxWidth}%`, height: `${boxHeight}%` }}>
-    <span className="absolute -top-5 left-0 whitespace-nowrap rounded bg-rose-600 px-1.5 py-0.5 text-[9px] font-bold text-white">L{index + 1} · {detection.class_name} {(detection.score * 100).toFixed(0)}%</span>
+  return <button type="button" aria-label={`L${index + 1} ${detection.class_name}`} onClick={onSelect} className={`absolute bg-rose-500/[0.06] transition ${selected ? "z-20 border-2 border-amber-300 ring-2 ring-amber-300/30" : "border border-rose-400/90 hover:border-rose-300"}`} style={{ left: `${left}%`, top: `${top}%`, width: `${boxWidth}%`, height: `${boxHeight}%` }}>
+    <span className={`absolute -top-[18px] left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[8px] font-bold text-white shadow-sm ${selected ? "bg-amber-500" : "bg-rose-600/95"}`}>L{index + 1} · {detection.class_name} {(detection.score * 100).toFixed(0)}%</span>
   </button>;
 }

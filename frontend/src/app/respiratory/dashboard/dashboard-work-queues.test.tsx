@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDashboardReviewQueue, buildDashboardWorkGroups, type DashboardCase, type DashboardCaseSnapshot } from "./dashboard-work-queues";
+import { buildDashboardReviewQueue, buildDashboardStageSummaries, buildDashboardWorkGroups, type DashboardCase, type DashboardCaseSnapshot } from "./dashboard-work-queues";
 
 const cases: DashboardCase[] = [
   { id: "case-path", case_code: "CASE-1", patient_name: "환자 A", patient_code: "P1", current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" },
@@ -28,5 +28,11 @@ describe("dashboard work queues", () => {
     const groups = buildDashboardWorkGroups(cases, snapshots, []);
     expect(groups.some((item) => item.key === "AI" && item.count > 0)).toBe(true);
     expect(groups.some((item) => item.key === "ORDER" && item.count > 0)).toBe(true);
+  });
+
+  it("summarizes stage states only from active orders and clinical drafts", () => {
+    const summaries = buildDashboardStageSummaries(cases, snapshots);
+    expect(summaries.find((item) => item.stage === "PATHOLOGY_GENE")).toEqual(expect.objectContaining({ total: 1, confirmationWaiting: 1 }));
+    expect(summaries.find((item) => item.stage === "PDL1")).toEqual(expect.objectContaining({ total: 1, resultWaiting: 1 }));
   });
 });

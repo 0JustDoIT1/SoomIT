@@ -8,23 +8,27 @@ export type CaseInfoClinicalResult = {
 export type CaseInfoOrder = { order_type: string; status: string };
 export type CaseInfoAiResult = { analysis_type: string; status?: string };
 
-const ITEMS: { key: CaseInfoKey; label: string }[] = [
-  { key: "OVERVIEW", label: "전체 요약" },
-  { key: "XRAY", label: "흉부 X선" },
-  { key: "CT", label: "흉부 CT" },
-  { key: "PET_CT_TNM", label: "PET-CT / TNM 병기" },
-  { key: "PATHOLOGY_GENE", label: "조직/유전자" },
-  { key: "PDL1", label: "PD-L1" },
-  { key: "AI_SUMMARY", label: "AI 종합 분석" },
-  { key: "TREATMENT", label: "치료 결정" },
-  { key: "PRESCRIPTION", label: "처방" },
+const ITEMS: { key: CaseInfoKey; label: string; displayLabel: string }[] = [
+  { key: "OVERVIEW", label: "전체 요약", displayLabel: "전체 요약" },
+  { key: "XRAY", label: "흉부 X선", displayLabel: "흉부 X-ray" },
+  { key: "CT", label: "흉부 CT", displayLabel: "흉부 CT" },
+  { key: "PET_CT_TNM", label: "PET-CT / TNM 병기", displayLabel: "PET-CT / TNM" },
+  { key: "PATHOLOGY_GENE", label: "조직/유전자", displayLabel: "조직 / 유전자" },
+  { key: "PDL1", label: "PD-L1", displayLabel: "PD-L1" },
+  { key: "AI_SUMMARY", label: "AI 종합 분석", displayLabel: "AI 종합 분석" },
+  { key: "TREATMENT", label: "치료 결정", displayLabel: "치료 결정" },
+  { key: "PRESCRIPTION", label: "처방", displayLabel: "처방" },
 ];
 
 const NAVIGATION_GROUPS: { label: string; keys: CaseInfoKey[] }[] = [
-  { label: "CASE", keys: ["OVERVIEW"] },
-  { label: "IMAGING", keys: ["XRAY", "CT", "PET_CT_TNM"] },
-  { label: "PATHOLOGY", keys: ["PATHOLOGY_GENE", "PDL1"] },
-  { label: "DECISION", keys: ["AI_SUMMARY", "TREATMENT", "PRESCRIPTION"] },
+  {
+    label: "검사",
+    keys: ["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1"],
+  },
+  {
+    label: "진료 판단",
+    keys: ["AI_SUMMARY", "TREATMENT", "PRESCRIPTION"],
+  },
 ];
 
 const WORKFLOW_STAGES: CaseInfoKey[] = ["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"];
@@ -95,57 +99,235 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
 }
 
 const STATUS_LABEL: Record<CaseInfoAccessState, string> = {
-  LOCKED: "잠김",
+  LOCKED: "대기",
   WAITING: "결과 대기",
-  ACTIONABLE: "처리 가능",
+  ACTIONABLE: "진행 중",
   COMPLETED: "완료",
-  OPEN: "",
+  OPEN: "조회",
 };
 
-export function CaseInfoMenu({ selected, currentStage, caseStatus, clinicalResults, orders, aiResults, onSelect }: { selected: CaseInfoKey; currentStage?: string; caseStatus?: string; clinicalResults?: CaseInfoClinicalResult[]; orders?: CaseInfoOrder[]; aiResults?: CaseInfoAiResult[]; onSelect: (key: CaseInfoKey) => void }) {
+const STATUS_DOT_CLASS: Record<CaseInfoAccessState, string> = {
+  LOCKED: "bg-slate-300",
+  WAITING: "bg-amber-400",
+  ACTIONABLE: "bg-blue-500",
+  COMPLETED: "bg-emerald-500",
+  OPEN: "bg-slate-300",
+};
+
+const STATUS_TEXT_CLASS: Record<CaseInfoAccessState, string> = {
+  LOCKED: "text-slate-400",
+  WAITING: "text-amber-700",
+  ACTIONABLE: "text-blue-700",
+  COMPLETED: "text-emerald-700",
+  OPEN: "text-slate-500",
+};
+
+export function CaseInfoMenu({
+  selected,
+  currentStage,
+  caseStatus,
+  clinicalResults,
+  orders,
+  aiResults,
+  onSelect,
+}: {
+  selected: CaseInfoKey;
+  currentStage?: string;
+  caseStatus?: string;
+  clinicalResults?: CaseInfoClinicalResult[];
+  orders?: CaseInfoOrder[];
+  aiResults?: CaseInfoAiResult[];
+  onSelect: (key: CaseInfoKey) => void;
+}) {
+  const overviewItem = ITEMS.find((item) => item.key === "OVERVIEW")!;
+  const overviewSelected = selected === "OVERVIEW";
 
   return (
-    <aside className="flex min-h-0 w-[108px] shrink-0 flex-col border-r border-slate-200 bg-[#f8fbff] py-3 xl:w-[116px]">
+    <aside className="flex min-h-0 w-[108px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-[#f8fbff] py-3 xl:w-[116px]">
       <div className="mx-2.5 border-b border-slate-200 pb-3">
-        <p className="text-[9px] font-bold tracking-[0.16em] text-blue-600">CASE WORKSPACE</p>
-        <h2 className="mt-1 text-sm font-bold tracking-tight text-slate-900">진료 정보</h2>
+        <h2 className="text-[15px] font-bold tracking-[-0.02em] text-slate-900">
+          진료 정보
+        </h2>
+        <p className="mt-1 text-[8px] font-medium leading-3.5 text-slate-400">
+          검사·진료 상태 확인
+        </p>
       </div>
-      <nav className="mt-3 min-h-0 flex-1 space-y-3 overflow-y-auto px-1.5 [scrollbar-gutter:stable]" aria-label="Case 진료 정보 메뉴">
-        {NAVIGATION_GROUPS.map((group) => (
-          <section key={group.label} aria-label={group.label}>
-            <p className="px-2 pb-1 text-[8px] font-bold tracking-[0.1em] text-slate-400">{group.label}</p>
-            <div className="space-y-0.5">
-              {group.keys.map((key) => {
-                const item = ITEMS.find((candidate) => candidate.key === key)!;
-                const access = getCaseInfoAccessState({ key: item.key, currentStage, caseStatus, clinicalResults, orders, aiResults });
-                const locked = access.state === "LOCKED";
-                const isCurrent = item.key === currentStage;
-                return (
-                  <button
-                    key={item.key}
-                    type="button"
-                    disabled={locked}
-                    data-access-state={access.state}
-                    title={access.message || undefined}
-                    onClick={() => onSelect(item.key)}
-                    aria-current={selected === item.key ? "page" : undefined}
-                    className={`group relative flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-left text-[10px] font-semibold transition ${locked ? "cursor-not-allowed text-slate-300" : isCurrent ? "bg-blue-600 text-white shadow-sm shadow-blue-200" : selected === item.key ? "bg-blue-50 text-blue-700" : access.state === "COMPLETED" ? "text-emerald-700 hover:bg-emerald-50" : "text-slate-600 hover:bg-blue-50 hover:text-blue-700"}`}
-                  >
-                    <CaseInfoIcon value={item.key} />
-                    <span className="min-w-0 leading-4">{item.label}</span>
-                    {isCurrent && <span aria-hidden="true" className="absolute -left-2 h-5 w-0.5 rounded-r bg-blue-700" />}
-                    {item.key !== "OVERVIEW" && item.key !== "AI_SUMMARY" && <span aria-hidden="true" className={`ml-auto text-[8px] font-bold ${isCurrent ? "text-blue-100" : access.state === "COMPLETED" ? "text-emerald-600" : access.state === "WAITING" ? "text-amber-600" : "text-slate-400"}`}>{STATUS_LABEL[access.state]}</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </section>
-        ))}
+
+      <nav
+        className="mt-3 min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-1.5 [scrollbar-gutter:stable]"
+        aria-label="Case 진료 정보 메뉴"
+      >
+        <button
+          type="button"
+          onClick={() => onSelect(overviewItem.key)}
+          aria-label={overviewItem.label}
+          aria-current={overviewSelected ? "page" : undefined}
+          className={`mb-3 flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+            overviewSelected
+              ? "bg-blue-600 text-white shadow-sm shadow-blue-100"
+              : "text-slate-700 hover:bg-blue-50 hover:text-blue-700"
+          }`}
+        >
+          <span
+            className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${
+              overviewSelected
+                ? "bg-white/15 text-white"
+                : "bg-white text-slate-500 shadow-sm ring-1 ring-slate-200"
+            }`}
+          >
+            <CaseInfoIcon value="OVERVIEW" />
+          </span>
+
+          <span className="text-[11px] font-semibold leading-4">
+            {overviewItem.displayLabel}
+          </span>
+        </button>
+
+        <div className="space-y-4">
+          {NAVIGATION_GROUPS.map((group) => (
+            <section key={group.label} aria-label={group.label}>
+              <div className="mb-1 flex items-center gap-1.5 px-1.5">
+                <p className="text-[9px] font-bold tracking-[-0.01em] text-slate-500">
+                  {group.label}
+                </p>
+                <span className="h-px flex-1 bg-slate-200/80" />
+              </div>
+
+              <div className="space-y-0.5">
+                {group.keys.map((key) => {
+                  const item = ITEMS.find((candidate) => candidate.key === key)!;
+                  const access = getCaseInfoAccessState({
+                    key: item.key,
+                    currentStage,
+                    caseStatus,
+                    clinicalResults,
+                    orders,
+                    aiResults,
+                  });
+
+                  const locked = access.state === "LOCKED";
+                  const selectedItem = selected === item.key;
+                  const isCurrent = item.key === currentStage;
+                  const showStatus = item.key !== "AI_SUMMARY";
+
+                  return (
+                    <button
+                      key={item.key}
+                      type="button"
+                      disabled={locked}
+                      data-access-state={access.state}
+                      title={access.message || undefined}
+                      onClick={() => onSelect(item.key)}
+                      aria-label={item.label}
+                      aria-current={selectedItem ? "page" : undefined}
+                      className={`group relative flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+                        locked
+                          ? "cursor-not-allowed text-slate-300"
+                          : selectedItem
+                            ? "bg-blue-50 text-blue-800 ring-1 ring-blue-100"
+                            : "text-slate-700 hover:bg-white hover:text-blue-700"
+                      }`}
+                    >
+                      {selectedItem && (
+                        <span
+                          aria-hidden="true"
+                          className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-blue-600"
+                        />
+                      )}
+
+                      <span
+                        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${
+                          locked
+                            ? "bg-slate-100 text-slate-300"
+                            : selectedItem
+                              ? "bg-blue-600 text-white"
+                              : access.state === "COMPLETED"
+                                ? "bg-emerald-50 text-emerald-700"
+                                : access.state === "WAITING"
+                                  ? "bg-amber-50 text-amber-700"
+                                  : access.state === "ACTIONABLE"
+                                    ? "bg-blue-50 text-blue-700"
+                                    : "bg-white text-slate-500 ring-1 ring-slate-200"
+                        }`}
+                      >
+                        <CaseInfoIcon value={item.key} />
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block break-keep text-[11px] font-semibold leading-[14px]">
+                          {item.displayLabel}
+                        </span>
+
+                        {showStatus ? (
+                          <span className="mt-0.5 flex items-center gap-1">
+                            <span
+                              aria-hidden="true"
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT_CLASS[access.state]}`}
+                            />
+                            <span
+                              className={`whitespace-nowrap text-[8px] font-semibold leading-3.5 ${STATUS_TEXT_CLASS[access.state]}`}
+                            >
+                              {isCurrent && access.state === "ACTIONABLE"
+                                ? "현재 단계"
+                                : STATUS_LABEL[access.state]}
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="mt-0.5 flex items-center gap-1">
+                            <span
+                              aria-hidden="true"
+                              className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                                selectedItem ? "bg-blue-500" : "bg-slate-300"
+                              }`}
+                            />
+                            <span
+                              className={`whitespace-nowrap text-[8px] font-semibold leading-3.5 ${
+                                selectedItem ? "text-blue-700" : "text-slate-400"
+                              }`}
+                            >
+                              {selectedItem ? "확인 중" : "조회"}
+                            </span>
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </section>
+          ))}
+        </div>
       </nav>
-      <div className="mt-auto mx-2.5 border-t border-slate-200 pt-2.5">
-        <p className="text-[9px] leading-4 text-slate-400">현재 Case의 실제 결과와 업무 상태를 확인합니다.</p>
+
+      <div className="mx-2 mt-2 border-t border-slate-200 pt-2">
+        <div className="rounded-lg bg-white px-2 py-2 ring-1 ring-slate-200/80">
+          <p className="text-[8px] font-semibold text-slate-600">
+            상태 안내
+          </p>
+          <div className="mt-1.5 grid grid-cols-2 gap-x-1 gap-y-1">
+            <StatusLegend dotClass="bg-emerald-500" label="완료" />
+            <StatusLegend dotClass="bg-blue-500" label="진행 중" />
+            <StatusLegend dotClass="bg-amber-400" label="결과 대기" />
+            <StatusLegend dotClass="bg-slate-300" label="대기" />
+          </div>
+        </div>
       </div>
     </aside>
+  );
+}
+
+function StatusLegend({
+  dotClass,
+  label,
+}: {
+  dotClass: string;
+  label: string;
+}) {
+  return (
+    <span className="flex items-center gap-1 whitespace-nowrap text-[7px] font-medium text-slate-400">
+      <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
+      {label}
+    </span>
   );
 }
 
