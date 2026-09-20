@@ -335,7 +335,7 @@ class _PatientQrScreenState extends State<PatientQrScreen> {
         opacity: _isExpired ? 0.28 : 1,
 
         child: QrImageView(
-          data: token,
+          data: PatientQrService.publicQrUrl(token),
 
           version: QrVersions.auto,
 
