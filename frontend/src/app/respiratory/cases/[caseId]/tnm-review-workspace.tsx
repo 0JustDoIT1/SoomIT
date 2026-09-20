@@ -2,7 +2,7 @@
 
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { DecisionActions, DecisionStatus } from "./decision-ui";
-import { EvidenceViewerPanel } from "./evidence-viewer-panel";
+import { CaseDicomEvidence } from "./case-dicom-evidence";
 import { showToast } from "@/components/ui/toast/toast";
 
 export type TnmCategory = "T" | "N" | "M";
@@ -66,58 +66,41 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
     setMessage("TNM 초안이 저장되었습니다.");
     return data.id;
   };
-  const confirmDraft = async () => {
-    if (resultConfirmed) return;
-    const latestId = dirty || !activeResultId ? await saveDraft() : activeResultId;
-    await post(`${latestId}/confirm/`);
-    setIsConfirmed(true);
-    setMessage("TNM 결과가 확정되었습니다.");
-    await onConfirmed?.();
-  };
   const selectCategory = (next: TnmCategory) => { setCategory(next); requestAnimationFrame(() => tabRefs.current[next]?.focus()); };
-  const calculateStage = async () => {
-    if (!activeResultId || !resultConfirmed || dirty) return;
-    setStageResult(await post(`${activeResultId}/stage/`));
-    setMessage("Stage 계산이 완료되었습니다.");
-    await onConfirmed?.();
-  };
-  const confirmStage = async () => {
-    if (!activeResultId || !resultConfirmed || dirty || !candidateReady || stageConfirmed) return;
-    setStageResult(await post(`${activeResultId}/stage/confirm/`, { advance_to_next_stage: true }));
-    setMessage("Stage Group이 확정되었습니다.");
-    if (onStageAdvanced) await onStageAdvanced();
-    else await onConfirmed?.();
-  };
   const draftComplete = Object.values(drafts).every((item) => item.selectedValue);
   const stage = (stageResult ?? clinicalTnm)?.evidence?.stage;
   const candidateReady = stage?.stage_group_status === "candidate_ready" && Boolean(stage.stage_group_candidate);
   const stageConfirmed = resultConfirmed && Boolean((stageResult ?? clinicalTnm)?.stage_group?.trim());
-  const canSave = draftComplete && Boolean(aiTnm?.ai_result_id);
-  const nextAction = !activeResultId
-    ? { label: "TNM 초안 저장", onClick: saveDraft, disabled: !canSave }
-    : !resultConfirmed
-      ? { label: "TNM 결과 확정", onClick: confirmDraft, disabled: dirty && !canSave }
-      : stageConfirmed
-        ? { label: "Stage Group 확정 완료", onClick: () => undefined, disabled: true }
-        : candidateReady
-          ? { label: "Stage Group 확정 및 다음 단계 진행", onClick: confirmStage, disabled: dirty }
-          : { label: "Stage 계산", onClick: calculateStage, disabled: dirty };
+  const canFinalize = !stageConfirmed && draftComplete && Boolean(activeResultId || aiTnm?.ai_result_id);
+  const completeTnm = async () => {
+    let latestId = activeResultId;
+    if (dirty || !latestId) latestId = await saveDraft();
+    if (!resultConfirmed) {
+      await post(`${latestId}/confirm/`);
+      setIsConfirmed(true);
+      await onConfirmed?.();
+    }
+    const calculatedStage = await post(`${latestId}/stage/`);
+    const calculatedCandidate = calculatedStage.evidence?.stage;
+    setStageResult(calculatedStage);
+    if (calculatedCandidate?.stage_group_status !== "candidate_ready" || !calculatedCandidate.stage_group_candidate) {
+      throw new Error("TNM Stage Group 후보를 계산할 수 없습니다.");
+    }
+    const confirmedStage = await post(`${latestId}/stage/confirm/`, { advance_to_next_stage: true });
+    setStageResult(confirmedStage);
+    setMessage("TNM 병기가 확정되고 다음 단계가 활성화되었습니다.");
+    if (onStageAdvanced) await onStageAdvanced();
+    else await onConfirmed?.();
+  };
   const runNextAction = async () => {
-    if (!actionable || submittingRef.current || nextAction.disabled || !authorizedFetch || !apiBaseUrl || !caseId) return;
+    if (!actionable || submittingRef.current || !canFinalize || !authorizedFetch || !apiBaseUrl || !caseId) return;
     const toastId = `case-tnm-${caseId}`;
     submittingRef.current = true;
     setBusy(true); setError(""); setMessage("");
     showToast.info("TNM 결과를 처리하고 있습니다.", { id: toastId });
     try {
-      await nextAction.onClick();
-      const successMessage = nextAction.label === "TNM 초안 저장"
-        ? "TNM 초안이 저장되었습니다."
-        : nextAction.label === "TNM 결과 확정"
-          ? "T/N/M 결과가 확정되었습니다."
-          : nextAction.label === "Stage 계산"
-            ? "TNM Stage가 계산되었습니다."
-            : "TNM 병기가 확정되고 조직·유전자 검사 오더가 생성되었습니다.";
-      showToast.success(successMessage, { id: toastId });
+      await completeTnm();
+      showToast.success("TNM 병기가 확정되고 조직·유전자 검사 오더가 생성되었습니다.", { id: toastId });
     } catch (cause) {
       console.error(cause);
       setError("TNM 결과 처리에 실패했습니다.");
@@ -142,7 +125,14 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
             <nav role="tablist" aria-label="TNM 범주" className="grid grid-cols-3 border-b border-slate-200">
               {(["T", "N", "M"] as TnmCategory[]).map((item) => <button ref={(node) => { tabRefs.current[item] = node; }} key={item} id={`tnm-tab-${item}`} role="tab" aria-selected={category === item} aria-controls={`tnm-panel-${item}`} tabIndex={category === item ? 0 : -1} type="button" onClick={() => selectCategory(item)} onKeyDown={handleTabKeyDown} className={`whitespace-nowrap border-r border-slate-200 px-2 text-[11px] font-bold ${category === item ? "bg-blue-50 text-blue-700 shadow-[inset_0_-2px_0_#2563eb]" : "text-slate-500"}`}>{META[item]} <span className="font-normal">{confirmedFor(item, clinicalTnm) ? "· 결과 있음" : "· 미확인"}</span>{drafts[item].dirty && <span className="ml-1 text-amber-600" aria-label="저장되지 않은 변경사항">●</span>}</button>)}
             </nav>
-            <EvidenceViewerPanel />
+            {caseId && apiBaseUrl && authorizedFetch ? (
+              <CaseDicomEvidence
+                caseId={caseId}
+                apiBaseUrl={apiBaseUrl}
+                authorizedFetch={authorizedFetch}
+                stage="PET_CT_TNM"
+              />
+            ) : null}
             <section id={`tnm-panel-${category}`} role="tabpanel" aria-labelledby={`tnm-tab-${category}`} className="min-h-0 p-2">
               <div className="grid h-full grid-cols-3 gap-2">
                 <ReviewCard title="A. AI·규칙 후보" source="AI 분석 후보"><Field label={`${category} 후보`} value={aiValue} /><Field label="Confidence" value={aiTnm?.confidence} /><Field label="모델명·버전" value={[modelName, modelVersion].filter(Boolean).join(" · ")} /></ReviewCard>
@@ -159,7 +149,7 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
       <div className="border-t border-slate-200 px-3 py-2">
         {dirty && <p className="text-xs text-amber-700">저장되지 않은 변경사항이 있습니다. 확정 시 최신값을 먼저 저장합니다.</p>}
         <DecisionStatus error={error} message={!actionable ? "현재 단계에서는 결과 조회만 가능합니다. 선행 단계 완료 후 처리하세요." : message} />
-        {stageConfirmed ? <p className="text-xs text-slate-600">Stage Group 확정 완료</p> : <DecisionActions busy={busy} disabled={!actionable || nextAction.disabled || !authorizedFetch || !apiBaseUrl || !caseId} label={nextAction.label} onSubmit={() => void runNextAction()} />}
+        {stageConfirmed ? <p className="text-xs text-slate-600">Stage Group 확정 완료</p> : <DecisionActions busy={busy} disabled={!actionable || !canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} />}
       </div>
     </section>
   );

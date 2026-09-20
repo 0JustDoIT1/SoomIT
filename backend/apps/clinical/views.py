@@ -1940,7 +1940,8 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 reasons.append(f"ECOG {data['ecog']}: 조건 충족")
 
             pairs = set()
-            molecular_uncertain = not data["findings"]
+            molecular_required = bool(biomarker) or rule.rule_code in self.TARGET_RULES
+            molecular_uncertain = molecular_required and not data["findings"]
             for finding in data["findings"]:
                 gene = finding.gene_symbol.strip().upper()
                 if gene in self.CONTEXT_GENES:
@@ -1952,7 +1953,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 elif finding.assessment != "LIKELY_NEGATIVE" or code:
                     molecular_uncertain = True
             # No unsupported/ambiguous driver may fall through to another candidate.
-            if molecular_uncertain:
+            if molecular_required and molecular_uncertain:
                 return None
 
             required = set()

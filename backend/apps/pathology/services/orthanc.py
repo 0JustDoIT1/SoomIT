@@ -45,9 +45,19 @@ def get_wsi_pyramid(series_id):
         payload = json.loads(response.content.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise OrthancError("Orthanc pyramid 응답이 올바른 JSON이 아닙니다.") from exc
-    required = {"Resolutions", "Sizes", "TileHeight", "TileWidth", "TotalHeight", "TotalWidth"}
+    required = {"Resolutions", "Sizes", "TotalHeight", "TotalWidth"}
     if not isinstance(payload, dict) or not required.issubset(payload):
         raise OrthancError("Orthanc pyramid 응답에 필수 정보가 없습니다.")
+    if "TileWidth" not in payload or "TileHeight" not in payload:
+        tile_sizes = payload.get("TilesSizes")
+        if (
+            not isinstance(tile_sizes, list)
+            or not tile_sizes
+            or not isinstance(tile_sizes[0], (list, tuple))
+            or len(tile_sizes[0]) != 2
+        ):
+            raise OrthancError("Orthanc pyramid 응답에 tile 크기 정보가 없습니다.")
+        payload["TileWidth"], payload["TileHeight"] = tile_sizes[0]
     return payload
 
 
