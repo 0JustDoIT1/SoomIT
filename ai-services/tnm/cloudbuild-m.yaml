@@ -5,10 +5,10 @@ steps:
       - -ceu
       - |
         CACHE_IMAGE=gcr.io/$PROJECT_ID/tnm-m-serve:buildcache
-        docker pull "$CACHE_IMAGE" || true
-        docker build --cache-from "$CACHE_IMAGE" --file Dockerfile.m --tag gcr.io/$PROJECT_ID/tnm-m-serve:$_IMAGE_TAG .
-        docker tag gcr.io/$PROJECT_ID/tnm-m-serve:$_IMAGE_TAG "$CACHE_IMAGE"
-        docker push "$CACHE_IMAGE"
+        docker pull "$$CACHE_IMAGE" || true
+        docker build --cache-from "$$CACHE_IMAGE" --file Dockerfile.m --tag gcr.io/$PROJECT_ID/tnm-m-serve:$_IMAGE_TAG .
+        docker tag gcr.io/$PROJECT_ID/tnm-m-serve:$_IMAGE_TAG "$$CACHE_IMAGE"
+        docker push "$$CACHE_IMAGE"
 images: [gcr.io/$PROJECT_ID/tnm-m-serve:$_IMAGE_TAG]
 substitutions: {_IMAGE_TAG: latest}
 timeout: 3600s

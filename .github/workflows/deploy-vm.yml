@@ -151,7 +151,10 @@ jobs:
 
   deploy:
     needs: [changes, build]
-    if: always() && !failure() && (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.realtime == 'true' || needs.changes.outputs.infra == 'true')
+    if: >-
+      always() && !cancelled() &&
+      (needs.changes.outputs.frontend == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.realtime == 'true' || needs.changes.outputs.infra == 'true') &&
+      ((needs.changes.outputs.frontend != 'true' && needs.changes.outputs.backend != 'true' && needs.changes.outputs.realtime != 'true') || needs.build.result == 'success')
     runs-on: ubuntu-latest
     steps:
       - uses: google-github-actions/auth@v2
