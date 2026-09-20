@@ -7,6 +7,8 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { DayPicker } from "react-day-picker";
 import { ko } from "react-day-picker/locale";
 import { showToast } from "@/components/ui/toast/toast";
+import type { LoginUser } from "@/types/auth";
+import { SkeletonLine } from "../_components/skeleton";
 
 type Patient = {
   id: string;
@@ -44,12 +46,6 @@ type PatientQuestionnaire = {
 
 type Doctor = {
   id: string;
-  name: string;
-};
-
-type Hospital = {
-  id: string;
-  code: string;
   name: string;
 };
 
@@ -95,6 +91,18 @@ const initialUpdateForm: PatientUpdateForm = {
   address: "",
 };
 
+const questionnaireQuestions = [
+  ["현재 불편한 증상은 무엇인가요?", "current_symptoms"],
+  ["증상은 언제부터 발생했나요?", "symptom_onset"],
+  ["흡연 경험이 있나요?", "smoking_history"],
+  ["호흡곤란이 있나요?", "dyspnea"],
+  ["기침이 있나요?", "cough"],
+  ["객혈(피가 섞인 가래)이 있나요?", "hemoptysis"],
+  ["기존 질환이나 수술 이력이 있나요?", "past_history"],
+  ["현재 복용 중인 약이 있나요?", "current_medications"],
+  ["약물 또는 음식 알레르기가 있나요?", "allergies"],
+] as const;
+
 const birthDateStartMonth = new Date(1900, 0, 1);
 
 function parseBirthDate(value: string) {
@@ -118,6 +126,7 @@ export default function PatientsPage() {
   const [sexFilter, setSexFilter] = useState("ALL");
   const [questionnaire, setQuestionnaire] = useState<PatientQuestionnaire | null>(null);
   const [questionnairePatientName, setQuestionnairePatientName] = useState("");
+  const [questionnairePatientCode, setQuestionnairePatientCode] = useState("");
   const [questionnaireLoading, setQuestionnaireLoading] = useState(false);
 
   // 신규 등록
@@ -126,9 +135,6 @@ export default function PatientsPage() {
     useState<PatientCreateForm>(initialCreateForm);
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
-  const [hospitals, setHospitals] = useState<Hospital[]>([]);
-  const [hospitalsLoading, setHospitalsLoading] = useState(false);
-  const [hospitalsError, setHospitalsError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [doctorsLoading, setDoctorsLoading] = useState(false);
   const [doctorsError, setDoctorsError] = useState("");
@@ -192,29 +198,6 @@ export default function PatientsPage() {
       );
     } finally {
       setLoading(false);
-    }
-  };
-
-  const fetchHospitals = async () => {
-    try {
-      setHospitalsLoading(true);
-      setHospitalsError("");
-      const response = await fetch(
-        `${API_BASE_URL}/api/patients/hospitals/`
-      );
-      if (!response.ok) {
-        throw new Error("Unable to load hospitals.");
-      }
-      const data: Hospital[] = await response.json();
-      setHospitals(data);
-    } catch (err) {
-      setHospitalsError(
-        err instanceof Error
-          ? err.message
-          : "An error occurred while loading hospitals."
-      );
-    } finally {
-      setHospitalsLoading(false);
     }
   };
 
@@ -286,7 +269,16 @@ export default function PatientsPage() {
     setPatientAccountId(null);
     setAppLookupStatus("IDLE");
     setAppLookupMessage("");
-    void fetchHospitals();
+    let hospitalId = "";
+    try {
+      const user = JSON.parse(sessionStorage.getItem("user") ?? "null") as LoginUser | null;
+      hospitalId = user?.hospital?.id ?? "";
+    } catch {
+      hospitalId = "";
+    }
+    setCreateForm((current) => ({ ...current, hospital_id: hospitalId }));
+    if (hospitalId) void fetchDoctors(hospitalId);
+    else setCreateError("로그인 사용자에게 연결된 병원 정보를 확인할 수 없습니다.");
     setIsCreateOpen(true);
   };
 
@@ -298,6 +290,7 @@ export default function PatientsPage() {
       if (!response.ok) throw new Error("문진 내용을 불러오지 못했습니다.");
       setQuestionnaire(await response.json());
       setQuestionnairePatientName(patient.name);
+      setQuestionnairePatientCode(patient.patient_code);
     } catch (err) { showToast.error(err instanceof Error ? err.message : "문진 내용을 불러오지 못했습니다."); }
     finally { setQuestionnaireLoading(false); }
   };
@@ -548,12 +541,19 @@ export default function PatientsPage() {
       return matchesSearch && matchesSex;
     });
   }, [patients, searchTerm, sexFilter]);
+  const recentPatients = useMemo(
+    () => [...patients].sort((first, second) => new Date(second.created_at).getTime() - new Date(first.created_at).getTime()).slice(0, 3),
+    [patients],
+  );
+  const linkedPatientCount = patients.filter((patient) => patient.app_link_status === "LINKED").length;
+  const submittedQuestionnaireCount = patients.filter((patient) => patient.questionnaire_status === "SUBMITTED").length;
+  const registeredTodayCount = patients.filter((patient) => isToday(patient.created_at)).length;
   const resetFilters = () => {
     setSearchTerm("");
     setSexFilter("ALL");
   };
   return (
-    <div>
+    <>
       <Script
         id="daum-postcode-script"
         src="https://t1.daumcdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js"
@@ -561,9 +561,11 @@ export default function PatientsPage() {
         onReady={() => { setPostcodeReady(Boolean(window.daum?.Postcode)); setPostcodeError(""); }}
         onError={() => { setPostcodeReady(false); setPostcodeError("주소 검색 서비스를 불러오지 못했습니다. 잠시 후 다시 시도해주세요."); }}
       />
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[minmax(0,1.75fr)_minmax(280px,0.75fr)]">
+      <div className="min-w-0">
       {/* 페이지 상단 */}
       <div className="mb-6">
-        <div className="flex items-end justify-between gap-4">
+        <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <div className="flex items-center gap-3">
               <h1 className="text-2xl font-bold text-slate-800">
@@ -580,15 +582,15 @@ export default function PatientsPage() {
           <button
             type="button"
             onClick={openCreateDrawer}
-            className="rounded-xl bg-pink-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-pink-600"
+            className="shrink-0 rounded-xl bg-pink-500 px-5 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-pink-600"
           >
             + 신규 환자 등록
           </button>
         </div>
 
         {/* 검색 / 필터 */}
-        <div className="mt-6 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="flex-1">
+        <div className="mt-6 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="min-w-[180px] flex-1">
             <input
               type="text"
               value={searchTerm}
@@ -705,6 +707,47 @@ export default function PatientsPage() {
           </div>
         </div>
       )}
+      </div>
+
+      <aside className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-base font-semibold text-slate-800">환자 관리 현황</h2>
+        <dl className="mt-3 divide-y divide-slate-100">
+          {[
+            { label: "전체 환자", count: patients.length },
+            { label: "오늘 등록", count: registeredTodayCount },
+            { label: "앱 연동", count: linkedPatientCount },
+            { label: "문진표 제출", count: submittedQuestionnaireCount },
+          ].map(({ label, count }) => (
+            <div key={label} className="flex items-center justify-between gap-4 py-3">
+              <dt className="text-sm text-slate-500">{label}</dt>
+              <dd>{loading ? <SkeletonLine className="w-10" /> : <span className="text-sm font-semibold tabular-nums text-slate-700">{count}명</span>}</dd>
+            </div>
+          ))}
+        </dl>
+        <div className="mt-2 border-t border-slate-100 pt-4">
+          <h3 className="text-sm font-semibold text-slate-700">최근 등록 환자</h3>
+          {loading ? (
+            <ul className="mt-2 divide-y divide-slate-100">
+              {Array.from({ length: 3 }, (_, index) => <li key={index} className="space-y-2 py-3"><SkeletonLine className="w-24" /><SkeletonLine className="w-16" /></li>)}
+            </ul>
+          ) : recentPatients.length ? (
+            <ul className="mt-2 divide-y divide-slate-100">
+              {recentPatients.map((patient) => (
+                <li key={patient.id} className="flex items-center justify-between gap-3 py-3">
+                  <button type="button" onClick={() => openPatientDetail(patient.id)} className="min-w-0 text-left">
+                    <span className="block truncate text-sm font-medium text-slate-700">{patient.name}</span>
+                    <span className="mt-0.5 block text-xs text-slate-400">{patient.patient_code}</span>
+                  </button>
+                  <time dateTime={patient.created_at} className="shrink-0 text-xs tabular-nums text-slate-400">{formatDateTime(patient.created_at)}</time>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="mt-3 text-sm text-slate-400">등록된 환자가 없습니다.</p>
+          )}
+        </div>
+      </aside>
+      </div>
 
       {/* 상세 로딩 */}
       {detailLoading && (
@@ -717,10 +760,29 @@ export default function PatientsPage() {
 
       {questionnaire && (
         <div className="fixed inset-0 z-[80] flex justify-end bg-black/20">
-          <div className="h-full w-[440px] overflow-y-auto bg-white p-6 shadow-2xl">
-            <div className="mb-6 flex items-start justify-between"><div><p className="text-xs font-semibold text-pink-500">QUESTIONNAIRE</p><h2 className="mt-1 text-xl font-bold text-slate-800">{questionnairePatientName} 문진표</h2></div><button type="button" onClick={() => setQuestionnaire(null)} className="text-2xl text-slate-400">×</button></div>
-            <p className="mb-5 text-xs text-slate-500">제출일시: {formatDateTime(questionnaire.completed_at)}</p>
-            <div className="space-y-4">{[["현재 불편한 증상은 무엇인가요?", "current_symptoms"], ["증상은 언제부터 발생했나요?", "symptom_onset"], ["흡연 경험이 있나요?", "smoking_history"], ["호흡곤란이 있나요?", "dyspnea"], ["기침이 있나요?", "cough"], ["객혈(피가 섞인 가래)이 있나요?", "hemoptysis"], ["기존 질환이나 수술 이력이 있나요?", "past_history"], ["현재 복용 중인 약이 있나요?", "current_medications"], ["약물 또는 음식 알레르기가 있나요?", "allergies"]].map(([label, key], index) => <div key={key}><p className="text-sm font-semibold text-slate-700">{index + 1}. {label}</p><p className="mt-1 whitespace-pre-wrap rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-600">{questionnaire.responses[key] || "-"}</p></div>)}</div>
+          <div className="flex h-full w-full max-w-[760px] flex-col bg-white shadow-2xl">
+            <header className="flex items-start justify-between gap-5 border-b border-slate-100 px-5 py-5 sm:px-8">
+              <div className="min-w-0">
+                <p className="text-xs font-semibold tracking-wide text-pink-500">문진표</p>
+                <h2 className="mt-1 truncate text-xl font-bold text-slate-800">{questionnairePatientName} · {questionnairePatientCode}</h2>
+                <p className="mt-2 text-xs text-slate-500">제출일시: {formatDateTime(questionnaire.completed_at)}</p>
+              </div>
+              <button type="button" onClick={() => setQuestionnaire(null)} aria-label="문진표 닫기" className="shrink-0 rounded-full px-3 py-2 text-2xl leading-none text-slate-400 transition hover:bg-slate-50">×</button>
+            </header>
+            <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-8 sm:py-7">
+              <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
+                {questionnaireQuestions.map(([label, key], index) => {
+                  const answer = questionnaire.responses[key] || "-";
+                  const isLongAnswer = answer.length > 70;
+                  return (
+                    <article key={key} className={`border-b border-slate-100 py-4 ${isLongAnswer ? "md:col-span-2" : ""}`}>
+                      <p className="text-sm font-medium leading-6 text-slate-500"><span className="mr-2 text-xs tabular-nums text-slate-400">{String(index + 1).padStart(2, "0")}</span>{label}</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-7 text-slate-800">{answer}</p>
+                    </article>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -746,7 +808,7 @@ export default function PatientsPage() {
 
       {/* 신규 등록 Drawer */}
       <div
-        className={`fixed right-0 top-0 z-50 h-full w-[440px] bg-white shadow-2xl transition-transform duration-300 ${
+        className={`fixed right-0 top-0 z-50 h-full w-full max-w-[600px] bg-white shadow-2xl transition-transform duration-300 ${
           isCreateOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -756,69 +818,18 @@ export default function PatientsPage() {
             className="flex h-full flex-col"
           >
             <DrawerHeader
-              eyebrow="New Patient"
+              eyebrow=""
               title="신규 환자 등록"
               description="환자의 기본정보를 입력해주세요."
               onClose={closeCreateDrawer}
             />
-            <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
               {createError && (
                 <ErrorMessage message={createError} />
               )}
-              <div className="space-y-5">
-                <FormField label="Hospital" required>
-                  <select
-                    value={createForm.hospital_id}
-                    onChange={(e) => {
-                      const hospitalId = e.target.value;
-                      setCreateForm({
-                        ...createForm,
-                        hospital_id: hospitalId,
-                        primary_doctor_id: "",
-                      });
-                      void fetchDoctors(hospitalId);
-                    }}
-                    disabled={hospitalsLoading || Boolean(hospitalsError)}
-                    className={`${inputClassName} [scrollbar-width:none] [&::-webkit-scrollbar]:hidden`}
-                  >
-                    <option value="">
-                      {hospitalsLoading ? "Loading hospitals" : "Select a hospital"}
-                    </option>
-                    {hospitals.map((hospital) => (
-                      <option key={hospital.id} value={hospital.id}>
-                        {hospital.code} — {hospital.name}
-                      </option>
-                    ))}
-                  </select>
-                  {hospitalsError ? (
-                    <p className="mt-1.5 text-xs text-red-600">{hospitalsError}</p>
-                  ) : null}
-                </FormField>
-                <FormField label="Primary doctor" required>
-                  <select
-                    value={createForm.primary_doctor_id}
-                    onChange={(e) =>
-                      setCreateForm({
-                        ...createForm,
-                        primary_doctor_id: e.target.value,
-                      })
-                    }
-                    disabled={doctorsLoading || Boolean(doctorsError)}
-                    className={inputClassName}
-                  >
-                    <option value="">
-                      {doctorsLoading ? "Loading doctors" : "Select a doctor"}
-                    </option>
-                    {doctors.map((doctor) => (
-                      <option key={doctor.id} value={doctor.id}>
-                        {doctor.name}
-                      </option>
-                    ))}
-                  </select>
-                  {doctorsError ? (
-                    <p className="mt-1.5 text-xs text-red-600">{doctorsError}</p>
-                  ) : null}
-                </FormField>
+              <div className="space-y-6">
+                <DrawerSection title="기본 정보">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <FormField label="환자번호" required>
                   <input
                     type="text"
@@ -833,7 +844,32 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
-                <FormField label="이름" required>
+                <FormField label="담당의" required>
+                  <select
+                    value={createForm.primary_doctor_id}
+                    onChange={(e) =>
+                      setCreateForm({
+                        ...createForm,
+                        primary_doctor_id: e.target.value,
+                      })
+                    }
+                    disabled={doctorsLoading || Boolean(doctorsError)}
+                    className={inputClassName}
+                  >
+                    <option value="">
+                      {doctorsLoading ? "담당의 목록을 불러오는 중입니다" : "담당의를 선택하세요"}
+                    </option>
+                    {doctors.map((doctor) => (
+                      <option key={doctor.id} value={doctor.id}>
+                        {doctor.name}
+                      </option>
+                    ))}
+                  </select>
+                  {doctorsError ? (
+                    <p className="mt-1.5 text-xs text-red-600">{doctorsError}</p>
+                  ) : null}
+                </FormField>
+                <FormField label="이름" required className="sm:col-span-2">
                   <input
                     type="text"
                     value={createForm.name}
@@ -934,6 +970,9 @@ export default function PatientsPage() {
                     <option value="OTHER">기타</option>
                   </select>
                 </FormField>
+                  </div>
+                </DrawerSection>
+                <DrawerSection title="연락 및 앱 연동">
                 <FormField label="연락처" required>
                   <div className="flex gap-2">
                   <input
@@ -947,6 +986,8 @@ export default function PatientsPage() {
                    </div>
                    {appLookupMessage && <p className={`mt-1.5 text-xs ${appLookupStatus === "LINKED" ? "text-red-600" : "text-violet-700"}`}>{appLookupMessage}</p>}
                 </FormField>
+                </DrawerSection>
+                <DrawerSection title="주소">
                 <FormField label="주소" required>
                   <div className="flex gap-2">
                     <input
@@ -995,6 +1036,7 @@ export default function PatientsPage() {
                     className={`${inputClassName} bg-slate-50`}
                   />
                 </FormField>
+                </DrawerSection>
               </div>
             </div>
             <DrawerFooter
@@ -1160,7 +1202,7 @@ export default function PatientsPage() {
 
       {/* 환자정보 수정 Drawer */}
       <div
-        className={`fixed right-0 top-0 z-[60] h-full w-[440px] bg-white shadow-2xl transition-transform duration-300 ${
+        className={`fixed right-0 top-0 z-[60] h-full w-full max-w-[600px] bg-white shadow-2xl transition-transform duration-300 ${
           isUpdateOpen ? "translate-x-0" : "translate-x-full"
         }`}
       >
@@ -1170,27 +1212,23 @@ export default function PatientsPage() {
             className="flex h-full flex-col"
           >
             <DrawerHeader
-              eyebrow="Edit Patient"
+              eyebrow=""
               title="환자정보 수정"
               description={`${selectedPatient.name} · ${selectedPatient.patient_code}`}
               onClose={closeUpdateDrawer}
             />
-            <div className="flex-1 overflow-y-auto px-6 py-6">
+            <div className="flex-1 overflow-y-auto px-5 py-5 sm:px-6">
               {updateError && (
                 <ErrorMessage message={updateError} />
               )}
-              <div className="mb-5 rounded-2xl bg-slate-50 p-4">
-                <p className="text-xs text-slate-400">
-                  환자번호
-                </p>
-                <p className="mt-1 text-sm font-semibold text-slate-700">
-                  {selectedPatient.patient_code}
-                </p>
-                <p className="mt-1 text-xs text-slate-400">
-                  환자번호는 수정할 수 없습니다.
-                </p>
-              </div>
-              <div className="space-y-5">
+              <div className="space-y-6">
+                <DrawerSection title="기본 정보">
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2">
+                      <p className="mb-2 text-sm font-medium text-slate-700">환자번호</p>
+                      <p className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold text-slate-600">{selectedPatient.patient_code}</p>
+                      <p className="mt-1.5 text-xs text-slate-400">환자번호는 수정할 수 없습니다.</p>
+                    </div>
                 <FormField label="이름" required>
                   <input
                     type="text"
@@ -1246,6 +1284,9 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
+                  </div>
+                </DrawerSection>
+                <DrawerSection title="주소">
                 <FormField label="주소" required>
                   <input
                     type="text"
@@ -1259,6 +1300,7 @@ export default function PatientsPage() {
                     className={inputClassName}
                   />
                 </FormField>
+                </DrawerSection>
               </div>
             </div>
             <DrawerFooter
@@ -1272,7 +1314,7 @@ export default function PatientsPage() {
           </form>
         )}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1299,14 +1341,16 @@ function DetailRow({
 function FormField({
   label,
   required = false,
+  className = "",
   children,
 }: {
   label: string;
   required?: boolean;
+  className?: string;
   children: React.ReactNode;
 }) {
   return (
-    <div>
+    <div className={className}>
       <label className="mb-2 block text-sm font-medium text-slate-700">
         {label}
         {required && (
@@ -1315,6 +1359,15 @@ function FormField({
       </label>
       {children}
     </div>
+  );
+}
+
+function DrawerSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="border-b border-slate-100 pb-2 text-sm font-semibold text-slate-700">{title}</h3>
+      <div className="mt-4">{children}</div>
+    </section>
   );
 }
 
@@ -1333,9 +1386,7 @@ function DrawerHeader({
     <div className="border-b border-slate-100 px-6 py-5">
       <div className="flex items-start justify-between">
         <div>
-          <p className="text-sm font-medium text-pink-500">
-            {eyebrow}
-          </p>
+          {eyebrow ? <p className="text-sm font-medium text-pink-500">{eyebrow}</p> : null}
           <h2 className="mt-1 text-xl font-bold text-slate-800">
             {title}
           </h2>
@@ -1411,6 +1462,12 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function isToday(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  return date.getFullYear() === today.getFullYear() && date.getMonth() === today.getMonth() && date.getDate() === today.getDate();
 }
 
 async function getApiErrorMessage(

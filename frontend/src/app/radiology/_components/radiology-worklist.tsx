@@ -124,7 +124,7 @@ export function RadiologyWorklist({
       </div>
 
       <div className="min-h-0 flex-1 overflow-auto" aria-busy={viewStatus === "loading"}>
-        {viewStatus === "loading" ? <span className="sr-only" role="status">Worklist 로딩 중</span> : null}
+        {viewStatus === "loading" ? <span className="sr-only" role="status" aria-label="Worklist 로딩 중">Worklist 로딩 중</span> : null}
         <table className="w-full min-w-[420px] border-collapse text-left text-xs">
           <thead className="bg-violet-50/40 text-xs font-semibold text-slate-500">
             <tr className="border-b border-slate-200">
@@ -136,11 +136,11 @@ export function RadiologyWorklist({
           </thead>
 
           <tbody>
-            {viewStatus === "loading" && items.length === 0 ? Array.from({ length: 10 }, (_, index) => (
+            {viewStatus === "loading" ? Array.from({ length: 7 }, (_, index) => (
               <tr key={index} aria-hidden="true" className="border-b border-slate-100 border-l-4 border-l-transparent motion-safe:animate-pulse">
                 {["w-14", "w-20", "w-12", "w-16"].map((width) => (
                   <td key={width} className="px-3 py-2.5">
-                    <div className={`h-6 max-w-full rounded bg-violet-50 ${width}`} />
+                    <div className={`h-5 max-w-full rounded bg-slate-100 ${width}`} />
                   </td>
                 ))}
               </tr>

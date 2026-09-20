@@ -19,14 +19,14 @@ import {
   type RadiologyWorklistFilters,
 } from "./_lib/radiology-api";
 
-type WorkstationTab = "worklist" | "ai" | "history";
+type WorkstationTab = "worklist" | "history";
 
 const tabs: Array<{ id: WorkstationTab; label: string }> = [
   { id: "worklist", label: "Worklist" },
-  { id: "ai", label: "AI 작업" },
   { id: "history", label: "완료 기록" },
 ];
 
+/*
 function RadiologyStatusTable({
   title,
   items,
@@ -76,6 +76,7 @@ function RadiologyStatusTable({
     </section>
   );
 }
+*/
 
 function RadiologyCaseDetail({
   caseId,
@@ -188,10 +189,6 @@ export default function RadiologyWorklistPage() {
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
-  const aiItems = worklistItems.filter((item) =>
-    ["AI_READY", "AI_RUNNING", "AI_FAILED", "AI_COMPLETED", "REVIEW_PENDING"].includes(item.workflow_status),
-  );
-
   function handleSelectItem(item: RadiologyCaseWorklistItem) {
     setRecentSelection(null);
     setSelectedItem(item);
@@ -361,11 +358,6 @@ export default function RadiologyWorklistPage() {
               </main>
             )}
           </div>
-        ) : null}
-        {activeTab === "ai" ? (
-          viewStatus === "loading" ? <StateMessage variant="loading" title="AI 작업 목록을 불러오는 중입니다." />
-            : viewStatus === "error" || viewStatus === "unauthorized" ? <StateMessage variant="error" title="AI 작업 목록을 조회할 수 없습니다." description={errorMessage} />
-              : <RadiologyStatusTable title="AI 작업" items={aiItems} emptyTitle="현재 표시할 AI 작업이 없습니다." />
         ) : null}
         {activeTab === "history" ? (
           <RadiologyCompletedHistory />

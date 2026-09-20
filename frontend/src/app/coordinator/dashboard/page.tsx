@@ -4,6 +4,7 @@ import { API_BASE_URL, staffAuthenticatedFetch } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
+import { SkeletonBlock, SkeletonLine } from "../_components/skeleton";
 
 type Patient = {
   id: string;
@@ -267,9 +268,10 @@ export default function CoordinatorDashboardPage() {
       .slice(0, RECENT_ACTIVITY_LIMIT);
   }, [appointments, appointmentRequests, examinationOrders, patients]);
 
-  const summary = [
+  const summary: { label: string; count: number; icon: SummaryIconName }[] = [
     {
       label: "오늘 예약",
+      icon: "calendar",
       count: appointments.filter(
         (appointment) =>
           appointment.appointment_status === "CONFIRMED" && isToday(appointment.scheduled_at),
@@ -277,46 +279,53 @@ export default function CoordinatorDashboardPage() {
     },
     {
       label: "신규 예약 요청",
+      icon: "calendarPlus",
       count: appointments.filter((appointment) => appointment.appointment_status === "REQUESTED").length,
     },
     {
       label: "변경 요청",
+      icon: "calendarPen",
       count: appointmentRequests.filter(
         (request) => request.request_type === "CHANGE" && request.status === "PENDING",
       ).length,
     },
     {
       label: "취소 요청",
+      icon: "calendarX",
       count: appointmentRequests.filter(
         (request) => request.request_type === "CANCEL" && request.status === "PENDING",
       ).length,
     },
-    { label: "신규 환자", count: patients.filter((patient) => isToday(patient.created_at)).length },
+    { label: "신규 환자", icon: "userPlus", count: patients.filter((patient) => isToday(patient.created_at)).length },
   ];
-
-  if (loading) {
-    return <div className="rounded-xl border border-slate-200 bg-white px-6 py-10 text-sm text-slate-500">대시보드 정보를 불러오는 중입니다.</div>;
-  }
 
   if (error) {
     return <div role="alert" className="rounded-xl border border-rose-100 bg-white px-6 py-5 text-sm text-rose-700">{error}</div>;
   }
 
   return (
-    <div className="space-y-5 bg-[#EEF3F8]">
-      <header>
-        <h1 className="text-2xl font-bold text-slate-900">대시보드</h1>
-        <p className="mt-1 text-sm text-slate-500">오늘 예약과 처리 대기 업무를 확인합니다.</p>
-      </header>
-
+    <div className="space-y-5">
       <div className="space-y-4 rounded-md border border-[#DDE5EE] bg-[#F8FAFC] p-4">
       <h2 className="text-sm font-semibold text-[#24364B]">오늘 업무</h2>
       <section aria-label="상단 업무 요약" className="overflow-hidden rounded-lg border border-slate-200 bg-white">
         <div className="grid grid-cols-2 divide-x divide-y divide-slate-100 sm:grid-cols-3 sm:divide-y-0 lg:grid-cols-5">
-          {summary.map((item) => (
-            <div key={item.label} className="px-4 py-3 sm:px-5">
-              <p className="text-xs font-medium text-slate-500">{item.label}</p>
-          <p className={`mt-1 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-pink-500" : "text-slate-700"}`}>{item.count}</p>
+          {loading ? Array.from({ length: 5 }, (_, index) => (
+            <div key={`summary-skeleton-${index}`} className="flex min-w-0 items-center gap-3 px-3 py-3 sm:gap-3.5 sm:px-4">
+              <SkeletonBlock className="h-10 w-10 flex-none" />
+              <div className="min-w-0 flex-1 space-y-2">
+                <SkeletonLine className="w-20" />
+                <SkeletonBlock className="h-7 w-10" />
+              </div>
+            </div>
+          )) : summary.map((item) => (
+            <div key={item.label} className="flex min-w-0 items-center gap-3 px-3 py-3 transition-colors duration-200 hover:bg-[#FDF1F5] sm:gap-3.5 sm:px-4">
+              <span className="flex h-10 w-10 flex-none items-center justify-center" aria-hidden="true">
+                <SummaryIcon name={item.icon} />
+              </span>
+              <div className="min-w-0">
+                <p className="truncate text-xs font-medium text-slate-500">{item.label}</p>
+                <p className={`mt-0.5 text-2xl font-semibold tabular-nums ${item.count > 0 && item.label !== "오늘 예약" && item.label !== "신규 환자" ? "text-pink-500" : "text-slate-700"}`}>{item.count}</p>
+              </div>
             </div>
           ))}
         </div>
@@ -325,12 +334,25 @@ export default function CoordinatorDashboardPage() {
       <div aria-hidden="true" className="my-5 border-t border-[#E5EAF0]" />
 
       <div className="grid grid-cols-1 items-start gap-4 lg:grid-cols-2 2xl:grid-cols-[minmax(0,2fr)_minmax(0,2fr)_minmax(240px,1fr)]">
-      <section className="min-w-0 overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm">
+      <section className="min-w-0 min-h-[500px] overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm">
         <div className="flex h-10 items-center justify-between gap-3 border-b border-[#E1E5EB] bg-[#EEF1F7] px-4">
           <h2 className="text-base font-semibold text-slate-900">처리 필요한 예약 요청</h2>
-          <CountBadge count={pendingRequests.length} />
+          {loading ? <SkeletonBlock className="h-5 w-10" /> : <CountBadge count={pendingRequests.length} />}
         </div>
-          {pendingRequests.length ? (
+          {loading ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[570px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                  <tr>{["환자", "유형", "담당의", "요청/예약 시간", "상태"].map((label) => <th key={label} className="px-3 py-2.5">{label}</th>)}</tr>
+                </thead>
+                <tbody>{Array.from({ length: 5 }, (_, row) => (
+                  <tr key={row} className="border-b border-slate-100">
+                    {[0, 1, 2, 3, 4].map((cell) => <td key={cell} className="px-3 py-3"><SkeletonLine className={cell === 3 ? "w-32" : cell === 0 ? "w-24" : "w-16"} /></td>)}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : pendingRequests.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[570px] text-left text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
@@ -375,12 +397,25 @@ export default function CoordinatorDashboardPage() {
           </div>
       </section>
 
-      <section className="min-w-0 overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm">
+      <section className="min-w-0 min-h-[500px] overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm">
         <div className="flex h-10 items-center justify-between gap-3 border-b border-[#E1E5EB] bg-[#EEF1F7] px-4">
           <h2 className="text-base font-semibold text-slate-800">검사 오더 현황</h2>
-          <CountBadge count={examinationOrders.length} />
+          {loading ? <SkeletonBlock className="h-5 w-10" /> : <CountBadge count={examinationOrders.length} />}
         </div>
-          {examinationOrders.length ? (
+          {loading ? (
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[540px] text-left text-sm">
+                <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
+                  <tr>{["환자", "검사 종류", "담당의", "오더 생성일"].map((label) => <th key={label} className="px-3 py-2.5">{label}</th>)}</tr>
+                </thead>
+                <tbody>{Array.from({ length: 7 }, (_, row) => (
+                  <tr key={row} className="border-b border-slate-100">
+                    {[0, 1, 2, 3].map((cell) => <td key={cell} className="px-3 py-3"><SkeletonLine className={cell === 0 ? "w-24" : cell === 3 ? "w-28" : "w-16"} /></td>)}
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          ) : examinationOrders.length ? (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[540px] text-left text-sm">
                 <thead className="border-b border-slate-200 bg-slate-50 text-xs font-semibold text-slate-600">
@@ -418,9 +453,19 @@ export default function CoordinatorDashboardPage() {
       <section className="min-w-0 overflow-hidden rounded-lg border border-[#E1E5EB] bg-white shadow-sm lg:col-span-2 2xl:col-span-1">
         <div className="flex h-10 items-center justify-between gap-3 border-b border-[#E1E5EB] bg-[#F2F3F5] px-4">
           <h2 className="text-base font-medium text-slate-600">최근 활동</h2>
-          <CountBadge count={recentActivities.length} muted />
+          {loading ? <SkeletonBlock className="h-5 w-10" /> : <CountBadge count={recentActivities.length} muted />}
         </div>
-        {recentActivities.length ? (
+        {loading ? (
+          <ol className="divide-y divide-slate-100/80">
+            {Array.from({ length: RECENT_ACTIVITY_LIMIT }, (_, index) => (
+              <li key={index} className="space-y-2 px-3 py-3">
+                <SkeletonLine className="w-20" />
+                <SkeletonLine className="w-3/4" />
+                <SkeletonLine className="w-1/2" />
+              </li>
+            ))}
+          </ol>
+        ) : recentActivities.length ? (
           <ol className="divide-y divide-slate-100/80">
             {recentActivities.map((activity) => (
               <li key={activity.id} className="px-3 py-2">
@@ -442,9 +487,20 @@ export default function CoordinatorDashboardPage() {
       </div>
 
       <section>
-        <SectionHeading title="오늘 진료 진행 현황" count={todayAppointments.length} />
+        <SectionHeading title="오늘 진료 진행 현황" count={todayAppointments.length} loading={loading} />
         <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          {todayAppointments.length ? (
+          {loading ? (
+            <div className="divide-y divide-slate-100">
+              {Array.from({ length: 4 }, (_, index) => (
+                <div key={index} className="grid grid-cols-1 items-center gap-3 px-4 py-3 sm:grid-cols-[minmax(150px,1.2fr)_100px_minmax(120px,1fr)_minmax(160px,1.5fr)] sm:px-5">
+                  <div className="space-y-2"><SkeletonLine className="w-28" /><SkeletonLine className="w-20" /></div>
+                  <SkeletonLine className="w-12" />
+                  <SkeletonLine className="w-24" />
+                  <SkeletonBlock className="h-5 w-full" />
+                </div>
+              ))}
+            </div>
+          ) : todayAppointments.length ? (
             <div className="divide-y divide-slate-100">
               {todayAppointments.map(({ appointment, patient, examination }) => (
                 <button
@@ -472,11 +528,23 @@ export default function CoordinatorDashboardPage() {
   );
 }
 
-function SectionHeading({ title, count }: { title: string; count: number }) {
+type SummaryIconName = "calendar" | "calendarPlus" | "calendarPen" | "calendarX" | "userPlus";
+
+function SummaryIcon({ name }: { name: SummaryIconName }) {
+  const common = { width: 40, height: 40, className: "block h-10 w-10 flex-none", fill: "none", stroke: "#D96B91", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const, viewBox: "0 0 24 24", focusable: false };
+  return <svg {...common}>
+    {name === "calendar" && <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17" /></>}
+    {name === "calendarPlus" && <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M12 12.5v5M9.5 15h5" /></>}
+    {name === "calendarPen" && <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17M10.5 16.5l4.8-4.8 1.8 1.8-4.8 4.8-2.3.5z" /></>}
+    {name === "calendarX" && <><rect x="3.5" y="5" width="17" height="15.5" rx="2" /><path d="M7.5 3.5v3M16.5 3.5v3M3.5 9.5h17m-9 4 5 5m0-5-5 5" /></>}
+    {name === "userPlus" && <><path d="M15.5 20v-1.5a4 4 0 0 0-4-4h-4a4 4 0 0 0-4 4V20" /><circle cx="9.5" cy="7.5" r="4" /><path d="M19 8v6m-3-3h6" /></>}
+  </svg>;
+}
+function SectionHeading({ title, count, loading = false }: { title: string; count: number; loading?: boolean }) {
   return (
     <div className="flex items-center justify-between gap-3">
       <h2 className="text-lg font-bold text-slate-900">{title}</h2>
-      <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">{count}</span>
+      {loading ? <SkeletonBlock className="h-6 w-10 rounded-full" /> : <span className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold tabular-nums text-slate-600">{count}</span>}
     </div>
   );
 }

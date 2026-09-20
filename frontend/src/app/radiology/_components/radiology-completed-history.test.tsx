@@ -52,3 +52,36 @@ it("groups completed exams by case and opens each read-only exam detail", async 
   expect(screen.getByText("대표 영상 미리보기 없음")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /업로드|분석 실행|재실행|제출/ })).not.toBeInTheDocument();
 });
+
+it("renders CT malignancy risk as an API percentage without scaling it again", async () => {
+  vi.mocked(fetchRadiologyCompletedExams).mockResolvedValue([
+    {
+      patient: { id: "patient-ct", name: "CT 환자", patient_code: "CT-001", birth_date: "1970-01-01", sex: "UNKNOWN" },
+      case: { id: "case-ct", case_code: "CASE-CT", current_stage: "CT", case_status: "ACTIVE" },
+      responsible_doctor: null,
+      completed_exams: [{
+        patient: { id: "patient-ct", name: "CT 환자", patient_code: "CT-001", birth_date: "1970-01-01", sex: "UNKNOWN" },
+        case: { id: "case-ct", case_code: "CASE-CT", current_stage: "CT", case_status: "ACTIVE" },
+        examination_order: { id: "order-ct", order_type: "CT", order_type_label: "CT", priority: "NORMAL", priority_label: "일반", status: "COMPLETED", status_label: "완료", purpose: "CT", clinical_note: null, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+        requesting_doctor: { id: "doctor-ct", name: "요청 의사" },
+        responsible_doctor: null,
+        scheduled_at: null,
+        image_asset_count: 0,
+        latest_image_asset: null,
+        latest_ai_analysis: null,
+        workflow_status: "REVIEW_COMPLETED",
+        workflow_status_label: "완료",
+        ai_result: { overall_malignancy_risk: "93.11", nodules: [{ nodule_no: 1, detection_confidence: "0.91", malignancy_risk: "93.11", finding_payload: { quantification: { maximum_3d_diameter_mm: 28.8 } } }], visualization: null },
+        review: null,
+        completed_at: null,
+      }],
+    },
+  ] as Awaited<ReturnType<typeof fetchRadiologyCompletedExams>>);
+
+  const user = userEvent.setup();
+  render(<RadiologyCompletedHistory />);
+  await user.click((await screen.findByText("CT 분석 완료")).closest("summary")!);
+
+  expect(screen.getByText("93.11%")).toBeInTheDocument();
+  expect(screen.getByText("28.8 mm")).toBeInTheDocument();
+});

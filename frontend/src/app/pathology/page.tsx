@@ -26,13 +26,14 @@ import {
 
 import type { PathologyAiAnalysis } from "./_lib/pathology-api";
 
-type Tab = "worklist" | "ai" | "completed";
+type Tab = "worklist" | "completed";
 
 const PAGE_SIZE = 10;
 
 function WorklistSkeleton() {
   return (
     <div className="min-h-0 flex-1 overflow-auto" role="status" aria-label="Worklist 로딩 중" aria-busy="true">
+      <span className="sr-only">Worklist 로딩 중</span>
       <table className="w-full min-w-[420px] text-left text-xs" aria-hidden="true">
         <thead className="sticky top-0 z-[1] bg-[#F1F3FF] text-slate-600">
           <tr>
@@ -42,11 +43,11 @@ function WorklistSkeleton() {
           </tr>
         </thead>
         <tbody className="motion-safe:animate-pulse">
-          {Array.from({ length: PAGE_SIZE }, (_, index) => (
+          {Array.from({ length: 7 }, (_, index) => (
             <tr key={index} className="border-b border-l-[3px] border-l-transparent border-b-[#E8EAF3]">
               {["w-14", "w-20", "w-12", "w-16"].map((width) => (
                 <td key={width} className="px-3 py-2.5">
-                  <div className={`h-4 max-w-full rounded bg-[#EEF0F8] ${width}`} />
+                  <div className={`h-4 max-w-full rounded bg-slate-100 ${width}`} />
                 </td>
               ))}
             </tr>
@@ -667,6 +668,21 @@ function Pdl1AnalysisResults({
   );
 }
 
+function CompletedRecordsSkeleton() {
+  return (
+    <section role="status" aria-label="완료 기록 로딩 중" aria-busy="true" className="space-y-4">
+      <span className="sr-only">완료 기록 로딩 중</span>
+      {Array.from({ length: 5 }, (_, index) => (
+        <article key={index} aria-hidden="true" className="overflow-hidden rounded-xl border border-[#DDE2F7] bg-white">
+          <header className="border-b border-[#E2E5F2] bg-[#FBFBFF] px-5 py-4"><div className="h-4 w-28 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="mt-2 h-3 w-40 rounded bg-slate-50 motion-safe:animate-pulse" /></header>
+          <div className="divide-y divide-[#E2E5F2]">{[0, 1].map(row => <div key={row} className="flex items-center gap-3 px-5 py-4"><div className="h-4 w-4 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="h-4 w-36 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="ml-auto h-5 w-16 rounded bg-slate-50 motion-safe:animate-pulse" /></div>)}</div>
+          <div className="grid gap-5 border-t border-[#EEF0F8] px-5 py-4 lg:grid-cols-[180px_minmax(0,1fr)]"><div className="h-32 rounded-lg border border-slate-100 bg-slate-50 motion-safe:animate-pulse" /><div className="grid content-start gap-4 sm:grid-cols-3">{Array.from({ length: 6 }, (_, cell) => <div key={cell}><div className="h-3 w-14 rounded bg-slate-50 motion-safe:animate-pulse" /><div className="mt-2 h-4 w-24 rounded bg-slate-100 motion-safe:animate-pulse" /></div>)}</div></div>
+        </article>
+      ))}
+    </section>
+  );
+}
+
 function PathologyCompletedHistory() {
   const [histories, setHistories] = useState<PathologyCompletedExamHistory[]>([]);
   const [loading, setLoading] = useState(true);
@@ -689,7 +705,7 @@ function PathologyCompletedHistory() {
     return () => controller.abort();
   }, []);
 
-  if (loading) return <StateMessage variant="loading" title="완료 기록을 불러오는 중입니다." />;
+  if (loading) return <CompletedRecordsSkeleton />;
   if (error) return <StateMessage variant="error" title={error} />;
   if (histories.length === 0) return <StateMessage variant="empty" title="완료된 병리 검사가 없습니다." />;
 
@@ -1936,16 +1952,6 @@ export default function PathologyDashboardPage() {
       );
     }
 
-    if (tab === "ai") {
-      return nonCancelled.filter((item) =>
-        [
-          "AI_READY",
-          "AI_RUNNING",
-          "AI_COMPLETED",
-        ].includes(item.workflow_status),
-      );
-    }
-
     return items.filter(
       (item) => workflowStatusFilter === "ALL" || workflowStatusGroups[workflowStatusFilter]?.includes(item.workflow_status),
     );
@@ -2031,7 +2037,6 @@ export default function PathologyDashboardPage() {
             {(
               [
                 ["worklist", "Worklist"],
-                ["ai", "AI 작업"],
                 ["completed", "완료 기록"],
               ] as const
             ).map(([id, label]) => (

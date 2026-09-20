@@ -66,29 +66,44 @@ export default function CoordinatorLayout({
       {/* 상단 고정 영역 */}
       <header className="sticky top-0 z-50 bg-white">
         {/* 1. Header */}
-        <div className="relative overflow-hidden border-b border-white/15 bg-gradient-to-r from-[#2B426B] to-[#30466F]">
-          <span aria-hidden="true" className="pointer-events-none absolute right-8 top-5 h-[2px] w-[2px] rounded-full bg-slate-100/15" />
-          <span aria-hidden="true" className="pointer-events-none absolute right-16 top-11 h-[1px] w-[1px] rounded-full bg-slate-100/10" />
-          <span aria-hidden="true" className="pointer-events-none absolute right-28 top-7 h-[2px] w-[2px] rounded-full bg-slate-100/10" />
-          <div className="relative mx-auto flex h-[72px] w-full max-w-[1760px] items-center justify-between px-4 sm:px-6">
+        <div className="relative isolate overflow-hidden border-b border-[#F1E5EA] bg-gradient-to-r from-[#FDF7F9] via-[#FDF4F7] to-[#F8EEF3]">
+          <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-[2%] z-0 hidden w-[32%] max-w-[560px] opacity-[0.12] lg:block">
+            <svg viewBox="0 0 450 100" className="h-full w-full" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <g stroke="#D96B91" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="56" y="13" width="164" height="74" rx="10" />
+                <path d="M56 37h164M91 7v14M185 7v14" />
+                <path d="M86 52h17M126 52h17M166 52h17M86 72h17M126 72h17" />
+              </g>
+              <g stroke="#98A2B3" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M239 70h35c16 0 27-10 27-24V28" strokeDasharray="7 8" />
+                <circle cx="360" cy="25" r="11" fill="#98A2B3" stroke="none" />
+                <path d="M326 84c3-18 14-28 34-28s31 10 34 28M335 84h50" />
+              </g>
+              <g stroke="#D96B91" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="220" cy="78" r="17" fill="#FDF4F7" />
+                <path d="m212 78 6 6 11-12" />
+              </g>
+            </svg>
+          </div>
+          <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
             {/* Logo + Department */}
             <div>
               <div>
-                <p className="text-[15px] font-semibold text-white">
+                <p className="text-xs font-bold tracking-[0.16em] text-[#D96B91]">
                   원무과
                 </p>
-                <p className="mt-0.5 text-[11px] text-white/60">
+                <p className="mt-1 text-2xl font-bold tracking-tight text-[#243653]">
                   Patient Coordination
                 </p>
               </div>
             </div>
 
             {/* 우측 */}
-            <div className="flex items-center gap-4">
+            <div className="ml-auto flex items-center gap-3 sm:gap-4">
               {/* 알림 - 기능은 추후 연결 */}
               <button
                 type="button"
-                className="relative flex h-9 w-9 items-center justify-center rounded-full text-slate-200 transition hover:bg-white/10 hover:text-white"
+                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6B7280] transition hover:bg-[#F8EEF3] hover:text-[#D96B91]"
                 aria-label="알림"
               >
                 <svg
@@ -106,13 +121,11 @@ export default function CoordinatorLayout({
                 </svg>
 
                 {/* 알림이 생기면 숫자로 변경 */}
-                <span className="absolute right-[7px] top-[7px] h-1.5 w-1.5 rounded-full bg-pink-400" />
+                <span className="absolute right-[7px] top-[7px] h-1.5 w-1.5 rounded-full bg-[#D96B91]" />
               </button>
 
-              <div className="h-7 w-px bg-white/15" />
-
               <div className="text-right">
-                <p className="text-sm font-semibold text-slate-100">
+                <p className="text-sm font-bold text-[#243653]">
                   {userName}
                 </p>
               </div>
@@ -120,7 +133,7 @@ export default function CoordinatorLayout({
               <button
                 type="button"
                 onClick={handleLogout}
-                className="rounded-lg border border-white/20 bg-transparent px-3 py-2 text-xs font-semibold text-slate-100 transition hover:bg-white/10 hover:text-white"
+                className="rounded-lg border border-[#E5DDE2] bg-white/80 px-3 py-2 text-xs font-semibold text-[#6B7280] shadow-sm transition hover:border-[#E8C9D5] hover:bg-white hover:text-[#D96B91]"
               >
                 로그아웃
               </button>
@@ -130,7 +143,7 @@ export default function CoordinatorLayout({
 
         {/* 2. 1차 탭 */}
         <div className="border-b border-slate-200 bg-white">
-          <nav className="mx-auto flex h-[53px] w-full max-w-[1760px] items-end gap-9 px-4 sm:px-6">
+          <nav className="mx-auto flex h-[53px] w-full max-w-[1760px] items-end gap-8 px-4 sm:px-6">
             {tabs.map((tab) => {
               const active = isActive(tab.href);
 
@@ -140,14 +153,14 @@ export default function CoordinatorLayout({
                   href={tab.href}
                   className={`relative flex h-full items-center px-0.5 text-sm font-semibold transition ${
                     active
-                      ? "text-[#2B426B]"
-                      : "text-[#6B7280] hover:text-[#2B426B]"
+                      ? "text-[#D96B91]"
+                      : "text-[#7A8595] hover:text-[#243653]"
                   }`}
                 >
                   {tab.label}
 
                   {active && (
-                    <span className="absolute bottom-0 left-0 h-[2px] w-full rounded-full bg-pink-400" />
+                    <span className="absolute bottom-0 left-0 h-[2px] w-full rounded-full bg-[#D96B91]" />
                   )}
                 </Link>
               );

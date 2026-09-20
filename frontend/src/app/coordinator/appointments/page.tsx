@@ -3,6 +3,7 @@
 import { API_BASE_URL } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import { showToast } from "@/components/ui/toast/toast";
+import { SkeletonBlock, SkeletonLine } from "../_components/skeleton";
 
 type Appointment = {
   id: string;
@@ -660,22 +661,18 @@ export default function AppointmentsPage() {
       </div>
 
       {/* 승인 대기 */}
-      {!loading &&
-        !error &&
-        requestedAppointments.length > 0 && (
+      {(loading || (!error && requestedAppointments.length > 0)) && (
           <section className="mt-6">
             <div className="mb-3 flex items-center gap-2">
               <h2 className="text-sm font-bold text-slate-700">
                 승인 대기
               </h2>
 
-              <span className="text-xs font-semibold text-pink-500">
-                {requestedAppointments.length}
-              </span>
+              {loading ? <SkeletonBlock className="h-4 w-6" /> : <span className="text-xs font-semibold text-pink-500">{requestedAppointments.length}</span>}
             </div>
 
             <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              {requestedAppointments.map(
+              {loading ? Array.from({ length: 3 }, (_, index) => <div key={index} className="grid grid-cols-[120px_160px_150px_1fr_90px] items-center gap-5 px-4 py-3"><div className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-20" /></div><SkeletonLine className="w-28" /><div className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-20" /></div><SkeletonLine className="w-20" /><SkeletonLine className="ml-auto w-14" /></div>) : requestedAppointments.map(
                 (appointment) => (
                   <button
                     key={appointment.id}
@@ -732,20 +729,18 @@ export default function AppointmentsPage() {
           </section>
         )}
 
-      {!loading && appointmentRequests.length > 0 && (
+      {(loading || (!error && appointmentRequests.length > 0)) && (
         <section className="mt-6">
           <div className="mb-3 flex items-center gap-2">
             <h2 className="text-sm font-bold text-slate-700">
               환자 예약 요청
             </h2>
 
-            <span className="text-xs font-semibold text-pink-500">
-              {appointmentRequests.length}
-            </span>
+            {loading ? <SkeletonBlock className="h-4 w-6" /> : <span className="text-xs font-semibold text-pink-500">{appointmentRequests.length}</span>}
           </div>
 
           <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {appointmentRequests.map((appointmentRequest) => (
+            {loading ? Array.from({ length: 3 }, (_, index) => <div key={index} className="grid grid-cols-[120px_160px_130px_160px_1fr_90px] items-center gap-5 px-4 py-3"><div className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-20" /></div><SkeletonLine className="w-28" /><SkeletonLine className="w-20" /><SkeletonLine className="w-28" /><SkeletonLine className="w-24" /><SkeletonLine className="ml-auto w-14" /></div>) : appointmentRequests.map((appointmentRequest) => (
               <button
                 key={appointmentRequest.id}
                 type="button"
@@ -797,13 +792,6 @@ export default function AppointmentsPage() {
         </div>
       )}
 
-      {/* 로딩 */}
-      {loading && (
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-8 text-sm text-slate-500 shadow-sm">
-          예약 정보를 불러오는 중입니다.
-        </div>
-      )}
-
       {/* 오류 */}
       {error && (
         <div className="mt-6 rounded-2xl border border-red-100 bg-red-50/70 p-6 text-sm text-red-600">
@@ -812,8 +800,7 @@ export default function AppointmentsPage() {
       )}
 
       {/* 주간 예약 */}
-      {!loading &&
-        !error &&
+      {!error &&
         viewMode === "WEEK" && (
           <section className="mt-7">
             {/* 주 이동 */}
@@ -828,10 +815,12 @@ export default function AppointmentsPage() {
 
               <div className="text-center">
                 <p className="text-base font-bold text-slate-800">
+                  {loading ? <SkeletonLine className="mx-auto w-44" /> : <>
                   {formatWeekRange(
                     weekStart,
                     weekEnd
                   )}
+                  </>}
                 </p>
 
                 <p className="mt-1 text-xs text-slate-400">
@@ -894,7 +883,7 @@ export default function AppointmentsPage() {
                     </p>
 
                     <p className="mt-1 text-[11px] text-slate-400">
-                      {dayAppointments.length > 0
+                      {loading ? <SkeletonLine className="mx-auto w-12" /> : dayAppointments.length > 0
                         ? `${dayAppointments.length}건`
                         : "예약 없음"}
                     </p>
@@ -922,7 +911,7 @@ export default function AppointmentsPage() {
                         className="px-4 py-3 text-center"
                       >
                         <p className="text-sm font-semibold text-slate-700">
-                          {doctor}
+                          {loading ? <SkeletonLine className="mx-auto w-20" /> : doctor}
                         </p>
 
                         <p className="mt-0.5 text-[11px] font-normal text-slate-400">
@@ -952,6 +941,10 @@ export default function AppointmentsPage() {
                           selectedDate,
                           time
                         );
+
+                        if (loading) {
+                          return <td key={`${doctor}-${time}`} className="border-l border-slate-100 px-2 py-2"><SkeletonBlock className="min-h-[50px] w-full" /></td>;
+                        }
 
                         if (appointment) {
                           return (
@@ -1023,8 +1016,7 @@ export default function AppointmentsPage() {
         )}
 
       {/* 월간 예약 */}
-      {!loading &&
-        !error &&
+      {!error &&
         viewMode === "MONTH" && (
           <section className="mt-7 grid items-start gap-5 xl:grid-cols-[minmax(0,63fr)_minmax(300px,37fr)]">
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -1039,8 +1031,10 @@ export default function AppointmentsPage() {
                 </button>
 
                 <h2 className="min-w-[120px] text-center text-base font-bold text-slate-800">
+                  {loading ? <SkeletonLine className="mx-auto w-24" /> : <>
                   {currentMonth.getFullYear()}년{" "}
                   {currentMonth.getMonth() + 1}월
+                  </>}
                 </h2>
 
                 <button
@@ -1106,7 +1100,7 @@ export default function AppointmentsPage() {
                         {date.getDate()}
                       </span>
 
-                      {dayAppointments.length > 0 ? (
+                      {loading ? <div className="mt-2 space-y-2"><SkeletonLine className="w-3/4" /><SkeletonLine className="w-1/2" /></div> : dayAppointments.length > 0 ? (
                         <div className="mt-1.5 space-y-0.5 text-[10px]">
                           <p className="text-slate-500">
                             <span className="mr-1 text-slate-300">●</span>
@@ -1129,14 +1123,12 @@ export default function AppointmentsPage() {
             <aside className="overflow-hidden rounded-lg border border-slate-200 bg-white">
               <div className="border-b border-slate-200 px-4 py-3">
                 <h2 className="text-sm font-bold text-slate-800">
-                  {formatDate(selectedDate)}
+                  {loading ? <SkeletonLine className="w-28" /> : formatDate(selectedDate)}
                 </h2>
-                <p className="mt-1 text-xs text-slate-400">
-                  예약 {selectedDateAppointments.length}건
-                </p>
+                <p className="mt-1 text-xs text-slate-400">{loading ? <SkeletonLine className="w-16" /> : `예약 ${selectedDateAppointments.length}건`}</p>
               </div>
 
-              {selectedDateAppointments.length > 0 ? (
+              {loading ? <div className="divide-y divide-slate-100">{Array.from({ length: 5 }, (_, index) => <div key={index} className="space-y-2 px-4 py-3"><SkeletonLine className="w-40" /><SkeletonLine className="w-24" /><SkeletonLine className="w-32" /></div>)}</div> : selectedDateAppointments.length > 0 ? (
                 <div className="max-h-[520px] divide-y divide-slate-100 overflow-y-auto">
                   {selectedDateAppointments.map((appointment) => (
                     <button

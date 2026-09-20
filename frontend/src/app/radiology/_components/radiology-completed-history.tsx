@@ -27,10 +27,16 @@ function formatDateTime(value: string | null) {
   }).format(date);
 }
 
-function formatPercent(value: string | number | null | undefined) {
+function formatProbability(value: string | number | null | undefined) {
   if (value === null || value === undefined) return "-";
   const numeric = Number(value);
-  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : String(value);
+  return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(2)}%` : String(value);
+}
+
+function formatCtRiskPercent(value: string | number | null | undefined) {
+  if (value === null || value === undefined) return "-";
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric.toFixed(2)}%` : String(value);
 }
 
 function valueOf(value: unknown) {
@@ -91,7 +97,7 @@ function AiResultSummary({ exam }: { exam: RadiologyCompletedExam }) {
   if ("assessment" in result) {
     return <dl className="grid gap-3 text-xs sm:grid-cols-3">
       <div><dt className="text-slate-500">판정</dt><dd className="mt-1 font-semibold text-slate-800">{result.assessment_label}</dd></div>
-      <div><dt className="text-slate-500">의심 점수</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(result.classification.suspicion_score ?? result.suspicion_score)}</dd></div>
+      <div><dt className="text-slate-500">의심 점수</dt><dd className="mt-1 font-semibold text-slate-800">{formatProbability(result.classification.suspicion_score ?? result.suspicion_score)}</dd></div>
       <div><dt className="text-slate-500">Detection 수</dt><dd className="mt-1 font-semibold text-slate-800">{result.detections.length}</dd></div>
     </dl>;
   }
@@ -104,7 +110,7 @@ function AiResultSummary({ exam }: { exam: RadiologyCompletedExam }) {
     const diameter = quantification?.maximum_3d_diameter_mm ?? quantification?.equivalent_diameter_mm ?? null;
     return <dl className="grid gap-3 text-xs sm:grid-cols-3">
       <div><dt className="text-slate-500">결절 수</dt><dd className="mt-1 font-semibold text-slate-800">{result.nodules.length}</dd></div>
-      <div><dt className="text-slate-500">전체 악성 위험도</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(result.overall_malignancy_risk)}</dd></div>
+      <div><dt className="text-slate-500">전체 악성 위험도</dt><dd className="mt-1 font-semibold text-slate-800">{formatCtRiskPercent(result.overall_malignancy_risk)}</dd></div>
       {firstNodule ? <div><dt className="text-slate-500">첫 번째 결절 직경</dt><dd className="mt-1 font-semibold text-slate-800">{diameter === null ? "-" : `${diameter.toFixed(1)} mm`}</dd></div> : null}
     </dl>;
   }
@@ -112,7 +118,7 @@ function AiResultSummary({ exam }: { exam: RadiologyCompletedExam }) {
   return <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-3">
     <div><dt className="text-slate-500">T candidate</dt><dd className="mt-1 font-semibold text-slate-800">{valueOf(payload?.t?.t_candidate)}</dd></div>
     <div><dt className="text-slate-500">Size-only candidate</dt><dd className="mt-1 font-semibold text-slate-800">{valueOf(payload?.t?.size_only_t_candidate)}</dd></div>
-    <div><dt className="text-slate-500">N+ probability</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(payload?.n?.nplus_probability)}</dd></div>
+    <div><dt className="text-slate-500">N+ probability</dt><dd className="mt-1 font-semibold text-slate-800">{formatProbability(payload?.n?.nplus_probability)}</dd></div>
     <div><dt className="text-slate-500">Risk tier</dt><dd className="mt-1 font-semibold text-slate-800">{valueOf(payload?.n?.risk_tier)}</dd></div>
     <div><dt className="text-slate-500">M candidate</dt><dd className="mt-1 font-semibold text-slate-800">{valueOf(payload?.m?.m_candidate)}</dd></div>
   </dl>;
@@ -169,7 +175,27 @@ export function RadiologyCompletedHistory() {
   }, []);
 
   if (error) return <StateMessage variant="error" title="완료 기록을 조회할 수 없습니다." description={error} />;
-  if (!histories) return <StateMessage variant="loading" title="완료 기록을 불러오는 중입니다." />;
+  if (!histories) return <RadiologyCompletedHistorySkeleton />;
   if (histories.length === 0) return <StateMessage variant="empty" title="완료된 검사 이력이 없습니다." />;
   return <section className="space-y-4" aria-label="완료 기록">{histories.map((history) => <CompletedCaseCard key={history.case.id} history={history} />)}</section>;
+}
+
+function RadiologyCompletedHistorySkeleton() {
+  return (
+    <section role="status" aria-label="완료 기록 로딩 중" aria-busy="true" className="space-y-4">
+      <span className="sr-only">완료 기록 로딩 중</span>
+      {Array.from({ length: 5 }, (_, index) => (
+        <article key={index} aria-hidden="true" className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+          <header className="flex items-center justify-between border-b border-slate-200 bg-slate-50/70 px-5 py-4">
+            <div><div className="h-4 w-28 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="mt-2 h-3 w-40 rounded bg-slate-50 motion-safe:animate-pulse" /></div>
+            <div className="h-3 w-24 rounded bg-slate-50 motion-safe:animate-pulse" />
+          </header>
+          {[0, 1].map(row => <div key={row}>
+            <div className="flex items-center gap-3 px-5 py-4"><div className="h-4 w-4 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="h-4 w-40 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="ml-auto h-5 w-16 rounded bg-slate-50 motion-safe:animate-pulse" /></div>
+            {row === 0 ? <div className="grid gap-5 border-t border-slate-100 bg-slate-50/60 px-5 py-5 lg:grid-cols-[minmax(220px,0.7fr)_minmax(0,1.3fr)]"><div className="h-32 rounded-lg border border-slate-200 bg-slate-100/70 motion-safe:animate-pulse" /><div className="grid content-start gap-5 sm:grid-cols-3">{Array.from({ length: 6 }, (_, cell) => <div key={cell}><div className="h-3 w-16 rounded bg-slate-100 motion-safe:animate-pulse" /><div className="mt-2 h-4 w-24 rounded bg-slate-50 motion-safe:animate-pulse" /></div>)}</div></div> : null}
+          </div>)}
+        </article>
+      ))}
+    </section>
+  );
 }

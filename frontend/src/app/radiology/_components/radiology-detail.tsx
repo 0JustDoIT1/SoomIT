@@ -152,10 +152,27 @@ function getAnalysisLabel(item: RadiologyWorklistItem) {
   return item.examination_order.order_type === "XRAY" ? "X-ray AI 분석" : "CT AI 분석";
 }
 
-function formatPercent(value: string | number | null | undefined, scale = 100) {
+function formatPercent(value: string | number | null | undefined, scale = 100, digits = 1) {
   if (value === null || value === undefined) return "-";
   const number = Number(value);
-  return Number.isFinite(number) ? `${(number * scale).toFixed(1)}%` : value;
+  return Number.isFinite(number) ? `${(number * scale).toFixed(digits)}%` : value;
+}
+
+function formatTnmNumber(value: string | number | null | undefined, scale = 1) {
+  if (value === null || value === undefined || value === "") return "-";
+  const number = Number(value);
+  return Number.isFinite(number) ? (number * scale).toFixed(2) : String(value);
+}
+
+function formatTnmPercent(value: string | number | null | undefined) {
+  const formatted = formatTnmNumber(value, 100);
+  return formatted === "-" ? formatted : `${formatted}%`;
+}
+
+function getTnmMLabel(value: string | null | undefined) {
+  if (value === "M_indeterminate") return "판정 불가";
+  if (["M0", "M1", "M1a", "M1b", "M1c", "M1c1", "M1c2"].includes(value ?? "")) return value;
+  return "판정 정보 없음";
 }
 
 type XrayResult = Extract<RadiologyAnalysisResult["result"], { assessment: string }>;
@@ -164,6 +181,24 @@ function formatPayloadPercent(value: number | string | null | undefined) {
   if (value === null || value === undefined) return "-";
   const numeric = Number(value);
   return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : String(value);
+}
+
+function getXrayClassificationLabel(value: string | null | undefined) {
+  switch (value?.trim().toLowerCase()) {
+    case "normal":
+    case "negative":
+      return "정상";
+    case "other lung disease":
+    case "other_lung_disease":
+      return "기타 폐질환";
+    case "suspicious lung cancer":
+    case "suspicious":
+      return "폐암 의심";
+    case "indeterminate":
+      return "판정 보류";
+    default:
+      return "판정 정보 없음";
+  }
 }
 
 function getNested(payload: unknown, path: string[]): unknown {
@@ -228,7 +263,7 @@ function CtNoduleCard({ nodule }: { nodule: Extract<RadiologyAnalysisResult["res
       <dl className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div><dt className="text-slate-400">직경</dt><dd className="mt-1 font-semibold text-slate-800">{formatMm(diameter)}</dd></div>
         <div><dt className="text-slate-400">부피</dt><dd className="mt-1 font-semibold text-slate-800">{formatMm3(volume)}</dd></div>
-        <div><dt className="text-slate-400">악성도</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(nodule.malignancy_risk, 1)}</dd></div>
+        <div><dt className="text-slate-400">악성도</dt><dd className="mt-1 font-semibold text-slate-800">{formatPercent(nodule.malignancy_risk, 1, 2)}</dd></div>
         <div><dt className="text-slate-400">질감(Texture)</dt><dd className="mt-1 font-semibold text-slate-800">{texturePattern ? TEXTURE_LABELS[texturePattern] ?? texturePattern : "-"}</dd></div>
         <div><dt className="text-slate-400">Spiculation</dt><dd className="mt-1 font-semibold text-slate-800">{spiculation ? MORPHOLOGY_LABELS[spiculation] ?? spiculation : "-"}</dd></div>
         <div><dt className="text-slate-400">Lobulation</dt><dd className="mt-1 font-semibold text-slate-800">{lobulation ? MORPHOLOGY_LABELS[lobulation] ?? lobulation : "-"}</dd></div>
@@ -238,12 +273,10 @@ function CtNoduleCard({ nodule }: { nodule: Extract<RadiologyAnalysisResult["res
 }
 
 function XrayImagePanel({
-  title,
   imageUrl,
   result,
   showDetections,
 }: {
-  title: string;
   imageUrl: string | null;
   result: XrayResult;
   showDetections: boolean;
@@ -258,9 +291,8 @@ function XrayImagePanel({
   ));
 
   return <section className="rounded-xl border border-slate-200 bg-slate-950 p-3">
-    <p className="mb-2 text-xs font-semibold text-slate-200">{title}</p>
     {imageUrl && canOverlay ? <div className="relative mx-auto w-full overflow-hidden bg-black" style={{ aspectRatio: `${width} / ${height}` }}>
-      <Image src={imageUrl} alt={title} fill unoptimized sizes="(min-width: 1280px) 50vw, 100vw" className="object-contain" />
+      <Image src={imageUrl} alt={showDetections ? "AI Detection 결과 이미지" : "원본 X-ray 이미지"} fill unoptimized sizes="(min-width: 1280px) 50vw, 100vw" className="object-contain" />
       {showDetections ? detections.map((detection, index) => {
         const [left, top, right, bottom] = detection.bbox_xyxy as [number, number, number, number];
         const boxWidth = Math.max(0, right - left);
@@ -278,31 +310,59 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
     const result = data.result;
     const probabilities = result.classification.probabilities ?? {};
     const labels = [
-      ["Normal", probabilities.Normal],
-      ["Other Lung Disease", probabilities["Other Lung Disease"]],
-      ["Suspicious Lung Cancer", probabilities["Suspicious Lung Cancer"]],
+      { key: "Normal", label: "정상", probability: probabilities.Normal },
+      { key: "Other Lung Disease", label: "기타 폐질환", probability: probabilities["Other Lung Disease"] },
+      { key: "Suspicious Lung Cancer", label: "폐암 의심", probability: probabilities["Suspicious Lung Cancer"] },
     ] as const;
+    const highestProbability = labels.reduce((highest, item) => {
+      const probability = item.probability == null ? Number.NEGATIVE_INFINITY : Number(item.probability);
+      return Number.isFinite(probability) ? Math.max(highest, probability) : highest;
+    }, Number.NEGATIVE_INFINITY);
+    const assessment = result.classification.prediction
+      ?? result.classification.assessment
+      ?? result.assessment;
+    const suspiciousProbability = probabilities["Suspicious Lung Cancer"]
+      ?? result.classification.suspicion_score
+      ?? result.suspicion_score;
     return <div className="space-y-4">
       <div className="grid gap-4 xl:grid-cols-2">
-        <XrayImagePanel title="\uc6d0\ubcf8 X-ray" imageUrl={sourceImageUrl} result={result} showDetections={false} />
-        <XrayImagePanel title="AI \uc758\uc2ec \ubd80\uc704 Detection" imageUrl={sourceImageUrl} result={result} showDetections />
+        <XrayImagePanel imageUrl={sourceImageUrl} result={result} showDetections={false} />
+        <XrayImagePanel imageUrl={sourceImageUrl} result={result} showDetections />
       </div>
-      <dl className="grid gap-3 text-xs sm:grid-cols-2 xl:grid-cols-5">
-        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">\ud310\uc815</dt><dd className="mt-2 text-lg font-bold text-slate-900">{result.assessment_label}</dd></div>
-        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">\uc758\uc2ec \uc810\uc218</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPayloadPercent(result.classification.suspicion_score ?? result.suspicion_score)}</dd></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><dt className="text-slate-500">Prediction</dt><dd className="mt-2 break-words font-semibold text-slate-900">{result.classification.prediction ?? "-"}</dd></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><dt className="text-slate-500">assessment</dt><dd className="mt-2 break-words font-semibold text-slate-900">{result.classification.assessment ?? "-"}</dd></div>
-        <div className="rounded-xl border border-slate-200 bg-white p-4"><dt className="text-slate-500">model_revision</dt><dd className="mt-2 break-words font-semibold text-slate-900">{result.model_revision ?? "-"}</dd></div>
+      <dl className="grid gap-3 sm:grid-cols-2">
+        <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
+          <dt className="text-xs font-medium text-violet-700">판정</dt>
+          <dd className="mt-2 text-2xl font-bold text-slate-900">{getXrayClassificationLabel(assessment)}</dd>
+        </div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
+          <dt className="text-xs font-medium text-blue-700">폐암 의심 확률</dt>
+          <dd className="mt-2 text-2xl font-bold text-slate-900">{formatPayloadPercent(suspiciousProbability)}</dd>
+        </div>
       </dl>
-      <div className="grid gap-3 sm:grid-cols-3">{labels.map(([label, probability]) => <div key={label} className="rounded-lg border border-slate-200 bg-white px-4 py-3 text-xs"><p className="text-slate-500">{label}</p><p className="mt-1 text-base font-bold text-slate-900">{formatPayloadPercent(probability)}</p></div>)}</div>
+      <section aria-label="분류별 확률">
+        <h4 className="mb-2 text-xs font-semibold text-slate-600">분류별 확률</h4>
+        <div className="grid gap-3 sm:grid-cols-3">
+          {labels.map(({ key, label, probability }) => {
+            const numericProbability = probability == null ? Number.NaN : Number(probability);
+            const isHighest = Number.isFinite(numericProbability) && numericProbability === highestProbability;
+            return (
+              <div key={key} className={`rounded-lg border px-4 py-3 text-xs ${isHighest ? "border-violet-200 bg-violet-50/70" : "border-slate-200 bg-white"}`}>
+                <p className={isHighest ? "font-medium text-violet-700" : "text-slate-500"}>{label}</p>
+                <p className={`mt-1 text-base font-bold ${isHighest ? "text-[#29366F]" : "text-slate-900"}`}>{formatPayloadPercent(probability)}</p>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      {result.model_revision ? <p className="text-[11px] text-slate-500">모델 정보 <span className="ml-1 font-medium text-slate-600">{result.model_revision}</span></p> : null}
     </div>;
   }
   if ("nodules" in data.result) {
     const { nodules, overall_malignancy_risk } = data.result;
     return <div className="space-y-3 text-xs">
       <dl className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">\uc804\uccb4 \uc545\uc131 \uc704\ud5d8\ub3c4</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(overall_malignancy_risk, 1)}</dd></div>
-        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">\uacb0\uc808 \uac1c\uc218</dt><dd className="mt-2 text-lg font-bold text-slate-900">{nodules.length}</dd></div>
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">악성 위험도</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(overall_malignancy_risk, 1, 2)}%</dd></div>
+        <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">결절 수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{nodules.length}</dd></div>
       </dl>
       {nodules.length > 0 ? (
         <div className="space-y-2">
@@ -319,28 +379,38 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
   const mModelSupport = m?.model_support;
   const hasValue = (item: unknown) => item !== null && item !== undefined && item !== "";
   const tResult = hasValue(result.predicted_t) ? result.predicted_t : hasValue(t?.t_candidate) ? t?.t_candidate : t?.size_only_t_candidate;
+  const mResult = hasValue(result.predicted_m) ? result.predicted_m : hasValue(m?.m_candidate) ? m?.m_candidate : null;
+  const mIsIndeterminate = mResult === "M_indeterminate";
   return <div className="space-y-4">
     <div className="grid items-stretch gap-3 sm:grid-cols-3">
       <section className="min-h-28 rounded-lg border border-violet-100 bg-violet-50/30 p-4">
         <h4 className="text-xs font-medium text-violet-700">T 분석 결과</h4>
         <p className="mt-2 text-2xl font-semibold text-slate-900">{hasValue(tResult) ? String(tResult) : "-"}</p>
-        {hasValue(t?.mask_bbox_diagonal_mm) ? <p className="mt-1 text-xs text-slate-500">종양 크기 {String(t?.mask_bbox_diagonal_mm)} mm</p> : null}
+        {hasValue(t?.mask_bbox_diagonal_mm) ? <p className="mt-1 text-xs text-slate-500">종양 크기 {formatTnmNumber(t?.mask_bbox_diagonal_mm)} mm</p> : null}
       </section>
       <section className="min-h-28 rounded-lg border border-blue-100 bg-blue-50/30 p-4">
         <h4 className="text-xs font-medium text-blue-700">N 분석 결과</h4>
-        <p className="mt-2 text-xs text-slate-500">N+ probability</p>
-        <p className="mt-1 text-2xl font-semibold text-slate-900">{formatPercent(n?.nplus_probability)}</p>
+        <p className="mt-2 text-xs text-slate-500">N+ 확률</p>
+        <p className="mt-1 text-2xl font-semibold text-slate-900">{formatTnmPercent(n?.nplus_probability)}</p>
       </section>
       <section className="min-h-28 rounded-lg border border-indigo-100 bg-indigo-50/30 p-4">
         <h4 className="text-xs font-medium text-indigo-700">M 분석 결과</h4>
-        <p className="mt-2 text-2xl font-semibold text-slate-900">{hasValue(result.predicted_m) ? result.predicted_m : hasValue(m?.m_candidate) ? m?.m_candidate : "-"}</p>
-        {hasValue(mModelSupport?.m_positive_probability) ? <p className="mt-1 text-xs text-slate-500">M+ probability {formatPercent(mModelSupport?.m_positive_probability)}</p> : null}
+        {mIsIndeterminate ? (
+          <>
+            <p className="mt-2 text-lg font-semibold text-slate-900">원격전이 가능성 {formatTnmPercent(mModelSupport?.m_positive_probability)}</p>
+            <p className="mt-1 text-xs text-slate-500">검사 정보가 부족하여 M 병기 평가가 어렵습니다.</p>
+          </>
+        ) : (
+          <>
+            <p className="mt-2 text-2xl font-semibold text-slate-900">{getTnmMLabel(typeof mResult === "string" ? mResult : null)}</p>
+            {hasValue(mModelSupport?.m_positive_probability) ? <p className="mt-1 text-xs text-slate-500">원격전이 가능성 {formatTnmPercent(mModelSupport?.m_positive_probability)}</p> : null}
+          </>
+        )}
       </section>
     </div>
-    {hasValue(result.predicted_stage_group) || hasValue(result.confidence) ? (
+    {hasValue(result.predicted_stage_group) ? (
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-lg border border-violet-100 bg-violet-50/20 px-4 py-3 text-sm">
-        {hasValue(result.predicted_stage_group) ? <p><span className="text-slate-500">Stage</span><span className="ml-2 font-semibold text-slate-900">{result.predicted_stage_group}</span></p> : null}
-        {hasValue(result.confidence) ? <p><span className="text-slate-500">Confidence</span><span className="ml-2 font-semibold text-slate-900">{formatPercent(result.confidence)}</span></p> : null}
+        {hasValue(result.predicted_stage_group) ? <p><span className="text-slate-500">병기</span><span className="ml-2 font-semibold text-slate-900">{result.predicted_stage_group}</span></p> : null}
       </div>
     ) : null}
   </div>;
@@ -940,7 +1010,14 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
               {trackedAnalysis ? (
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-600">
                   <span>현재 상태: <RadiologyWorkflowBadge status={trackedAnalysis.status} label={trackedAnalysis.status === "PENDING" ? "실행 대기" : trackedAnalysis.status === "RUNNING" ? "분석 중" : trackedAnalysis.status === "SUCCEEDED" ? "분석 완료" : "분석 실패"} /></span>
-                  <span>모델: <strong className="font-semibold text-slate-700">{trackedAnalysis.model_name} · {trackedAnalysis.model_version}</strong></span>
+                  {isXray ? (
+                    <>
+                      <span>분류 모델: <strong className="font-semibold text-slate-700">Foundation X 기반 Swin-B + Linear</strong></span>
+                      <span>탐지 모델: <strong className="font-semibold text-slate-700">Faster R-CNN V7-E</strong></span>
+                    </>
+                  ) : !isCt ? (
+                    <span>모델: <strong className="font-semibold text-slate-700">{trackedAnalysis.model_name} · {trackedAnalysis.model_version}</strong></span>
+                  ) : null}
                 </div>
               ) : <p className="mt-2 text-xs text-slate-500">현재 상태: AI 분석 이력 없음</p>}
             </div>
