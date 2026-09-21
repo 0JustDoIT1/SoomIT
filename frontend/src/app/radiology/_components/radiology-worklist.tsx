@@ -1,5 +1,4 @@
-import { StateMessage } from "@/components/workspace/state-message";
-import { useState } from "react";
+﻿import { StateMessage } from "@/components/workspace/state-message";
 
 import type {
   RadiologyWorklistFilters,
@@ -19,7 +18,7 @@ const workflowLabels: Record<RadiologyWorkflowStatus, string> = {
   REVIEW_COMPLETED: "진행 완료",
 };
 
-const workflowStatusGroups: Record<string, RadiologyWorkflowStatus[]> = {
+export const workflowStatusGroups: Record<string, RadiologyWorkflowStatus[]> = {
   AI_BEFORE: ["EXAM_PENDING", "IMAGE_PENDING", "AI_READY", "AI_RUNNING", "AI_FAILED", "CANCELLED"],
   REVIEW_PENDING: ["AI_COMPLETED", "REVIEW_PENDING"],
   REVIEW_COMPLETED: ["REVIEW_COMPLETED"],
@@ -40,6 +39,8 @@ type RadiologyWorklistProps = {
   errorMessage: string;
   filters: RadiologyWorklistFilters;
   onFiltersChange: (filters: RadiologyWorklistFilters) => void;
+  workflowStatusFilter: string;
+  onWorkflowStatusFilterChange: (status: string) => void;
   currentPage: number;
   totalPages: number;
   totalItems: number;
@@ -54,14 +55,13 @@ export function RadiologyWorklist({
   errorMessage,
   filters,
   onFiltersChange,
+  workflowStatusFilter,
+  onWorkflowStatusFilterChange,
   currentPage,
   totalPages,
   totalItems,
   onPageChange,
 }: RadiologyWorklistProps) {
-  const [workflowStatusFilter, setWorkflowStatusFilter] = useState("ALL");
-  const visibleItems = items.filter((item) => workflowStatusFilter === "ALL" || workflowStatusGroups[workflowStatusFilter]?.includes(item.workflow_status));
-
   function updateFilter<Key extends keyof RadiologyWorklistFilters>(
     key: Key,
     value: RadiologyWorklistFilters[Key] | "",
@@ -79,15 +79,15 @@ export function RadiologyWorklist({
 
   return (
     <section aria-labelledby="worklist-heading" className="flex min-h-0 min-w-0 flex-col bg-white">
-      <div className="flex min-h-14 flex-wrap items-center gap-3 border-b border-violet-100 bg-gradient-to-r from-white to-violet-50/50 px-5 py-2">
+      <div className="flex min-h-14 flex-nowrap items-center gap-3 border-b border-violet-100 bg-gradient-to-r from-white to-violet-50/50 px-4 py-3">
         <h2
           id="worklist-heading"
-          className="mr-auto text-sm font-bold text-slate-800"
+          className="mr-auto min-w-[150px] shrink-0 whitespace-nowrap text-sm font-bold text-slate-800"
         >
           영상 검사 Worklist
         </h2>
 
-        <label className="flex items-center gap-2 text-xs text-slate-500">
+        <label className="inline-flex shrink-0 items-center gap-2 text-xs text-slate-500">
           검사
           <select
             value={filters.order_type ?? ""}
@@ -108,11 +108,11 @@ export function RadiologyWorklist({
           </select>
         </label>
 
-        <label className="flex items-center gap-2 text-xs text-slate-500">
+        <label className="inline-flex shrink-0 items-center gap-2 text-xs text-slate-500">
           오더 상태
           <select
             value={workflowStatusFilter}
-            onChange={(event) => setWorkflowStatusFilter(event.target.value)}
+            onChange={(event) => onWorkflowStatusFilterChange(event.target.value)}
             className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 outline-none focus:border-violet-300"
           >
             <option value="ALL">전체</option>
@@ -144,7 +144,7 @@ export function RadiologyWorklist({
                   </td>
                 ))}
               </tr>
-            )) : visibleItems.map((item) => {
+            )) : items.map((item) => {
               const caseId = item.case.id;
 
               return (

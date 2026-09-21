@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useState } from "react";
 import Image from "next/image";
@@ -9,7 +9,7 @@ import { StatusBadge } from "@/components/workspace/status-badge";
 
 import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
 import { RadiologyCompletedHistory } from "./_components/radiology-completed-history";
-import { RadiologyWorklist, type WorklistViewStatus } from "./_components/radiology-worklist";
+import { RadiologyWorklist, workflowStatusGroups, type WorklistViewStatus } from "./_components/radiology-worklist";
 import {
   fetchRadiologyCaseWorkflow,
   fetchRadiologyCaseWorklist,
@@ -179,13 +179,17 @@ export default function RadiologyWorklistPage() {
   const recent = useRecentPatients("radiologyRecentPatients");
   const selectedCaseId = selectedItem?.case.id ?? recentSelection?.case_id ?? null;
   const [filters, setFilters] = useState<RadiologyWorklistFilters>({});
+  const [workflowStatusFilter, setWorkflowStatusFilter] = useState("ALL");
   const [viewStatus, setViewStatus] = useState<WorklistViewStatus>("loading");
   const [errorMessage, setErrorMessage] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [activeTab, setActiveTab] = useState<WorkstationTab>("worklist");
 
-  const totalPages = Math.max(1, Math.ceil(worklistItems.length / pageSize));
-  const pagedItems = worklistItems.slice(
+  const filteredItems = worklistItems
+    .filter((item) => !filters.order_type || item.current_exam.examination_order.order_type === filters.order_type)
+    .filter((item) => workflowStatusFilter === "ALL" || workflowStatusGroups[workflowStatusFilter]?.includes(item.workflow_status));
+  const totalPages = Math.max(1, Math.ceil(filteredItems.length / pageSize));
+  const pagedItems = filteredItems.slice(
     (currentPage - 1) * pageSize,
     currentPage * pageSize,
   );
@@ -199,6 +203,12 @@ export default function RadiologyWorklistPage() {
     setRecentSelection(null);
     setCurrentPage(1);
     setFilters(nextFilters);
+  }
+
+  function handleWorkflowStatusFilterChange(nextStatus: string) {
+    setRecentSelection(null);
+    setCurrentPage(1);
+    setWorkflowStatusFilter(nextStatus);
   }
 
   function handlePageChange(nextPage: number) {
@@ -290,12 +300,13 @@ export default function RadiologyWorklistPage() {
 
       <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
         {activeTab === "worklist" ? (
-          <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[160px_minmax(360px,28fr)_minmax(0,62fr)]">
+          <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(500px,42fr)_minmax(0,58fr)]">
+            <section className="grid min-h-0 grid-cols-[160px_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <RecentPatients patients={recent.patients} selectedId={selectedCaseId} onSelect={patient => {
               if (patient.case_id !== selectedCaseId) { setSelectedItem(null); setRecentSelection(patient); }
               recent.remember(patient);
-            }} />
-            <div className="grid min-h-0 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm grid-rows-[minmax(0,62fr)_minmax(0,38fr)] divide-y divide-slate-100">
+            }} className="min-h-0 w-[160px] shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50/50 p-3" />
+            <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] overflow-hidden divide-y divide-slate-100">
               <RadiologyWorklist
                 items={pagedItems}
                 selectedId={selectedCaseId}
@@ -304,9 +315,11 @@ export default function RadiologyWorklistPage() {
                 errorMessage={errorMessage}
                 filters={filters}
                 onFiltersChange={handleFiltersChange}
+                workflowStatusFilter={workflowStatusFilter}
+                onWorkflowStatusFilterChange={handleWorkflowStatusFilterChange}
                 currentPage={currentPage}
                 totalPages={totalPages}
-                totalItems={worklistItems.length}
+                totalItems={filteredItems.length}
                 onPageChange={handlePageChange}
               />
               {selectedItem ? (
@@ -315,6 +328,7 @@ export default function RadiologyWorklistPage() {
                 <div className="p-4"><p>{recentSelection.patient_name}</p><p>{recentSelection.birth_date || "-"}</p></div>
               ) : null}
             </div>
+            </section>
             {selectedCaseId ? (
               <RadiologyCaseDetail
                 key={selectedCaseId}

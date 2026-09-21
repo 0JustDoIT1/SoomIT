@@ -55,6 +55,8 @@ const TIME_SLOTS = [
   "16:30",
 ];
 
+const MAX_APPOINTMENTS_PER_SLOT = 5;
+
 const WEEK_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
 export default function AppointmentsPage() {
@@ -471,7 +473,7 @@ export default function AppointmentsPage() {
 
     return Array.from(
       new Set(appointmentDoctors)
-    ).slice(0, 5);
+    );
   }, [appointments]);
 
   /*
@@ -530,6 +532,37 @@ export default function AppointmentsPage() {
           new Date(second.scheduled_at).getTime()
       );
   }, [appointments, selectedDate]);
+
+  const selectedDateDoctorCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    selectedDateAppointments.forEach((appointment) => {
+      if (!appointment.doctor_name) return;
+      counts.set(appointment.doctor_name, (counts.get(appointment.doctor_name) ?? 0) + 1);
+    });
+    return Array.from(counts, ([doctor, count]) => ({ doctor, count }));
+  }, [selectedDateAppointments]);
+
+  const selectedDateSlotSummary = useMemo(() => {
+    let availableSlots = 0;
+    let fullSlots = 0;
+
+    doctors.forEach((doctor) => {
+      TIME_SLOTS.forEach((time) => {
+        if (isPastSlot(selectedDate, time)) return;
+        const bookedCount = selectedDateAppointments.filter((appointment) => {
+          if (appointment.doctor_name !== doctor) return false;
+          return getTimeValue(new Date(appointment.scheduled_at)) === time;
+        }).length;
+
+        if (bookedCount >= MAX_APPOINTMENTS_PER_SLOT) fullSlots += 1;
+        else availableSlots += 1;
+      });
+    });
+
+    return { availableSlots, fullSlots };
+  }, [doctors, selectedDate, selectedDateAppointments]);
+
+  const pendingQueueCount = requestedAppointments.length + appointmentRequests.length;
 
   /*
    * 주 이동
@@ -619,190 +652,129 @@ export default function AppointmentsPage() {
         </h1>
 
         <p className="mt-2 text-sm text-slate-500">
-          상담 및 검사 예약 일정과 승인 요청을 관리합니다.
+          진료 예약 일정과 예약 요청을 관리합니다.
         </p>
       </div>
 
-      {/* 2차 탭 */}
-      <div className="border-b border-slate-200">
-        <div className="flex h-11 items-end gap-8">
-          <button
-            type="button"
-            onClick={() => setViewMode("WEEK")}
-            className={`relative h-full px-0.5 text-sm font-semibold ${
-              viewMode === "WEEK"
-                ? "text-slate-900"
-                : "text-slate-400 hover:text-slate-700"
-            }`}
-          >
-            주간 예약
-
-            {viewMode === "WEEK" && (
-              <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />
-            )}
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setViewMode("MONTH")}
-            className={`relative h-full px-0.5 text-sm font-semibold ${
-              viewMode === "MONTH"
-                ? "text-slate-900"
-                : "text-slate-400 hover:text-slate-700"
-            }`}
-          >
-            월간 예약
-
-            {viewMode === "MONTH" && (
-              <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />
-            )}
-          </button>
-        </div>
-      </div>
-
-      {/* 승인 대기 */}
-      {(loading || (!error && requestedAppointments.length > 0)) && (
-          <section className="mt-6">
-            <div className="mb-3 flex items-center gap-2">
-              <h2 className="text-sm font-bold text-slate-700">
-                승인 대기
-              </h2>
-
-              {loading ? <SkeletonBlock className="h-4 w-6" /> : <span className="text-xs font-semibold text-pink-500">{requestedAppointments.length}</span>}
+      <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,2.3fr)_minmax(290px,1fr)]">
+        <aside className="contents xl:col-start-2 xl:row-start-1 xl:flex xl:flex-col xl:rounded-2xl xl:border xl:border-slate-200 xl:bg-white xl:p-5 xl:shadow-sm">
+          <section className="order-1 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:order-none xl:rounded-none xl:border-0 xl:bg-transparent xl:p-0 xl:shadow-none">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-sm font-bold text-slate-800">처리 대기 요청</h2>
+              {loading ? <SkeletonBlock className="h-4 w-8" /> : <span className="text-xs font-semibold text-pink-500">{pendingQueueCount}건</span>}
             </div>
 
-            <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              {loading ? Array.from({ length: 3 }, (_, index) => <div key={index} className="grid grid-cols-[120px_160px_150px_1fr_90px] items-center gap-5 px-4 py-3"><div className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-20" /></div><SkeletonLine className="w-28" /><div className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-20" /></div><SkeletonLine className="w-20" /><SkeletonLine className="ml-auto w-14" /></div>) : requestedAppointments.map(
-                (appointment) => (
+            {loading ? (
+              <div className="mt-4 divide-y divide-slate-100">
+                {Array.from({ length: 3 }, (_, index) => <div key={index} className="space-y-2 py-3"><SkeletonLine className="w-28" /><SkeletonLine className="w-40" /><SkeletonLine className="w-20" /></div>)}
+              </div>
+            ) : (
+              <div className="mt-3 divide-y divide-slate-100">
+                {appointmentRequests.map((appointmentRequest) => (
                   <button
-                    key={appointment.id}
+                    key={`request-${appointmentRequest.id}`}
                     type="button"
-                    onClick={() =>
-                      openAppointmentDetail(
-                        appointment.id
-                      )
-                    }
-                    className="grid w-full grid-cols-[120px_160px_150px_1fr_90px] items-center gap-5 px-4 py-3 text-left transition hover:bg-pink-50/30"
+                    onClick={() => openAppointmentRequestDetail(appointmentRequest.id)}
+                    className="w-full border-l-2 border-pink-200 py-3 pl-3 pr-1 text-left transition hover:bg-pink-50/40"
                   >
-                    <div>
-                      <p className="text-sm font-semibold text-slate-800">
-                        {appointment.patient_name}
-                      </p>
-
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        {appointment.patient_code}
-                      </p>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-800">{appointmentRequest.patient_name} · {appointmentRequest.patient_code}</p>
+                      <span className="shrink-0 text-[11px] font-medium text-slate-500">승인 대기</span>
                     </div>
-
-                    <div className="text-sm text-slate-600">
-                      {formatDateTime(
-                        appointment.scheduled_at
-                      )}
-                    </div>
-
-                    <div>
-                      <p className="text-sm font-medium text-slate-700">
-                        {appointment.doctor_name ??
-                          "담당 의사 미정"}
-                      </p>
-
-                      <p className="mt-0.5 text-xs text-slate-400">
-                        호흡기내과
-                      </p>
-                    </div>
-
-                    <div>
-                      <span className="text-xs font-medium text-slate-500">
-                        {getAppointmentTypeLabel(
-                          appointment.created_by_type
-                        )}
-                      </span>
-                    </div>
-
-                    <div className="text-right text-xs font-semibold text-pink-500">
-                      승인 대기
-                    </div>
+                    <p className="mt-1 text-xs font-medium text-slate-600">{getAppointmentRequestTypeLabel(appointmentRequest.request_type)}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {appointmentRequest.request_type === "CHANGE"
+                        ? `${formatDateTime(appointmentRequest.original_scheduled_at)} → ${formatDateTime(appointmentRequest.requested_scheduled_at ?? "")}`
+                        : formatDateTime(appointmentRequest.original_scheduled_at)}
+                    </p>
+                    <p className="mt-1 text-[11px] text-slate-400">접수 {formatDateTime(appointmentRequest.requested_at)}</p>
                   </button>
-                )
-              )}
-            </div>
+                ))}
+                {requestedAppointments.map((appointment) => (
+                  <button
+                    key={`appointment-${appointment.id}`}
+                    type="button"
+                    onClick={() => openAppointmentDetail(appointment.id)}
+                    className="w-full border-l-2 border-pink-200 py-3 pl-3 pr-1 text-left transition hover:bg-pink-50/40"
+                  >
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="truncate text-sm font-semibold text-slate-800">{appointment.patient_name} · {appointment.patient_code}</p>
+                      <span className="shrink-0 text-[11px] font-medium text-slate-500">승인 대기</span>
+                    </div>
+                    <p className="mt-1 text-xs font-medium text-slate-600">신규 예약 요청</p>
+                    <p className="mt-1 text-xs text-slate-500">{formatDateTime(appointment.scheduled_at)}</p>
+                    <p className="mt-1 text-[11px] text-slate-400">접수 {formatDateTime(appointment.created_at)}</p>
+                  </button>
+                ))}
+                {pendingQueueCount === 0 && !requestError && (
+                  <p className="py-5 text-sm text-slate-400">현재 처리할 예약 요청이 없습니다.</p>
+                )}
+              </div>
+            )}
+            {requestError && <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{requestError}</p>}
           </section>
-        )}
 
-      {(loading || (!error && appointmentRequests.length > 0)) && (
-        <section className="mt-6">
-          <div className="mb-3 flex items-center gap-2">
-            <h2 className="text-sm font-bold text-slate-700">
-              환자 예약 요청
-            </h2>
+          <section className="order-3 mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:order-none xl:mt-5 xl:border-0 xl:border-t xl:border-slate-100 xl:rounded-none xl:bg-transparent xl:px-0 xl:pb-0 xl:pt-5 xl:shadow-none">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">선택 날짜 현황</h2>
+                <p className="mt-1 text-xs text-slate-400">{new Intl.DateTimeFormat("ko-KR", { month: "long", day: "numeric", weekday: "long" }).format(selectedDate)}</p>
+              </div>
+              {loading ? <SkeletonBlock className="h-4 w-9" /> : <span className="text-xs text-slate-400">{selectedDateAppointments.length}건</span>}
+            </div>
+            <dl className="mt-3 divide-y divide-slate-100">
+              <div className="flex items-center justify-between gap-3 py-2.5"><dt className="text-xs text-slate-500">확정 예약</dt><dd className="text-sm font-semibold tabular-nums text-slate-700">{loading ? <SkeletonLine className="w-8" /> : `${selectedDateAppointments.filter((appointment) => appointment.appointment_status === "CONFIRMED").length}건`}</dd></div>
+              <div className="flex items-center justify-between gap-3 py-2.5"><dt className="text-xs text-slate-500">예약 가능 슬롯</dt><dd className="text-sm font-semibold tabular-nums text-slate-700">{loading ? <SkeletonLine className="w-8" /> : `${selectedDateSlotSummary.availableSlots}개`}</dd></div>
+              <div className="flex items-center justify-between gap-3 py-2.5"><dt className="text-xs text-slate-500">정원 도달 슬롯</dt><dd className="text-sm font-semibold tabular-nums text-slate-700">{loading ? <SkeletonLine className="w-8" /> : `${selectedDateSlotSummary.fullSlots}개`}</dd></div>
+            </dl>
+          </section>
 
-            {loading ? <SkeletonBlock className="h-4 w-6" /> : <span className="text-xs font-semibold text-pink-500">{appointmentRequests.length}</span>}
-          </div>
+          <section className="order-4 mt-5 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm xl:order-none xl:mt-5 xl:border-0 xl:border-t xl:border-slate-100 xl:rounded-none xl:bg-transparent xl:px-0 xl:pb-0 xl:pt-5 xl:shadow-none">
+            <h2 className="text-sm font-bold text-slate-800">의사별 예약 현황</h2>
+            {loading ? (
+              <div className="mt-3 space-y-4">{Array.from({ length: 3 }, (_, index) => <div key={index} className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-36" /></div>)}</div>
+            ) : selectedDateDoctorCounts.length ? (
+              <ul className="mt-2 divide-y divide-slate-100">
+                {selectedDateDoctorCounts.map(({ doctor, count }) => (
+                  <li key={doctor} className="flex items-center justify-between gap-3 py-3">
+                    <div className="min-w-0"><p className="truncate text-sm font-medium text-slate-700">{doctor}</p><p className="mt-0.5 text-xs text-slate-400">호흡기내과</p></div>
+                    <span className="shrink-0 text-sm font-semibold tabular-nums text-slate-600">{count}건</span>
+                  </li>
+                ))}
+              </ul>
+            ) : <p className="mt-3 text-sm text-slate-400">선택한 날짜의 의사별 예약이 없습니다.</p>}
+          </section>
+        </aside>
 
-          <div className="divide-y divide-slate-100 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-            {loading ? Array.from({ length: 3 }, (_, index) => <div key={index} className="grid grid-cols-[120px_160px_130px_160px_1fr_90px] items-center gap-5 px-4 py-3"><div className="space-y-2"><SkeletonLine className="w-24" /><SkeletonLine className="w-20" /></div><SkeletonLine className="w-28" /><SkeletonLine className="w-20" /><SkeletonLine className="w-28" /><SkeletonLine className="w-24" /><SkeletonLine className="ml-auto w-14" /></div>) : appointmentRequests.map((appointmentRequest) => (
+        <main className="order-2 min-w-0 xl:col-start-1 xl:row-start-1 xl:order-none">
+          {/* 2차 탭 */}
+          <div className="border-b border-slate-200">
+            <div className="flex h-11 items-end gap-8">
               <button
-                key={appointmentRequest.id}
                 type="button"
-                onClick={() =>
-                  openAppointmentRequestDetail(appointmentRequest.id)
-                }
-                className="grid w-full grid-cols-[120px_160px_130px_160px_1fr_90px] items-center gap-5 px-4 py-3 text-left transition hover:bg-pink-50/30"
+                onClick={() => setViewMode("WEEK")}
+                className={`relative h-full px-0.5 text-sm font-semibold ${viewMode === "WEEK" ? "text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
               >
-                <div>
-                  <p className="text-sm font-semibold text-slate-800">
-                    {appointmentRequest.patient_name}
-                  </p>
-
-                  <p className="mt-0.5 text-xs text-slate-400">
-                    {appointmentRequest.patient_code}
-                  </p>
-                </div>
-
-                <div className="text-sm text-slate-600">
-                  {formatDateTime(appointmentRequest.original_scheduled_at)}
-                </div>
-
-                <div className="text-xs font-semibold text-slate-600">
-                  {getAppointmentRequestTypeLabel(appointmentRequest.request_type)}
-                </div>
-
-                <div className="text-sm text-slate-600">
-                  {appointmentRequest.request_type === "CHANGE"
-                    ? formatDateTime(appointmentRequest.requested_scheduled_at)
-                    : "-"}
-                </div>
-
-                <div className="text-xs text-slate-500">
-                  {formatDateTime(appointmentRequest.requested_at)}
-                </div>
-
-                <div className="text-right text-xs font-semibold text-pink-500">
-                  {getAppointmentRequestStatusLabel(appointmentRequest.status)}
-                </div>
+                주간 예약
+                {viewMode === "WEEK" && <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />}
               </button>
-            ))}
+              <button
+                type="button"
+                onClick={() => setViewMode("MONTH")}
+                className={`relative h-full px-0.5 text-sm font-semibold ${viewMode === "MONTH" ? "text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
+              >
+                월간 예약
+                {viewMode === "MONTH" && <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />}
+              </button>
+            </div>
           </div>
-        </section>
-      )}
 
-      {requestError && (
-        <div className="mt-6 rounded-2xl border border-red-100 bg-red-50/70 p-4 text-sm text-red-600">
-          {requestError}
-        </div>
-      )}
-
-      {/* 오류 */}
-      {error && (
-        <div className="mt-6 rounded-2xl border border-red-100 bg-red-50/70 p-6 text-sm text-red-600">
-          {error}
-        </div>
-      )}
+          {error && <div className="mt-5 rounded-2xl border border-red-100 bg-red-50/70 p-5 text-sm text-red-600">{error}</div>}
 
       {/* 주간 예약 */}
       {!error &&
         viewMode === "WEEK" && (
-          <section className="mt-7">
+          <section className="mt-5">
             {/* 주 이동 */}
             <div className="flex items-center justify-between">
               <button
@@ -855,7 +827,7 @@ export default function AppointmentsPage() {
                     onClick={() =>
                       setSelectedDate(date)
                     }
-                    className={`relative px-3 py-3 text-center transition ${
+                    className={`relative min-w-0 px-1 py-3 text-center transition sm:px-2 ${
                       active
                         ? "bg-pink-50/70"
                         : "hover:bg-slate-50"
@@ -897,21 +869,21 @@ export default function AppointmentsPage() {
             </div>
 
             {/* 시간표 */}
-            <div className="mt-5 overflow-x-auto border-y border-slate-200 bg-white">
-              <table className="w-full min-w-[1100px] table-fixed text-left">
+            <div className="mt-5 overflow-hidden border-y border-slate-200 bg-white">
+              <table className="w-full min-w-0 table-fixed text-left">
                 <thead>
                   <tr className="border-b border-slate-200 bg-slate-50/80">
-                    <th className="w-[90px] px-4 py-3 text-xs font-semibold text-slate-500">
+                    <th className="w-[68px] px-2 py-3 text-xs font-semibold text-slate-500 sm:w-[76px] sm:px-3">
                       시간
                     </th>
 
                     {doctors.map((doctor) => (
                       <th
                         key={doctor}
-                        className="px-4 py-3 text-center"
+                        className="min-w-0 px-1 py-3 text-center sm:px-2"
                       >
                         <p className="text-sm font-semibold text-slate-700">
-                          {loading ? <SkeletonLine className="mx-auto w-20" /> : doctor}
+                          {loading ? <SkeletonLine className="mx-auto w-16" /> : <span className="block truncate">{doctor}</span>}
                         </p>
 
                         <p className="mt-0.5 text-[11px] font-normal text-slate-400">
@@ -925,7 +897,7 @@ export default function AppointmentsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {TIME_SLOTS.map((time) => (
                     <tr key={time}>
-                      <td className="px-4 py-3 text-sm font-medium text-slate-500">
+                      <td className="px-2 py-3 text-xs font-medium text-slate-500 sm:px-3 sm:text-sm">
                         {time}
                       </td>
 
@@ -950,7 +922,7 @@ export default function AppointmentsPage() {
                           return (
                             <td
                               key={`${doctor}-${time}`}
-                              className="border-l border-slate-100 px-2 py-2"
+                              className="min-w-0 border-l border-slate-100 px-1 py-2 sm:px-2"
                             >
                               <button
                                 type="button"
@@ -959,7 +931,7 @@ export default function AppointmentsPage() {
                                     appointment.id
                                   )
                                 }
-                                className={`w-full rounded-lg border px-3 py-2 text-left transition hover:shadow-sm ${getScheduleCellClass(
+                                className={`w-full min-w-0 rounded-lg border px-1.5 py-2 text-left transition hover:shadow-sm sm:px-2 ${getScheduleCellClass(
                                   appointment.appointment_status,
                                   past
                                 )}`}
@@ -991,10 +963,10 @@ export default function AppointmentsPage() {
                         return (
                           <td
                             key={`${doctor}-${time}`}
-                            className="border-l border-slate-100 px-2 py-2"
+                              className="min-w-0 border-l border-slate-100 px-1 py-2 sm:px-2"
                           >
                             <div
-                              className={`flex min-h-[50px] items-center justify-center rounded-lg text-xs ${
+                              className={`flex min-h-[50px] min-w-0 items-center justify-center rounded-lg text-center text-[11px] ${
                                 past
                                   ? "bg-slate-50 text-slate-300"
                                   : "border border-dashed border-slate-200 text-slate-400"
@@ -1018,7 +990,7 @@ export default function AppointmentsPage() {
       {/* 월간 예약 */}
       {!error &&
         viewMode === "MONTH" && (
-          <section className="mt-7 grid items-start gap-5 xl:grid-cols-[minmax(0,63fr)_minmax(300px,37fr)]">
+          <section className="mt-5 space-y-5">
             <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
               <div className="flex items-center justify-center gap-4 border-b border-slate-200 px-4 py-3">
                 <button
@@ -1175,6 +1147,9 @@ export default function AppointmentsPage() {
             </aside>
           </section>
         )}
+
+        </main>
+      </div>
 
       {/* 상세 로딩 */}
       {detailLoading && (
