@@ -4,6 +4,7 @@ import { config } from './config.js';
 import { ChatInputSchema, chatFlow } from './flows/chatFlow.js';
 import { initializeMedicalKnowledgeMcp } from './mcp/medicalKnowledgeMcp.js';
 import { PATIENT_DATA_TOOL_NAMES } from './mcp/patientDataMcp.js';
+import { DoctorCaseChatInputSchema, doctorCaseChatFlow } from './flows/doctorCaseChatFlow.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -41,6 +42,14 @@ app.post('/chat', async (request, response) => {
     console.error('chat request failed', error);
     response.status(502).json({ detail: '챗봇 답변을 생성하지 못했습니다.' });
   }
+});
+
+app.post('/doctor-case-chat', async (request, response) => {
+  if (request.headers['x-django-service-token'] !== config.djangoServiceToken) { response.status(401).json({ detail: 'Service authentication is required.' }); return; }
+  const parsed = DoctorCaseChatInputSchema.safeParse(request.body);
+  if (!parsed.success) { response.status(400).json({ detail: parsed.error.flatten() }); return; }
+  try { response.json(await doctorCaseChatFlow(parsed.data)); }
+  catch (error) { console.error('doctor case chat failed', error); response.status(502).json({ detail: 'AI 응답을 생성하지 못했습니다.' }); }
 });
 
 async function startServer(): Promise<void> {
