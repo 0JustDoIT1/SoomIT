@@ -180,6 +180,34 @@ services:
       timeout: 5s
       retries: 10
 
+  wsi-dicomizer:
+    # One-shot conversion tool. It is intentionally profile-gated so it does
+    # not alter the existing Orthanc runtime or run without an explicit slide.
+    image: jodogne/orthanc-plugins:1.13.0
+    profiles: ['wsi-tools']
+    restart: 'no'
+    environment:
+      # Keep these identical to the credentials interpolated into the Orthanc
+      # service above; do not read a separate backend-only environment file.
+      ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
+      ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
+      WSI_SOURCE_FILE: ${WSI_SOURCE_FILE:-}
+    volumes:
+      - ${WSI_INPUT_DIR:-../wsi-input}:/input:ro
+    depends_on:
+      orthanc:
+        condition: service_healthy
+    entrypoint: ['/bin/sh', '-ec']
+    command:
+      - >-
+        test -n "$${WSI_SOURCE_FILE}";
+        exec OrthancWSIDicomizer
+        --openslide=/lib/x86_64-linux-gnu/libopenslide.so.0
+        --orthanc=http://orthanc:8042/
+        --username="$${ORTHANC_USERNAME}"
+        --password="$${ORTHANC_PASSWORD}"
+        "/input/$${WSI_SOURCE_FILE}"
+
 volumes:
   celery_beat_data:
     name: soomit_infra_celery_beat_data

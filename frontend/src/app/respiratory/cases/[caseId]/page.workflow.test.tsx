@@ -386,7 +386,7 @@ it("opens prescription exceptions using the existing confirmed treatment result"
     return response([]);
   });
   render(<Page />);
-  const button = await screen.findByRole("button", { name: "결과 입력 및 처리" });
+  const button = await screen.findByRole("button", { name: "최종 확인" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
   expect(screen.queryByRole("option", { name: "다음 단계 진행" })).not.toBeInTheDocument();
@@ -423,7 +423,7 @@ it("exposes Case closure after a FINAL prescription is loaded", async () => {
     return response([]);
   });
   render(<Page />);
-  const button = await screen.findByRole("button", { name: "결과 입력 및 처리" });
+  const button = await screen.findByRole("button", { name: "최종 확인" });
   await waitFor(() => expect(button).toBeEnabled());
   fireEvent.click(button);
   expect(screen.getByRole("option", { name: "Case 종료" })).toBeInTheDocument();

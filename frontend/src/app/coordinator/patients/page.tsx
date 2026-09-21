@@ -8,7 +8,7 @@ import { DayPicker } from "react-day-picker";
 import { ko } from "react-day-picker/locale";
 import { showToast } from "@/components/ui/toast/toast";
 import type { LoginUser } from "@/types/auth";
-import { SkeletonLine } from "../_components/skeleton";
+import { SkeletonBlock, SkeletonLine } from "../_components/skeleton";
 
 type Patient = {
   id: string;
@@ -117,6 +117,7 @@ function formatBirthDate(date: Date) {
 }
 
 export default function PatientsPage() {
+  const itemsPerPage = 10;
   const [patients, setPatients] = useState<Patient[]>([]);
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [loading, setLoading] = useState(true);
@@ -124,6 +125,7 @@ export default function PatientsPage() {
   const [error, setError] = useState("");
   const [searchTerm, setSearchTerm] = useState("");
   const [sexFilter, setSexFilter] = useState("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
   const [questionnaire, setQuestionnaire] = useState<PatientQuestionnaire | null>(null);
   const [questionnairePatientName, setQuestionnairePatientName] = useState("");
   const [questionnairePatientCode, setQuestionnairePatientCode] = useState("");
@@ -133,6 +135,7 @@ export default function PatientsPage() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [createForm, setCreateForm] =
     useState<PatientCreateForm>(initialCreateForm);
+  const [createPhoneError, setCreatePhoneError] = useState("");
   const [createLoading, setCreateLoading] = useState(false);
   const [createError, setCreateError] = useState("");
   const [doctors, setDoctors] = useState<Doctor[]>([]);
@@ -175,6 +178,7 @@ export default function PatientsPage() {
   const [isUpdateOpen, setIsUpdateOpen] = useState(false);
   const [updateForm, setUpdateForm] =
     useState<PatientUpdateForm>(initialUpdateForm);
+  const [updatePhoneError, setUpdatePhoneError] = useState("");
   const [updateLoading, setUpdateLoading] = useState(false);
   const [updateError, setUpdateError] = useState("");
 
@@ -315,7 +319,7 @@ export default function PatientsPage() {
       }
       setPatientAccountId(data.patient_account_id);
       setAppLookupStatus("UNLINKED"); setAppLookupMessage("앱 정보 연동");
-      setCreateForm((current) => ({ ...current, name: data.name, birth_date: data.birth_date, sex: data.sex, phone_number: data.phone_number, postal_code: data.postal_code, address: data.address ?? "", address_detail: data.address_detail ?? "" }));
+      setCreateForm((current) => ({ ...current, name: data.name, birth_date: data.birth_date, sex: data.sex, phone_number: String(data.phone_number ?? "").replace(/\D/g, "").slice(0, 11), postal_code: data.postal_code, address: data.address ?? "", address_detail: data.address_detail ?? "" }));
     } catch (err) { setAppLookupMessage(err instanceof Error ? err.message : "앱 회원 조회에 실패했습니다."); }
     finally { setAppLookupLoading(false); }
   };
@@ -400,11 +404,12 @@ export default function PatientsPage() {
   const openUpdateDrawer = () => {
     if (!selectedPatient) return;
     setUpdateError("");
+    setUpdatePhoneError("");
     setUpdateForm({
       name: selectedPatient.name,
       birth_date: selectedPatient.birth_date,
       sex: selectedPatient.sex,
-      phone_number: selectedPatient.phone_number,
+      phone_number: selectedPatient.phone_number.replace(/\D/g, "").slice(0, 11),
       address: selectedPatient.address ?? "",
     });
     setIsUpdateOpen(true);
@@ -548,9 +553,24 @@ export default function PatientsPage() {
   const linkedPatientCount = patients.filter((patient) => patient.app_link_status === "LINKED").length;
   const submittedQuestionnaireCount = patients.filter((patient) => patient.questionnaire_status === "SUBMITTED").length;
   const registeredTodayCount = patients.filter((patient) => isToday(patient.created_at)).length;
+  const totalItems = filteredPatients.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / itemsPerPage));
+  const boundedPage = Math.min(currentPage, totalPages);
+  const startIndex = (boundedPage - 1) * itemsPerPage;
+  const endIndex = Math.min(startIndex + itemsPerPage, totalItems);
+  const paginatedPatients = filteredPatients.slice(startIndex, endIndex);
+  const pageNumbers: Array<number | "start-ellipsis" | "end-ellipsis"> =
+    totalPages <= 7
+      ? Array.from({ length: totalPages }, (_, index) => index + 1)
+      : boundedPage <= 4
+        ? [1, 2, 3, 4, 5, "end-ellipsis", totalPages]
+        : boundedPage >= totalPages - 3
+          ? [1, "start-ellipsis", totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages]
+          : [1, "start-ellipsis", boundedPage - 1, boundedPage, boundedPage + 1, "end-ellipsis", totalPages];
   const resetFilters = () => {
     setSearchTerm("");
     setSexFilter("ALL");
+    setCurrentPage(1);
   };
   return (
     <>
@@ -594,14 +614,20 @@ export default function PatientsPage() {
             <input
               type="text"
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => {
+                setSearchTerm(e.target.value);
+                setCurrentPage(1);
+              }}
               placeholder="환자명, 환자번호, 연락처 검색"
               className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-pink-300 focus:bg-white"
             />
           </div>
           <select
             value={sexFilter}
-            onChange={(e) => setSexFilter(e.target.value)}
+            onChange={(e) => {
+              setSexFilter(e.target.value);
+              setCurrentPage(1);
+            }}
             className="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 outline-none focus:border-pink-300"
           >
             <option value="ALL">성별 전체</option>
@@ -621,9 +647,30 @@ export default function PatientsPage() {
 
       {/* 로딩 */}
       {loading && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500 shadow-sm">
-          환자 정보를 불러오는 중입니다.
-        </div>
+        <section aria-label="환자 목록 로딩 중" aria-busy="true" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-5 py-4">
+            <SkeletonLine className="w-20" />
+            <SkeletonLine className="mt-2 w-32" />
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[850px] text-left">
+              <thead className="bg-pink-50/70">
+                <tr>{Array.from({ length: 7 }, (_, index) => <th key={index} className="px-5 py-4"><SkeletonLine className={index === 5 ? "w-20" : "w-16"} /></th>)}</tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {Array.from({ length: 6 }, (_, row) => (
+                  <tr key={row}>
+                    {Array.from({ length: 7 }, (_, cell) => <td key={cell} className="px-5 py-5"><SkeletonLine className={cell === 5 ? "w-28" : cell === 0 || cell === 4 ? "w-20" : "w-14"} /></td>)}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="flex min-h-[53px] items-center justify-between gap-3 border-t border-slate-200 px-4 py-3">
+            <SkeletonLine className="w-32" />
+            <div className="flex gap-1"><SkeletonBlock className="h-8 w-8" />{Array.from({ length: 3 }, (_, index) => <SkeletonBlock key={index} className="h-8 w-8" />)}<SkeletonBlock className="h-8 w-8" /></div>
+          </div>
+        </section>
       )}
 
       {/* 오류 */}
@@ -658,7 +705,7 @@ export default function PatientsPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredPatients.map((patient) => (
+                {paginatedPatients.map((patient) => (
                   <tr
                     key={patient.id}
                     onClick={() => openPatientDetail(patient.id)}
@@ -705,6 +752,52 @@ export default function PatientsPage() {
               </tbody>
             </table>
           </div>
+          {totalItems > 0 && (
+            <div className="flex flex-col items-center justify-between gap-2 border-t border-slate-200 px-4 py-3 sm:flex-row">
+              <p className="text-xs tabular-nums text-slate-400">
+                전체 {totalItems}명 · {startIndex + 1}-{endIndex}명 표시
+              </p>
+              {totalItems > itemsPerPage && (
+              <nav aria-label="환자 목록 페이지" className="flex items-center justify-center gap-1">
+                <button
+                  type="button"
+                  aria-label="이전 페이지"
+                  disabled={boundedPage === 1}
+                  onClick={() => setCurrentPage(Math.max(1, boundedPage - 1))}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-lg leading-none text-slate-500 transition hover:bg-pink-50 hover:text-pink-500 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                >
+                  ‹
+                </button>
+                {pageNumbers.map((page) => typeof page === "number" ? (
+                  <button
+                    key={page}
+                    type="button"
+                    aria-current={boundedPage === page ? "page" : undefined}
+                    onClick={() => setCurrentPage(page)}
+                    className={`flex h-8 min-w-8 items-center justify-center rounded-lg px-2 text-xs font-semibold transition ${
+                      boundedPage === page
+                        ? "border border-pink-200 bg-pink-50 text-pink-600"
+                        : "text-slate-500 hover:bg-pink-50 hover:text-pink-500"
+                    }`}
+                  >
+                    {page}
+                  </button>
+                ) : (
+                  <span key={page} aria-hidden="true" className="flex h-8 w-6 items-center justify-center text-xs text-slate-400">…</span>
+                ))}
+                <button
+                  type="button"
+                  aria-label="다음 페이지"
+                  disabled={boundedPage === totalPages}
+                  onClick={() => setCurrentPage(Math.min(totalPages, boundedPage + 1))}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg text-lg leading-none text-slate-500 transition hover:bg-pink-50 hover:text-pink-500 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-slate-500"
+                >
+                  ›
+                </button>
+              </nav>
+              )}
+            </div>
+          )}
         </div>
       )}
       </div>
@@ -833,14 +926,15 @@ export default function PatientsPage() {
                 <FormField label="환자번호" required>
                   <input
                     type="text"
+                    inputMode="numeric"
                     value={createForm.patient_code}
                     onChange={(e) =>
                       setCreateForm({
                         ...createForm,
-                        patient_code: e.target.value.replace(/[^A-Za-z0-9]/g, ""),
+                        patient_code: e.target.value.replace(/\D/g, ""),
                       })
                     }
-                    placeholder="예: P0003"
+                    placeholder="예: 10003"
                     className={inputClassName}
                   />
                 </FormField>
@@ -977,13 +1071,16 @@ export default function PatientsPage() {
                   <div className="flex gap-2">
                   <input
                     type="text"
+                    inputMode="numeric"
+                    maxLength={11}
                     value={createForm.phone_number}
-                     onChange={(e) => { setCreateForm({ ...createForm, phone_number: e.target.value.replace(/\D/g, "") }); setPatientAccountId(null); setAppLookupStatus("IDLE"); setAppLookupMessage(""); }}
+                    onChange={(e) => { const raw = e.target.value; const digits = raw.replace(/\D/g, ""); const invalid = /\D/.test(raw) || digits.length > 11; setCreatePhoneError(invalid ? "연락처는 숫자 11자리로 입력해 주세요." : ""); setCreateForm({ ...createForm, phone_number: digits.slice(0, 11) }); setPatientAccountId(null); setAppLookupStatus("IDLE"); setAppLookupMessage(""); }}
                     placeholder="예: 01012345678"
-                     className={`${inputClassName} flex-1`}
+                     className={`${inputClassName} flex-1 ${createPhoneError ? "border-rose-300 focus:border-rose-400" : ""}`}
                    />
                    <button type="button" onClick={lookupAppMember} disabled={appLookupLoading} className="rounded-lg border border-violet-200 px-3 text-sm font-semibold text-violet-700 disabled:opacity-50">{appLookupLoading ? "조회 중" : "앱 회원 조회"}</button>
                    </div>
+                   {createPhoneError && <p className="mt-1 text-xs text-rose-500">{createPhoneError}</p>}
                    {appLookupMessage && <p className={`mt-1.5 text-xs ${appLookupStatus === "LINKED" ? "text-red-600" : "text-violet-700"}`}>{appLookupMessage}</p>}
                 </FormField>
                 </DrawerSection>
@@ -1274,15 +1371,18 @@ export default function PatientsPage() {
                 <FormField label="연락처" required>
                   <input
                     type="text"
+                    inputMode="numeric"
+                    maxLength={11}
                     value={updateForm.phone_number}
-                    onChange={(e) =>
-                      setUpdateForm({
-                        ...updateForm,
-                        phone_number: e.target.value.replace(/\D/g, ""),
-                      })
-                    }
-                    className={inputClassName}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      const digits = raw.replace(/\D/g, "");
+                      setUpdatePhoneError(/\D/.test(raw) || digits.length > 11 ? "연락처는 숫자 11자리로 입력해 주세요." : "");
+                      setUpdateForm({ ...updateForm, phone_number: digits.slice(0, 11) });
+                    }}
+                    className={`${inputClassName} ${updatePhoneError ? "border-rose-300 focus:border-rose-400" : ""}`}
                   />
+                  {updatePhoneError && <p className="mt-1 text-xs text-rose-500">{updatePhoneError}</p>}
                 </FormField>
                   </div>
                 </DrawerSection>

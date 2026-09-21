@@ -10,6 +10,7 @@ import { showToast } from "@/components/ui/toast/toast";
 
 type Props = { actionable?: boolean; waitingMessage?: string; caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; onTreatmentChanged?: (decision: TreatmentDecision, confirmed: boolean) => void; onTreatmentConfirmed?: (decision: TreatmentDecision) => void };
 const TYPES = [["CHEMOTHERAPY", "항암화학요법"], ["TARGETED_THERAPY", "표적치료"], ["IMMUNOTHERAPY", "면역치료"], ["COMBINATION", "병합치료"], ["RADIATION", "방사선치료"], ["SURGERY", "수술"], ["SUPPORTIVE_CARE", "완화치료"], ["OBSERVATION", "경과관찰"], ["OTHER", "기타"]] as const;
+const REGIMEN_REQUIRED_TYPES = new Set(["CHEMOTHERAPY", "TARGETED_THERAPY", "IMMUNOTHERAPY", "COMBINATION"]);
 
 export function TreatmentDecisionPanel({ actionable = true, waitingMessage, caseId, apiBaseUrl, authorizedFetch, onTreatmentChanged, onTreatmentConfirmed }: Props) {
   const [open, setOpen] = useState(false);
@@ -22,6 +23,7 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
   const [plan, setPlan] = useState("");
   const [targetedPlan, setTargetedPlan] = useState("");
   const [rationale, setRationale] = useState("");
+  const [evidenceOpen, setEvidenceOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -42,7 +44,10 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
         setCandidates(nextCandidates);
         setConfirmed(nextDecision?.decision_status === "CONFIRMED");
         setDecisionStatus(nextDecision?.decision_status ?? undefined);
-        setSelected(nextDecision?.selected_regimen ?? ""); setTreatmentType(nextDecision?.treatment_type ?? "");
+        setSelected(nextDecision?.selected_regimen ?? "");
+        const nextTreatmentType = nextDecision?.treatment_type ?? "";
+        setTreatmentType(nextTreatmentType);
+        if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true);
         setAiAction(nextDecision?.ai_recommendation_action ?? "NOT_USED"); setPlan(nextDecision?.treatment_plan ?? "");
         setTargetedPlan(nextDecision?.targeted_therapy_plan ?? ""); setRationale(nextDecision?.rationale ?? "");
       } catch (caught) { if (active) setError(caught instanceof Error ? caught.message : "치료결정 정보를 불러오지 못했습니다."); }
@@ -87,7 +92,8 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
   };
 
   if (loading) return <section className="rounded-lg bg-white p-4 text-sm text-slate-500">치료결정 정보를 불러오는 중입니다.</section>;
-  const canSave = Boolean(treatmentType && plan.trim());
+  const regimenRequired = REGIMEN_REQUIRED_TYPES.has(treatmentType);
+  const canSave = Boolean(treatmentType && plan.trim() && (!regimenRequired || selected));
   return <div className="space-y-3">
     <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,13fr)_minmax(280px,7fr)]">
     <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
@@ -97,10 +103,11 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
       {!confirmed && <button type="button" disabled={!actionable} onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-4"}>결과 입력 및 처리</button>}
       {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. 저장 후 확정하여 처방 단계로 진행합니다." busy={busy} error={error} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => setTreatmentType(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => { const nextTreatmentType = event.target.value; setTreatmentType(nextTreatmentType); if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true); }} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
       <label className="mt-3 block text-xs font-semibold text-slate-700">치료 계획<textarea value={plan} disabled={busy} onChange={(event) => setPlan(event.target.value)} rows={3} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>
+      {regimenRequired && !selected && <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">선택한 치료 유형은 Regimen을 선택한 후 치료계획을 확정할 수 있습니다.</p>}
       <DecisionMethodSelect value="CONFIRM" onChange={() => undefined} options={[{ value: "CONFIRM", label: "치료계획 확정 및 처방 진행" }]} />
-      <details><summary className="cursor-pointer text-xs text-slate-600">치료요법 후보 및 추가 근거 (선택)</summary>
+      <details open={evidenceOpen} onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}><summary className="cursor-pointer text-xs text-slate-600">치료요법 후보 및 추가 근거{regimenRequired ? " · Regimen 선택 필수" : ""}</summary>
       <div className="mt-4 space-y-2"><p className="text-xs font-semibold text-slate-700">치료요법 후보</p>{candidates.length === 0 ? <p className="rounded bg-slate-50 p-3 text-xs text-slate-500">현재 조건과 일치하는 치료요법 후보가 없습니다.</p> : candidates.map((candidate) => <button type="button" key={candidate.id} disabled={busy} onClick={() => setSelected(candidate.regimen_detail.id)} className={`block w-full rounded border p-3 text-left ${selected === candidate.regimen_detail.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}><p className="text-sm font-semibold">{candidate.regimen_detail.regimen_name} <span className="font-normal text-slate-500">({candidate.regimen_detail.regimen_code})</span></p><p className="mt-1 text-xs text-slate-500">{candidate.match_reasons.join(" · ") || "매칭 근거 없음"}</p><p className="mt-1 text-[11px] text-slate-400">{candidate.evidence_source ?? "근거 출처 정보 없음"}</p></button>)}</div>
       <label className="mt-3 block text-xs font-semibold text-slate-700">표적치료 계획 <span className="font-normal text-slate-400">(선택)</span><textarea value={targetedPlan} disabled={busy} onChange={(event) => setTargetedPlan(event.target.value)} rows={2} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>
       <label className="mt-3 block text-xs font-semibold text-slate-700">결정 근거 <span className="font-normal text-slate-400">(선택)</span><textarea value={rationale} disabled={busy} onChange={(event) => setRationale(event.target.value)} rows={2} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>

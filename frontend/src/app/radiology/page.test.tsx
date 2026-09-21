@@ -147,7 +147,7 @@ it("shows ten skeleton rows on initial fetch and ends loading on error", async (
   vi.mocked(fetchRadiologyCaseWorklist).mockImplementation(() => new Promise((_, reject) => { rejectRequest = reject; }));
   render(<Page />);
   expect(screen.getByText("Worklist 로딩 중")).toHaveAttribute("role", "status");
-  expect(document.querySelectorAll('tr[aria-hidden="true"]')).toHaveLength(10);
+  expect(document.querySelectorAll('tr[aria-hidden="true"]')).toHaveLength(7);
   await waitFor(() => expect(rejectRequest).toBeDefined());
   await act(async () => rejectRequest?.(new Error("test-error")));
   expect(await screen.findByText("test-error")).toBeInTheDocument();
@@ -157,7 +157,43 @@ it("shows ten skeleton rows on initial fetch and ends loading on error", async (
 it("replaces existing rows only while the worklist is loading", () => {
   render(<RadiologyWorklist items={[]} selectedId="selected-case" onSelect={vi.fn()}
     viewStatus="loading" errorMessage="" filters={{}} onFiltersChange={vi.fn()}
+    workflowStatusFilter="ALL" onWorkflowStatusFilterChange={vi.fn()}
     currentPage={2} totalPages={3} totalItems={21} onPageChange={vi.fn()} />);
-  expect(document.querySelectorAll('tbody tr')).toHaveLength(10);
+  expect(document.querySelectorAll('tbody tr')).toHaveLength(7);
   expect(screen.queryByText("Worklist를 불러오는 중입니다.")).not.toBeInTheDocument();
+});
+
+it("filters the full worklist by exam enum and workflow status before pagination", async () => {
+  const makeItem = (id: string, orderType: "XRAY" | "CT" | "PET_CT_TNM", workflowStatus: "REVIEW_PENDING" | "REVIEW_COMPLETED") => ({
+    case: { id },
+    patient: { id: `patient-${id}`, patient_code: id, name: id, birth_date: "2000-01-01", sex: "OTHER" },
+    responsible_doctor: null,
+    exam_count: 1,
+    current_exam: { examination_order: { order_type: orderType, order_type_label: orderType } },
+    workflow_status: workflowStatus,
+    workflow_status_label: workflowStatus,
+  }) as unknown as import("./_lib/radiology-api").RadiologyCaseWorklistItem;
+  const allItems = [
+    makeItem("xray-pending", "XRAY", "REVIEW_PENDING"),
+    makeItem("ct-pending", "CT", "REVIEW_PENDING"),
+    makeItem("pet-pending", "PET_CT_TNM", "REVIEW_PENDING"),
+    makeItem("pet-completed", "PET_CT_TNM", "REVIEW_COMPLETED"),
+  ];
+  const user = userEvent.setup();
+  const renderFiltered = (orderType: "XRAY" | "CT" | "PET_CT_TNM" | "", status: string) => render(
+    <RadiologyWorklist items={allItems.filter(item => (!orderType || item.current_exam.examination_order.order_type === orderType) && (status === "ALL" || (status === "REVIEW_PENDING" ? item.workflow_status === "REVIEW_PENDING" : item.workflow_status === "REVIEW_COMPLETED")))} selectedId={null} onSelect={vi.fn()}
+      viewStatus="ready" errorMessage="" filters={orderType ? { order_type: orderType } : {}} onFiltersChange={vi.fn()}
+      workflowStatusFilter={status} onWorkflowStatusFilterChange={vi.fn()} currentPage={1} totalPages={1} totalItems={1} onPageChange={vi.fn()} />,
+  );
+
+  for (const [exam, status, expected] of [
+    ["XRAY", "ALL", "xray-pending"], ["CT", "ALL", "ct-pending"], ["PET_CT_TNM", "ALL", "pet-pending"],
+    ["", "REVIEW_PENDING", "xray-pending"], ["XRAY", "REVIEW_PENDING", "xray-pending"],
+    ["CT", "REVIEW_PENDING", "ct-pending"], ["PET_CT_TNM", "REVIEW_COMPLETED", "pet-completed"],
+  ] as const) {
+    const { unmount } = renderFiltered(exam, status);
+    expect(screen.getAllByText(expected)[0].closest("tr")).toBeInTheDocument();
+    expect(document.querySelectorAll("tbody tr[tabindex]").length).toBeGreaterThan(0);
+    unmount();
+  }
 });

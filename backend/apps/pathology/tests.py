@@ -637,12 +637,22 @@ class PathologyReadAPITestCase(APITestCase):
         pdl1_asset = CaseImageAsset.objects.create(
             case=self.case,
             examination_order=pdl1_order,
-            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            workflow_stage=WorkflowStage.PDL1,
             image_type=CaseImageAsset.ImageType.WSI,
             storage_type=CaseImageAsset.StorageType.GCS,
             storage_uri="gcs://test-bucket/pdl1-slide.svs",
             file_format="SVS",
             status=CaseImageAsset.Status.READY,
+        )
+        pdl1_wsi = WholeSlideImage.objects.create(
+            specimen=pdl1_specimen,
+            image_asset=pdl1_asset,
+            slide_code="SLIDE-PDL1",
+            version=1,
+            stain=WholeSlideImage.Stain.PDL1,
+            original_filename="pdl1-slide.svs",
+            sha256="c" * 64,
+            uploaded_by_user=self.user,
         )
         pdl1_analysis = AiAnalysis.objects.create(
             case=self.case,
@@ -652,23 +662,45 @@ class PathologyReadAPITestCase(APITestCase):
             analysis_type="PDL1_ANALYSIS",
             status=AiAnalysis.Status.SUCCEEDED,
         )
-        AiResult.objects.create(
+        pdl1_ai_result = AiResult.objects.create(
             ai_analysis=pdl1_analysis,
             schema_version="1.0",
-            result_payload={},
+            result_payload={
+                "predicted_class": 2,
+                "predicted_tps_range": PDL1AiResult.TpsRange.GE_50,
+                "predicted_tps_range_label": "≥50%",
+                "confidence": 0.995406985,
+                "probabilities": {
+                    "class_0": 0.0001,
+                    "class_1": 0.004493015,
+                    "class_2": 0.995406985,
+                },
+            },
+        )
+        PDL1AiResult.objects.create(
+            ai_result=pdl1_ai_result,
+            predicted_class=2,
+            predicted_tps_range=PDL1AiResult.TpsRange.GE_50,
+            confidence=0.995406985,
+            probabilities={
+                "class_0": 0.0001,
+                "class_1": 0.004493015,
+                "class_2": 0.995406985,
+            },
         )
         pdl1_draft = ClinicalResult.objects.create(
             case=self.case,
             examination_order=pdl1_order,
             workflow_stage=WorkflowStage.PDL1,
             source_image_asset=pdl1_asset,
-            reviewed_ai_result=pdl1_analysis.ai_result,
+            reviewed_ai_result=pdl1_ai_result,
             result_status=ClinicalResult.ResultStatus.DRAFT,
         )
         PDL1Result.objects.create(
             clinical_result=pdl1_draft,
             tps_percent="55.00",
             interpretation="Positive",
+            source_wsi=pdl1_wsi,
         )
         self.case.workstation_analyses = [pdl1_analysis, self.ai_analysis]
         self.assertEqual(calculate_workflow_status(pdl1_work_item), "AI_COMPLETED")

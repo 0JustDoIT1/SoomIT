@@ -867,6 +867,7 @@ function WorkArea({
   const pdl1TerminalToastIdsRef = useRef(new Set<string>());
   const pathologyResult = pathology?.result_detail?.pathology;
   const pdl1Result = pdl1?.result_detail?.pdl1;
+  const pdl1AnalysisCompleted = pdl1?.status === "SUCCEEDED" && Boolean(pdl1Result);
   const pdl1ModelRevision = resultPayloadText(
     pdl1?.result_detail?.result_payload,
     "model_revision",
@@ -968,7 +969,7 @@ function WorkArea({
   }, [item.case_id, item.order_type, onGeneAnalysisCompleted, pathologyGeneAnalysisId, pathologyGeneAnalysisStatus]);
 
   async function handlePdl1Run() {
-    if (!pdl1InputReady) return;
+    if (!pdl1InputReady || runningPdl1 || pdl1AnalysisCompleted || pdl1?.status === "PENDING" || pdl1?.status === "RUNNING") return;
 
     setRunningPdl1(true);
     setError("");
@@ -1193,13 +1194,15 @@ function WorkArea({
               <li
                 key={step.label}
                 className={`relative flex items-center gap-3 border-b border-[#E2E5F2] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${indicatorWorkflowStepIndex === index ? "pr-12" : ""} ${
-                  step.completed ? "bg-[#F1F3FF]" : "bg-white"
+                  indicatorWorkflowStepIndex === index
+                    ? "border-violet-200 bg-violet-50/70"
+                    : "bg-white"
                 }`}
               >
                 <span
                   className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
-                    step.completed
-                      ? "bg-[#3446B8] text-white"
+                    indicatorWorkflowStepIndex === index
+                      ? "border border-violet-300 bg-violet-100 text-violet-800"
                       : "border border-[#CDD3EE] bg-white text-slate-400"
                   }`}
                 >
@@ -1207,7 +1210,9 @@ function WorkArea({
                 </span>
                 <span
                   className={`text-xs font-semibold ${
-                    step.completed ? "text-[#3446B8]" : "text-slate-500"
+                    indicatorWorkflowStepIndex === index
+                      ? "font-semibold text-violet-800"
+                      : "font-medium text-slate-500"
                   }`}
                 >
                   {step.label}
@@ -1501,7 +1506,7 @@ function WorkArea({
             </div>
             <div className="mt-3 flex items-center justify-between rounded-xl border border-[#DDE2F7] bg-white p-3">
               <div><p className="text-xs font-semibold text-slate-700">02 PD-L1 AI 분석</p><p className="mt-1 text-xs text-slate-500">WSI와 HALO annotation이 모두 업로드된 후 실행합니다.</p></div>
-              <button type="button" disabled={!pdl1InputReady || runningPdl1} onClick={handlePdl1Run} className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{runningPdl1 ? "분석 요청 중" : "분석 실행"}</button>
+              <button type="button" disabled={!pdl1InputReady || runningPdl1 || pdl1?.status === "PENDING" || pdl1?.status === "RUNNING" || pdl1AnalysisCompleted} onClick={handlePdl1Run} className="rounded-lg bg-[#3446B8] px-3 py-2 text-xs font-semibold text-white disabled:bg-slate-300">{runningPdl1 || pdl1?.status === "PENDING" || pdl1?.status === "RUNNING" ? "분석 중..." : pdl1AnalysisCompleted ? "분석 완료" : "분석 실행"}</button>
             </div>
             <AnalysisProgress status={pdl1Status} /><div className="mt-3"><AnalysisStatus status={pdl1Status} /></div>
             {message ? <p className="mt-3 text-xs text-blue-800">{message}</p> : null}

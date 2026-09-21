@@ -28,8 +28,13 @@ class CoordinatorExaminationOrderAPITests(APITestCase):
             department_role=self.admin_role,
             account_status=User.AccountStatus.ACTIVE,
         )
+        clinical_department = Department.objects.create(
+            hospital=self.hospital,
+            code="PULMONOLOGY",
+            name="Pulmonology",
+        )
         doctor_role = DepartmentRole.objects.create(
-            department=self.department,
+            department=clinical_department,
             role=DepartmentRole.Role.DOCTOR,
             display_name="Doctor",
         )

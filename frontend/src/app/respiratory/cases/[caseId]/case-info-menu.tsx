@@ -16,8 +16,7 @@ const ITEMS: { key: CaseInfoKey; label: string; displayLabel: string }[] = [
   { key: "PATHOLOGY_GENE", label: "조직/유전자", displayLabel: "조직 / 유전자" },
   { key: "PDL1", label: "PD-L1", displayLabel: "PD-L1" },
   { key: "AI_SUMMARY", label: "AI 종합 분석", displayLabel: "AI 종합 분석" },
-  { key: "TREATMENT", label: "치료 결정", displayLabel: "치료 결정" },
-  { key: "PRESCRIPTION", label: "처방", displayLabel: "처방" },
+  { key: "TREATMENT", label: "치료계획·처방", displayLabel: "치료계획·처방" },
 ];
 
 const NAVIGATION_GROUPS: { label: string; keys: CaseInfoKey[] }[] = [
@@ -27,7 +26,7 @@ const NAVIGATION_GROUPS: { label: string; keys: CaseInfoKey[] }[] = [
   },
   {
     label: "진료 판단",
-    keys: ["AI_SUMMARY", "TREATMENT", "PRESCRIPTION"],
+    keys: ["AI_SUMMARY", "TREATMENT"],
   },
 ];
 

@@ -48,6 +48,7 @@ from .views import (
     DoctorExaminationOrderAPIView,
     DoctorExaminationOrderDetailAPIView,
     DoctorMedicalOpinionAPIView,
+    DoctorCaseAssistantAPIView,
     DoctorTreatmentOpinionAPIView,
     DoctorLungCancerCaseDetailAPIView,
     DoctorLungCancerCaseListAPIView,
@@ -60,6 +61,7 @@ from apps.patients.views import (
 
 
 urlpatterns = [
+    path("<uuid:case_id>/assistant/", DoctorCaseAssistantAPIView.as_view(), name="doctor-case-assistant"),
     path("consultations/me/", DoctorMyConsultationRequestAPIView.as_view(), name="doctor-my-consultation-list"),
     path("mfds-products/", DoctorMfdsProductSearchAPIView.as_view(), name="doctor-mfds-product-search"),
     path(

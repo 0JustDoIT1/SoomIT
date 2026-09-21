@@ -60,6 +60,7 @@ from .services.examination_orders import (
     update_examination_order,
 )
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
+from .services.case_assistant import CaseAssistantNotConfigured, CaseAssistantServiceError, ask_case_assistant, build_case_context
 from .services.pathology_orders import (
     ACTIVE_ORDER_STATUSES,
     PathologyOrderCreationError,
@@ -522,6 +523,26 @@ class DoctorMedicalOpinionAPIView(APIView):
             MedicalOpinionResponseSerializer(result).data,
             status=status.HTTP_200_OK,
         )
+
+
+class DoctorCaseAssistantAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def post(self, request, case_id):
+        from .serializers import DoctorCaseAssistantRequestSerializer
+        serializer = DoctorCaseAssistantRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        context = build_case_context(case_id, request.user, get_token_hospital_id(request))
+        if context is None:
+            return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        try:
+            result = ask_case_assistant(context, serializer.validated_data["message"], serializer.validated_data["history"])
+        except CaseAssistantNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except CaseAssistantServiceError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response({"answer": result["answer"], "case_id": str(case_id), "context_used": result.get("context_used", [])})
 
 
 class DoctorTreatmentOpinionAPIView(APIView):
