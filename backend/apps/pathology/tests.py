@@ -27,7 +27,11 @@ from apps.pathology.models import (
 )
 from apps.pathology.services.workflow import calculate_workflow_status
 from apps.pathology.services.pdl1_storage import PDL1StorageError
-from apps.pathology.tasks import run_pathology_gene_analysis
+from apps.pathology.tasks import (
+    register_wsi_with_orthanc_task,
+    run_pathology_gene_analysis,
+    run_pdl1_analysis,
+)
 
 
 class PathologyReadAPITestCase(APITestCase):
@@ -1431,6 +1435,210 @@ class PathologyReadAPITestCase(APITestCase):
         analysis.refresh_from_db()
         self.assertEqual(analysis.status, AiAnalysis.Status.CANCELLED)
 
+    def _pending_pathology_gene_analysis(self):
+        return AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=self.pathology_order,
+            source_image_asset=self.image_asset,
+            model_version=self.model_version,
+            analysis_type=AnalysisType.PATHOLOGY_GENE_ANALYSIS,
+            status=AiAnalysis.Status.PENDING,
+        )
+
+    @patch("apps.pathology.tasks.request_pathology_prediction")
+    def test_pathology_gene_task_creates_clinical_draft_after_ai_succeeds(self, prediction):
+        self.clinical_result.delete()
+        self.work_item.delete()
+        PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=self.pathology_order,
+            specimen=self.specimen,
+            wsi=self.wsi,
+            task_type=PathologyWorkItem.TaskType.PATHOLOGY_ANALYSIS,
+            status=PathologyWorkItem.Status.COMPLETED,
+        )
+        analysis = self._pending_pathology_gene_analysis()
+        prediction.return_value = {
+            "tissue": {
+                "predicted_label": "LUAD",
+                "confidence_score": 0.9,
+                "probabilities": {"Benign": 0.05, "LUAD": 0.9, "LUSC": 0.05},
+            },
+            "gene": {"predictions": {"EGFR": {"probability": 0.7}}},
+        }
+
+        self.assertEqual(run_pathology_gene_analysis(str(analysis.id)), "succeeded")
+
+        draft = ClinicalResult.objects.get(
+            case=self.case,
+            examination_order=self.pathology_order,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+        )
+        analysis.refresh_from_db()
+        self.assertEqual(analysis.status, AiAnalysis.Status.SUCCEEDED)
+        self.assertEqual(draft.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(draft.source_image_asset, self.image_asset)
+        self.assertEqual(draft.reviewed_ai_result.ai_analysis_id, analysis.id)
+        self.assertEqual(draft.pathology_detail.subtype, "LUAD")
+        review = PathologyWorkItem.objects.get(
+            case=self.case,
+            examination_order=self.pathology_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        )
+        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
+        self.assertEqual(review.wsi_id, self.wsi.id)
+
+    @patch("apps.pathology.tasks.request_pathology_prediction")
+    def test_pathology_gene_task_preserves_existing_draft(self, prediction):
+        self.clinical_result.result_status = ClinicalResult.ResultStatus.DRAFT
+        self.clinical_result.save(update_fields=["result_status", "updated_at"])
+        original_ai_result_id = self.clinical_result.reviewed_ai_result_id
+        analysis = self._pending_pathology_gene_analysis()
+        prediction.return_value = {
+            "tissue": {
+                "predicted_label": "LUAD",
+                "confidence_score": 0.9,
+                "probabilities": {"Benign": 0.05, "LUAD": 0.9, "LUSC": 0.05},
+            },
+            "gene": {"predictions": {"EGFR": {"probability": 0.7}}},
+        }
+
+        self.assertEqual(run_pathology_gene_analysis(str(analysis.id)), "succeeded")
+
+        self.clinical_result.refresh_from_db()
+        self.assertEqual(self.clinical_result.reviewed_ai_result_id, original_ai_result_id)
+        self.assertEqual(
+            ClinicalResult.objects.filter(
+                case=self.case,
+                examination_order=self.pathology_order,
+                workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            ).count(),
+            1,
+        )
+        self.assertEqual(
+            PathologyWorkItem.objects.filter(
+                case=self.case,
+                examination_order=self.pathology_order,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            ).count(),
+            1,
+        )
+
+    @patch("apps.pathology.tasks.request_pathology_prediction")
+    def test_pathology_gene_task_preserves_existing_confirmed_result(self, prediction):
+        original_ai_result_id = self.clinical_result.reviewed_ai_result_id
+        analysis = self._pending_pathology_gene_analysis()
+        prediction.return_value = {
+            "tissue": {
+                "predicted_label": "LUAD",
+                "confidence_score": 0.9,
+                "probabilities": {"Benign": 0.05, "LUAD": 0.9, "LUSC": 0.05},
+            },
+            "gene": {"predictions": {"EGFR": {"probability": 0.7}}},
+        }
+
+        self.assertEqual(run_pathology_gene_analysis(str(analysis.id)), "succeeded")
+
+        self.clinical_result.refresh_from_db()
+        self.assertEqual(self.clinical_result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(self.clinical_result.reviewed_ai_result_id, original_ai_result_id)
+        self.assertEqual(
+            ClinicalResult.objects.filter(
+                case=self.case,
+                examination_order=self.pathology_order,
+                workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            ).count(),
+            1,
+        )
+
+    @patch("apps.pathology.tasks.request_pdl1_prediction")
+    @patch("apps.pathology.tasks.download_pdl1_annotation_bytes", return_value=b"annotation")
+    def test_pdl1_task_creates_draft_and_diagnostic_review_after_ai_succeeds(self, annotation, prediction):
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.user,
+            purpose="PD-L1 automatic review",
+            status=ExaminationOrder.Status.ORDERED,
+        )
+        specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            examination_order=order,
+            specimen_code="PDL1-AUTO-REVIEW",
+            specimen_type=PathologySpecimen.SpecimenType.OTHER,
+            status=PathologySpecimen.Status.READY,
+            created_by_user=self.user,
+        )
+        asset = CaseImageAsset.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            image_type=CaseImageAsset.ImageType.WSI,
+            storage_type=CaseImageAsset.StorageType.GCS,
+            storage_uri="gs://test-bucket/pdl1-auto.svs",
+            file_format="SVS",
+            status=CaseImageAsset.Status.READY,
+            metadata={"pdl1_annotation": {"storage_uri": "gs://test-bucket/pdl1-auto.annotations", "roi_layer": "Tumor"}},
+        )
+        wsi = WholeSlideImage.objects.create(
+            specimen=specimen,
+            image_asset=asset,
+            slide_code="PDL1-AUTO-REVIEW",
+            stain=WholeSlideImage.Stain.PDL1,
+            original_filename="pdl1-auto.svs",
+            sha256="c" * 64,
+            uploaded_by_user=self.user,
+        )
+        PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=order,
+            specimen=specimen,
+            wsi=wsi,
+            task_type=PathologyWorkItem.TaskType.PD_L1_REVIEW,
+            status=PathologyWorkItem.Status.COMPLETED,
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=order,
+            source_image_asset=asset,
+            model_version=self.pdl1_model_version,
+            analysis_type=AnalysisType.PDL1_ANALYSIS,
+            status=AiAnalysis.Status.PENDING,
+            input_metadata={"roi_layer": "Tumor"},
+        )
+        prediction.return_value = {
+            "predicted_class": 0,
+            "predicted_tps_range": PDL1AiResult.TpsRange.LT_1,
+            "predicted_tps_range_label": "<1%",
+            "confidence": 0.99,
+            "probabilities": {"class_0": 0.99, "class_1": 0.01, "class_2": 0.0},
+        }
+
+        self.assertEqual(run_pdl1_analysis(str(analysis.id)), "succeeded")
+
+        draft = ClinicalResult.objects.get(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+        )
+        self.assertEqual(draft.result_status, ClinicalResult.ResultStatus.DRAFT)
+        review = PathologyWorkItem.objects.get(
+            case=self.case,
+            examination_order=order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        )
+        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
+        self.assertEqual(review.wsi_id, wsi.id)
+        self.assertEqual(run_pdl1_analysis(str(analysis.id)), "already_completed")
+        self.assertEqual(
+            PathologyWorkItem.objects.filter(
+                case=self.case,
+                examination_order=order,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            ).count(),
+            1,
+        )
+
     def test_workstation_excludes_analysis_for_noncurrent_he_wsi(self):
         self.wsi.is_current = False
         self.wsi.save(update_fields=["is_current", "updated_at"])
@@ -1528,6 +1736,81 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(asset.metadata["pdl1_annotation"]["storage_uri"], "gs://bucket/pathology/pdl1/annotation/input.annotations")
         self.assertEqual(WholeSlideImage.objects.get(image_asset=asset).stain, WholeSlideImage.Stain.PDL1)
         self.assertEqual(upload.call_count, 2)
+
+    @patch("apps.pathology.views.create_and_upload_wsi_preview")
+    @patch("apps.pathology.views.register_wsi_with_orthanc_task.delay")
+    @patch("apps.pathology.views.upload_pdl1_input")
+    def test_pdl1_upload_enqueues_wsi_orthanc_registration(self, upload, delay, preview):
+        order = self._create_pdl1_order()
+        upload.side_effect = [
+            "gs://bucket/pathology/pdl1/wsi/input.svs",
+            "gs://bucket/pathology/pdl1/annotation/input.annotations",
+        ]
+        self.authenticate_pathology_user()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("pathology:order-pdl1-input-upload", kwargs={"order_id": order.id}),
+                {
+                    "wsi_file": SimpleUploadedFile("input.svs", b"wsi"),
+                    "annotation_file": SimpleUploadedFile("input.annotations", b"annotation"),
+                    "roi_layer": "Tumor",
+                },
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        delay.assert_called_once_with(str(response.data["wsi"]["id"]))
+
+    @patch("apps.pathology.views.create_and_upload_wsi_preview")
+    @patch("apps.pathology.views.register_wsi_with_orthanc_task.delay")
+    @patch("apps.pathology.views.upload_pathology_wsi", return_value="gs://bucket/pathology/he/input.svs")
+    def test_he_upload_enqueues_wsi_orthanc_registration(self, upload, delay, preview):
+        self.authenticate_pathology_user()
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                reverse("pathology:order-pathology-gene-input-upload", kwargs={"order_id": self.pathology_order.id}),
+                {"wsi_file": SimpleUploadedFile("input.svs", b"he-wsi")},
+                format="multipart",
+            )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        delay.assert_called_once_with(str(response.data["wsi_id"]))
+
+    @patch("apps.pathology.tasks.register_wsi_with_orthanc")
+    def test_wsi_orthanc_registration_task_delegates_without_touching_ai(self, register):
+        register.return_value = "registered"
+
+        outcome = register_wsi_with_orthanc_task(str(self.wsi.id))
+
+        self.assertEqual(outcome, "registered")
+        register.assert_called_once_with(str(self.wsi.id))
+
+    def test_wsi_registration_persists_only_the_new_orthanc_series(self):
+        from apps.pathology.services import wsi_orthanc_registration
+
+        with patch.object(
+            wsi_orthanc_registration,
+            "_orthanc_request",
+            side_effect=[
+                ["older-series", "new-series"],
+                {"Instances": ["new-instance"], "MainDicomTags": {"SeriesInstanceUID": "1.2.3.4"}},
+                {"MainDicomTags": {"StudyInstanceUID": "1.2.3", "SOPInstanceUID": "1.2.3.4.5"}},
+            ],
+        ):
+            series_id = wsi_orthanc_registration._persist_new_series(
+                wsi_id=str(self.wsi.id),
+                before_series_ids={"older-series"},
+            )
+
+        self.wsi.refresh_from_db()
+        self.assertEqual(series_id, "new-series")
+        self.assertEqual(self.wsi.orthanc_series_id, "new-series")
+        self.assertEqual(self.wsi.orthanc_instance_id, "new-instance")
+        self.assertEqual(self.wsi.study_instance_uid, "1.2.3")
+        self.assertEqual(self.wsi.series_instance_uid, "1.2.3.4")
+        self.assertEqual(self.wsi.sop_instance_uid, "1.2.3.4.5")
 
     @patch("apps.pathology.views.upload_pdl1_input", side_effect=PDL1StorageError("GCS unavailable"))
     def test_pdl1_input_upload_failure_creates_no_ready_asset(self, upload):

@@ -24,9 +24,6 @@ from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, 
 from apps.cases.services.pathology_orders import ACTIVE_ORDER_STATUSES
 from apps.clinical.models import (
     ClinicalResult,
-    GeneFinding,
-    GeneResult,
-    PathologyResult,
     PDL1Result,
 )
 from apps.radiology.views import _PassthroughContentNegotiation
@@ -51,12 +48,17 @@ from .serializers import (
 from .services.pdl1_sample_catalog import PDL1SampleCatalogError, list_pdl1_test_samples
 from .services.review_submission import (
     ReviewSubmissionError,
+    prepare_pathology_gene_clinical_draft,
     prepare_pdl1_clinical_draft,
     submit_for_review,
 )
 from .services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from .services.workflow import PathologyWorkflowStatus, calculate_workflow_status
-from .tasks import run_pathology_gene_analysis, run_pdl1_analysis
+from .tasks import (
+    register_wsi_with_orthanc_task,
+    run_pathology_gene_analysis,
+    run_pdl1_analysis,
+)
 from .services.pdl1_storage import PDL1StorageError, delete_pdl1_input, upload_pdl1_input
 from .services.pathology_storage import (
     PathologyStorageError,
@@ -380,6 +382,9 @@ class PathologyOrderPathologyGeneInputUploadAPIView(PathologyStaffAPIViewMixin, 
                     specimen=specimen,
                     wsi=wsi,
                 )
+                transaction.on_commit(
+                    lambda wsi_id=str(wsi.id): register_wsi_with_orthanc_task.delay(wsi_id)
+                )
 
         except Exception:
             raise
@@ -586,6 +591,9 @@ class PathologyOrderPDL1InputUploadAPIView(PathologyStaffAPIViewMixin, APIView):
                 sha256=sha256(wsi_bytes).hexdigest(), uploaded_by_user=request.user,
             )
             PathologyWorkItem.objects.filter(case=order.case, examination_order=order).update(specimen=specimen, wsi=wsi)
+            transaction.on_commit(
+                lambda wsi_id=str(wsi.id): register_wsi_with_orthanc_task.delay(wsi_id)
+            )
         except Exception:
             if annotation_uri:
                 delete_pdl1_input(annotation_uri)
@@ -1072,12 +1080,15 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
             )
 
         if order.order_type == ExaminationOrder.OrderType.PATHOLOGY_GENE:
-            clinical_result = self._prepare_pathology_gene_draft(
-                case=case,
-                order=order,
-                analysis=analysis,
-                clinical_result=clinical_result,
-            )
+            try:
+                clinical_result = prepare_pathology_gene_clinical_draft(
+                    case=case,
+                    order=order,
+                    analysis=analysis,
+                    clinical_result=clinical_result,
+                )
+            except ReviewSubmissionError as exc:
+                raise ValidationError({"ai_analysis_id": str(exc)}) from exc
         elif order.order_type == ExaminationOrder.OrderType.PDL1:
             try:
                 clinical_result = prepare_pdl1_clinical_draft(
@@ -1103,61 +1114,6 @@ class PathologySubmitForReviewAPIView(PathologyStaffAPIViewMixin, APIView):
             },
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
-
-    @staticmethod
-    def _prepare_pathology_gene_draft(*, case, order, analysis, clinical_result):
-        ai_result = analysis.ai_result
-        pathology_ai = getattr(ai_result, "pathology_detail", None)
-        if pathology_ai is None:
-            raise ValidationError(
-                {"ai_analysis_id": "A pathology subtype result is required before submission."}
-            )
-
-        if clinical_result is None:
-            clinical_result = ClinicalResult.objects.create(
-                case=case,
-                examination_order=order,
-                workflow_stage=WorkflowStage.PATHOLOGY_GENE,
-                source_image_asset=analysis.source_image_asset,
-                reviewed_ai_result=ai_result,
-                result_status=ClinicalResult.ResultStatus.DRAFT,
-            )
-        else:
-            clinical_result.source_image_asset = analysis.source_image_asset
-            clinical_result.reviewed_ai_result = ai_result
-            clinical_result.save(
-                update_fields=["source_image_asset", "reviewed_ai_result", "updated_at"]
-            )
-
-        PathologyResult.objects.update_or_create(
-            clinical_result=clinical_result,
-            defaults={
-                "malignancy_status": pathology_ai.malignancy_assessment,
-                "histologic_type": pathology_ai.predicted_histologic_type,
-                "subtype": pathology_ai.predicted_subtype,
-            },
-        )
-        gene_result, _ = GeneResult.objects.get_or_create(
-            clinical_result=clinical_result,
-        )
-        gene_result.gene_findings.all().delete()
-        assessment_map = {
-            "PREDICTED_POSITIVE": GeneFinding.Assessment.LIKELY_POSITIVE,
-            "PREDICTED_NEGATIVE": GeneFinding.Assessment.LIKELY_NEGATIVE,
-            "INDETERMINATE": GeneFinding.Assessment.INDETERMINATE,
-        }
-        GeneFinding.objects.bulk_create(
-            [
-                GeneFinding(
-                    gene_result=gene_result,
-                    gene_symbol=finding.gene_symbol,
-                    assessment=assessment_map[finding.predicted_status],
-                )
-                for finding in ai_result.gene_ai_results.all()
-            ]
-        )
-        return clinical_result
-
 
 class PathologyWorkItemDetailAPIView(RetrieveAPIView):
     queryset = PathologyWorkItem.objects.select_related(

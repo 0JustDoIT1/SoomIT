@@ -26,7 +26,20 @@ services:
     volumes:
       - ../backend/gcs-key.json:/app/gcs-key.json:ro
       - ../backend/soomit-patient-firebase-admin.json:/app/soomit-patient-firebase-admin.json:ro
+      - wsi_dicomizer_staging:/wsi-staging
+    depends_on:
+      redis:
+        condition: service_healthy
+      wsi_staging_init:
+        condition: service_completed_successfully
     command: ['celery', '-A', 'config', 'worker', '-l', 'info']
+
+  wsi_staging_init:
+    image: alpine:3.20
+    restart: 'no'
+    command: ['sh', '-ec', 'mkdir -p /wsi-staging && chown 10001:10001 /wsi-staging && chmod 770 /wsi-staging']
+    volumes:
+      - wsi_dicomizer_staging:/wsi-staging
 
   celery_beat:
     <<: *django-base
@@ -181,32 +194,38 @@ services:
       retries: 10
 
   wsi-dicomizer:
-    # One-shot conversion tool. It is intentionally profile-gated so it does
-    # not alter the existing Orthanc runtime or run without an explicit slide.
+    # Dedicated worker for WSI registration tasks. Celery stages one UUID-named
+    # .svs file and a .ready marker; this service runs the existing converter.
     image: jodogne/orthanc-plugins:1.13.0
-    profiles: ['wsi-tools']
-    restart: 'no'
+    restart: unless-stopped
     environment:
       # Keep these identical to the credentials interpolated into the Orthanc
       # service above; do not read a separate backend-only environment file.
       ORTHANC_USERNAME: ${ORTHANC_USERNAME:?Set ORTHANC_USERNAME}
       ORTHANC_PASSWORD: ${ORTHANC_PASSWORD:?Set ORTHANC_PASSWORD}
-      WSI_SOURCE_FILE: ${WSI_SOURCE_FILE:-}
     volumes:
-      - ${WSI_INPUT_DIR:-../wsi-input}:/input:ro
+      - wsi_dicomizer_staging:/input
     depends_on:
       orthanc:
         condition: service_healthy
     entrypoint: ['/bin/sh', '-ec']
     command:
       - >-
-        test -n "$${WSI_SOURCE_FILE}";
-        exec OrthancWSIDicomizer
-        --openslide=/lib/x86_64-linux-gnu/libopenslide.so.0
-        --orthanc=http://orthanc:8042/
-        --username="$${ORTHANC_USERNAME}"
-        --password="$${ORTHANC_PASSWORD}"
-        "/input/$${WSI_SOURCE_FILE}"
+        while true; do
+          for marker in /input/*.svs.ready; do
+            test -f "$$marker" || continue;
+            source="$${marker%.ready}";
+            processing="$$source.processing";
+            mv "$$marker" "$$processing";
+            if OrthancWSIDicomizer --openslide=/lib/x86_64-linux-gnu/libopenslide.so.0 --orthanc=http://orthanc:8042/ --username="$$ORTHANC_USERNAME" --password="$$ORTHANC_PASSWORD" "$$source" >"$$source.log" 2>&1; then
+              touch "$$source.done";
+            else
+              touch "$$source.failed";
+            fi;
+            rm -f "$$processing";
+          done;
+          sleep 1;
+        done
 
 volumes:
   celery_beat_data:
@@ -215,6 +234,8 @@ volumes:
     name: soomit_infra_redis_data
   orthanc_storage:
     name: soomit_infra_orthanc_storage
+  wsi_dicomizer_staging:
+    name: soomit_wsi_dicomizer_staging
   certbot_conf:
     name: soomit_infra_certbot_conf
   certbot_www:

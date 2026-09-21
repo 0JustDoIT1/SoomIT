@@ -165,3 +165,51 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
         self.assertEqual(response.status_code, 400)
         self.result.refresh_from_db()
         self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.DRAFT)
+
+    def test_submitted_pdl1_draft_confirms_and_advances_to_treatment(self):
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.doctor,
+            purpose="PD-L1 review",
+        )
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        review = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        confirm = self.client.post(
+            reverse(
+                "doctor-submitted-pathology-result-confirm",
+                kwargs={"case_id": self.case.id, "result_id": result.id},
+            ),
+            format="json",
+        )
+        self.assertEqual(confirm.status_code, 200)
+        result.refresh_from_db()
+        review.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(review.status, PathologyWorkItem.Status.COMPLETED)
+
+        advance = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": "PROCEED_NEXT_STAGE",
+                "source_clinical_result_id": str(result.id),
+                "target_stage": WorkflowStage.TREATMENT,
+            },
+            format="json",
+        )
+        self.assertEqual(advance.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.TREATMENT)

@@ -1,7 +1,13 @@
 from django.db import transaction
 
-from apps.clinical.models import ClinicalResult, PDL1Result
-from apps.cases.models import LungCancerCase
+from apps.clinical.models import (
+    ClinicalResult,
+    GeneFinding,
+    GeneResult,
+    PDL1Result,
+    PathologyResult,
+)
+from apps.cases.models import LungCancerCase, WorkflowStage
 
 from ..models import PathologyWorkItem, WholeSlideImage
 
@@ -14,6 +20,65 @@ ACTIVE_REVIEW_STATUSES = {
 
 class ReviewSubmissionError(Exception):
     pass
+
+
+def prepare_pathology_gene_clinical_draft(*, case, order, analysis, clinical_result):
+    """Create or refresh a pathology/gene draft from a successful AI result."""
+    ai_result = analysis.ai_result
+    pathology_ai = getattr(ai_result, "pathology_detail", None)
+    if pathology_ai is None:
+        raise ReviewSubmissionError(
+            "A pathology subtype result is required before submission."
+        )
+
+    if clinical_result is None:
+        clinical_result = ClinicalResult.objects.create(
+            case=case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            source_image_asset=analysis.source_image_asset,
+            reviewed_ai_result=ai_result,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+    else:
+        if clinical_result.result_status != ClinicalResult.ResultStatus.DRAFT:
+            raise ReviewSubmissionError(
+                "Only a pathology/gene draft can be updated for submission."
+            )
+        clinical_result.source_image_asset = analysis.source_image_asset
+        clinical_result.reviewed_ai_result = ai_result
+        clinical_result.save(
+            update_fields=["source_image_asset", "reviewed_ai_result", "updated_at"]
+        )
+
+    PathologyResult.objects.update_or_create(
+        clinical_result=clinical_result,
+        defaults={
+            "malignancy_status": pathology_ai.malignancy_assessment,
+            "histologic_type": pathology_ai.predicted_histologic_type,
+            "subtype": pathology_ai.predicted_subtype,
+        },
+    )
+    gene_result, _ = GeneResult.objects.get_or_create(
+        clinical_result=clinical_result,
+    )
+    gene_result.gene_findings.all().delete()
+    assessment_map = {
+        "PREDICTED_POSITIVE": GeneFinding.Assessment.LIKELY_POSITIVE,
+        "PREDICTED_NEGATIVE": GeneFinding.Assessment.LIKELY_NEGATIVE,
+        "INDETERMINATE": GeneFinding.Assessment.INDETERMINATE,
+    }
+    GeneFinding.objects.bulk_create(
+        [
+            GeneFinding(
+                gene_result=gene_result,
+                gene_symbol=finding.gene_symbol,
+                assessment=assessment_map[finding.predicted_status],
+            )
+            for finding in ai_result.gene_ai_results.all()
+        ]
+    )
+    return clinical_result
 
 
 def prepare_pdl1_clinical_draft(*, case, order, analysis, clinical_result):

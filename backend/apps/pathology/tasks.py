@@ -8,13 +8,73 @@ from django.utils import timezone
 from apps.ai_results.models import (
     AiAnalysis, AiResult, AnalysisType, GeneAiResult, PathologyAiResult, PDL1AiResult,
 )
+from apps.clinical.models import ClinicalResult
+from apps.cases.models import WorkflowStage
+from apps.pathology.models import PathologyWorkItem
 
 from .services.pathology_inference import request_pathology_prediction
 from .services.pdl1_inference import request_pdl1_prediction
 from .services.pdl1_storage import download_pdl1_annotation_bytes
+from .services.review_submission import (
+    ReviewSubmissionError,
+    prepare_pathology_gene_clinical_draft,
+    prepare_pdl1_clinical_draft,
+    submit_for_review,
+)
+from .services.wsi_orthanc_registration import (
+    WsiOrthancRegistrationError,
+    register_wsi_with_orthanc,
+)
 
 
 logger = logging.getLogger(__name__)
+
+
+def _submit_automatic_diagnostic_review(analysis):
+    """Use the existing manual-submission rule for a successful AI result."""
+    existing_review = (
+        PathologyWorkItem.objects.select_for_update()
+        .filter(
+            case=analysis.case,
+            examination_order=analysis.examination_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status__in=[
+                PathologyWorkItem.Status.PENDING,
+                PathologyWorkItem.Status.IN_PROGRESS,
+            ],
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if existing_review is not None:
+        return existing_review, False
+    source_work_item = (
+        PathologyWorkItem.objects.select_for_update()
+        .filter(
+            case=analysis.case,
+            examination_order=analysis.examination_order,
+            wsi__image_asset_id=analysis.source_image_asset_id,
+        )
+        .exclude(task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW)
+        .order_by("-created_at")
+        .first()
+    )
+    if source_work_item is None:
+        raise ReviewSubmissionError("The pathology analysis has no source work item to submit.")
+    return submit_for_review(source_work_item)
+
+
+@shared_task
+def register_wsi_with_orthanc_task(wsi_id):
+    """Best-effort viewer preparation; never affects WSI upload or AI analysis."""
+    try:
+        return register_wsi_with_orthanc(str(wsi_id))
+    except WsiOrthancRegistrationError:
+        logger.exception("WSI Orthanc registration failed for wsi_id=%s", wsi_id)
+        return "failed"
+    except Exception:
+        logger.exception("Unexpected WSI Orthanc registration failure for wsi_id=%s", wsi_id)
+        return "failed"
 
 
 def _mark_failed(analysis_id, error_message="PD-L1 analysis failed.", preserve_cancelled=False):
@@ -132,6 +192,24 @@ def run_pdl1_analysis(analysis_id):
         analysis.completed_at = timezone.now()
         analysis.error_message = None
         analysis.save(update_fields=["status", "completed_at", "error_message"])
+        clinical_result = (
+            ClinicalResult.objects.select_for_update()
+            .filter(
+                case=analysis.case,
+                examination_order=analysis.examination_order,
+                workflow_stage=WorkflowStage.PDL1,
+            )
+            .first()
+        )
+        if clinical_result is None:
+            clinical_result = prepare_pdl1_clinical_draft(
+                case=analysis.case,
+                order=analysis.examination_order,
+                analysis=analysis,
+                clinical_result=None,
+            )
+        if clinical_result.result_status == ClinicalResult.ResultStatus.DRAFT:
+            _submit_automatic_diagnostic_review(analysis)
     return "succeeded"
 
 
@@ -233,4 +311,21 @@ def run_pathology_gene_analysis(analysis_id):
         analysis.completed_at = timezone.now()
         analysis.error_message = None
         analysis.save(update_fields=["status", "completed_at", "error_message"])
+        clinical_result = (
+            ClinicalResult.objects.select_for_update()
+            .filter(
+                case=analysis.case,
+                workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            )
+            .first()
+        )
+        if clinical_result is None:
+            clinical_result = prepare_pathology_gene_clinical_draft(
+                case=analysis.case,
+                order=analysis.examination_order,
+                analysis=analysis,
+                clinical_result=None,
+            )
+        if clinical_result.result_status == ClinicalResult.ResultStatus.DRAFT:
+            _submit_automatic_diagnostic_review(analysis)
     return "succeeded"
