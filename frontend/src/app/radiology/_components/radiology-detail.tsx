@@ -183,23 +183,32 @@ function formatPayloadPercent(value: number | string | null | undefined) {
   return Number.isFinite(numeric) ? `${(numeric * 100).toFixed(1)}%` : String(value);
 }
 
-function getXrayClassificationLabel(value: string | null | undefined) {
+type XrayClassification = "normal" | "other-lung-disease" | "suspicious-lung-cancer" | "unknown";
+
+function getXrayClassification(value: string | null | undefined): XrayClassification {
   switch (value?.trim().toLowerCase()) {
     case "normal":
     case "negative":
-      return "정상";
+      return "normal";
     case "other lung disease":
     case "other_lung_disease":
-      return "기타 폐질환";
+      return "other-lung-disease";
     case "suspicious lung cancer":
     case "suspicious":
-      return "폐암 의심";
+      return "suspicious-lung-cancer";
     case "indeterminate":
-      return "판정 보류";
+      return "unknown";
     default:
-      return "판정 정보 없음";
+      return "unknown";
   }
 }
+
+const xrayClassificationStyles: Record<XrayClassification, { label: string; card: string; labelText: string; valueText: string }> = {
+  normal: { label: "정상", card: "border-emerald-200 bg-emerald-50/60", labelText: "text-emerald-700", valueText: "text-emerald-900" },
+  "other-lung-disease": { label: "기타 폐질환", card: "border-amber-200 bg-amber-50/60", labelText: "text-amber-700", valueText: "text-amber-900" },
+  "suspicious-lung-cancer": { label: "폐암 의심", card: "border-rose-200 bg-rose-50/60", labelText: "text-rose-700", valueText: "text-rose-900" },
+  unknown: { label: "판정 정보 없음", card: "border-slate-200 bg-white", labelText: "text-slate-500", valueText: "text-slate-900" },
+};
 
 function getNested(payload: unknown, path: string[]): unknown {
   let current: unknown = payload;
@@ -321,6 +330,7 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
     const assessment = result.classification.prediction
       ?? result.classification.assessment
       ?? result.assessment;
+    const assessmentStyle = xrayClassificationStyles[getXrayClassification(assessment)];
     const suspiciousProbability = probabilities["Suspicious Lung Cancer"]
       ?? result.classification.suspicion_score
       ?? result.suspicion_score;
@@ -330,13 +340,13 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
         <XrayImagePanel imageUrl={sourceImageUrl} result={result} showDetections />
       </div>
       <dl className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-4">
-          <dt className="text-xs font-medium text-violet-700">판정</dt>
-          <dd className="mt-2 text-2xl font-bold text-slate-900">{getXrayClassificationLabel(assessment)}</dd>
+        <div className={`rounded-xl border p-4 ${assessmentStyle.card}`}>
+          <dt className={`text-xs font-medium ${assessmentStyle.labelText}`}>판정</dt>
+          <dd className={`mt-2 text-2xl font-bold ${assessmentStyle.valueText}`}>{assessmentStyle.label}</dd>
         </div>
-        <div className="rounded-xl border border-blue-100 bg-blue-50/50 p-4">
-          <dt className="text-xs font-medium text-blue-700">폐암 의심 확률</dt>
-          <dd className="mt-2 text-2xl font-bold text-slate-900">{formatPayloadPercent(suspiciousProbability)}</dd>
+        <div className={`rounded-xl border p-4 ${assessmentStyle.card}`}>
+          <dt className={`text-xs font-medium ${assessmentStyle.labelText}`}>폐암 의심 확률</dt>
+          <dd className={`mt-2 text-2xl font-bold ${assessmentStyle.valueText}`}>{formatPayloadPercent(suspiciousProbability)}</dd>
         </div>
       </dl>
       <section aria-label="분류별 확률">
@@ -345,10 +355,11 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
           {labels.map(({ key, label, probability }) => {
             const numericProbability = probability == null ? Number.NaN : Number(probability);
             const isHighest = Number.isFinite(numericProbability) && numericProbability === highestProbability;
+            const classificationStyle = xrayClassificationStyles[getXrayClassification(key)];
             return (
-              <div key={key} className={`rounded-lg border px-4 py-3 text-xs ${isHighest ? "border-violet-200 bg-violet-50/70" : "border-slate-200 bg-white"}`}>
-                <p className={isHighest ? "font-medium text-violet-700" : "text-slate-500"}>{label}</p>
-                <p className={`mt-1 text-base font-bold ${isHighest ? "text-[#29366F]" : "text-slate-900"}`}>{formatPayloadPercent(probability)}</p>
+              <div key={key} className={`rounded-lg border px-4 py-3 text-xs ${isHighest ? classificationStyle.card : "border-slate-200 bg-white"}`}>
+                <p className={isHighest ? `font-medium ${classificationStyle.labelText}` : "text-slate-500"}>{label}</p>
+                <p className={`mt-1 text-base font-bold ${isHighest ? classificationStyle.valueText : "text-slate-900"}`}>{formatPayloadPercent(probability)}</p>
               </div>
             );
           })}
