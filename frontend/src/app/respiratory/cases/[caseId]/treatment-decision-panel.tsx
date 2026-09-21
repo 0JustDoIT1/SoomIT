@@ -44,7 +44,10 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
         setCandidates(nextCandidates);
         setConfirmed(nextDecision?.decision_status === "CONFIRMED");
         setDecisionStatus(nextDecision?.decision_status ?? undefined);
-        setSelected(nextDecision?.selected_regimen ?? ""); setTreatmentType(nextDecision?.treatment_type ?? "");
+        setSelected(nextDecision?.selected_regimen ?? "");
+        const nextTreatmentType = nextDecision?.treatment_type ?? "";
+        setTreatmentType(nextTreatmentType);
+        if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true);
         setAiAction(nextDecision?.ai_recommendation_action ?? "NOT_USED"); setPlan(nextDecision?.treatment_plan ?? "");
         setTargetedPlan(nextDecision?.targeted_therapy_plan ?? ""); setRationale(nextDecision?.rationale ?? "");
       } catch (caught) { if (active) setError(caught instanceof Error ? caught.message : "치료결정 정보를 불러오지 못했습니다."); }
@@ -53,10 +56,6 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
     void load();
     return () => { active = false; };
   }, [apiBaseUrl, authorizedFetch, caseId]);
-
-  useEffect(() => {
-    if (REGIMEN_REQUIRED_TYPES.has(treatmentType)) setEvidenceOpen(true);
-  }, [treatmentType]);
 
   const saveAndConfirm = async () => {
     if (!actionable || confirmed || submittingRef.current || !treatmentType || !plan.trim()) return;
@@ -104,7 +103,7 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
       {!confirmed && <button type="button" disabled={!actionable} onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-4"}>결과 입력 및 처리</button>}
       {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. 저장 후 확정하여 처방 단계로 진행합니다." busy={busy} error={error} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => setTreatmentType(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => { const nextTreatmentType = event.target.value; setTreatmentType(nextTreatmentType); if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true); }} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
       <label className="mt-3 block text-xs font-semibold text-slate-700">치료 계획<textarea value={plan} disabled={busy} onChange={(event) => setPlan(event.target.value)} rows={3} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>
       {regimenRequired && !selected && <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">선택한 치료 유형은 Regimen을 선택한 후 치료계획을 확정할 수 있습니다.</p>}
       <DecisionMethodSelect value="CONFIRM" onChange={() => undefined} options={[{ value: "CONFIRM", label: "치료계획 확정 및 처방 진행" }]} />
