@@ -9,6 +9,7 @@ from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion, PDL1AiResult
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.patients.models import Patient
+from apps.pathology.models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from apps.pathology.tasks import _begin_analysis, run_pdl1_analysis
 
 
@@ -71,6 +72,9 @@ class PDL1AnalysisTaskTestCase(TestCase):
         order = ExaminationOrder.objects.create(case=case, order_type=ExaminationOrder.OrderType.PDL1, requesting_doctor=doctor, priority=ExaminationOrder.Priority.NORMAL, purpose="PD-L1 task test", status=ExaminationOrder.Status.ORDERED)
         model_version = ModelVersion.objects.create(model_name="pdl1-amd-mil", version="final_model", analysis_type="PDL1_ANALYSIS")
         asset = CaseImageAsset.objects.create(case=case, examination_order=order, workflow_stage=WorkflowStage.PDL1, image_type=CaseImageAsset.ImageType.WSI, storage_type=CaseImageAsset.StorageType.GCS, storage_uri="gs://test-bucket/pathology/pdl1/wsi.svs", file_format="SVS", status=CaseImageAsset.Status.READY, metadata={"pdl1_annotation": {"storage_uri": "gs://test-bucket/pathology/pdl1/input.annotations", "roi_layer": "Tumor"}})
+        specimen = PathologySpecimen.objects.create(case=case, examination_order=order, specimen_code="PDL1-TASK-SPEC", specimen_type=PathologySpecimen.SpecimenType.BIOPSY, status=PathologySpecimen.Status.READY, created_by_user=doctor)
+        wsi = WholeSlideImage.objects.create(specimen=specimen, image_asset=asset, slide_code="PDL1-TASK-SLIDE", stain=WholeSlideImage.Stain.PDL1, original_filename="wsi.svs", sha256="0" * 64, uploaded_by_user=doctor)
+        PathologyWorkItem.objects.create(case=case, examination_order=order, specimen=specimen, wsi=wsi, task_type=PathologyWorkItem.TaskType.PD_L1_REVIEW, status=PathologyWorkItem.Status.PENDING)
         self.analysis = AiAnalysis.objects.create(case=case, examination_order=order, analysis_type="PDL1_ANALYSIS", model_version=model_version, source_image_asset=asset, status=AiAnalysis.Status.PENDING, input_metadata={"roi_layer": "Tumor"})
 
     @patch("apps.pathology.tasks.request_pdl1_prediction", return_value=PREDICTION)

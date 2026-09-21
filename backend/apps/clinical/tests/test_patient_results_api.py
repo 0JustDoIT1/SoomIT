@@ -148,7 +148,7 @@ class PatientClinicalResultAPITests(APITestCase):
         )
         self.assertEqual(
             item["result_summary"],
-            "특이 소견이 없습니다.",
+            "음성",
         )
         self.assertIn("result_date", item)
         self.assertNotIn("exam_type", item)
@@ -241,15 +241,15 @@ class PatientClinicalResultAPITests(APITestCase):
         )
         self.assertEqual(
             by_stage[WorkflowStage.PET_CT_TNM]["exam_name"],
-            "PET-CT",
+            "PET-CT 및 TNM 병기 평가",
         )
         self.assertEqual(
             by_stage[WorkflowStage.PATHOLOGY_GENE]["exam_name"],
-            "조직(유전자)검사",
+            "조직·유전자 검사",
         )
         self.assertEqual(
             by_stage[WorkflowStage.PDL1]["exam_name"],
-            "조직(유전자)검사",
+            "PD-L1 검사",
         )
 
         pathology_sections = (
@@ -257,7 +257,7 @@ class PatientClinicalResultAPITests(APITestCase):
         )
         self.assertEqual(
             [section["type"] for section in pathology_sections],
-            ["PATHOLOGY", "GENE"],
+            ["PATHOLOGY_MALIGNANCY", "PATHOLOGY_HISTOLOGY", "PATHOLOGY_SUBTYPE"],
         )
 
         pdl1_sections = (
@@ -265,7 +265,7 @@ class PatientClinicalResultAPITests(APITestCase):
         )
         self.assertEqual(
             [section["type"] for section in pdl1_sections],
-            ["PDL1"],
+            ["PDL1_TPS"],
         )
 
         # 환자용 API에는 내부 위험도와 PD-L1 TPS 원수치를
