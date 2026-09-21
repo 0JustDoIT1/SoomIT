@@ -1146,9 +1146,6 @@ export default function RespiratoryCaseDetailPage() {
     || (selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "PRESCRIPTION_LIST")
     || (selectedMainMenu === "AI" && selectedAiMenu === "PDL1")
     || (selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE");
-  const selectedStageActiveOrder = caseOrders.find(
-    (order) => order.order_type === selectedInfoMenu && ["ORDERED", "SCHEDULED"].includes(order.status),
-  );
 
   const tnmClinical =
     tnmClinicalResult?.result_detail?.tnm;
@@ -1909,7 +1906,6 @@ export default function RespiratoryCaseDetailPage() {
             <span className="hidden shrink-0 rounded-md border border-blue-100 bg-blue-50 px-2 py-1 text-[9px] font-semibold text-blue-700 lg:inline">현재 Case 단계 · {getStageLabel(selectedCase.current_stage)}</span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
-            {selectedStageActiveOrder && <span className="hidden rounded-md border border-sky-100 bg-sky-50 px-2 py-1 text-[10px] font-semibold text-sky-700 xl:inline">{formatActiveOrderSchedule(selectedStageActiveOrder)}</span>}
             {stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}
             {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && submittedPathologyResult && (
               <button
@@ -3355,13 +3351,6 @@ function formatBirthDate(value: string) {
   return `${year}.${month}.${day}`;
 }
 
-function formatActiveOrderSchedule(order: ExaminationOrder) {
-  const status = order.appointment_status === "CONFIRMED" ? "예약 확정" : order.appointment_status === "REQUESTED" ? "예약 요청" : "예약 미배정";
-  if (!order.scheduled_at) return status;
-  const date = new Date(order.scheduled_at);
-  const formattedDate = Number.isNaN(date.getTime()) ? order.scheduled_at : date.toLocaleString("ko-KR");
-  return `${status} · ${formattedDate}`;
-}
 
 function resultSyncSignature(value: unknown) {
   if (!Array.isArray(value)) return "";

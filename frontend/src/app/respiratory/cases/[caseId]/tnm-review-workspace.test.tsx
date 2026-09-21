@@ -58,7 +58,7 @@ describe("TnmReviewWorkspace", () => {
 
     await enterTnm();
     fireEvent.click(screen.getByRole("button", { name: finalizeLabel }));
-    await waitFor(() => expect(onStageAdvanced).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByRole("button", { name: "다음 처리 선택" })).toBeEnabled());
 
     expect(authorizedFetch.mock.calls.map(([url]) => url)).toEqual([
       "http://test/api/doctor/cases/case-1/clinical-results/tnm/",
@@ -67,7 +67,8 @@ describe("TnmReviewWorkspace", () => {
       "http://test/api/doctor/cases/case-1/clinical-results/tnm/draft-1/stage/confirm/",
     ]);
     expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ t_category: "T1", n_category: "N0", m_category: "M0", reviewed_ai_result_id: "ai-1" });
-    expect(JSON.parse(authorizedFetch.mock.calls[3][1].body)).toEqual({ advance_to_next_stage: true });
+    expect(onStageAdvanced).not.toHaveBeenCalled();
+    expect(JSON.parse(authorizedFetch.mock.calls[3][1].body)).toEqual({ advance_to_next_stage: false });
     expect(screen.getByText("Stage Group 확정 완료")).toBeInTheDocument();
   });
 

@@ -119,7 +119,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
           )}
           <section className="mt-3 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2.5">
             <p className="text-[10px] font-semibold text-blue-700">진행 중 검사 예약</p>
-            {activeOrders.length ? <div className="mt-2 space-y-1.5">{activeOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 text-[11px]"><span className="min-w-0 truncate font-semibold text-slate-700">{order.order_type_label}</span><span className="shrink-0 text-slate-500">{order.scheduled_at ? `${appointmentStatusLabel(order.appointment_status)} · ${formatDate(order.scheduled_at)}` : "예약 미배정"}</span></div>)}</div> : <p className="mt-2 text-[11px] text-slate-400">진행 중인 검사 오더가 없습니다.</p>}
+            {activeOrders.length ? <div className="mt-2 space-y-1.5">{activeOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 text-[11px]"><span className="min-w-0 truncate font-semibold text-slate-700">{order.order_type_label}</span>{order.scheduled_at && <span className="shrink-0 text-slate-500">{`${appointmentStatusLabel(order.appointment_status)} · ${formatDate(order.scheduled_at)}`}</span>}</div>)}</div> : <p className="mt-2 text-[11px] text-slate-400">진행 중인 검사 오더가 없습니다.</p>}
           </section>
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
             <p className="text-[10px] text-slate-400">Case 상태</p>

@@ -3,6 +3,7 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { DecisionActions, DecisionStatus } from "./decision-ui";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
+import { CaseWorkflowDecision } from "./case-workflow-decision";
 import { showToast } from "@/components/ui/toast/toast";
 
 export type TnmCategory = "T" | "N" | "M";
@@ -86,11 +87,10 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
     if (calculatedCandidate?.stage_group_status !== "candidate_ready" || !calculatedCandidate.stage_group_candidate) {
       throw new Error("TNM Stage Group 후보를 계산할 수 없습니다.");
     }
-    const confirmedStage = await post(`${latestId}/stage/confirm/`, { advance_to_next_stage: true });
+    const confirmedStage = await post(`${latestId}/stage/confirm/`, { advance_to_next_stage: false });
     setStageResult(confirmedStage);
-    setMessage("TNM 병기가 확정되고 다음 단계가 활성화되었습니다.");
-    if (onStageAdvanced) await onStageAdvanced();
-    else await onConfirmed?.();
+    setMessage("TNM 병기가 확정되었습니다. 다음 처리 방식을 선택하세요.");
+    await onConfirmed?.();
   };
   const runNextAction = async () => {
     if (!actionable || submittingRef.current || !canFinalize || !authorizedFetch || !apiBaseUrl || !caseId) return;
@@ -100,7 +100,7 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
     showToast.info("TNM 결과를 처리하고 있습니다.", { id: toastId });
     try {
       await completeTnm();
-      showToast.success("TNM 병기가 확정되고 조직·유전자 검사 오더가 생성되었습니다.", { id: toastId });
+      showToast.success("TNM 병기가 확정되었습니다. 다음 처리 방식을 선택하세요.", { id: toastId });
     } catch (cause) {
       console.error(cause);
       setError("TNM 결과 처리에 실패했습니다.");
@@ -149,7 +149,23 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
       <div className="border-t border-slate-200 px-3 py-2">
         {dirty && <p className="text-xs text-amber-700">저장되지 않은 변경사항이 있습니다. 확정 시 최신값을 먼저 저장합니다.</p>}
         <DecisionStatus error={error} message={!actionable ? "현재 단계에서는 결과 조회만 가능합니다. 선행 단계 완료 후 처리하세요." : message} />
-        {stageConfirmed ? <p className="text-xs text-slate-600">Stage Group 확정 완료</p> : <DecisionActions busy={busy} disabled={!actionable || !canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} />}
+        {stageConfirmed ? (
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs text-slate-600">Stage Group 확정 완료</p>
+            {caseId && authorizedFetch && activeResultId && (
+              <CaseWorkflowDecision
+                caseId={caseId}
+                currentStage="PET_CT_TNM"
+                confirmedResultId={activeResultId}
+                confirmedStageGroup={(stageResult ?? clinicalTnm)?.stage_group}
+                showCaseCloseOption
+                triggerLabel="다음 처리 선택"
+                authorizedFetch={authorizedFetch}
+                onCompleted={() => { void onStageAdvanced?.(); }}
+              />
+            )}
+          </div>
+        ) : <DecisionActions busy={busy} disabled={!actionable || !canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} />}
       </div>
     </section>
   );

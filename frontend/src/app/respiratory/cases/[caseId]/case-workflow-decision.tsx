@@ -19,7 +19,7 @@ type WorkflowDecisionCompletion = {
   closed: boolean;
 };
 
-export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, exceptionsOnly = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; exceptionsOnly?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
+export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, showCaseCloseOption = false, exceptionsOnly = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; showCaseCloseOption?: boolean; exceptionsOnly?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
   const [action, setAction] = useState<"PROCEED_NEXT_STAGE" | "RETRY" | "REFERRED_OUT" | "CASE_CLOSED" | null>(null);
   const [reason, setReason] = useState("");
   const [retryPurpose, setRetryPurpose] = useState("");
@@ -27,7 +27,6 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
   const [error, setError] = useState("");
   const submittingRef = useRef(false);
   const next = NEXT_STAGE[currentStage];
-  const isFinalConfirmation = currentStage === "PRESCRIPTION";
   const disabled = !confirmedResultId;
   const canProceed = Boolean(!exceptionsOnly && next && confirmedResultId && (currentStage !== "PET_CT_TNM" || confirmedStageGroup?.trim()));
   const proceedLabel = currentStage === "PATHOLOGY_GENE"
@@ -78,15 +77,15 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
   const actionLabel = action === "RETRY" ? "재생검 요청" : action === "REFERRED_OUT" ? "의뢰·전원 처리" : action === "CASE_CLOSED" ? "Case 종료" : proceedLabel;
 
   return <>
-    <button type="button" disabled={disabled || submitting} title={disabled ? "현재 단계의 확정 결과가 필요합니다." : undefined} onClick={() => setAction(canProceed ? "PROCEED_NEXT_STAGE" : "REFERRED_OUT")} className={exceptionsOnly ? "rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-600 disabled:text-slate-400" : decisionTriggerClass}>{triggerLabel ?? (exceptionsOnly ? "종료·의뢰 처리" : isFinalConfirmation ? "최종 확인" : "결과 입력 및 처리")}</button>
+    <button type="button" disabled={disabled || submitting} title={disabled ? "현재 단계의 확정 결과가 필요합니다." : undefined} onClick={() => setAction(canProceed ? "PROCEED_NEXT_STAGE" : "REFERRED_OUT")} className={exceptionsOnly ? "rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-600 disabled:text-slate-400" : decisionTriggerClass}>{triggerLabel ?? (exceptionsOnly ? "종료·의뢰 처리" : "결과 입력 및 처리")}</button>
     {disabled && !exceptionsOnly && <p className="mt-1 text-xs text-slate-500">판독 결과 확정 대기: 확정 결과가 있어야 처리할 수 있습니다.</p>}
-    {action && <DecisionModal title={isFinalConfirmation ? "Case 최종 확인" : "결과 입력 및 처리"} description={isFinalConfirmation ? "진료 종료 또는 외부 의뢰를 선택하고 사유를 확인하세요." : "확정된 결과를 근거로 다음 처리를 선택하세요. 판독 결과 자체는 변경하지 않습니다."} busy={submitting} error={error} primaryLabel={actionLabel} disabled={(action === "PROCEED_NEXT_STAGE" && !canProceed) || (action !== "PROCEED_NEXT_STAGE" && !reason.trim()) || (action === "RETRY" && !retryPurpose.trim())} onSubmit={() => void submit()} onClose={() => { setAction(null); setError(""); }}>
+    {action && <DecisionModal title="결과 입력 및 처리" description="확정된 결과를 근거로 다음 처리를 선택하세요. 판독 결과 자체는 변경하지 않습니다." busy={submitting} error={error} primaryLabel={actionLabel} disabled={(action === "PROCEED_NEXT_STAGE" && !canProceed) || (action !== "PROCEED_NEXT_STAGE" && !reason.trim()) || (action === "RETRY" && !retryPurpose.trim())} onSubmit={() => void submit()} onClose={() => { setAction(null); setError(""); }}>
       <p className="text-xs text-slate-600">판독 결과: 완료</p>
       <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[
         ...(!exceptionsOnly && next ? [{ value: "PROCEED_NEXT_STAGE" as const, label: next.label + " 진행", disabled: !canProceed }] : []),
         ...(currentStage === "PATHOLOGY_GENE" ? [{ value: "RETRY" as const, label: "재생검" }] : []),
         { value: "REFERRED_OUT", label: "의뢰·전원" },
-        ...(hasFinalPrescription ? [{ value: "CASE_CLOSED" as const, label: "Case 종료" }] : []),
+        ...(hasFinalPrescription || showCaseCloseOption ? [{ value: "CASE_CLOSED" as const, label: hasFinalPrescription ? "Case 종료" : "Case 종료 (FINAL 처방 필요)", disabled: !hasFinalPrescription }] : []),
       ]} />
       {currentStage === "PET_CT_TNM" && !confirmedStageGroup?.trim() && <p className="text-xs text-amber-700">다음 단계 진행에는 TNM 결과와 Stage Group 최종 확정이 필요합니다.</p>}
       {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: {next?.label}</p> : <DecisionReasonFields kind={action === "RETRY" ? "retry" : action === "REFERRED_OUT" ? "refer" : "close"} reason={reason} onReasonChange={setReason} retryPurpose={retryPurpose} onRetryPurposeChange={setRetryPurpose} />}

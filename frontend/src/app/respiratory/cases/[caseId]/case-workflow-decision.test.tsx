@@ -82,7 +82,7 @@ it("allows referral from PRESCRIPTION without a FINAL prescription", async () =>
   const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case_status: "REFERRED_OUT" })));
   const onCompleted = vi.fn();
   render(<CaseWorkflowDecision caseId="case-1" currentStage="PRESCRIPTION" confirmedResultId="result-1" authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
-  fireEvent.click(screen.getByRole("button", { name: "최종 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
   expect(screen.queryByRole("option", { name: /진행/ })).not.toBeInTheDocument();
   expect(screen.queryByRole("option", { name: "Case 종료" })).not.toBeInTheDocument();
   fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "REFERRED_OUT" } });
@@ -97,7 +97,7 @@ it("allows Case closure from PRESCRIPTION only with a FINAL prescription", async
   const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case_status: "CLOSED" })));
   const onCompleted = vi.fn();
   render(<CaseWorkflowDecision caseId="case-1" currentStage="PRESCRIPTION" confirmedResultId="result-1" hasFinalPrescription authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
-  fireEvent.click(screen.getByRole("button", { name: "최종 확인" }));
+  fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
   fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "CASE_CLOSED" } });
   fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "정기 추적" } });
   fireEvent.click(screen.getByRole("button", { name: "Case 종료" }));
