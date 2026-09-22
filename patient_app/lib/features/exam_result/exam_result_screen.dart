@@ -149,7 +149,10 @@ class _ExamResultScreenState extends State<ExamResultScreen>
         indicatorSize: TabBarIndicatorSize.label,
         labelColor: _primaryDark,
         unselectedLabelColor: const Color(0xFF8B95A1),
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800),
+        labelStyle: const TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
+        ),
         unselectedLabelStyle: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w600,
@@ -721,21 +724,55 @@ class _ExamResultScreenState extends State<ExamResultScreen>
       },
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(20, 70, 20, 30),
-        children: const [
-          Icon(
-            Icons.calendar_month_outlined,
-            size: 46,
-            color: Color(0xFFB0B8C1),
-          ),
-          SizedBox(height: 14),
-          Text(
-            '등록된 검사 일정이 없어요.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: _textSecondary,
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 28),
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(22, 34, 22, 32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE2ECF5)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0C1B4B72),
+                  blurRadius: 16,
+                  offset: Offset(0, 7),
+                ),
+              ],
+            ),
+            child: const Column(
+              children: [
+                CircleAvatar(
+                  radius: 38,
+                  backgroundColor: Color(0xFFEAF6FF),
+                  child: Icon(
+                    Icons.calendar_month_rounded,
+                    size: 38,
+                    color: Color(0xFF35AEE2),
+                  ),
+                ),
+                SizedBox(height: 20),
+                Text(
+                  '등록된 검사 일정이 없어요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF172033),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 9),
+                Text(
+                  '검사 일정이 등록되면\n이곳에서 확인할 수 있어요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF8A96A8),
+                    fontSize: 13,
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -767,27 +804,60 @@ class _ExamResultScreenState extends State<ExamResultScreen>
   }
 
   Widget _buildEmptyResultState() {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.fromLTRB(20, 48, 20, 28),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return RefreshIndicator(
+      color: _primaryDark,
+      onRefresh: () async {
+        setState(_loadResults);
+        await _resultsFuture;
+      },
+      child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 22, 16, 28),
         children: [
-          Center(
-            child: Column(
-              children: [
-                Icon(
-                  Icons.fact_check_outlined,
-                  size: 46,
-                  color: Color(0xFFB0B8C1),
+          Container(
+            padding: const EdgeInsets.fromLTRB(22, 34, 22, 32),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: const Color(0xFFE2ECF5)),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x0C1B4B72),
+                  blurRadius: 16,
+                  offset: Offset(0, 7),
                 ),
-                SizedBox(height: 14),
+              ],
+            ),
+            child: const Column(
+              children: [
+                CircleAvatar(
+                  radius: 38,
+                  backgroundColor: Color(0xFFEAF6FF),
+                  child: Icon(
+                    Icons.fact_check_rounded,
+                    size: 38,
+                    color: Color(0xFF35AEE2),
+                  ),
+                ),
+                SizedBox(height: 20),
                 Text(
                   '확인 가능한 검사 결과가 없어요.',
+                  textAlign: TextAlign.center,
                   style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: _textSecondary,
+                    color: Color(0xFF172033),
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                SizedBox(height: 9),
+                Text(
+                  '검사 결과가 등록되면\n이곳에서 확인할 수 있어요.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF8A96A8),
+                    fontSize: 13,
+                    height: 1.5,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
               ],

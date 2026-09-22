@@ -267,21 +267,27 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
             if ct.overall_malignancy_risk is not None:
                 sections.append({
                     "type": "CT_MALIGNANCY_RISK",
-                    "label": "악성 위험도",
+                    "label": "전체 악성 위험도",
                     "summary": f"{ct.overall_malignancy_risk}%",
                 })
 
-            # ---------------------------------------------
-            # 결절 정보
-            # ---------------------------------------------
             observations = list(
-                ct.nodule_observations.all()
+                ct.nodule_observations
+                .select_related("nodule")
+                .all()
+                .order_by("nodule__nodule_no")
             )
 
-            for index, observation in enumerate(
-                observations,
-                start=1,
-            ):
+            sections.append({
+                "type": "CT_NODULE_COUNT",
+                "label": "결절 개수",
+                "summary": f"{len(observations)}개",
+            })
+
+            for observation in observations:
+                nodule = observation.nodule
+                nodule_no = nodule.nodule_no
+
                 location_parts = []
 
                 if observation.lobe:
@@ -295,31 +301,66 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
                     )
 
                 if location_parts:
-                    location_label = (
-                        "결절 위치"
-                        if len(observations) == 1
-                        else f"결절 {index} 위치"
-                    )
-
                     sections.append({
-                        "type": f"CT_NODULE_LOCATION_{index}",
-                        "label": location_label,
+                        "type": f"CT_NODULE_{nodule_no}_LOCATION",
+                        "label": "위치",
                         "summary": " · ".join(location_parts),
                     })
 
                 if observation.max_diameter_mm is not None:
-                    size_label = (
-                        "결절 크기"
-                        if len(observations) == 1
-                        else f"결절 {index} 크기"
-                    )
-
                     sections.append({
-                        "type": f"CT_NODULE_SIZE_{index}",
-                        "label": size_label,
-                        "summary": (
-                            f"{observation.max_diameter_mm} mm"
-                        ),
+                        "type": f"CT_NODULE_{nodule_no}_SIZE",
+                        "label": "최대 크기",
+                        "summary": f"{observation.max_diameter_mm} mm",
+                    })
+
+                if observation.volume_mm3 is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_VOLUME",
+                        "label": "부피",
+                        "summary": f"{observation.volume_mm3} mm³",
+                    })
+
+                if observation.surface_area_mm2 is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_SURFACE_AREA",
+                        "label": "표면적",
+                        "summary": f"{observation.surface_area_mm2} mm²",
+                    })
+
+                if observation.sphericity is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_SPHERICITY",
+                        "label": "구형도",
+                        "summary": str(observation.sphericity),
+                    })
+
+                if observation.spiculation:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_SPICULATION",
+                        "label": "침상형 경계",
+                        "summary": observation.get_spiculation_display(),
+                    })
+
+                if observation.lobulation:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_LOBULATION",
+                        "label": "분엽형 경계",
+                        "summary": observation.get_lobulation_display(),
+                    })
+
+                if observation.malignancy_risk is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_MALIGNANCY_RISK",
+                        "label": "악성 위험도",
+                        "summary": f"{observation.malignancy_risk}%",
+                    })
+
+                if nodule.tracking_status:
+                    sections.append({
+                        "type": f"CT_NODULE_{nodule_no}_TRACKING_STATUS",
+                        "label": "추적 상태",
+                        "summary": nodule.get_tracking_status_display(),
                     })
 
                 if observation.volume_mm3 is not None:
