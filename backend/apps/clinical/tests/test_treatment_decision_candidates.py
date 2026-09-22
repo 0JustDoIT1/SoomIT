@@ -117,6 +117,10 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(clinical.result_status, "CONFIRMED")
         clinical.save.assert_called_once()
+        self.assertEqual(self.case.current_stage, "PRESCRIPTION")
+        self.case.save.assert_called_once_with(update_fields=["current_stage", "updated_at"])
+        self.audit.create.assert_called_once()
+        self.assertEqual(self.audit.create.call_args.kwargs["target_stage"], "PRESCRIPTION")
 
     def test_repeated_confirmation_does_not_duplicate_decision(self):
         clinical = self.prepare_confirmation()

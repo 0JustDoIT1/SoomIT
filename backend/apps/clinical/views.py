@@ -752,17 +752,6 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 {"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."},
                 status=400,
             )
-        
-        
-
-        regimen_required_types = {"CHEMOTHERAPY", "TARGETED_THERAPY", "IMMUNOTHERAPY", "COMBINATION"}
-
-        if treatment_decision.treatment_type in regimen_required_types and treatment_decision.selected_regimen is None:
-            return Response(
-                {"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."},
-                status=400,
-            )
-
         clinical_result = treatment_decision.clinical_result
 
         if clinical_result.result_status == "CONFIRMED":
