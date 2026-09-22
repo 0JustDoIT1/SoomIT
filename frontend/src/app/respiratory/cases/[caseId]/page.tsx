@@ -1914,7 +1914,7 @@ export default function RespiratoryCaseDetailPage() {
                 onClick={() => { void confirmSubmittedPathologyResult(); }}
                 className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
               >
-                {confirmingPathologyResult ? "확정 중" : "결과 확인/확정"}
+                {confirmingPathologyResult ? "확정 중" : "결과 확인 및 확정"}
               </button>
             )}
             {selectedCase?.case_status === "ACTIVE" && canCreatePdl1Order && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
@@ -1930,7 +1930,7 @@ export default function RespiratoryCaseDetailPage() {
               <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PDL1" && Boolean(confirmedPdl1Result) && ["PDL1", "TREATMENT"].includes(selectedInfoMenu) && (
-              <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="치료 판단 진행" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+              <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && !["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(selectedCase.current_stage) && (
               <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />

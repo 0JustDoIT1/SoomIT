@@ -49,6 +49,7 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
   const confirmedCt = clinicalResults.find((result) => result.workflow_stage === "CT" && result.result_status === "CONFIRMED");
   const pathologyConfirmed = clinicalResults.some((result) => result.workflow_stage === "PATHOLOGY_GENE" && result.result_status === "CONFIRMED");
   const pdl1Confirmed = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED");
+  const pdl1DraftReady = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "DRAFT");
   const activePdl1Order = orders.find((order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status));
   const completedPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "COMPLETED");
   const pdl1AiCompleted = aiResults.some((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
@@ -67,6 +68,7 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
 
   if (key === "PDL1") {
     if (pdl1Confirmed) return { state: "COMPLETED" as const, message: "PD-L1 호흡기내과 최종 확정이 완료되었습니다." };
+    if (pdl1DraftReady) return { state: "ACTIONABLE" as const, message: "PD-L1 결과가 도착했습니다. 호흡기내과 최종 확정을 진행하세요." };
     if (activePdl1Order) {
       const message = activePdl1Order.status === "ORDERED"
         ? "PD-L1 오더 요청됨 · 병리과 접수를 기다리고 있습니다."

@@ -4,6 +4,9 @@ const nextConfig: NextConfig = {
   /* config options here */
   // reactCompiler: true,
   output: 'standalone',
+  // Permit the local IPv4 host used by the respiratory workstation during
+  // development, so Turbopack can deliver refreshed client bundles.
+  allowedDevOrigins: ['127.0.0.1', 'localhost'],
   // Cornerstone3D's DICOM image loader pulls in Emscripten-generated wasm codec
   // glue (openjpeg/openjph/charls/libjpeg-turbo) that references Node's fs/path
   // as an optional Node.js runtime fallback. Those codecs run in the browser via

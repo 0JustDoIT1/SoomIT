@@ -68,9 +68,14 @@ export function Pdl1ResultPanel({
     ? [ai.probabilities.class_0, ai.probabilities.class_1, ai.probabilities.class_2].map(toPercentage)
     : null;
   const clinicalConfirmed = clinicalResult?.result_status === "CONFIRMED";
+  const clinicalNote = clinical?.note ?? null;
+  const isAiGeneratedClinicalNote = /^Generated from PD-L1 AI result:/i.test(clinicalNote ?? "");
+  const hasConfirmedTps = clinical?.tps_percent !== null && clinical?.tps_percent !== undefined;
+  const clinicalInterpretation = isAiGeneratedClinicalNote
+    ? "병리과 최종 해석 미입력"
+    : clinical?.interpretation ?? (clinicalConfirmed ? "확정 결과 없음" : "병리과 검토 결과 없음");
   const clinicalSource = clinicalConfirmed ? "호흡기내과 최종 확정" : "병리과 검토 결과";
   const clinicalTpsLabel = clinicalConfirmed ? "최종 TPS" : "병리과 TPS 결과";
-  const clinicalEmptyLabel = clinicalConfirmed ? "확정 결과 없음" : "병리과 검토 결과 없음";
 
   return (
     <div className="space-y-4">
@@ -104,7 +109,7 @@ export function Pdl1ResultPanel({
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-2.5">
-          <ResultCard className="col-span-2" source={clinicalSource} label={clinicalTpsLabel} value={clinical?.tps_percent !== null && clinical?.tps_percent !== undefined ? `${clinical.tps_percent}%` : clinicalEmptyLabel} tone="emerald" />
+          <ResultCard className="col-span-2" source={clinicalSource} label={clinicalTpsLabel} value={hasConfirmedTps ? `${clinical?.tps_percent}%` : "TPS 미입력"} tone="emerald" />
           <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "AI 결과 없음"} tone="blue" />
           <ResultCard source="PD-L1 AI 분석 후보" label="분석 신뢰도" value={confidence !== null ? `${confidence.toFixed(2)}%` : "-"} tone="blue" />
         </div>
@@ -116,8 +121,8 @@ export function Pdl1ResultPanel({
         )}
 
         <dl className="mt-3 space-y-2 rounded-xl bg-slate-50 px-4 py-3 text-xs">
-          <Detail label={clinicalConfirmed ? "호흡기내과 최종 해석" : "병리과 검토 해석"} value={clinical?.interpretation ?? clinicalEmptyLabel} />
-          <Detail label="병리과 검토 소견" value={clinical?.note ?? "-"} />
+          <Detail label={clinicalConfirmed ? "호흡기내과 최종 해석" : "병리과 검토 해석"} value={clinicalInterpretation} />
+          <Detail label="병리과 검토 소견" value={isAiGeneratedClinicalNote ? "병리과 원문 소견 미입력" : clinicalNote ?? "-"} />
           <Detail label="결과일" value={clinicalResult?.result_date ?? "-"} />
           <Detail label="AI 모델" value={[aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" ") || "-"} />
           <Detail label="모델 구성" value={formatModelComponents(aiResult?.model_components) || "-"} />

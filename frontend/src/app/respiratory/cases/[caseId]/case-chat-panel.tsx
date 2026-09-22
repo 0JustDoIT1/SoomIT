@@ -87,7 +87,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
   const [status, setStatus] = useState<"connecting" | "connected" | "offline">("offline");
   const [error, setError] = useState("");
 
-  // Case 채팅만 워크스테이션 고정 레이아웃의 예외로 이동 가능하게 둔다.
+  // 숨챗은 워크스테이션 고정 레이아웃의 예외로 이동 가능하게 둔다.
   const [chatPosition, setChatPosition] = useState<ChatPosition>({ x: 0, y: 0 });
   const [isDraggingChat, setIsDraggingChat] = useState(false);
 
@@ -1168,7 +1168,8 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
         onPointerUp={!open ? endChatDrag : undefined}
         onPointerCancel={!open ? endChatDrag : undefined}
         onClick={toggleChat}
-        className={`group relative inline-flex h-12 items-center gap-2 rounded-2xl border border-blue-500/20 bg-blue-600 px-4 text-[12px] font-bold text-white shadow-[0_10px_30px_rgba(37,99,235,0.25)] transition hover:bg-blue-700 ${
+        aria-label={open ? "숨챗 닫기" : "숨챗 열기"}
+        className={`group relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/80 bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-[0_12px_28px_rgba(14,116,144,0.28)] transition hover:scale-105 hover:from-blue-700 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-2 ${
           !open
             ? isDraggingChat
               ? "cursor-grabbing touch-none select-none"
@@ -1177,28 +1178,29 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
         }`}
         title={
           open
-            ? "Case 채팅 닫기"
-            : "클릭하여 열기 · 드래그하여 이동"
+            ? "숨챗 닫기"
+            : "숨챗 · 클릭하여 열기 · 드래그하여 이동"
         }
       >
-        <svg
-          width="17"
-          height="17"
-          viewBox="0 0 24 24"
-          fill="none"
-          aria-hidden="true"
-          className="opacity-90"
-        >
-          <path
-            d="M7.5 18.5 4 20l1.1-3.4A8 8 0 1 1 20 12a8 8 0 0 1-12.5 6.5Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
+        {open ? (
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="m7 7 10 10M17 7 7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+          </svg>
+        ) : (
+          <svg width="23" height="23" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M4 8.5h8.5a2.5 2.5 0 1 0-2.2-3.7" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            <path d="M4 12h12.5a2.5 2.5 0 1 1-2.2 3.7" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            <path d="M4 15.5h5.5" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" />
+            <circle cx="5" cy="8.5" r="1.1" fill="currentColor" />
+          </svg>
+        )}
 
-        <span>{open ? "채팅 닫기" : "Case 채팅"}</span>
+        <span className="sr-only">{open ? "숨챗 닫기" : "숨챗 열기"}</span>
+        {!open && (
+          <span className="pointer-events-none absolute right-[calc(100%+10px)] whitespace-nowrap rounded-md bg-slate-900 px-2 py-1 text-[10px] font-semibold text-white opacity-0 shadow-sm transition group-hover:opacity-100 group-focus-visible:opacity-100">
+            숨챗
+          </span>
+        )}
 
         {!open && unreadCount > 0 && (
           <span className="absolute -right-1.5 -top-1.5 min-w-5 rounded-full border-2 border-white bg-rose-500 px-1 text-center text-[9px] font-bold leading-4 text-white">

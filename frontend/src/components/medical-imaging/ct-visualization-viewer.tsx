@@ -260,7 +260,7 @@ export function CtVisualizationViewer({ analysisId, layers, fetchLayer }: CtVisu
         </button>
       </div>
 
-      <aside className="min-h-0 overflow-y-auto border-l border-slate-800 bg-slate-900 p-2" aria-label="레이어 목록">
+      <aside className="min-h-0 overflow-y-auto overscroll-contain border-l border-slate-800 bg-slate-900 p-2 pb-4" aria-label="레이어 목록">
         {[...groupedLayers.entries()].map(([category, categoryLayers]) => (
           <div key={category} className="mb-3">
             <p className="mb-1 text-[9px] font-semibold text-slate-400">{CATEGORY_LABELS[category]}</p>

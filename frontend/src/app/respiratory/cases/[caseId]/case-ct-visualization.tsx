@@ -40,5 +40,5 @@ export function CaseCtVisualization({ apiBaseUrl, authorizedFetch, caseId, analy
   if (loading) return <p className="rounded border border-slate-200 bg-white px-3 py-5 text-center text-xs text-slate-500">CT 3D 결과를 불러오는 중입니다.</p>;
   if (error) return <p role="alert" className="rounded border border-rose-100 bg-rose-50 px-3 py-3 text-xs text-rose-700">{error}</p>;
   if (!layers.length) return null;
-  return <section className="overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="border-b border-slate-200 px-4 py-3"><p className="text-[10px] font-semibold text-blue-600">CT 분할 · 3D</p><h3 className="mt-0.5 text-sm font-bold text-slate-800">결절 분할 3D 시각화</h3></header><CtVisualizationViewer analysisId={analysisId} layers={layers} fetchLayer={fetchLayer} /></section>;
+  return <section className="grid h-full min-h-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="border-b border-slate-200 px-4 py-3"><p className="text-[10px] font-semibold text-blue-600">CT 분할 · 3D</p><h3 className="mt-0.5 text-sm font-bold text-slate-800">결절 분할 3D 시각화</h3></header><CtVisualizationViewer analysisId={analysisId} layers={layers} fetchLayer={fetchLayer} /></section>;
 }

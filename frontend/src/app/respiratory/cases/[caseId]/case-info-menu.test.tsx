@@ -24,6 +24,7 @@ describe("CaseInfoMenu", () => {
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "SCHEDULED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("예약됨") });
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("검사/분석 진행 중") });
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pathologyConfirmed, orders: [{ order_type: "PDL1", status: "COMPLETED" }], aiResults: [{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }] })).toMatchObject({ state: "WAITING", message: expect.stringContaining("병리과 검토") });
+    expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: [...pathologyConfirmed, { workflow_stage: "PDL1", result_status: "DRAFT" }], orders: [{ order_type: "PDL1", status: "COMPLETED" }] })).toMatchObject({ state: "ACTIONABLE" });
     expect(getCaseInfoAccessState({ key: "PDL1", currentStage: "PDL1", clinicalResults: pdl1Confirmed })).toMatchObject({ state: "COMPLETED" });
     expect(getCaseInfoAccessState({ key: "TREATMENT", currentStage: "PDL1", clinicalResults: pdl1Confirmed })).toMatchObject({ state: "ACTIONABLE" });
     for (const status of ["COMPLETED", "CANCELLED"]) {
@@ -35,11 +36,11 @@ describe("CaseInfoMenu", () => {
     const onSelect = vi.fn();
     render(<CaseInfoMenu selected="PET_CT_TNM" onSelect={onSelect} />);
 
-    for (const label of ["전체 요약", "흉부 X선", "흉부 CT", "PET-CT / TNM 병기", "조직/유전자", "PD-L1", "치료 결정", "처방", "AI 종합 분석"]) {
+    for (const label of ["전체 요약", "흉부 X선", "흉부 CT", "PET-CT / TNM 병기", "조직/유전자", "PD-L1", "치료계획·처방", "AI 종합 분석"]) {
       fireEvent.click(screen.getByRole("button", { name: label }));
     }
 
-    expect(onSelect.mock.calls.map(([key]) => key)).toEqual(["OVERVIEW", "XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION", "AI_SUMMARY"]);
+    expect(onSelect.mock.calls.map(([key]) => key)).toEqual(["OVERVIEW", "XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "AI_SUMMARY"]);
   });
 
   it("marks only the selected workspace as the current page", () => {

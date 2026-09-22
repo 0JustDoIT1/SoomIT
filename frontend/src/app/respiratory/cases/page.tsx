@@ -63,7 +63,7 @@ export default function RespiratoryCasesPage() {
 
   const isDashboard = pathname === "/respiratory/dashboard";
 
-  const { authorizedFetch } = useRespiratoryAuth();
+  const { authorizedFetch, user } = useRespiratoryAuth();
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -820,56 +820,58 @@ export default function RespiratoryCasesPage() {
       <div className="mx-auto max-w-[1440px]">
         {/* Header */}
 
-        <header className="mb-4 flex items-end justify-between gap-6">
-          <div className="min-w-0">
-            <p className="text-xs font-semibold text-blue-600">
-              호흡기내과 진료 업무
-            </p>
+        <header className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <div className="h-1 bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-400" />
+          <div className="flex min-h-[136px] items-center justify-between gap-6 px-6 py-5">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 sm:flex" aria-hidden="true">
+                <svg width="25" height="25" viewBox="0 0 24 24" fill="none">
+                  <path d="M12 3v18M12 6C8.2 2.8 4.5 4.7 4.5 9.6c0 4.7 2.3 8.4 5.6 8.4 1.1 0 1.9-.5 1.9-1.3M12 6c3.8-3.2 7.5-1.3 7.5 3.6 0 4.7-2.3 8.4-5.6 8.4-1.1 0-1.9-.5-1.9-1.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  <path d="M12 9 8.5 12m3.5 1-3 2.5m3-6.5 3.5 3m-3.5 1 3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+                </svg>
+              </div>
 
-            <h1 className="mt-1 text-2xl font-bold text-slate-900">
-              오늘의 진료 업무
-            </h1>
+              <div className="min-w-0">
+                <p className="text-xs font-medium text-slate-500">오늘의 진료 브리핑</p>
+                <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900">
+                  {user?.name ?? "호흡기내과 의료진"}
+                  <span className="ml-1.5 font-semibold text-slate-700">선생님</span>
+                </h1>
+                <p className="mt-1 text-sm text-slate-600">담당 Case의 진행 현황과 우선 처리 업무를 확인합니다.</p>
+              </div>
+            </div>
 
-            <p className="mt-1.5 text-sm text-slate-500">
-              현재 담당 Case의 진행 상황과 우선 처리 업무를
-              확인합니다.
-            </p>
+            <div className="flex shrink-0 flex-col items-end gap-3">
+              <span className="hidden text-xs text-slate-500 md:block">
+                {casesSyncing
+                  ? "업무함을 갱신하는 중입니다."
+                  : lastCasesSyncAt
+                    ? `마지막 갱신 ${lastCasesSyncAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
+                    : "자동 갱신: 30초"}
+              </span>
+              <button
+                type="button"
+                onClick={() => void fetchCases(undefined, true)}
+                disabled={casesSyncing}
+                className="inline-flex h-9 items-center justify-center rounded-lg border border-blue-200 bg-white px-3.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {casesSyncing ? "갱신 중" : "업무 새로고침"}
+              </button>
+            </div>
           </div>
 
-          <div className="flex shrink-0 items-center gap-3 text-xs text-slate-500">
-            <span>
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 bg-slate-50/70 px-6 py-2.5 text-xs text-slate-500">
+            <span className="font-semibold text-blue-700">호흡기내과</span>
+            <span className="h-3 w-px bg-slate-200" />
+            <span>Respiratory Medicine</span>
+            <span className="h-3 w-px bg-slate-200" />
+            <span className="md:hidden">
               {casesSyncing
                 ? "업무함을 갱신하는 중입니다."
                 : lastCasesSyncAt
-                  ? `마지막 갱신 ${lastCasesSyncAt.toLocaleTimeString(
-                      "ko-KR",
-                      {
-                        hour:
-                          "2-digit",
-                        minute:
-                          "2-digit",
-                      },
-                    )}`
+                  ? `마지막 갱신 ${lastCasesSyncAt.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" })}`
                   : "자동 갱신: 30초"}
             </span>
-
-            <button
-              type="button"
-              onClick={() =>
-                void fetchCases(
-                  undefined,
-                  true,
-                )
-              }
-              disabled={
-                casesSyncing
-              }
-              className="rounded-lg border border-blue-200 bg-white px-3 py-2 font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {casesSyncing
-                ? "갱신 중"
-                : "업무 새로고침"}
-            </button>
           </div>
         </header>
 

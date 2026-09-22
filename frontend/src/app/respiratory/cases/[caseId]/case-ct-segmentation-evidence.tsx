@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { CtDicomViewer } from "@/components/medical-imaging/ct-dicom-viewer";
+import { CtDicomViewer, type ClinicianImageAnnotation, type PendingImageAnnotation } from "@/components/medical-imaging/ct-dicom-viewer";
+import { showToast } from "@/components/ui/toast/toast";
 import type { CtCornerstoneSegmentation } from "@/app/radiology/_lib/cornerstone-labelmap";
 import { ensureCornerstoneInitialized } from "@/app/radiology/_lib/cornerstone-init";
 
@@ -62,6 +63,7 @@ export function CaseCtSegmentationEvidence({
   const [view, setView] = useState<"DICOM" | "SEGMENTATION">("DICOM");
   const [imageCount, setImageCount] = useState<number | null>(null);
   const [segmentationAvailable, setSegmentationAvailable] = useState(false);
+  const [annotations, setAnnotations] = useState<ClinicianImageAnnotation[]>([]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -188,7 +190,7 @@ export function CaseCtSegmentationEvidence({
         }),
       );
 
-      return { imageIds };
+      return { imageIds, sopInstanceUids: uids };
     },
     [
       apiBaseUrl,
@@ -197,6 +199,75 @@ export function CaseCtSegmentationEvidence({
       onEvidenceInfoChange,
     ],
   );
+
+  useEffect(() => {
+    if (!asset) return;
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const response = await authorizedFetch(
+          `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?image_asset_id=${asset.id}`,
+          { signal: controller.signal },
+        );
+        const body: unknown = await response.json().catch(() => []);
+        if (!response.ok || !Array.isArray(body)) throw new Error("annotation load failed");
+        if (!controller.signal.aborted) setAnnotations(body as ClinicianImageAnnotation[]);
+      } catch (error) {
+        console.error(error);
+        if (!controller.signal.aborted) showToast.error("영상 주석을 불러오지 못했습니다.", { id: `ct-annotations-load-${asset.id}` });
+      }
+    })();
+    return () => controller.abort();
+  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+
+  const saveAnnotation = useCallback(async (pending: PendingImageAnnotation) => {
+    if (!asset) return;
+    try {
+      const response = await authorizedFetch(
+        `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image_asset: asset.id, ...pending }),
+        },
+      );
+      const body: unknown = await response.json().catch(() => ({}));
+      if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
+      setAnnotations((current) => [...current, body as ClinicianImageAnnotation]);
+      showToast.success("영상 주석을 저장했습니다.");
+    } catch (error) {
+      console.error(error);
+      showToast.error("영상 주석 저장에 실패했습니다.");
+    }
+  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+
+  const deleteAnnotation = useCallback(async (annotationId: string) => {
+    try {
+      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`, { method: "DELETE" });
+      if (!response.ok) throw new Error("annotation delete failed");
+      setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
+      showToast.success("영상 주석을 삭제했습니다.");
+    } catch (error) {
+      console.error(error);
+      showToast.error("영상 주석 삭제에 실패했습니다.");
+    }
+  }, [apiBaseUrl, authorizedFetch, caseId]);
+
+  const updateAnnotation = useCallback(async (annotationId: string, pending: PendingImageAnnotation) => {
+    try {
+      const response = await authorizedFetch(
+        `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`,
+        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pending) },
+      );
+      const body: unknown = await response.json().catch(() => ({}));
+      if (!response.ok || !body || typeof body !== "object") throw new Error("annotation update failed");
+      setAnnotations((current) => current.map((annotation) => annotation.id === annotationId ? body as ClinicianImageAnnotation : annotation));
+      showToast.success("영상 주석을 수정했습니다.");
+    } catch (error) {
+      console.error(error);
+      showToast.error("영상 주석 수정에 실패했습니다.");
+    }
+  }, [apiBaseUrl, authorizedFetch, caseId]);
 
   const loadSegmentation = useCallback(
     async (
@@ -406,6 +477,11 @@ export function CaseCtSegmentationEvidence({
             analysisId={analysisId}
             loadSeries={loadSeries}
             loadSegmentation={loadSegmentation}
+            seriesInstanceUid={asset.series_instance_uid}
+            annotations={annotations}
+            onAnnotationCreated={saveAnnotation}
+            onAnnotationUpdated={updateAnnotation}
+            onAnnotationDeleted={deleteAnnotation}
           />
         ) : (
           <CaseCtVisualization

@@ -18,6 +18,7 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
   const [decisionStatus, setDecisionStatus] = useState<string | undefined>();
   const [candidates, setCandidates] = useState<RegimenCandidate[]>([]);
   const [selected, setSelected] = useState("");
+  const [selectedRegimenDetail, setSelectedRegimenDetail] = useState<TreatmentDecision["selected_regimen_detail"]>(null);
   const [treatmentType, setTreatmentType] = useState("");
   const [aiAction, setAiAction] = useState("NOT_USED");
   const [plan, setPlan] = useState("");
@@ -45,6 +46,7 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
         setConfirmed(nextDecision?.decision_status === "CONFIRMED");
         setDecisionStatus(nextDecision?.decision_status ?? undefined);
         setSelected(nextDecision?.selected_regimen ?? "");
+        setSelectedRegimenDetail(nextDecision?.selected_regimen_detail ?? null);
         const nextTreatmentType = nextDecision?.treatment_type ?? "";
         setTreatmentType(nextTreatmentType);
         if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true);
@@ -99,6 +101,7 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
     <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
       <header><p className="text-xs font-semibold text-emerald-600">호흡기내과 치료 결정</p><h2 className="mt-1 text-lg font-bold text-slate-800">최종 치료계획</h2><p className="mt-1 text-xs text-slate-500">확정 임상 결과와 치료요법 후보를 검토한 뒤 담당의가 저장·확정합니다.</p></header>
       <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{plan || (actionable ? "등록된 치료계획이 없습니다." : "현재 치료계획을 작성할 수 없습니다.")}</p>
+      {(treatmentType || selectedRegimenDetail || targetedPlan || rationale) && <TreatmentDecisionDetails treatmentType={nextLabel(treatmentType, TYPES)} aiAction={aiAction} regimen={selectedRegimenDetail} targetedPlan={targetedPlan} rationale={rationale} />}
       <DecisionStatus error={!open ? error : undefined} message={confirmed ? "치료계획 확정 완료" : undefined} />
       {!confirmed && <button type="button" disabled={!actionable} onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-4"}>결과 입력 및 처리</button>}
       {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. 저장 후 확정하여 처방 단계로 진행합니다." busy={busy} error={error} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
@@ -119,4 +122,13 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
     </div>
     <div className="grid items-start gap-3 lg:grid-cols-2"><TreatmentEvidencePanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /><TreatmentOpinionPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /></div>
   </div>;
+}
+
+function nextLabel(value: string, options: readonly (readonly [string, string])[]) {
+  return (options.find(([key]) => key === value)?.[1] ?? value) || "-";
+}
+
+function TreatmentDecisionDetails({ treatmentType, aiAction, regimen, targetedPlan, rationale }: { treatmentType: string; aiAction: string; regimen: TreatmentDecision["selected_regimen_detail"]; targetedPlan: string; rationale: string }) {
+  const rows = [["치료 유형", treatmentType], ["AI 추천 반영", aiAction], ["선택 Regimen", regimen ? `${regimen.regimen_name} (${regimen.regimen_code})` : "미선택"], ["표적치료 계획", targetedPlan || "-"], ["결정 근거", rationale || "-"]];
+  return <dl className="mt-3 grid gap-x-4 gap-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs sm:grid-cols-2">{rows.map(([label, value]) => <div key={label}><dt className="text-slate-400">{label}</dt><dd className="mt-0.5 whitespace-pre-wrap font-medium text-slate-700">{value}</dd></div>)}</dl>;
 }

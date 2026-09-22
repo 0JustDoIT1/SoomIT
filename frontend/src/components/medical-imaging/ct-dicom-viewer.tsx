@@ -12,12 +12,25 @@ type CtDicomViewerProps = {
   orderId: string;
   assetId: string;
   analysisId?: string;
-  loadSeries?: (orderId: string, assetId: string) => Promise<{ imageIds: string[] }>;
+  loadSeries?: (orderId: string, assetId: string) => Promise<{ imageIds: string[]; sopInstanceUids?: string[] }>;
   loadSegmentation?: (analysisId: string) => Promise<CtCornerstoneSegmentation>;
+  seriesInstanceUid?: string | null;
+  annotations?: ClinicianImageAnnotation[];
+  onAnnotationCreated?: (annotation: PendingImageAnnotation) => void;
+  onAnnotationUpdated?: (annotationId: string, annotation: PendingImageAnnotation) => void;
+  onAnnotationDeleted?: (annotationId: string) => void;
 };
 
+export type ClinicianImageAnnotation = {
+  id: string;
+  annotation_type: "LENGTH" | "BOUNDING_BOX" | "TEXT";
+  annotation_data: Record<string, unknown>;
+};
+
+export type PendingImageAnnotation = Omit<ClinicianImageAnnotation, "id">;
+
 type ViewKey = "axial" | "coronal" | "sagittal" | "volume3d";
-type MprToolMode = "WL" | "ZOOM" | "PAN" | "LENGTH" | "ROI";
+type MprToolMode = "WL" | "ZOOM" | "PAN" | "LENGTH" | "ROI" | "TEXT";
 type MprToolGroup = Pick<import("@cornerstonejs/tools").Types.IToolGroup, "setToolActive" | "setToolPassive">;
 type MprToolBindings = {
   primary: import("@cornerstonejs/tools").Enums.MouseBindings;
@@ -30,6 +43,7 @@ type MprToolBindings = {
   stackScroll: string;
   length: string;
   rectangleRoi: string;
+  text: string;
 };
 
 const TOOL_GROUP_ID = "ct-dicom-viewer-mpr-tools";
@@ -65,7 +79,7 @@ function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
   return [-x, -y, z];
 }
 
-export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSegmentation }: CtDicomViewerProps) {
+export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted }: CtDicomViewerProps) {
   const workspaceRef = useRef<HTMLDivElement>(null);
   const axialRef = useRef<HTMLDivElement>(null);
   const coronalRef = useRef<HTMLDivElement>(null);
@@ -87,8 +101,14 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   const [focusedView, setFocusedView] = useState<ViewKey | null>(null);
   const [selectedView, setSelectedView] = useState<ViewKey>("axial");
   const [activeTool, setActiveTool] = useState<MprToolMode>("WL");
+  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [annotationText, setAnnotationText] = useState("");
 
   const imageIdsRef = useRef<string[] | null>(null);
+  const sopInstanceUidsRef = useRef<string[]>([]);
+  const onAnnotationCreatedRef = useRef(onAnnotationCreated);
+  const onAnnotationUpdatedRef = useRef(onAnnotationUpdated);
+  const annotationTextRef = useRef("");
   const noduleFocusWorldRef = useRef<[number, number, number] | null>(null);
   // All 4 viewports are built once per series and kept alive for the component's
   // lifetime; this ref lets the maximize/restore effect resize them without
@@ -100,6 +120,23 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   // Caches the loaded labelmap data across re-renders, keyed by analysis+
   // volume, so it is only downloaded once per series.
   const segmentationCacheRef = useRef<{ key: string; segmentation: CtCornerstoneSegmentation } | null>(null);
+
+  useEffect(() => {
+    onAnnotationCreatedRef.current = onAnnotationCreated;
+  }, [onAnnotationCreated]);
+
+  useEffect(() => {
+    onAnnotationUpdatedRef.current = onAnnotationUpdated;
+  }, [onAnnotationUpdated]);
+
+  useEffect(() => {
+    annotationTextRef.current = annotationText;
+  }, [annotationText]);
+
+  const selectAnnotation = (annotation: ClinicianImageAnnotation) => {
+    setSelectedAnnotationId(annotation.id);
+    setAnnotationText(typeof annotation.annotation_data.text === "string" ? annotation.annotation_data.text : "");
+  };
 
   const resetViewports = () => {
     renderingEngineRef.current?.getViewports().forEach((viewport) => {
@@ -121,8 +158,9 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       PAN: bindings.pan,
       LENGTH: bindings.length,
       ROI: bindings.rectangleRoi,
+      TEXT: bindings.text,
     }[mode];
-    [bindings.windowLevel, bindings.zoom, bindings.pan, bindings.stackScroll, bindings.length, bindings.rectangleRoi]
+    [bindings.windowLevel, bindings.zoom, bindings.pan, bindings.stackScroll, bindings.length, bindings.rectangleRoi, bindings.text]
       .forEach((toolName) => toolGroup.setToolPassive(toolName, { removeAllBindings: true }));
     const primaryBindings = [{ mouseButton: bindings.primary }];
     if (primaryTool === bindings.pan) primaryBindings.push({ mouseButton: bindings.auxiliary });
@@ -156,9 +194,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       (loadSeries ?? loadCtDicomWebSeries)(orderId, assetId),
       analysisId && !loadSeries ? fetchRadiologyAnalysisResult(analysisId).catch(() => null) : Promise.resolve(null),
     ])
-      .then(([{ imageIds }, analysisResult]) => {
+      .then(([series, analysisResult]) => {
         if (disposed) return;
+        const { imageIds } = series;
         imageIdsRef.current = imageIds;
+        sopInstanceUidsRef.current = (series as { sopInstanceUids?: string[] }).sopInstanceUids ?? [];
         noduleFocusWorldRef.current = getNoduleFocusWorld(analysisResult);
         setSeriesProgress({ loaded: 0, total: imageIds.length });
         setLoading(false);
@@ -227,10 +267,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
         tools.ToolGroupManager.destroyToolGroup(toolGroupId);
         tools.ToolGroupManager.destroyToolGroup(volume3dToolGroupId);
       };
-      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.TrackballRotateTool].forEach(
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool, tools.TrackballRotateTool].forEach(
         (ToolClass) => tools.addTool(ToolClass),
       );
-      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool].forEach((ToolClass) =>
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool].forEach((ToolClass) =>
         toolGroup.addTool(ToolClass.toolName),
       );
       mprToolGroupRef.current = toolGroup;
@@ -245,8 +285,74 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
         stackScroll: tools.StackScrollTool.toolName,
         length: tools.LengthTool.toolName,
         rectangleRoi: tools.RectangleROITool.toolName,
+        text: tools.ArrowAnnotateTool.toolName,
       };
       setMprToolMode(activeToolRef.current);
+
+      const runtimeTools = tools as unknown as {
+        eventTarget?: EventTarget;
+        Enums?: { Events?: Record<string, string> };
+      };
+      const annotationEventName = runtimeTools.Enums?.Events?.ANNOTATION_COMPLETED;
+      const annotationModifiedEventName = runtimeTools.Enums?.Events?.ANNOTATION_MODIFIED;
+      const syncAnnotation = (event: Event, completed: boolean) => {
+        const detail = (event as CustomEvent<{ annotation?: Record<string, unknown> }>).detail;
+        const annotation = detail?.annotation;
+        if (!annotation || !seriesInstanceUid) return;
+        const metadata = annotation.metadata as Record<string, unknown> | undefined;
+        const data = annotation.data as Record<string, unknown> | undefined;
+        const toolName = metadata?.toolName;
+        const annotationType = toolName === tools.LengthTool.toolName
+          ? "LENGTH"
+          : toolName === tools.RectangleROITool.toolName
+            ? "BOUNDING_BOX"
+            : toolName === tools.ArrowAnnotateTool.toolName
+              ? "TEXT"
+              : null;
+        const points = (data?.handles as { points?: unknown } | undefined)?.points;
+        if (!annotationType || !Array.isArray(points) || points.length === 0) return;
+        const referencedImageId = typeof metadata?.referencedImageId === "string" ? metadata.referencedImageId : "";
+        const imageIndex = imageIds.indexOf(referencedImageId);
+        const sopInstanceUid = sopInstanceUidsRef.current[imageIndex] ?? sopInstanceUidsRef.current[0];
+        if (!sopInstanceUid) return;
+        const viewportId = typeof metadata?.viewportId === "string" ? metadata.viewportId : AXIAL_VIEWPORT_ID;
+        const cachedStats = data?.cachedStats && typeof data.cachedStats === "object" ? data.cachedStats : undefined;
+        const annotationId = typeof annotation.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-")
+          ? annotation.annotationUID.slice("clinician-".length)
+          : null;
+        const text = annotationType === "TEXT" ? annotationTextRef.current.trim() : undefined;
+        if (annotationType === "TEXT" && !text) return;
+        const payload: PendingImageAnnotation = {
+          annotation_type: annotationType,
+          annotation_data: {
+            series_instance_uid: seriesInstanceUid,
+            sop_instance_uid: sopInstanceUid,
+            tool_name: String(toolName),
+            viewport: viewportId.replace("ct-dicom-viewer-", ""),
+            frame_of_reference_uid: typeof metadata?.FrameOfReferenceUID === "string" ? metadata.FrameOfReferenceUID : undefined,
+            world_points: points,
+            cached_stats: cachedStats,
+            text,
+          },
+        };
+        if (annotationId) {
+          onAnnotationUpdatedRef.current?.(annotationId, payload);
+        } else if (completed) {
+          onAnnotationCreatedRef.current?.(payload);
+        }
+      };
+      if (runtimeTools.eventTarget && annotationEventName) {
+        const handleAnnotationCompleted = (event: Event) => syncAnnotation(event, true);
+        const handleAnnotationModified = (event: Event) => syncAnnotation(event, false);
+        runtimeTools.eventTarget.addEventListener(annotationEventName, handleAnnotationCompleted);
+        if (annotationModifiedEventName) runtimeTools.eventTarget.addEventListener(annotationModifiedEventName, handleAnnotationModified);
+        const previousCleanup = cleanupCornerstoneState;
+        cleanupCornerstoneState = () => {
+          runtimeTools.eventTarget?.removeEventListener(annotationEventName, handleAnnotationCompleted);
+          if (annotationModifiedEventName) runtimeTools.eventTarget?.removeEventListener(annotationModifiedEventName, handleAnnotationModified);
+          previousCleanup?.();
+        };
+      }
       // The 3D volume-rendering view rotates/pans/zooms instead of windowing by drag.
       [tools.TrackballRotateTool, tools.PanTool, tools.ZoomTool].forEach((ToolClass) =>
         volume3dToolGroup.addTool(ToolClass.toolName),
@@ -294,10 +400,62 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
       removeProgressListener = () => core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
 
+      // `wadouri:fileManager` IDs only expose their DICOM metadata after the
+      // file has been decoded once.  The streaming volume loader reads image
+      // plane metadata while constructing the volume, so creating it first
+      // leaves pixelRepresentation undefined for locally managed files.
+      let loadedImageCount = 0;
+      await Promise.all(imageIds.map(async (imageId) => {
+        await core.imageLoader.loadAndCacheImage(imageId);
+        loadedImageCount += 1;
+        if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
+      }));
+      if (disposed) return;
+
       const volume = await core.volumeLoader.createAndCacheVolume(volumeId, { imageIds, progressiveRendering: true });
       if (disposed) return;
       const allViewportIds = [...MPR_VIEWPORT_IDS, VOLUME3D_VIEWPORT_ID];
       await core.setVolumesForViewports(renderingEngine, [{ volumeId }], allViewportIds);
+
+      // Clinician annotations are kept separate from the AI labelmap.  The
+      // persisted world coordinates let Cornerstone place the same annotation
+      // in an MPR viewport after the Case is reopened.
+      const annotationState = (tools as unknown as {
+        annotation?: { state?: { addAnnotation?: (annotation: Record<string, unknown>, element: HTMLDivElement) => void } };
+      }).annotation?.state;
+      if (annotationState?.addAnnotation) {
+        const addAnnotation = annotationState.addAnnotation;
+        annotations.forEach((saved) => {
+          const data = saved.annotation_data;
+          const points = data.world_points;
+          if (!Array.isArray(points) || points.length === 0) return;
+          const toolName = saved.annotation_type === "LENGTH"
+            ? tools.LengthTool.toolName
+            : saved.annotation_type === "BOUNDING_BOX"
+              ? tools.RectangleROITool.toolName
+              : tools.ArrowAnnotateTool.toolName;
+          const viewportName = typeof data.viewport === "string" ? data.viewport : "axial";
+          const target = ({ axial: axialRef.current, coronal: coronalRef.current, sagittal: sagittalRef.current } as Record<string, HTMLDivElement | null>)[viewportName] ?? axialRef.current;
+          if (!target) return;
+          addAnnotation({
+            annotationUID: `clinician-${saved.id}`,
+            highlighted: false,
+            invalidated: false,
+            isLocked: false,
+            isVisible: true,
+            metadata: {
+              toolName,
+              FrameOfReferenceUID: data.frame_of_reference_uid,
+              referencedImageId: imageIds[Math.max(0, sopInstanceUidsRef.current.indexOf(String(data.sop_instance_uid)))],
+            },
+            data: {
+              handles: { points },
+              cachedStats: data.cached_stats ?? {},
+              label: typeof data.text === "string" ? data.text : undefined,
+            },
+          }, target);
+        });
+      }
 
       const volume3dViewport = renderingEngine.getViewport(VOLUME3D_VIEWPORT_ID) as InstanceType<typeof core.VolumeViewport3D>;
       const preset = core.CONSTANTS.VIEWPORT_PRESETS.find((item) => item.name === VOLUME3D_PRESET);
@@ -380,7 +538,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       renderingEngine?.destroy();
       renderingEngineRef.current = null;
     };
-  }, [loading, error, analysisId, orderId, assetId, loadSegmentation, setMprToolMode]);
+  }, [loading, error, analysisId, orderId, assetId, annotations, loadSegmentation, setMprToolMode, seriesInstanceUid]);
 
   // Pure layout switch: maximizing/restoring a view never re-fetches or rebuilds
   // anything - the already-built viewports just need a resize once their
@@ -418,6 +576,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
     ["PAN", "Pan", "Pan"],
     ["LENGTH", "측정", "Length measurement"],
     ["ROI", "ROI", "Rectangle ROI"],
+    ["TEXT", "Text", "Text annotation"],
   ];
 
   const progressPercent =
@@ -429,7 +588,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       ref={workspaceRef}
       tabIndex={0}
       onKeyDown={onWorkspaceKeyDown}
-      className="grid h-full min-h-0 grid-rows-[42px_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="relative grid h-full min-h-0 grid-rows-[42px_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
       aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동"
     >
       {/* PACS toolbar */}
@@ -475,11 +634,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
               type="button"
               aria-pressed={activeTool === mode}
               onClick={() => setMprToolMode(mode)}
-              title={
-                mode === "LENGTH" || mode === "ROI"
-                  ? `${title} · 화면에서만 사용하며 저장되지 않습니다.`
-                  : title
-              }
+              title={title}
               className={`h-7 shrink-0 rounded-md border px-2 text-[9px] font-semibold transition ${
                 activeTool === mode
                   ? "border-blue-500 bg-blue-600 text-white shadow-sm"
@@ -489,6 +644,16 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
               {label}
             </button>
           ))}
+
+          {activeTool === "TEXT" && (
+            <input
+              aria-label="텍스트 주석 내용"
+              value={annotationText}
+              onChange={(event) => setAnnotationText(event.target.value)}
+              placeholder="주석 입력 후 영상 클릭"
+              className="h-7 w-36 shrink-0 rounded-md border border-slate-700 bg-slate-950 px-2 text-[9px] text-slate-100 placeholder:text-slate-500"
+            />
+          )}
 
           <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-slate-700" />
 
@@ -509,6 +674,18 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
           >
             전체화면
           </button>
+
+          <button
+            type="button"
+            disabled={!selectedAnnotationId}
+            onClick={() => {
+              if (selectedAnnotationId) onAnnotationDeleted?.(selectedAnnotationId);
+            }}
+            title="마지막으로 저장한 의료진 주석 삭제"
+            className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            주석 삭제
+          </button>
         </div>
 
         <div className="hidden shrink-0 items-center gap-2 text-[8px] text-slate-500 xl:flex">
@@ -519,6 +696,33 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
           <span>중클릭 Pan</span>
         </div>
       </div>
+
+      {annotations.length > 0 && (
+        <div className="absolute bottom-2 left-2 z-40 flex max-w-[calc(100%-16px)] items-center gap-1 overflow-x-auto rounded-md border border-slate-700 bg-slate-950/90 p-1.5 text-[9px] text-slate-200 backdrop-blur">
+          <span className="shrink-0 px-1 text-slate-400">의료진 주석</span>
+          {annotations.map((annotation, index) => (
+            <button
+              key={annotation.id}
+              type="button"
+              aria-pressed={selectedAnnotationId === annotation.id}
+              onClick={() => selectAnnotation(annotation)}
+              className={`shrink-0 rounded px-2 py-1 font-semibold ${selectedAnnotationId === annotation.id ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}
+            >
+              {annotation.annotation_type === "LENGTH" ? "길이" : annotation.annotation_type === "BOUNDING_BOX" ? "ROI" : "Text"} {index + 1}
+            </button>
+          ))}
+          {selectedAnnotationId && annotations.find((annotation) => annotation.id === selectedAnnotationId)?.annotation_type === "TEXT" && (
+            <>
+              <input aria-label="선택한 텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} className="h-6 w-28 rounded border border-slate-700 bg-slate-900 px-1.5 text-[9px] text-white" />
+              <button type="button" onClick={() => {
+                const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
+                if (!selected || !annotationText.trim()) return;
+                onAnnotationUpdated?.(selected.id, { annotation_type: selected.annotation_type, annotation_data: { ...selected.annotation_data, text: annotationText.trim() } });
+              }} className="shrink-0 rounded bg-blue-600 px-2 py-1 font-semibold text-white">텍스트 저장</button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Viewports */}
       <div className="relative min-h-0 overflow-hidden bg-[#02050d]">
