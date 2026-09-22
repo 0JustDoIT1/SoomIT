@@ -1142,6 +1142,13 @@ export default function RespiratoryCaseDetailPage() {
     && !(selectedInfoMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "PRESCRIPTION_LIST");
   const prescriptionActionable = selectedCase?.case_status === "ACTIVE"
     && selectedCase.current_stage === "PRESCRIPTION";
+  const treatmentDecisionActionable = selectedCase?.case_status === "ACTIVE"
+    && selectedCase.current_stage === "TREATMENT";
+  const isTreatmentPrescriptionPending = selectedInfoMenu === "TREATMENT"
+    && !treatmentDecisionActionable
+    && !prescriptionActionable;
+  const requiresPdl1StageDecision = selectedCase?.current_stage === "PDL1"
+    && Boolean(confirmedPdl1Result);
   const isFixedWorkspace = selectedInfoMenu === "AI_SUMMARY"
     || (selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "PRESCRIPTION_LIST")
     || (selectedMainMenu === "AI" && selectedAiMenu === "PDL1")
@@ -1973,9 +1980,15 @@ export default function RespiratoryCaseDetailPage() {
             />
           </div>
         ) : selectedInfoMenu === "TREATMENT" ? (
+          isTreatmentPrescriptionPending ? (
+            <TreatmentPrescriptionPendingPanel
+              waitingMessage={selectedInfoAccess.message}
+              requiresPdl1StageDecision={requiresPdl1StageDecision}
+            />
+          ) : (
           <section className="grid min-h-0 flex-1 gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
             <TreatmentDecisionPanel
-              actionable={selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "TREATMENT"}
+              actionable={treatmentDecisionActionable}
               waitingMessage={selectedInfoAccess.state === "WAITING" ? selectedInfoAccess.message : undefined}
               key={caseId}
               caseId={caseId}
@@ -1995,6 +2008,7 @@ export default function RespiratoryCaseDetailPage() {
               onPrescriptionChanged={() => setCaseRefreshVersion((current) => current + 1)}
             />
           </section>
+          )
         ) : selectedMainMenu === "PRESCRIPTION" &&
         selectedPrescriptionMenu === "PRESCRIPTION_LIST" ? (
           <fieldset disabled={!prescriptionActionable} className="contents"><PrescriptionSection className="grid min-h-0 flex-1 grid-cols-1 gap-3 xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
@@ -2984,6 +2998,35 @@ export default function RespiratoryCaseDetailPage() {
       </div>
     </>
     );
+}
+
+function TreatmentPrescriptionPendingPanel({ waitingMessage, requiresPdl1StageDecision }: { waitingMessage?: string; requiresPdl1StageDecision: boolean }) {
+  const steps = [
+    requiresPdl1StageDecision
+      ? ["1", "다음 단계 결정", "확정된 PD-L1 결과를 검토한 후 치료결정 단계로 진행합니다."]
+      : ["1", "PD-L1 결과 확정", "호흡기내과에서 PD-L1 결과를 확인·확정합니다."],
+    ["2", "치료계획 작성", "확정 결과를 바탕으로 치료 유형과 Regimen을 결정합니다."],
+    ["3", "처방 및 안전성 확인", "임시 처방 생성 후 안전성 검사를 거쳐 최종 확정합니다."],
+  ];
+
+  return <section className="mx-auto flex w-full max-w-4xl flex-col rounded-xl border border-amber-200 bg-white p-5 shadow-sm">
+    <div className="flex items-start gap-3">
+      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-amber-100 text-base font-bold text-amber-700">!</span>
+      <div>
+        <p className="text-xs font-semibold text-amber-700">치료계획·처방 진행 대기</p>
+        <h2 className="mt-1 text-xl font-bold text-slate-800">{requiresPdl1StageDecision ? "다음 단계 결정이 필요합니다." : "PD-L1 호흡기내과 최종 확정이 필요합니다."}</h2>
+        <p className="mt-2 text-sm leading-6 text-slate-600">{requiresPdl1StageDecision ? "상단의 다음 단계 결정으로 치료결정 단계에 진입한 뒤 치료계획을 작성하세요." : waitingMessage || "선행 검사 결과가 확정되면 치료계획과 처방을 이어서 진행할 수 있습니다."}</p>
+      </div>
+    </div>
+    <ol className="mt-5 grid gap-3 border-t border-slate-100 pt-5 md:grid-cols-3">
+      {steps.map(([number, title, description]) => <li key={number} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-blue-600 text-xs font-bold text-white">{number}</span>
+        <h3 className="mt-3 text-sm font-bold text-slate-800">{title}</h3>
+        <p className="mt-1 text-xs leading-5 text-slate-500">{description}</p>
+      </li>)}
+    </ol>
+    <p className="mt-4 text-xs text-slate-500">{requiresPdl1StageDecision ? "치료결정 단계 진입 전에는 치료계획과 처방을 작성할 수 없습니다." : "PD-L1 확정 전에는 치료계획과 처방을 작성할 수 없습니다."}</p>
+  </section>;
 }
 
 function CasePrescriptionItemRow({

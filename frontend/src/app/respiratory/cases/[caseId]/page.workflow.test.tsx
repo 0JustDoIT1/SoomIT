@@ -76,7 +76,7 @@ it("offers the PD-L1 order after a confirmed pathology result", async () => {
   expect(await screen.findByRole("button", { name: "PD-L1 오더" })).toBeEnabled();
 });
 
-it("makes the combined treatment and prescription workspace actionable after PD-L1 confirmation", async () => {
+it("keeps treatment and prescription in a single waiting view until the confirmed PD-L1 result advances to treatment", async () => {
   installCaseResponses({ stage: "PDL1", clinicalResults: [
     { id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} },
     { id: "pdl1-1", workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 60 } } },
@@ -88,7 +88,8 @@ it("makes the combined treatment and prescription workspace actionable after PD-
   expect(await screen.findByRole("button", { name: "다음 단계 결정" })).toBeEnabled();
 
   await openCaseWorkspace("치료계획·처방");
-  expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: "다음 단계 결정이 필요합니다." })).toBeInTheDocument();
+  expect(screen.queryByTestId("treatment-final-plan")).not.toBeInTheDocument();
 });
 
 it("does not expose duplicate PD-L1 ordering while an active PD-L1 order exists", async () => {
