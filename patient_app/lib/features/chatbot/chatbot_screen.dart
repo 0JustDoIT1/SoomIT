@@ -12,11 +12,9 @@ class ChatbotScreen extends StatefulWidget {
 
 class _ChatbotScreenState extends State<ChatbotScreen> {
   final TextEditingController _controller = TextEditingController();
-
   final ScrollController _scrollController = ScrollController();
 
   final ChatbotService _chatbotService = ChatbotService();
-
   final PatientAuthService _authService = PatientAuthService();
 
   bool _isReplying = false;
@@ -25,9 +23,9 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     const _ChatMessage(
       text:
           '안녕하세요 😊\n'
-          '숨-잇 안내 챗봇이에요.\n\n'
+          '숨-잇 안내 챗봇 숨이에요.\n\n'
           '앱 사용방법, 검사 준비사항, '
-          '일반 건강정보 등이 궁금하면 편하게 물어보세요.',
+          '일반 건강정보 등이 궁금하면 편하게 물어보세요!',
       isUser: false,
     ),
   ];
@@ -43,15 +41,12 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   void dispose() {
     _controller.dispose();
     _scrollController.dispose();
-
     super.dispose();
   }
 
   void _scrollToBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_scrollController.hasClients) {
-        return;
-      }
+      if (!_scrollController.hasClients) return;
 
       _scrollController.animateTo(
         _scrollController.position.maxScrollExtent,
@@ -67,13 +62,8 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   }) async {
     var accessToken = await _authService.getAccessToken();
 
-    /*
-     * access token이 없는 경우
-     * 저장된 refresh token을 이용해 세션 복구를 시도한다.
-     */
     if (accessToken == null || accessToken.isEmpty) {
       final refreshed = await _authService.refreshStoredSession();
-
       if (refreshed) {
         accessToken = await _authService.getAccessToken();
       }
@@ -92,10 +82,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     } catch (error) {
       final errorMessage = error.toString();
 
-      /*
-       * access token이 만료된 경우
-       * refresh token으로 한 번 갱신한 뒤 재요청한다.
-       */
       final isAuthenticationError =
           errorMessage.contains('인증이 필요합니다.') ||
           errorMessage.contains('401') ||
@@ -117,10 +103,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         throw Exception('새 인증정보를 불러오지 못했습니다.');
       }
 
-      /*
-       * 토큰 갱신 성공 후
-       * 동일한 챗봇 요청을 한 번만 다시 보낸다.
-       */
       return _chatbotService.sendMessage(
         message: message,
         history: history,
@@ -136,18 +118,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
       return;
     }
 
-    /*
-     * 현재 질문을 넣기 전의 대화 내용을
-     * API history로 만든다.
-     *
-     * 서버 제한:
-     * history 최대 20개
-     */
     final history = _buildHistory();
 
     setState(() {
       _messages.add(_ChatMessage(text: text, isUser: true));
-
       _isReplying = true;
     });
 
@@ -160,23 +134,17 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         history: history,
       );
 
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _messages.add(_ChatMessage(text: answer, isUser: false));
-
         _isReplying = false;
       });
     } catch (e) {
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
 
       setState(() {
         _messages.add(_ChatMessage(text: _getErrorMessage(e), isUser: false));
-
         _isReplying = false;
       });
     }
@@ -194,10 +162,6 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         )
         .toList();
 
-    /*
-     * 서버에서 history 최대 20개까지만 허용.
-     * 최근 대화 20개만 전달한다.
-     */
     if (history.length > 20) {
       return history.sublist(history.length - 20);
     }
@@ -209,56 +173,47 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
     final message = error.toString().replaceFirst('Exception: ', '');
 
     if (message.contains('로그인 인증정보를 확인할 수 없습니다.')) {
-      return '로그인 정보를 확인할 수 없어요.\n'
-          '다시 로그인한 뒤 이용해주세요.';
+      return '로그인 정보를 확인할 수 없어요.\n다시 로그인한 뒤 이용해주세요.';
     }
 
     if (message.contains('로그인 세션이 만료되었습니다.') ||
         message.contains('인증이 필요합니다.')) {
-      return '로그인 세션이 만료되었어요.\n'
-          '다시 로그인한 뒤 이용해주세요.';
+      return '로그인 세션이 만료되었어요.\n다시 로그인한 뒤 이용해주세요.';
     }
 
     if (message.contains('새 인증정보를 불러오지 못했습니다.')) {
-      return '로그인 정보를 갱신하지 못했어요.\n'
-          '다시 로그인해주세요.';
+      return '로그인 정보를 갱신하지 못했어요.\n다시 로그인해주세요.';
     }
 
     if (message.contains('AI 서비스에 연결할 수 없습니다.')) {
-      return '현재 AI 서비스에 연결할 수 없어요.\n'
-          '잠시 후 다시 시도해주세요.';
+      return '현재 AI 서비스에 연결할 수 없어요.\n잠시 후 다시 시도해주세요.';
     }
 
     if (message.contains('AI 서비스가 아직 설정되지 않았습니다.')) {
-      return '현재 AI 서비스 설정을 확인하고 있어요.\n'
-          '백엔드 Genkit 설정을 확인해주세요.';
+      return '현재 AI 서비스 설정을 확인하고 있어요.\n백엔드 Genkit 설정을 확인해주세요.';
     }
 
-    return '챗봇 답변을 불러오지 못했어요.\n'
-        '$message';
+    return '챗봇 답변을 불러오지 못했어요.\n$message';
   }
 
   @override
   Widget build(BuildContext context) {
     return Material(
       color: const Color(0xFFF8FBFF),
-      child: SafeArea(
-        bottom: false,
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(child: _buildMessageList()),
-            _buildRecommendedQuestions(),
-            _buildInputArea(),
-          ],
-        ),
+      child: Column(
+        children: [
+          _buildHeader(),
+          Expanded(child: _buildMessageList()),
+          _buildRecommendedQuestions(),
+          _buildInputArea(),
+        ],
       ),
     );
   }
 
   Widget _buildHeader() {
     return Container(
-      margin: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+      margin: const EdgeInsets.fromLTRB(16, 10, 16, 10),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -301,7 +256,10 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     SizedBox(width: 6),
                     Text(
                       '무엇이든 편하게 물어보세요',
-                      style: TextStyle(fontSize: 12, color: Color(0xFF8A97A8)),
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFF8A97A8),
+                      ),
                     ),
                   ],
                 ),
@@ -331,7 +289,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
   Widget _buildMessageList() {
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       itemCount: _messages.length + (_isReplying ? 1 : 0),
       itemBuilder: (context, index) {
         if (_isReplying && index == _messages.length) {
@@ -504,11 +462,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                   color: Color(0xFF334155),
                 ),
               ),
-              onPressed: _isReplying
-                  ? null
-                  : () {
-                      _sendMessage(question);
-                    },
+              onPressed: _isReplying ? null : () => _sendMessage(question),
             );
           },
         ),
@@ -545,13 +499,14 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     size: 19,
                   ),
                   hintText: '궁금한 내용을 입력해주세요.',
-                  hintStyle: TextStyle(color: Color(0xFF9AA8B7), fontSize: 14),
+                  hintStyle: TextStyle(
+                    color: Color(0xFF9AA8B7),
+                    fontSize: 14,
+                  ),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
-                onSubmitted: (_) {
-                  _sendMessage();
-                },
+                onSubmitted: (_) => _sendMessage(),
               ),
             ),
           ),
@@ -601,11 +556,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
         color: Colors.transparent,
         borderRadius: BorderRadius.circular(16),
         child: InkWell(
-          onTap: disabled
-              ? null
-              : () {
-                  _sendMessage();
-                },
+          onTap: disabled ? null : () => _sendMessage(),
           borderRadius: BorderRadius.circular(16),
           child: const Center(
             child: Icon(Icons.send_rounded, color: Colors.white, size: 21),
@@ -652,5 +603,8 @@ class _ChatMessage {
   final String text;
   final bool isUser;
 
-  const _ChatMessage({required this.text, required this.isUser});
+  const _ChatMessage({
+    required this.text,
+    required this.isUser,
+  });
 }

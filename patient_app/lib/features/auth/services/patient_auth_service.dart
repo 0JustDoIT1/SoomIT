@@ -26,6 +26,7 @@ class PatientGoogleLoginResult {
 
 class PatientAuthService {
   static const String _accessTokenKey = 'patient_access_token';
+
   static const String _refreshTokenKey = 'patient_refresh_token';
 
   final Dio _dio = DioClient.instance;
