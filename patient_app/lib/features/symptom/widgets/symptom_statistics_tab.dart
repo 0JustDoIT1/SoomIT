@@ -25,6 +25,17 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
   static const Color _text = Color(0xFF172033);
   static const Color _subText = Color(0xFF748198);
   static const Color _border = Color(0xFFE5EDF5);
+
+  // 평균 점수 위험도 시각화 색상
+  // 증상 기록 슬라이더와 동일한 파스텔 팔레트 사용
+  static const Color _riskGreen = Color(0xFF55BFA8);
+  static const Color _riskLightGreen = Color(0xFF79CEBB);
+  static const Color _riskYellow = Color(0xFFF2C66D);
+  static const Color _riskOrange = Color(0xFFF2A15F);
+  static const Color _riskRed = Color(0xFFEA6B70);
+  static const Color _riskDeepRed = Color(0xFFD95761);
+  static const Color _riskNeutral = Color(0xFFA7B4C1);
+
   static const String _otherType = '기타';
 
   static const List<_SymptomUi> _items = [
@@ -318,10 +329,135 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
     );
   }
 
+  bool _isHighAlertSymptom(
+    String symptomType,
+  ) {
+    return symptomType == '객혈' ||
+        symptomType == '호흡곤란' ||
+        symptomType == '흉통';
+  }
+
+  Color _averageScoreColor(
+    String symptomType,
+    double average, {
+    required bool hasRecords,
+  }) {
+    if (!hasRecords) {
+      return _riskNeutral;
+    }
+
+    if (_isHighAlertSymptom(symptomType)) {
+      if (average >= 5) {
+        final t = ((average - 5) / 5).clamp(0.0, 1.0).toDouble();
+        return Color.lerp(
+              _riskRed,
+              _riskDeepRed,
+              t,
+            ) ??
+            _riskRed;
+      }
+
+      final t = ((average - 1) / 3).clamp(0.0, 1.0).toDouble();
+      return Color.lerp(
+            _riskYellow,
+            _riskOrange,
+            t,
+          ) ??
+          _riskYellow;
+    }
+
+    if (average >= 8) {
+      final t = ((average - 8) / 2).clamp(0.0, 1.0).toDouble();
+      return Color.lerp(
+            _riskRed,
+            _riskDeepRed,
+            t,
+          ) ??
+          _riskRed;
+    }
+
+    if (average >= 4) {
+      final t = ((average - 4) / 3).clamp(0.0, 1.0).toDouble();
+      return Color.lerp(
+            _riskYellow,
+            _riskOrange,
+            t,
+          ) ??
+          _riskYellow;
+    }
+
+    final t = ((average - 1) / 2).clamp(0.0, 1.0).toDouble();
+    return Color.lerp(
+          _riskGreen,
+          _riskLightGreen,
+          t,
+        ) ??
+        _riskGreen;
+  }
+
+  List<Color> _averageGradientColors(
+    String symptomType,
+    double average, {
+    required bool hasRecords,
+  }) {
+    final currentColor = _averageScoreColor(
+      symptomType,
+      average,
+      hasRecords: hasRecords,
+    );
+
+    if (!hasRecords) {
+      return const [
+        _riskNeutral,
+        _riskNeutral,
+      ];
+    }
+
+    if (_isHighAlertSymptom(symptomType)) {
+      if (average >= 5) {
+        return [
+          _riskYellow,
+          _riskOrange,
+          currentColor,
+        ];
+      }
+
+      return [
+        _riskYellow,
+        currentColor,
+      ];
+    }
+
+    if (average >= 8) {
+      return [
+        _riskGreen,
+        _riskYellow,
+        _riskOrange,
+        currentColor,
+      ];
+    }
+
+    if (average >= 4) {
+      return [
+        _riskGreen,
+        _riskYellow,
+        currentColor,
+      ];
+    }
+
+    return [
+      _riskGreen,
+      currentColor,
+    ];
+  }
+
   Widget _buildAverageCard(List<SymptomLog> filtered) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 16,
+        vertical: 7,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(21),
@@ -333,30 +469,71 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
             _averageRow(
               _items[i],
               _average(
-                filtered.where((record) => record.symptomType == _items[i].name).toList(),
+                filtered
+                    .where(
+                      (record) =>
+                          record.symptomType ==
+                          _items[i].name,
+                    )
+                    .toList(),
+              ),
+              hasRecords: filtered.any(
+                (record) =>
+                    record.symptomType ==
+                    _items[i].name,
               ),
             ),
             if (i != _items.length - 1)
-              const Divider(height: 1, color: Color(0xFFF1F4F7)),
+              const Divider(
+                height: 1,
+                color: Color(0xFFF1F4F7),
+              ),
           ],
         ],
       ),
     );
   }
 
-  Widget _averageRow(_SymptomUi item, double average) {
+  Widget _averageRow(
+    _SymptomUi item,
+    double average, {
+    required bool hasRecords,
+  }) {
+    final averageColor = _averageScoreColor(
+      item.name,
+      average,
+      hasRecords: hasRecords,
+    );
+
+    final gradientColors = _averageGradientColors(
+      item.name,
+      average,
+      hasRecords: hasRecords,
+    );
+
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => setState(() => _selectedSymptom = item.name),
+      onTap: () => setState(
+        () => _selectedSymptom = item.name,
+      ),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 9),
+        padding: const EdgeInsets.symmetric(
+          vertical: 9,
+        ),
         child: Row(
           children: [
             Container(
               width: 32,
               height: 32,
-              decoration: BoxDecoration(color: item.background, shape: BoxShape.circle),
-              child: Icon(item.icon, color: item.color, size: 17),
+              decoration: BoxDecoration(
+                color: item.background,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                item.icon,
+                color: item.color,
+                size: 17,
+              ),
             ),
             const SizedBox(width: 10),
             SizedBox(
@@ -373,36 +550,79 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final width = constraints.maxWidth * (average / 10).clamp(0.0, 1.0);
+                  final width = constraints.maxWidth *
+                      (average / 10).clamp(
+                        0.0,
+                        1.0,
+                      );
+
                   return Container(
-                    height: 7,
+                    height: 8,
                     decoration: BoxDecoration(
                       color: const Color(0xFFEDF2F7),
                       borderRadius: BorderRadius.circular(99),
                     ),
                     alignment: Alignment.centerLeft,
                     child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 250),
+                      duration: const Duration(
+                        milliseconds: 250,
+                      ),
                       width: width,
-                      height: 7,
+                      height: 8,
                       decoration: BoxDecoration(
-                        color: item.color,
-                        borderRadius: BorderRadius.circular(99),
+                        gradient: hasRecords
+                            ? LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: gradientColors,
+                              )
+                            : null,
+                        color: hasRecords
+                            ? null
+                            : const Color(0xFFEDF2F7),
+                        borderRadius:
+                            BorderRadius.circular(99),
                       ),
                     ),
                   );
                 },
               ),
             ),
-            const SizedBox(width: 12),
-            SizedBox(
-              width: 29,
+            const SizedBox(width: 10),
+            AnimatedContainer(
+              duration: const Duration(
+                milliseconds: 200,
+              ),
+              constraints: const BoxConstraints(
+                minWidth: 38,
+              ),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 7,
+                vertical: 5,
+              ),
+              decoration: BoxDecoration(
+                color: hasRecords
+                    ? averageColor.withValues(
+                        alpha: 0.12,
+                      )
+                    : const Color(0xFFF3F7FB),
+                borderRadius: BorderRadius.circular(99),
+                border: Border.all(
+                  color: hasRecords
+                      ? averageColor.withValues(
+                          alpha: 0.24,
+                        )
+                      : const Color(0xFFE5EDF5),
+                ),
+              ),
               child: Text(
                 average.toStringAsFixed(1),
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  color: _text,
-                  fontSize: 12,
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: hasRecords
+                      ? averageColor
+                      : _subText,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                 ),
               ),

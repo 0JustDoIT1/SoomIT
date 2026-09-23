@@ -6,9 +6,7 @@ import 'symptom_date_utils.dart';
 import 'widgets/symptom_statistics_tab.dart';
 
 class SymptomScreen extends StatefulWidget {
-  const SymptomScreen({
-    super.key,
-  });
+  const SymptomScreen({super.key});
 
   @override
   State<SymptomScreen> createState() => _SymptomScreenState();
@@ -17,8 +15,7 @@ class SymptomScreen extends StatefulWidget {
 class _SymptomScreenState extends State<SymptomScreen> {
   final SymptomService _service = SymptomService();
 
-  final TextEditingController _otherSymptomController =
-      TextEditingController();
+  final TextEditingController _otherSymptomController = TextEditingController();
 
   static const Color _primaryBlue = Color(0xFF3198F4);
   static const Color _strongBlue = Color(0xFF2F8DFE);
@@ -26,6 +23,16 @@ class _SymptomScreenState extends State<SymptomScreen> {
   static const Color _textPrimary = Color(0xFF172033);
   static const Color _textSecondary = Color(0xFF748198);
   static const Color _border = Color(0xFFE5EDF5);
+
+  // 증상 점수 위험도 시각화 색상
+  // 숨-잇의 부드러운 의료 UI와 맞도록 채도를 낮춘 파스텔 팔레트 사용
+  static const Color _riskGreen = Color(0xFF55BFA8);
+  static const Color _riskLightGreen = Color(0xFF79CEBB);
+  static const Color _riskYellow = Color(0xFFF2C66D);
+  static const Color _riskOrange = Color(0xFFF2A15F);
+  static const Color _riskRed = Color(0xFFEA6B70);
+  static const Color _riskDeepRed = Color(0xFFD95761);
+  static const Color _riskNeutral = Color(0xFFA7B4C1);
 
   static const String _otherType = '기타';
 
@@ -113,9 +120,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // 데이터 조회
   // =========================================================
 
-  Future<void> _load({
-    bool preserveSaveResult = false,
-  }) async {
+  Future<void> _load({bool preserveSaveResult = false}) async {
     if (mounted) {
       setState(() {
         _loading = true;
@@ -132,9 +137,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
       setState(() {
         _symptoms = symptoms;
 
-        _applySelectedDate(
-          resetSaveResult: !preserveSaveResult,
-        );
+        _applySelectedDate(resetSaveResult: !preserveSaveResult);
 
         _loading = false;
       });
@@ -147,13 +150,9 @@ class _SymptomScreenState extends State<SymptomScreen> {
         _loading = false;
       });
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '증상 기록을 불러오지 못했습니다.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('증상 기록을 불러오지 못했습니다.')));
     }
   }
 
@@ -162,36 +161,22 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // =========================================================
 
   DateTime _koreaToday() {
-    final koreaNow = toKoreaTime(
-      DateTime.now(),
-    );
+    final koreaNow = toKoreaTime(DateTime.now());
 
-    return DateTime(
-      koreaNow.year,
-      koreaNow.month,
-      koreaNow.day,
-    );
+    return DateTime(koreaNow.year, koreaNow.month, koreaNow.day);
   }
 
-  bool _sameDate(
-    DateTime first,
-    DateTime second,
-  ) {
+  bool _sameDate(DateTime first, DateTime second) {
     return first.year == second.year &&
         first.month == second.month &&
         first.day == second.day;
   }
 
   bool get _isToday {
-    return _sameDate(
-      _selectedDate,
-      _koreaToday(),
-    );
+    return _sameDate(_selectedDate, _koreaToday());
   }
 
-  void _applySelectedDate({
-    bool resetSaveResult = true,
-  }) {
+  void _applySelectedDate({bool resetSaveResult = true}) {
     _selectedDateRecords.clear();
 
     if (resetSaveResult) {
@@ -204,60 +189,35 @@ class _SymptomScreenState extends State<SymptomScreen> {
 
     _otherSymptomController.text = '';
 
-    final matchingRecords = _symptoms.where(
-      (symptom) {
-        final koreaTime = toKoreaTime(
-          symptom.loggedAt,
-        );
+    final matchingRecords = _symptoms.where((symptom) {
+      final koreaTime = toKoreaTime(symptom.loggedAt);
 
-        final recordDate = DateTime(
-          koreaTime.year,
-          koreaTime.month,
-          koreaTime.day,
-        );
-
-        return _sameDate(
-          recordDate,
-          _selectedDate,
-        );
-      },
-    ).toList()
-      ..sort(
-        (a, b) => a.loggedAt.compareTo(
-          b.loggedAt,
-        ),
+      final recordDate = DateTime(
+        koreaTime.year,
+        koreaTime.month,
+        koreaTime.day,
       );
 
+      return _sameDate(recordDate, _selectedDate);
+    }).toList()..sort((a, b) => a.loggedAt.compareTo(b.loggedAt));
+
     for (final symptom in matchingRecords) {
-      _selectedDateRecords[
-        symptom.symptomType
-      ] = symptom;
+      _selectedDateRecords[symptom.symptomType] = symptom;
 
       if (symptom.symptomType == _otherType) {
-        _otherSymptomController.text =
-            symptom.symptomDescription ?? '';
+        _otherSymptomController.text = symptom.symptomDescription ?? '';
 
         continue;
       }
 
-      if (_scores.containsKey(
-        symptom.symptomType,
-      )) {
-        _scores[
-          symptom.symptomType
-        ] = symptom.severity;
+      if (_scores.containsKey(symptom.symptomType)) {
+        _scores[symptom.symptomType] = symptom.severity;
       }
     }
   }
 
-  void _moveDate(
-    int offset,
-  ) {
-    final candidate = _selectedDate.add(
-      Duration(
-        days: offset,
-      ),
-    );
+  void _moveDate(int offset) {
+    final candidate = _selectedDate.add(Duration(days: offset));
 
     final today = _koreaToday();
 
@@ -266,11 +226,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
     }
 
     setState(() {
-      _selectedDate = DateTime(
-        candidate.year,
-        candidate.month,
-        candidate.day,
-      );
+      _selectedDate = DateTime(candidate.year, candidate.month, candidate.day);
 
       _applySelectedDate();
     });
@@ -280,13 +236,10 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // 변경 상태
   // =========================================================
 
-  bool _hasScoreChange(
-    String symptomType,
-  ) {
+  bool _hasScoreChange(String symptomType) {
     final current = _scores[symptomType] ?? 0;
 
-    final existing =
-        _selectedDateRecords[symptomType];
+    final existing = _selectedDateRecords[symptomType];
 
     if (existing != null) {
       return current != existing.severity;
@@ -300,10 +253,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
   }
 
   String get _savedOtherText {
-    return _selectedDateRecords[_otherType]
-            ?.symptomDescription
-            ?.trim() ??
-        '';
+    return _selectedDateRecords[_otherType]?.symptomDescription?.trim() ?? '';
   }
 
   bool get _hasOtherChange {
@@ -338,36 +288,23 @@ class _SymptomScreenState extends State<SymptomScreen> {
     }
 
     final scoreTargets = _symptomItems
-        .where(
-          (item) => _hasScoreChange(
-            item.name,
-          ),
-        )
-        .map(
-          (item) => item.name,
-        )
+        .where((item) => _hasScoreChange(item.name))
+        .map((item) => item.name)
         .toList();
 
     if (scoreTargets.isEmpty && !_hasOtherChange) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '변경한 내용이 없습니다.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('변경한 내용이 없습니다.')));
 
       return;
     }
 
-    final isUpdating = scoreTargets.any(
-          (symptomType) =>
-              _selectedDateRecords[symptomType] != null,
+    final isUpdating =
+        scoreTargets.any(
+          (symptomType) => _selectedDateRecords[symptomType] != null,
         ) ||
-        (
-          _hasOtherChange &&
-              _selectedDateRecords[_otherType] != null
-        );
+        (_hasOtherChange && _selectedDateRecords[_otherType] != null);
 
     setState(() {
       _saving = true;
@@ -378,8 +315,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
     try {
       // 점수형 증상 저장
       for (final symptomType in scoreTargets) {
-        final existing =
-            _selectedDateRecords[symptomType];
+        final existing = _selectedDateRecords[symptomType];
 
         final saved = await _service.saveDailySymptom(
           symptomType: symptomType,
@@ -392,8 +328,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
 
       // 기타 증상 메모 저장
       if (_hasOtherChange) {
-        final existing =
-            _selectedDateRecords[_otherType];
+        final existing = _selectedDateRecords[_otherType];
 
         final saved = await _service.saveDailySymptom(
           symptomType: _otherType,
@@ -413,37 +348,24 @@ class _SymptomScreenState extends State<SymptomScreen> {
         return;
       }
 
-      _lastSaveResult = isUpdating
-          ? _SaveResult.updated
-          : _SaveResult.created;
+      _lastSaveResult = isUpdating ? _SaveResult.updated : _SaveResult.created;
 
-      await _load(
-        preserveSaveResult: true,
-      );
+      await _load(preserveSaveResult: true);
 
       if (!mounted) {
         return;
       }
 
-      final redRecords = savedRecords.where(
-        (record) {
-          return record.symptomType != _otherType &&
-              record.riskLevel == 'RED';
-        },
-      ).toList();
+      final redRecords = savedRecords.where((record) {
+        return record.symptomType != _otherType && record.riskLevel == 'RED';
+      }).toList();
 
       if (redRecords.isNotEmpty) {
-        await _showRedRiskDialog(
-          redRecords,
-        );
+        await _showRedRiskDialog(redRecords);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(
-              isUpdating
-                  ? '증상 기록을 수정했습니다.'
-                  : '오늘의 증상 기록을 저장했습니다.',
-            ),
+            content: Text(isUpdating ? '증상 기록을 수정했습니다.' : '오늘의 증상 기록을 저장했습니다.'),
           ),
         );
       }
@@ -452,13 +374,9 @@ class _SymptomScreenState extends State<SymptomScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            '증상 기록 저장에 실패했습니다.',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('증상 기록 저장에 실패했습니다.')));
     } finally {
       if (mounted) {
         setState(() {
@@ -472,13 +390,9 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // RED 위험 팝업
   // =========================================================
 
-  Future<void> _showRedRiskDialog(
-    List<SymptomLog> redRecords,
-  ) async {
+  Future<void> _showRedRiskDialog(List<SymptomLog> redRecords) async {
     final symptomNames = redRecords
-        .map(
-          (record) => record.symptomType,
-        )
+        .map((record) => record.symptomType)
         .toSet()
         .join(', ');
 
@@ -490,57 +404,31 @@ class _SymptomScreenState extends State<SymptomScreen> {
           backgroundColor: Colors.white,
           surfaceTintColor: Colors.white,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              22,
-            ),
+            borderRadius: BorderRadius.circular(22),
           ),
-          titlePadding: const EdgeInsets.fromLTRB(
-            22,
-            22,
-            22,
-            0,
-          ),
-          contentPadding: const EdgeInsets.fromLTRB(
-            22,
-            16,
-            22,
-            10,
-          ),
-          actionsPadding: const EdgeInsets.fromLTRB(
-            18,
-            4,
-            18,
-            16,
-          ),
+          titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
+          contentPadding: const EdgeInsets.fromLTRB(22, 16, 22, 10),
+          actionsPadding: const EdgeInsets.fromLTRB(18, 4, 18, 16),
           title: Row(
-            crossAxisAlignment:
-                CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
                 width: 42,
                 height: 42,
                 decoration: const BoxDecoration(
-                  color: Color(
-                    0xFFFFECEE,
-                  ),
+                  color: Color(0xFFFFECEE),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.warning_amber_rounded,
-                  color: Color(
-                    0xFFE85D67,
-                  ),
+                  color: Color(0xFFE85D67),
                   size: 24,
                 ),
               ),
-              const SizedBox(
-                width: 12,
-              ),
+              const SizedBox(width: 12),
               const Expanded(
                 child: Padding(
-                  padding: EdgeInsets.only(
-                    top: 7,
-                  ),
+                  padding: EdgeInsets.only(top: 7),
                   child: Text(
                     '주의가 필요한 증상이 있어요',
                     style: TextStyle(
@@ -571,29 +459,19 @@ class _SymptomScreenState extends State<SymptomScreen> {
               width: double.infinity,
               child: FilledButton(
                 onPressed: () {
-                  Navigator.of(
-                    dialogContext,
-                  ).pop();
+                  Navigator.of(dialogContext).pop();
                 },
                 style: FilledButton.styleFrom(
                   backgroundColor: _strongBlue,
                   foregroundColor: Colors.white,
-                  minimumSize: const Size(
-                    0,
-                    48,
-                  ),
+                  minimumSize: const Size(0, 48),
                   shape: RoundedRectangleBorder(
-                    borderRadius:
-                        BorderRadius.circular(
-                      14,
-                    ),
+                    borderRadius: BorderRadius.circular(14),
                   ),
                 ),
                 child: const Text(
                   '확인',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontWeight: FontWeight.w800),
                 ),
               ),
             ),
@@ -608,9 +486,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // =========================================================
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: _background,
       appBar: AppBar(
@@ -636,13 +512,11 @@ class _SymptomScreenState extends State<SymptomScreen> {
           Expanded(
             child: _loading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                      color: _primaryBlue,
-                    ),
+                    child: CircularProgressIndicator(color: _primaryBlue),
                   )
                 : _tabIndex == 0
-                    ? _buildSymptomRecordTab()
-                    : _buildStatisticsTab(),
+                ? _buildSymptomRecordTab()
+                : _buildStatisticsTab(),
           ),
         ],
       ),
@@ -658,23 +532,14 @@ class _SymptomScreenState extends State<SymptomScreen> {
       color: Colors.white,
       child: Row(
         children: [
-          _buildTopTab(
-            index: 0,
-            title: '증상 기록',
-          ),
-          _buildTopTab(
-            index: 1,
-            title: '기록 통계',
-          ),
+          _buildTopTab(index: 0, title: '증상 기록'),
+          _buildTopTab(index: 1, title: '기록 통계'),
         ],
       ),
     );
   }
 
-  Widget _buildTopTab({
-    required int index,
-    required String title,
-  }) {
+  Widget _buildTopTab({required int index, required String title}) {
     final selected = _tabIndex == index;
 
     return Expanded(
@@ -686,34 +551,20 @@ class _SymptomScreenState extends State<SymptomScreen> {
         },
         child: Column(
           children: [
-            const SizedBox(
-              height: 16,
-            ),
+            const SizedBox(height: 16),
             Text(
               title,
               style: TextStyle(
-                color: selected
-                    ? _textPrimary
-                    : const Color(
-                        0xFF9BA8B8,
-                      ),
+                color: selected ? _textPrimary : const Color(0xFF9BA8B8),
                 fontSize: 14,
-                fontWeight: selected
-                    ? FontWeight.w800
-                    : FontWeight.w600,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               ),
             ),
-            const SizedBox(
-              height: 13,
-            ),
+            const SizedBox(height: 13),
             AnimatedContainer(
-              duration: const Duration(
-                milliseconds: 180,
-              ),
+              duration: const Duration(milliseconds: 180),
               height: 3,
-              color: selected
-                  ? _strongBlue
-                  : Colors.transparent,
+              color: selected ? _strongBlue : Colors.transparent,
             ),
           ],
         ),
@@ -735,15 +586,9 @@ class _SymptomScreenState extends State<SymptomScreen> {
         physics: const AlwaysScrollableScrollPhysics(
           parent: BouncingScrollPhysics(),
         ),
-        padding: const EdgeInsets.fromLTRB(
-          20,
-          22,
-          20,
-          32,
-        ),
+        padding: const EdgeInsets.fromLTRB(20, 22, 20, 32),
         child: Column(
-          crossAxisAlignment:
-              CrossAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text(
               '오늘의 증상을 기록해보세요',
@@ -754,9 +599,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
                 letterSpacing: -0.6,
               ),
             ),
-            const SizedBox(
-              height: 6,
-            ),
+            const SizedBox(height: 6),
             const Text(
               '꾸준한 기록으로 증상 변화를 확인할 수 있어요.',
               style: TextStyle(
@@ -765,48 +608,28 @@ class _SymptomScreenState extends State<SymptomScreen> {
                 height: 1.4,
               ),
             ),
-            const SizedBox(
-              height: 19,
-            ),
+            const SizedBox(height: 19),
 
             _buildDateSelector(),
 
-            const SizedBox(
-              height: 13,
-            ),
+            const SizedBox(height: 13),
 
             if (!_isToday) ...[
               _buildPastDateNotice(),
-              const SizedBox(
-                height: 12,
-              ),
+              const SizedBox(height: 12),
             ],
 
-            if (riskBanner != null) ...[
-              riskBanner,
-              const SizedBox(
-                height: 12,
-              ),
-            ],
+            if (riskBanner != null) ...[riskBanner, const SizedBox(height: 12)],
 
             _buildSymptomCard(),
 
-            const SizedBox(
-              height: 14,
-            ),
+            const SizedBox(height: 14),
 
             _buildOtherSymptomCard(),
 
-            if (_isToday) ...[
-              const SizedBox(
-                height: 18,
-              ),
-              _buildSaveButton(),
-            ],
+            if (_isToday) ...[const SizedBox(height: 18), _buildSaveButton()],
 
-            const SizedBox(
-              height: 14,
-            ),
+            const SizedBox(height: 14),
 
             const Center(
               child: Text(
@@ -814,9 +637,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
                 '의료진의 진단을 대신하지 않습니다.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: Color(
-                    0xFF9AA7B7,
-                  ),
+                  color: Color(0xFF9AA7B7),
                   fontSize: 10.5,
                   height: 1.45,
                 ),
@@ -837,12 +658,8 @@ class _SymptomScreenState extends State<SymptomScreen> {
       height: 53,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          17,
-        ),
-        border: Border.all(
-          color: _border,
-        ),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: _border),
       ),
       child: Row(
         children: [
@@ -850,10 +667,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
             onPressed: () {
               _moveDate(-1);
             },
-            icon: const Icon(
-              Icons.chevron_left_rounded,
-              color: _textSecondary,
-            ),
+            icon: const Icon(Icons.chevron_left_rounded, color: _textSecondary),
           ),
           Expanded(
             child: Text(
@@ -874,11 +688,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
                   },
             icon: Icon(
               Icons.chevron_right_rounded,
-              color: _isToday
-                  ? const Color(
-                      0xFFD4DDE6,
-                    )
-                  : _textSecondary,
+              color: _isToday ? const Color(0xFFD4DDE6) : _textSecondary,
             ),
           ),
         ],
@@ -889,35 +699,19 @@ class _SymptomScreenState extends State<SymptomScreen> {
   Widget _buildPastDateNotice() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 11,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
       decoration: BoxDecoration(
-        color: const Color(
-          0xFFF0F7FE,
-        ),
-        borderRadius: BorderRadius.circular(
-          13,
-        ),
+        color: const Color(0xFFF0F7FE),
+        borderRadius: BorderRadius.circular(13),
       ),
       child: const Row(
         children: [
-          Icon(
-            Icons.info_outline_rounded,
-            color: _primaryBlue,
-            size: 18,
-          ),
-          SizedBox(
-            width: 8,
-          ),
+          Icon(Icons.info_outline_rounded, color: _primaryBlue, size: 18),
+          SizedBox(width: 8),
           Expanded(
             child: Text(
               '이전 날짜의 증상 기록은 조회만 가능합니다.',
-              style: TextStyle(
-                color: _textSecondary,
-                fontSize: 11.5,
-              ),
+              style: TextStyle(color: _textSecondary, fontSize: 11.5),
             ),
           ),
         ],
@@ -932,78 +726,113 @@ class _SymptomScreenState extends State<SymptomScreen> {
   Widget _buildSymptomCard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 5,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          22,
-        ),
-        border: Border.all(
-          color: _border,
-        ),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: const Color(
-              0xFF5F86AA,
-            ).withValues(
-              alpha: 0.04,
-            ),
+            color: const Color(0xFF5F86AA).withValues(alpha: 0.04),
             blurRadius: 18,
-            offset: const Offset(
-              0,
-              5,
-            ),
+            offset: const Offset(0, 5),
           ),
         ],
       ),
       child: Column(
         children: [
-          for (
-            int index = 0;
-            index < _symptomItems.length;
-            index++
-          ) ...[
-            _buildSymptomRow(
-              _symptomItems[index],
-            ),
-            if (
-              index !=
-                  _symptomItems.length - 1
-            )
-              const Divider(
-                height: 1,
-                thickness: 1,
-                color: Color(
-                  0xFFF0F3F7,
-                ),
-              ),
+          for (int index = 0; index < _symptomItems.length; index++) ...[
+            _buildSymptomRow(_symptomItems[index]),
+            if (index != _symptomItems.length - 1)
+              const Divider(height: 1, thickness: 1, color: Color(0xFFF0F3F7)),
           ],
         ],
       ),
     );
   }
 
-  Widget _buildSymptomRow(
-    _SymptomItem item,
-  ) {
+  bool _isHighAlertSymptom(String symptomType) {
+    return symptomType == '객혈' || symptomType == '호흡곤란' || symptomType == '흉통';
+  }
+
+  Color _scoreColor(String symptomType, int score) {
+    if (score <= 0) {
+      return _riskNeutral;
+    }
+
+    if (_isHighAlertSymptom(symptomType)) {
+      if (score >= 5) {
+        final t = ((score - 5) / 5).clamp(0.0, 1.0).toDouble();
+        return Color.lerp(_riskRed, _riskDeepRed, t) ?? _riskRed;
+      }
+
+      final t = ((score - 1) / 3).clamp(0.0, 1.0).toDouble();
+      return Color.lerp(_riskYellow, _riskOrange, t) ?? _riskYellow;
+    }
+
+    if (score >= 8) {
+      final t = ((score - 8) / 2).clamp(0.0, 1.0).toDouble();
+      return Color.lerp(_riskRed, _riskDeepRed, t) ?? _riskRed;
+    }
+
+    if (score >= 4) {
+      final t = ((score - 4) / 3).clamp(0.0, 1.0).toDouble();
+      return Color.lerp(_riskYellow, _riskOrange, t) ?? _riskYellow;
+    }
+
+    final t = ((score - 1) / 2).clamp(0.0, 1.0).toDouble();
+    return Color.lerp(_riskGreen, _riskLightGreen, t) ?? _riskGreen;
+  }
+
+  List<Color> _scoreGradientColors(String symptomType, int score) {
+    final currentColor = _scoreColor(symptomType, score);
+
+    if (score <= 0) {
+      return const [_riskNeutral, _riskNeutral];
+    }
+
+    if (_isHighAlertSymptom(symptomType)) {
+      if (score >= 5) {
+        return [_riskYellow, _riskOrange, currentColor];
+      }
+
+      return [_riskYellow, currentColor];
+    }
+
+    if (score >= 8) {
+      return [_riskGreen, _riskYellow, _riskOrange, currentColor];
+    }
+
+    if (score >= 4) {
+      return [_riskGreen, _riskYellow, currentColor];
+    }
+
+    return [_riskGreen, currentColor];
+  }
+
+  Widget _buildSymptomRow(_SymptomItem item) {
     final score = _scores[item.name] ?? 0;
 
-    final existing =
-        _selectedDateRecords[item.name];
+    final existing = _selectedDateRecords[item.name];
 
     final hasRecord = existing != null;
 
-    final changed = _hasScoreChange(
-      item.name,
-    );
+    final changed = _hasScoreChange(item.name);
+
+    final scoreColor = _scoreColor(item.name, score);
+
+    final gradientColors = _scoreGradientColors(item.name, score);
+
+    final scoreBackground = score <= 0
+        ? const Color(0xFFF3F7FB)
+        : scoreColor.withValues(alpha: 0.12);
+
+    final scoreBorder = score <= 0
+        ? const Color(0xFFE5EDF5)
+        : scoreColor.withValues(alpha: 0.28);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 9,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 9),
       child: Row(
         children: [
           Container(
@@ -1013,22 +842,15 @@ class _SymptomScreenState extends State<SymptomScreen> {
               color: item.background,
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              item.icon,
-              color: item.color,
-              size: 21,
-            ),
+            child: Icon(item.icon, color: item.color, size: 21),
           ),
 
-          const SizedBox(
-            width: 10,
-          ),
+          const SizedBox(width: 10),
 
           SizedBox(
             width: 67,
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   item.name,
@@ -1039,16 +861,11 @@ class _SymptomScreenState extends State<SymptomScreen> {
                   ),
                 ),
 
-                if (hasRecord || changed)
-                  const SizedBox(
-                    height: 2,
-                  ),
+                if (hasRecord || changed) const SizedBox(height: 2),
 
                 if (changed)
                   Text(
-                    hasRecord
-                        ? '수정 중'
-                        : '입력 중',
+                    hasRecord ? '수정 중' : '입력 중',
                     style: const TextStyle(
                       color: _primaryBlue,
                       fontSize: 9,
@@ -1056,93 +873,220 @@ class _SymptomScreenState extends State<SymptomScreen> {
                     ),
                   )
                 else if (hasRecord)
-                  _buildSavedStatusText(
-                    existing,
-                  ),
+                  _buildSavedStatusText(existing),
               ],
             ),
           ),
 
           Expanded(
-            child: SliderTheme(
-              data: SliderTheme.of(
-                context,
-              ).copyWith(
-                activeTrackColor: const Color(
-                  0xFF8BC5FC,
-                ),
-                inactiveTrackColor: const Color(
-                  0xFFE7EDF3,
-                ),
-                disabledActiveTrackColor:
-                    const Color(
-                  0xFFB7C8D8,
-                ),
-                disabledInactiveTrackColor:
-                    const Color(
-                  0xFFE8EDF2,
-                ),
-                thumbColor: const Color(
-                  0xFF67AFF6,
-                ),
-                disabledThumbColor:
-                    const Color(
-                  0xFFB7C8D8,
-                ),
-                overlayColor:
-                    _primaryBlue.withValues(
-                  alpha: 0.10,
-                ),
-                trackHeight: 4,
-                thumbShape:
-                    const RoundSliderThumbShape(
-                  enabledThumbRadius: 6.5,
-                ),
-                overlayShape:
-                    const RoundSliderOverlayShape(
-                  overlayRadius: 14,
-                ),
-              ),
-              child: Slider(
-                value: score.toDouble(),
-                min: 0,
-                max: 10,
-                divisions: 10,
-                onChanged: _isToday
-                    ? (value) {
-                        setState(() {
-                          _scores[item.name] =
-                              value.round();
+            child: SizedBox(
+              height: 42,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  // 실제 Slider의 드래그 영역은 그대로 사용하고,
+                  // 막대/점 눈금/손잡이는 Stack에서 직접 그린다.
+                  // 선 형태 눈금보다 작은 점 눈금이 화면을 덜 복잡하게 만든다.
+                  const trackInset = 15.0;
+                  const trackHeight = 6.0;
+                  const knobSize = 16.0;
 
-                          _lastSaveResult = null;
-                        });
-                      }
-                    : null,
+                  final usableWidth = (constraints.maxWidth - trackInset * 2)
+                      .clamp(0.0, double.infinity)
+                      .toDouble();
+
+                  final progress = (score / 10).clamp(0.0, 1.0).toDouble();
+
+                  final activeWidth = usableWidth * progress;
+
+                  final knobCenterX = trackInset + activeWidth;
+
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      // 전체 비활성 막대
+                      Positioned(
+                        left: trackInset,
+                        right: trackInset,
+                        child: Container(
+                          height: trackHeight,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFE8EEF4),
+                            borderRadius: BorderRadius.circular(99),
+                          ),
+                        ),
+                      ),
+
+                      // 현재 점수까지 채워지는 파스텔 위험도 Gradient
+                      if (activeWidth > 0)
+                        Positioned(
+                          left: trackInset,
+                          width: activeWidth,
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            height: trackHeight,
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.centerLeft,
+                                end: Alignment.centerRight,
+                                colors: gradientColors,
+                              ),
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                          ),
+                        ),
+
+                      // 0~10 점 눈금.
+                      // 0 / 5 / 10만 한 단계 크게 표시해 기준점을 자연스럽게 보여준다.
+                      Positioned(
+                        left: trackInset,
+                        right: trackInset,
+                        child: IgnorePointer(
+                          child: SizedBox(
+                            height: 18,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: List.generate(11, (index) {
+                                final isMajor =
+                                    index == 0 || index == 5 || index == 10;
+
+                                final isActiveTick =
+                                    score > 0 && index <= score;
+
+                                final dotColor = isActiveTick
+                                    ? Colors.white.withValues(alpha: 0.92)
+                                    : const Color(0xFFC7D1DB);
+
+                                final dotSize = isMajor ? 5.0 : 3.4;
+
+                                return AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  width: dotSize,
+                                  height: dotSize,
+                                  decoration: BoxDecoration(
+                                    color: dotColor,
+                                    shape: BoxShape.circle,
+                                    boxShadow: isMajor
+                                        ? [
+                                            BoxShadow(
+                                              color: const Color(
+                                                0xFF7A8A99,
+                                              ).withValues(alpha: 0.08),
+                                              blurRadius: 2,
+                                            ),
+                                          ]
+                                        : null,
+                                  ),
+                                );
+                              }),
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // Slider는 터치와 값 변경만 담당한다.
+                      // 기본 thumb/track은 보이지 않게 하고 아래의 링 손잡이를 사용한다.
+                      Positioned.fill(
+                        child: SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            activeTrackColor: Colors.transparent,
+                            inactiveTrackColor: Colors.transparent,
+                            disabledActiveTrackColor: Colors.transparent,
+                            disabledInactiveTrackColor: Colors.transparent,
+                            thumbColor: Colors.transparent,
+                            disabledThumbColor: Colors.transparent,
+                            overlayColor: scoreColor.withValues(alpha: 0.10),
+                            trackHeight: 1,
+                            thumbShape: const RoundSliderThumbShape(
+                              enabledThumbRadius: 0,
+                              disabledThumbRadius: 0,
+                              elevation: 0,
+                              pressedElevation: 0,
+                            ),
+                            overlayShape: const RoundSliderOverlayShape(
+                              overlayRadius: 16,
+                            ),
+                            tickMarkShape: SliderTickMarkShape.noTickMark,
+                          ),
+                          child: Slider(
+                            value: score.toDouble(),
+                            min: 0,
+                            max: 10,
+                            divisions: 10,
+                            onChanged: _isToday
+                                ? (value) {
+                                    setState(() {
+                                      _scores[item.name] = value.round();
+                                      _lastSaveResult = null;
+                                    });
+                                  }
+                                : null,
+                          ),
+                        ),
+                      ),
+
+                      // 흰색 중심 + 현재 상태색 테두리 손잡이
+                      // 기존 단색 손잡이보다 부드럽고 의료 앱 UI에 더 잘 어울린다.
+                      Positioned(
+                        left: knobCenterX - knobSize / 2,
+                        top: (42 - knobSize) / 2,
+                        child: IgnorePointer(
+                          child: AnimatedContainer(
+                            duration: const Duration(milliseconds: 180),
+                            width: knobSize,
+                            height: knobSize,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: score <= 0
+                                    ? const Color(0xFFBAC6D1)
+                                    : scoreColor,
+                                width: 3,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color:
+                                      (score <= 0
+                                              ? const Color(0xFF708090)
+                                              : scoreColor)
+                                          .withValues(alpha: 0.18),
+                                  blurRadius: 5,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
 
-          const SizedBox(
-            width: 4,
-          ),
+          const SizedBox(width: 4),
 
-          Container(
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
             width: 34,
             height: 34,
             alignment: Alignment.center,
-            decoration: const BoxDecoration(
-              color: Color(
-                0xFFF3F7FB,
-              ),
+            decoration: BoxDecoration(
+              color: scoreBackground,
               shape: BoxShape.circle,
+              border: Border.all(color: scoreBorder),
             ),
-            child: Text(
-              '$score',
-              style: const TextStyle(
-                color: _textPrimary,
+            child: AnimatedDefaultTextStyle(
+              duration: const Duration(milliseconds: 160),
+              style: TextStyle(
+                color: score <= 0 ? _textPrimary : scoreColor,
                 fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
+              child: Text('$score'),
             ),
           ),
         ],
@@ -1150,16 +1094,12 @@ class _SymptomScreenState extends State<SymptomScreen> {
     );
   }
 
-  Widget _buildSavedStatusText(
-    SymptomLog symptom,
-  ) {
+  Widget _buildSavedStatusText(SymptomLog symptom) {
     if (symptom.riskLevel == 'RED') {
       return const Text(
         '위험',
         style: TextStyle(
-          color: Color(
-            0xFFE85D67,
-          ),
+          color: Color(0xFFE85D67),
           fontSize: 9,
           fontWeight: FontWeight.w700,
         ),
@@ -1170,9 +1110,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
       return const Text(
         '주의',
         style: TextStyle(
-          color: Color(
-            0xFFD18A12,
-          ),
+          color: Color(0xFFD18A12),
           fontSize: 9,
           fontWeight: FontWeight.w700,
         ),
@@ -1194,28 +1132,20 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // =========================================================
 
   Widget _buildOtherSymptomCard() {
-    final existing =
-        _selectedDateRecords[_otherType];
+    final existing = _selectedDateRecords[_otherType];
 
     final changed = _hasOtherChange;
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(
-        16,
-      ),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(
-          20,
-        ),
-        border: Border.all(
-          color: _border,
-        ),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _border),
       ),
       child: Column(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -1223,25 +1153,18 @@ class _SymptomScreenState extends State<SymptomScreen> {
                 width: 38,
                 height: 38,
                 decoration: const BoxDecoration(
-                  color: Color(
-                    0xFFF0EFFF,
-                  ),
+                  color: Color(0xFFF0EFFF),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.edit_note_rounded,
-                  color: Color(
-                    0xFF8B8BF5,
-                  ),
+                  color: Color(0xFF8B8BF5),
                 ),
               ),
-              const SizedBox(
-                width: 10,
-              ),
+              const SizedBox(width: 10),
               const Expanded(
                 child: Column(
-                  crossAxisAlignment:
-                      CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
                       '기타 증상',
@@ -1251,15 +1174,10 @@ class _SymptomScreenState extends State<SymptomScreen> {
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                    SizedBox(
-                      height: 2,
-                    ),
+                    SizedBox(height: 2),
                     Text(
                       '추가로 느끼는 증상이 있다면 적어주세요.',
-                      style: TextStyle(
-                        color: _textSecondary,
-                        fontSize: 11,
-                      ),
+                      style: TextStyle(color: _textSecondary, fontSize: 11),
                     ),
                   ],
                 ),
@@ -1284,9 +1202,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
                 ),
             ],
           ),
-          const SizedBox(
-            height: 14,
-          ),
+          const SizedBox(height: 14),
           TextField(
             controller: _otherSymptomController,
             enabled: _isToday,
@@ -1299,54 +1215,30 @@ class _SymptomScreenState extends State<SymptomScreen> {
               });
             },
             decoration: InputDecoration(
-              hintText:
-                  '예: 어지러움, 목 불편감, 두통 등',
+              hintText: '예: 어지러움, 목 불편감, 두통 등',
               hintStyle: const TextStyle(
-                color: Color(
-                  0xFFA5B0BE,
-                ),
+                color: Color(0xFFA5B0BE),
                 fontSize: 12,
               ),
               filled: true,
-              fillColor: const Color(
-                0xFFF8FAFC,
-              ),
+              fillColor: const Color(0xFFF8FAFC),
               counterText: '',
-              contentPadding: const EdgeInsets.all(
-                14,
-              ),
+              contentPadding: const EdgeInsets.all(14),
               border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(
-                  14,
-                ),
-                borderSide: const BorderSide(
-                  color: _border,
-                ),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _border),
               ),
               enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(
-                  14,
-                ),
-                borderSide: const BorderSide(
-                  color: _border,
-                ),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _border),
               ),
               focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(
-                  14,
-                ),
-                borderSide: const BorderSide(
-                  color: _primaryBlue,
-                  width: 1.3,
-                ),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _primaryBlue, width: 1.3),
               ),
               disabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(
-                  14,
-                ),
-                borderSide: const BorderSide(
-                  color: _border,
-                ),
+                borderRadius: BorderRadius.circular(14),
+                borderSide: const BorderSide(color: _border),
               ),
             ),
           ),
@@ -1362,9 +1254,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
   Widget _buildSaveButton() {
     final hasChanges = _hasUnsavedChanges;
 
-    final savedState =
-        _hasSavedRecords &&
-        !hasChanges;
+    final savedState = _hasSavedRecords && !hasChanges;
 
     String buttonText;
     IconData buttonIcon;
@@ -1373,18 +1263,14 @@ class _SymptomScreenState extends State<SymptomScreen> {
       buttonText = '저장 중...';
       buttonIcon = Icons.hourglass_top_rounded;
     } else if (savedState) {
-      if (_lastSaveResult ==
-          _SaveResult.updated) {
+      if (_lastSaveResult == _SaveResult.updated) {
         buttonText = '수정 내용 저장됨';
       } else {
         buttonText = '오늘 기록 저장됨';
       }
 
       buttonIcon = Icons.check_circle_rounded;
-    } else if (
-      _hasSavedRecords &&
-      hasChanges
-    ) {
+    } else if (_hasSavedRecords && hasChanges) {
       buttonText = '수정 내용 저장하기';
       buttonIcon = Icons.edit_rounded;
     } else {
@@ -1396,54 +1282,33 @@ class _SymptomScreenState extends State<SymptomScreen> {
       width: double.infinity,
       height: 53,
       child: FilledButton.icon(
-        onPressed:
-            _saving || savedState
-            ? null
-            : _saveSymptoms,
+        onPressed: _saving || savedState ? null : _saveSymptoms,
         icon: _saving
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child:
-                    CircularProgressIndicator(
+                child: CircularProgressIndicator(
                   strokeWidth: 2,
                   color: Colors.white,
                 ),
               )
-            : Icon(
-                buttonIcon,
-                size: 19,
-              ),
+            : Icon(buttonIcon, size: 19),
         label: Text(
           buttonText,
-          style: const TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w800,
-          ),
+          style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
         ),
         style: FilledButton.styleFrom(
           backgroundColor: _strongBlue,
           foregroundColor: Colors.white,
 
-          disabledBackgroundColor:
-              savedState
-              ? const Color(
-                  0xFFEAF5FF,
-                )
-              : const Color(
-                  0xFFAECDF7,
-                ),
+          disabledBackgroundColor: savedState
+              ? const Color(0xFFEAF5FF)
+              : const Color(0xFFAECDF7),
 
-          disabledForegroundColor:
-              savedState
-              ? _primaryBlue
-              : Colors.white,
+          disabledForegroundColor: savedState ? _primaryBlue : Colors.white,
 
           shape: RoundedRectangleBorder(
-            borderRadius:
-                BorderRadius.circular(
-              15,
-            ),
+            borderRadius: BorderRadius.circular(15),
           ),
         ),
       ),
@@ -1455,27 +1320,17 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // =========================================================
 
   Widget? _buildRiskBanner() {
-    final redRecords =
-        _selectedDateRecords.values.where(
-      (record) {
-        return record.symptomType != _otherType &&
-            record.riskLevel == 'RED';
-      },
-    ).toList();
+    final redRecords = _selectedDateRecords.values.where((record) {
+      return record.symptomType != _otherType && record.riskLevel == 'RED';
+    }).toList();
 
-    final yellowRecords =
-        _selectedDateRecords.values.where(
-      (record) {
-        return record.symptomType != _otherType &&
-            record.riskLevel == 'YELLOW';
-      },
-    ).toList();
+    final yellowRecords = _selectedDateRecords.values.where((record) {
+      return record.symptomType != _otherType && record.riskLevel == 'YELLOW';
+    }).toList();
 
     if (redRecords.isNotEmpty) {
       final names = redRecords
-          .map(
-            (record) => record.symptomType,
-          )
+          .map((record) => record.symptomType)
           .toSet()
           .join(', ');
 
@@ -1485,23 +1340,15 @@ class _SymptomScreenState extends State<SymptomScreen> {
         description: _isToday
             ? '오늘 기록한 $names 증상이 주의가 필요한 수준이에요.'
             : '$names 증상이 주의가 필요한 수준으로 기록되어 있어요.',
-        foreground: const Color(
-          0xFFE85D67,
-        ),
-        background: const Color(
-          0xFFFFF1F2,
-        ),
-        border: const Color(
-          0xFFFFD7DB,
-        ),
+        foreground: const Color(0xFFE85D67),
+        background: const Color(0xFFFFF1F2),
+        border: const Color(0xFFFFD7DB),
       );
     }
 
     if (yellowRecords.isNotEmpty) {
       final names = yellowRecords
-          .map(
-            (record) => record.symptomType,
-          )
+          .map((record) => record.symptomType)
           .toSet()
           .join(', ');
 
@@ -1511,15 +1358,9 @@ class _SymptomScreenState extends State<SymptomScreen> {
         description: _isToday
             ? '오늘 기록한 $names 증상을 계속 관찰해주세요.'
             : '$names 증상이 주의 수준으로 기록되어 있어요.',
-        foreground: const Color(
-          0xFFD18A12,
-        ),
-        background: const Color(
-          0xFFFFF8E8,
-        ),
-        border: const Color(
-          0xFFFFE2A3,
-        ),
+        foreground: const Color(0xFFD18A12),
+        background: const Color(0xFFFFF8E8),
+        border: const Color(0xFFFFE2A3),
       );
     }
 
@@ -1531,10 +1372,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // =========================================================
 
   Widget _buildStatisticsTab() {
-    return SymptomStatisticsTab(
-      symptoms: _symptoms,
-      onRefresh: _load,
-    );
+    return SymptomStatisticsTab(symptoms: _symptoms, onRefresh: _load);
   }
 
   // =========================================================
@@ -1542,15 +1380,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
   // =========================================================
 
   String _formatSelectedDate() {
-    const dayNames = [
-      '월',
-      '화',
-      '수',
-      '목',
-      '금',
-      '토',
-      '일',
-    ];
+    const dayNames = ['월', '화', '수', '목', '금', '토', '일'];
 
     return '${_selectedDate.year}년 '
         '${_selectedDate.month}월 '
@@ -1563,10 +1393,7 @@ class _SymptomScreenState extends State<SymptomScreen> {
 // 저장 결과 상태
 // ===========================================================
 
-enum _SaveResult {
-  created,
-  updated,
-}
+enum _SaveResult { created, updated }
 
 // ===========================================================
 // 증상 UI 정보
@@ -1608,49 +1435,31 @@ class _RiskBanner extends StatelessWidget {
   });
 
   @override
-  Widget build(
-    BuildContext context,
-  ) {
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(
-        14,
-      ),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(
-          15,
-        ),
-        border: Border.all(
-          color: border,
-        ),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: border),
       ),
       child: Row(
-        crossAxisAlignment:
-            CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
             width: 34,
             height: 34,
             decoration: BoxDecoration(
-              color: Colors.white.withValues(
-                alpha: 0.72,
-              ),
+              color: Colors.white.withValues(alpha: 0.72),
               shape: BoxShape.circle,
             ),
-            child: Icon(
-              icon,
-              color: foreground,
-              size: 19,
-            ),
+            child: Icon(icon, color: foreground, size: 19),
           ),
-          const SizedBox(
-            width: 10,
-          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
@@ -1660,15 +1469,11 @@ class _RiskBanner extends StatelessWidget {
                     fontWeight: FontWeight.w800,
                   ),
                 ),
-                const SizedBox(
-                  height: 3,
-                ),
+                const SizedBox(height: 3),
                 Text(
                   description,
                   style: const TextStyle(
-                    color: Color(
-                      0xFF748198,
-                    ),
+                    color: Color(0xFF748198),
                     fontSize: 11.5,
                     height: 1.45,
                   ),
