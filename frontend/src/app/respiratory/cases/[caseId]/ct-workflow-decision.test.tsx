@@ -47,6 +47,28 @@ describe("CtWorkflowDecision", () => {
 
     expect(authorizedFetch).not.toHaveBeenCalled();
   });
+
+  it("includes AI nodule details when saving the confirmed CT draft", async () => {
+    const authorizedFetch = vi
+      .fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-1" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-1", result_status: "CONFIRMED" }), { status: 200 }));
+    render(<CtWorkflowDecision
+      caseId="case-1"
+      aiResultId="ai-1"
+      aiNodules={[{ nodule_no: 1, malignancy_risk: 82.5, finding_payload: { quantification: { maximum_3d_diameter_mm: 12.4, volume_mm3: 486.2 } } }]}
+      authorizedFetch={authorizedFetch}
+      onCompleted={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
+    fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
+
+    await vi.waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(2));
+    expect(JSON.parse((authorizedFetch.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({
+      nodule_observations: [{ nodule_no: 1, max_diameter_mm: 12.4, volume_mm3: 486.2, malignancy_risk: 82.5 }],
+    });
+  });
 });
 
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });

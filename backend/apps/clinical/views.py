@@ -19,7 +19,7 @@ from apps.patients.patient_authentication import PatientJWTAuthentication
 
 from .dur_client import DurClient, OPERATIONS
 from apps.radiology.services.tnm_stage_inference import TnmStageInferenceError, request_tnm_stage
-from .models import ClinicalResult, CtResult, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TnmResult, TreatmentDecision, TreatmentRule
+from .models import ClinicalResult, CtResult, Nodule, NoduleObservation, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TnmResult, TreatmentDecision, TreatmentRule
 from .serializers import (
     DoctorClinicalResultSerializer,
     DoctorPrescriptionSerializer,
@@ -130,6 +130,53 @@ class DoctorTnmDraftAPIView(APIView):
     def patch(self, request, case_id):
         return self.post(request, case_id)
 
+def _ai_ct_nodule_observations(ai_result):
+    """Build safe initial clinical nodule values from the reviewed CT AI result."""
+    try:
+        ai_nodules = ai_result.ct_detail.nodule_results.all()
+    except AttributeError:
+        return []
+
+    observations = []
+    for item in ai_nodules:
+        payload = item.finding_payload if isinstance(item.finding_payload, dict) else {}
+        quantification = payload.get("quantification") if isinstance(payload.get("quantification"), dict) else {}
+        observations.append({
+            "nodule_no": item.nodule_no,
+            "max_diameter_mm": quantification.get("maximum_3d_diameter_mm") or quantification.get("equivalent_diameter_mm"),
+            "volume_mm3": quantification.get("volume_mm3"),
+            "surface_area_mm2": quantification.get("surface_area_mm2"),
+            "sphericity": quantification.get("sphericity"),
+            "malignancy_risk": item.malignancy_risk,
+        })
+    return observations
+
+
+def _sync_ct_nodule_observations(*, case, ct_result, values, ai_result):
+    observations = values.get("nodule_observations")
+    if observations is None:
+        observations = _ai_ct_nodule_observations(ai_result)
+
+    for observation in observations:
+        nodule, _ = Nodule.objects.get_or_create(
+            case=case,
+            nodule_no=observation["nodule_no"],
+        )
+        defaults = {
+            key: observation.get(key)
+            for key in (
+                "lobe", "location_description", "max_diameter_mm", "volume_mm3",
+                "surface_area_mm2", "sphericity", "spiculation", "lobulation", "malignancy_risk",
+            )
+            if key in observation
+        }
+        NoduleObservation.objects.update_or_create(
+            nodule=nodule,
+            ct_result=ct_result,
+            defaults=defaults,
+        )
+
+
 class DoctorCtResultAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
@@ -160,18 +207,25 @@ class DoctorCtResultAPIView(APIView):
         if result is not None and result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
             return Response({"detail": "A confirmed CT result cannot be modified."}, status=409)
         from apps.ai_results.models import AiResult
+        reviewed_ai_result = AiResult.objects.get(id=values["reviewed_ai_result_id"])
         if result is None:
-            result = ClinicalResult.objects.create(case=case, examination_order=order, workflow_stage="CT", reviewed_ai_result=AiResult.objects.get(id=values["reviewed_ai_result_id"]), result_status=ClinicalResult.ResultStatus.DRAFT)
-            CtResult.objects.create(clinical_result=result, overall_assessment=values["overall_assessment"], overall_malignancy_risk=values.get("overall_malignancy_risk"), finding_summary=values.get("finding_summary"))
+            result = ClinicalResult.objects.create(case=case, examination_order=order, workflow_stage="CT", reviewed_ai_result=reviewed_ai_result, result_status=ClinicalResult.ResultStatus.DRAFT)
+            detail = CtResult.objects.create(clinical_result=result, overall_assessment=values["overall_assessment"], overall_malignancy_risk=values.get("overall_malignancy_risk"), finding_summary=values.get("finding_summary"))
             created = True
         else:
-            result.reviewed_ai_result_id = values["reviewed_ai_result_id"]
+            result.reviewed_ai_result = reviewed_ai_result
             result.save(update_fields=["reviewed_ai_result", "updated_at"])
             detail = result.ct_detail
             for key in ("overall_assessment", "overall_malignancy_risk", "finding_summary"):
                 setattr(detail, key, values.get(key))
             detail.save(update_fields=["overall_assessment", "overall_malignancy_risk", "finding_summary"])
             created = False
+        _sync_ct_nodule_observations(
+            case=case,
+            ct_result=detail,
+            values=values,
+            ai_result=reviewed_ai_result,
+        )
         return Response({"id": str(result.id), "workflow_stage": result.workflow_stage, "result_status": result.result_status, "reviewed_ai_result_id": str(result.reviewed_ai_result_id)}, status=201 if created else 200)
 
     patch = post
@@ -513,6 +567,7 @@ class PatientClinicalResultListAPIView(ListAPIView):
                 "gene_detail",
                 "pdl1_detail",
             )
+            .prefetch_related("ct_detail__nodule_observations__nodule")
             .order_by("-confirmed_at", "-updated_at")
         )
         
@@ -531,7 +586,6 @@ class DoctorClinicalResultListAPIView(ListAPIView):
             .filter(
                 id=case_id,
                 primary_doctor=self.request.user,
-                case_status="ACTIVE",
             )
             .first()
         )
@@ -562,6 +616,7 @@ class DoctorClinicalResultListAPIView(ListAPIView):
             )
             .prefetch_related(
                 "gene_detail__gene_findings",
+                "ct_detail__nodule_observations__nodule",
             )
             .order_by("-confirmed_at", "-updated_at")
             .distinct()

@@ -36,6 +36,7 @@ function isClosedCase(status?: string | null) {
 }
 
 function statusLabel(status?: string | null) {
+  if (status === "REFERRED_OUT") return "전원";
   if (isClosedCase(status)) return "종결";
   return "진행 중";
 }
@@ -172,7 +173,7 @@ export function CasePatientSidebar({
           <FilterButton
             active={filter === "CLOSED"}
             onClick={() => setFilter("CLOSED")}
-            label="종결"
+            label="종결·전원"
             count={counts.closed}
           />
         </div>

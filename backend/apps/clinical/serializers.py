@@ -4,7 +4,7 @@ from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis, AnalysisType
 
-from .models import ClinicalResult, CtResult, TnmResult
+from .models import ClinicalResult, CtResult, NoduleObservation, TnmResult
 from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
 
 
@@ -58,11 +58,25 @@ class DoctorTnmDraftSerializer(serializers.Serializer):
             "confirmed_at": instance.confirmed_at,
         }
 
+class NoduleObservationWriteSerializer(serializers.Serializer):
+    nodule_no = serializers.IntegerField(min_value=1)
+    lobe = serializers.ChoiceField(choices=NoduleObservation.Lobe.choices, required=False, allow_null=True)
+    location_description = serializers.CharField(max_length=255, required=False, allow_blank=True, allow_null=True)
+    max_diameter_mm = serializers.DecimalField(max_digits=6, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    volume_mm3 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    surface_area_mm2 = serializers.DecimalField(max_digits=12, decimal_places=2, min_value=Decimal("0"), required=False, allow_null=True)
+    sphericity = serializers.DecimalField(max_digits=5, decimal_places=4, min_value=Decimal("0"), max_value=Decimal("1"), required=False, allow_null=True)
+    spiculation = serializers.ChoiceField(choices=NoduleObservation.PresenceFlag.choices, required=False, allow_null=True)
+    lobulation = serializers.ChoiceField(choices=NoduleObservation.PresenceFlag.choices, required=False, allow_null=True)
+    malignancy_risk = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), required=False, allow_null=True)
+
+
 class DoctorCtResultWriteSerializer(serializers.Serializer):
     reviewed_ai_result_id = serializers.UUIDField()
     overall_assessment = serializers.ChoiceField(choices=CtResult.OverallAssessment.choices)
     overall_malignancy_risk = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), required=False, allow_null=True)
     finding_summary = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    nodule_observations = NoduleObservationWriteSerializer(many=True, required=False)
 
     def validate(self, attrs):
         case = self.context["case"]
@@ -75,6 +89,9 @@ class DoctorCtResultWriteSerializer(serializers.Serializer):
         ).exists()
         if not result:
             raise serializers.ValidationError({"reviewed_ai_result_id": "A succeeded CT AI result for this order is required."})
+        nodule_numbers = [item["nodule_no"] for item in attrs.get("nodule_observations", [])]
+        if len(nodule_numbers) != len(set(nodule_numbers)):
+            raise serializers.ValidationError({"nodule_observations": "Nodule numbers must be unique."})
         return attrs
 
 class PatientClinicalResultSerializer(serializers.ModelSerializer):
@@ -305,6 +322,48 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
                         ),
                     })
 
+                if observation.volume_mm3 is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_VOLUME_{index}",
+                        "label": "결절 부피" if len(observations) == 1 else f"결절 {index} 부피",
+                        "summary": f"{observation.volume_mm3} mm³",
+                    })
+
+                if observation.surface_area_mm2 is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_SURFACE_AREA_{index}",
+                        "label": "결절 표면적" if len(observations) == 1 else f"결절 {index} 표면적",
+                        "summary": f"{observation.surface_area_mm2} mm²",
+                    })
+
+                if observation.sphericity is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_SPHERICITY_{index}",
+                        "label": "결절 구형도" if len(observations) == 1 else f"결절 {index} 구형도",
+                        "summary": str(observation.sphericity),
+                    })
+
+                if observation.spiculation:
+                    sections.append({
+                        "type": f"CT_NODULE_SPICULATION_{index}",
+                        "label": "결절 침상 소견" if len(observations) == 1 else f"결절 {index} 침상 소견",
+                        "summary": observation.get_spiculation_display(),
+                    })
+
+                if observation.lobulation:
+                    sections.append({
+                        "type": f"CT_NODULE_LOBULATION_{index}",
+                        "label": "결절 분엽 소견" if len(observations) == 1 else f"결절 {index} 분엽 소견",
+                        "summary": observation.get_lobulation_display(),
+                    })
+
+                if observation.malignancy_risk is not None:
+                    sections.append({
+                        "type": f"CT_NODULE_MALIGNANCY_RISK_{index}",
+                        "label": "결절 악성 위험도" if len(observations) == 1 else f"결절 {index} 악성 위험도",
+                        "summary": f"{observation.malignancy_risk}%",
+                    })
+
             return sections
 
         # =====================================================
@@ -467,6 +526,22 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
                 "overall_assessment_label": ct.get_overall_assessment_display(),
                 "overall_malignancy_risk": ct.overall_malignancy_risk,
                 "finding_summary": ct.finding_summary,
+                "nodule_observations": [
+                    {
+                        "nodule_no": observation.nodule.nodule_no,
+                        "lobe": observation.lobe,
+                        "lobe_label": observation.get_lobe_display() if observation.lobe else None,
+                        "location_description": observation.location_description,
+                        "max_diameter_mm": observation.max_diameter_mm,
+                        "volume_mm3": observation.volume_mm3,
+                        "surface_area_mm2": observation.surface_area_mm2,
+                        "sphericity": observation.sphericity,
+                        "spiculation": observation.spiculation,
+                        "lobulation": observation.lobulation,
+                        "malignancy_risk": observation.malignancy_risk,
+                    }
+                    for observation in ct.nodule_observations.select_related("nodule").order_by("nodule__nodule_no")
+                ],
             }
 
         # 병리

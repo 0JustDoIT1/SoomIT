@@ -9,6 +9,8 @@ from apps.clinical.models import (
     ClinicalResult,
     XrayResult,
     CtResult,
+    Nodule,
+    NoduleObservation,
     TnmResult,
     PathologyResult,
     GeneResult,
@@ -165,11 +167,24 @@ class PatientClinicalResultAPITests(APITestCase):
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
             confirmed_at=timezone.now(),
         )
-        CtResult.objects.create(
+        ct_detail = CtResult.objects.create(
             clinical_result=ct,
             overall_assessment=CtResult.OverallAssessment.NODULE_DETECTED,
             overall_malignancy_risk=87.50,
             finding_summary="추가 확인이 필요한 결절 소견이 있습니다.",
+        )
+        nodule = Nodule.objects.create(case=case, nodule_no=1)
+        NoduleObservation.objects.create(
+            nodule=nodule,
+            ct_result=ct_detail,
+            lobe=NoduleObservation.Lobe.RUL,
+            max_diameter_mm=12.4,
+            volume_mm3=486.2,
+            surface_area_mm2=331.7,
+            sphericity=0.8421,
+            spiculation=NoduleObservation.PresenceFlag.PRESENT,
+            lobulation=NoduleObservation.PresenceFlag.ABSENT,
+            malignancy_risk=87.5,
         )
 
         pet = ClinicalResult.objects.create(
@@ -250,6 +265,23 @@ class PatientClinicalResultAPITests(APITestCase):
         self.assertEqual(
             by_stage[WorkflowStage.PDL1]["exam_name"],
             "PD-L1 검사",
+        )
+
+        ct_sections = by_stage[WorkflowStage.CT]["result_sections"]
+        self.assertEqual(
+            [section["type"] for section in ct_sections],
+            [
+                "CT_ASSESSMENT",
+                "CT_MALIGNANCY_RISK",
+                "CT_NODULE_LOCATION_1",
+                "CT_NODULE_SIZE_1",
+                "CT_NODULE_VOLUME_1",
+                "CT_NODULE_SURFACE_AREA_1",
+                "CT_NODULE_SPHERICITY_1",
+                "CT_NODULE_SPICULATION_1",
+                "CT_NODULE_LOBULATION_1",
+                "CT_NODULE_MALIGNANCY_RISK_1",
+            ],
         )
 
         pathology_sections = (

@@ -243,6 +243,16 @@ class DoctorExaminationOrderAPITests(TestCase):
             self.assertEqual(response.status_code, 200)
             self.assertEqual([item["case_code"] for item in response.data], ["SEARCH-CASE"])
 
+    def test_case_list_includes_referred_out_cases_for_result_review(self):
+        self.case.case_status = LungCancerCase.CaseStatus.REFERRED_OUT
+        self.case.save(update_fields=["case_status", "updated_at"])
+
+        response = self.client.get(reverse("doctor-case-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data[0]["case_code"], self.case.case_code)
+        self.assertEqual(response.data[0]["case_status"], LungCancerCase.CaseStatus.REFERRED_OUT)
+
     def test_confirmed_result_and_next_order_advance_the_case_with_an_audit_decision(self):
         result = self.confirm(WorkflowStage.XRAY)
         self.post_order("CT")

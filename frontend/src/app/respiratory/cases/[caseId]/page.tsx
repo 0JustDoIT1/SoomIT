@@ -76,6 +76,21 @@ type TnmAnalysisResult = {
   model_version_name?: string;
   completed_at?: string | null;
   result_detail: {
+    ct?: {
+      nodules?: {
+        nodule_no?: number;
+        malignancy_risk?: number | string | null;
+        finding_payload?: {
+          quantification?: {
+            maximum_3d_diameter_mm?: number | null;
+            equivalent_diameter_mm?: number | null;
+            volume_mm3?: number | null;
+            surface_area_mm2?: number | null;
+            sphericity?: number | null;
+          };
+        } | null;
+      }[];
+    };
     tnm?: {
       predicted_t: string | null;
       predicted_n: string | null;
@@ -1934,7 +1949,7 @@ export default function RespiratoryCaseDetailPage() {
               <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "CT" && selectedInfoMenu === "CT" && (
-              <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
+              <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} aiNodules={ctAnalysisResult?.result_detail?.ct?.nodules} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PDL1" && Boolean(confirmedPdl1Result) && ["PDL1", "TREATMENT"].includes(selectedInfoMenu) && (
               <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />

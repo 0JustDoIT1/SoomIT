@@ -105,7 +105,6 @@ class DoctorLungCancerCaseListAPIView(ListAPIView):
             .select_related("patient", "primary_doctor")
             .filter(
                 primary_doctor=self.request.user,
-                case_status="ACTIVE",
             )
             .order_by("-updated_at")
         )
@@ -131,7 +130,6 @@ class DoctorLungCancerCaseDetailAPIView(RetrieveAPIView):
             .select_related("patient", "primary_doctor")
             .filter(
                 primary_doctor=self.request.user,
-                case_status="ACTIVE",
             )
         )
 

@@ -22,7 +22,6 @@ class DoctorAiAnalysisListAPIView(ListAPIView):
             .filter(
                 id=case_id,
                 primary_doctor=self.request.user,
-                case_status="ACTIVE",
             )
             .first()
         )

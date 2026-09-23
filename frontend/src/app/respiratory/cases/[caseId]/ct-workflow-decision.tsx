@@ -6,15 +6,45 @@ import { DecisionModal, DecisionMethodSelect, DecisionReasonFields, decisionInpu
 import { showToast } from "@/components/ui/toast/toast";
 
 type Action = "PROCEED_NEXT_STAGE" | "REFERRED_OUT";
+type CtAiNodule = {
+  nodule_no?: number;
+  malignancy_risk?: number | string | null;
+  finding_payload?: {
+    quantification?: {
+      maximum_3d_diameter_mm?: number | null;
+      equivalent_diameter_mm?: number | null;
+      volume_mm3?: number | null;
+      surface_area_mm2?: number | null;
+      sphericity?: number | null;
+    };
+  } | null;
+};
 type CtWorkflowDecisionProps = {
   caseId: string;
   aiResultId?: string;
+  aiNodules?: CtAiNodule[];
   clinicalResult?: { id?: string; result_status?: string; result_detail?: { ct?: { overall_assessment?: string | null; overall_malignancy_risk?: number | string | null; finding_summary?: string | null } } };
   authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
   onCompleted: (result: { closed: boolean; message: string }) => void;
 };
 
-export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authorizedFetch, onCompleted }: CtWorkflowDecisionProps) {
+function buildNoduleObservations(nodules: CtAiNodule[] | undefined) {
+  return (nodules ?? [])
+    .filter((nodule): nodule is CtAiNodule & { nodule_no: number } => Number.isInteger(nodule.nodule_no) && (nodule.nodule_no ?? 0) > 0)
+    .map((nodule) => {
+      const quantification = nodule.finding_payload?.quantification;
+      return {
+        nodule_no: nodule.nodule_no,
+        max_diameter_mm: quantification?.maximum_3d_diameter_mm ?? quantification?.equivalent_diameter_mm ?? null,
+        volume_mm3: quantification?.volume_mm3 ?? null,
+        surface_area_mm2: quantification?.surface_area_mm2 ?? null,
+        sphericity: quantification?.sphericity ?? null,
+        malignancy_risk: nodule.malignancy_risk ?? null,
+      };
+    });
+}
+
+export function CtWorkflowDecision({ caseId, aiResultId, aiNodules, clinicalResult, authorizedFetch, onCompleted }: CtWorkflowDecisionProps) {
   const initialDetail = clinicalResult?.result_detail?.ct;
   const [open, setOpen] = useState(false);
   const [assessment, setAssessment] = useState(initialDetail?.overall_assessment || "INDETERMINATE");
@@ -27,6 +57,7 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
   const [error, setError] = useState("");
   const submittingRef = useRef(false);
   const uncertainConfirmation = useRef<string | null>(null);
+  const noduleObservations = buildNoduleObservations(aiNodules);
   const resultId = confirmedId ?? (clinicalResult?.result_status === "CONFIRMED" ? clinicalResult.id : undefined);
   const close = () => { if (!submittingRef.current) { setOpen(false); setError(""); } };
   const openDialog = () => {
@@ -86,7 +117,13 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
       let sourceId = recovered.id;
       let advanced = false;
       if (!sourceId) {
-        const draft = await post("clinical-results/ct/", { reviewed_ai_result_id: aiResultId, overall_assessment: assessment, overall_malignancy_risk: parsedRisk, finding_summary: summary.trim() || null });
+        const draft = await post("clinical-results/ct/", {
+          reviewed_ai_result_id: aiResultId,
+          overall_assessment: assessment,
+          overall_malignancy_risk: parsedRisk,
+          finding_summary: summary.trim() || null,
+          ...(noduleObservations.length ? { nodule_observations: noduleObservations } : {}),
+        });
         if (!draft.id) throw new Error("저장된 CT 결과를 확인할 수 없습니다.");
         uncertainConfirmation.current = draft.id;
         await post(`clinical-results/ct/${draft.id}/confirm/`, { advance_to_next_stage: action === "PROCEED_NEXT_STAGE" });
@@ -130,6 +167,7 @@ export function CtWorkflowDecision({ caseId, aiResultId, clinicalResult, authori
     {open && <DecisionModal title="흉부 CT 결과 입력 및 처리" description="영상·AI 결과를 검토하고 다음 처리를 선택하세요." busy={busy} error={error} message={resultId ? "결과 확정 완료 · 선택한 후속 처리를 진행합니다." : undefined} primaryLabel={primaryLabel} disabled={action !== "PROCEED_NEXT_STAGE" && !reason.trim()} onSubmit={() => void submit()} onClose={close}>
       <label className="block text-xs font-semibold text-slate-700">종합 판정<select disabled={Boolean(resultId)} value={assessment} onChange={(event) => { setAssessment(event.target.value); }} className={decisionInputClass}><option value="NO_NODULE">결절 없음</option><option value="NODULE_DETECTED">결절 발견</option><option value="INDETERMINATE">추가 평가 필요</option></select></label>
       <label className="block text-xs font-semibold text-slate-700">호흡기내과 소견<textarea disabled={Boolean(resultId)} value={summary} onChange={(event) => setSummary(event.target.value)} rows={3} maxLength={5000} className={decisionInputClass} /></label>
+      {noduleObservations.length > 0 && <div className="rounded-lg border border-blue-100 bg-blue-50/50 px-3 py-2 text-xs text-slate-700"><p className="font-semibold text-blue-800">결절별 확정 후보</p><p className="mt-1 leading-5">AI가 검출한 {noduleObservations.length}개 결절의 크기·부피·악성 위험도가 CT 확정 결과에 함께 저장됩니다.</p></div>}
       <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[{ value: "PROCEED_NEXT_STAGE", label: "PET-CT/TNM 진행" }, { value: "REFERRED_OUT", label: "의뢰·전원" }]} />
       {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: PET-CT/TNM</p> : <DecisionReasonFields kind="refer" reason={reason} onReasonChange={setReason} />}
       <details><summary className="cursor-pointer text-xs text-slate-600">CT 판정 상세 (선택)</summary><label className="mt-3 block text-xs font-semibold text-slate-700">악성 위험도 (%)<input disabled={Boolean(resultId)} type="number" min="0" max="100" step="0.01" value={risk} onChange={(event) => setRisk(event.target.value)} placeholder="선택 입력" className={decisionInputClass} /></label></details>
