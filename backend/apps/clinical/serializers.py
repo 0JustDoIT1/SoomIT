@@ -363,48 +363,6 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
                         "summary": nodule.get_tracking_status_display(),
                     })
 
-                if observation.volume_mm3 is not None:
-                    sections.append({
-                        "type": f"CT_NODULE_VOLUME_{index}",
-                        "label": "결절 부피" if len(observations) == 1 else f"결절 {index} 부피",
-                        "summary": f"{observation.volume_mm3} mm³",
-                    })
-
-                if observation.surface_area_mm2 is not None:
-                    sections.append({
-                        "type": f"CT_NODULE_SURFACE_AREA_{index}",
-                        "label": "결절 표면적" if len(observations) == 1 else f"결절 {index} 표면적",
-                        "summary": f"{observation.surface_area_mm2} mm²",
-                    })
-
-                if observation.sphericity is not None:
-                    sections.append({
-                        "type": f"CT_NODULE_SPHERICITY_{index}",
-                        "label": "결절 구형도" if len(observations) == 1 else f"결절 {index} 구형도",
-                        "summary": str(observation.sphericity),
-                    })
-
-                if observation.spiculation:
-                    sections.append({
-                        "type": f"CT_NODULE_SPICULATION_{index}",
-                        "label": "결절 침상 소견" if len(observations) == 1 else f"결절 {index} 침상 소견",
-                        "summary": observation.get_spiculation_display(),
-                    })
-
-                if observation.lobulation:
-                    sections.append({
-                        "type": f"CT_NODULE_LOBULATION_{index}",
-                        "label": "결절 분엽 소견" if len(observations) == 1 else f"결절 {index} 분엽 소견",
-                        "summary": observation.get_lobulation_display(),
-                    })
-
-                if observation.malignancy_risk is not None:
-                    sections.append({
-                        "type": f"CT_NODULE_MALIGNANCY_RISK_{index}",
-                        "label": "결절 악성 위험도" if len(observations) == 1 else f"결절 {index} 악성 위험도",
-                        "summary": f"{observation.malignancy_risk}%",
-                    })
-
             return sections
 
         # =====================================================
