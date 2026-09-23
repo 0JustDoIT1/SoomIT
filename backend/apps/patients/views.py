@@ -497,6 +497,14 @@ class AppointmentListAPIView(ListAPIView):
         )
         patient = patient_account.patient
 
+        # 임시 디버그: 현재 로그인한 환자 계정과 연결 환자 확인
+        print(
+            "[APPOINTMENT DEBUG]",
+            "account_id=", patient_account.id,
+            "patient_id=", patient.id,
+            "patient_code=", patient.patient_code,
+        )
+
         return (
             Appointment.objects
             .filter(patient=patient)
@@ -1876,24 +1884,173 @@ class PatientAppointmentCancelRequestAPIView(APIView):
     @transaction.atomic
     def post(self, request, appointment_id):
         serializer = PatientAppointmentCancelRequestSerializer(
-            data=request.data
+            data=request.data,
         )
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(
+            raise_exception=True,
+        )
 
-        patient_account = (
-            get_linked_patient_account(request)
+        patient_account = get_linked_patient_account(
+            request,
         )
         patient = patient_account.patient
 
         try:
-            appointment = Appointment.objects.select_for_update().get(
-                id=appointment_id,
-                patient=patient,
+            appointment = (
+                Appointment.objects
+                .select_for_update()
+                .get(
+                    id=appointment_id,
+                    patient=patient,
+                )
             )
         except Appointment.DoesNotExist:
             return Response(
-                {"detail": "예약 정보를 찾을 수 없습니다."},
+                {
+                    "detail": "예약 정보를 찾을 수 없습니다.",
+                },
                 status=status.HTTP_404_NOT_FOUND,
+            )
+
+        if (
+            appointment.visit_status
+            != Appointment.VisitStatus.SCHEDULED
+        ):
+            return Response(
+                {
+                    "detail": (
+                        "방문 예정 상태의 예약만 "
+                        "취소할 수 있습니다."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        cancellation_reason = (
+            serializer.validated_data.get(
+                "cancellation_reason",
+            )
+        )
+
+        # REQUESTED 예약은 아직 원무과 확정 전이므로
+        # 취소 요청을 남기지 않고 Appointment 자체를 삭제한다.
+        if (
+            appointment.appointment_status
+            == Appointment.AppointmentStatus.REQUESTED
+        ):
+            appointment_id_value = str(
+                appointment.id
+            )
+
+            # 기존 개발 과정에서 남은 AppointmentRequest가 있으면
+            # FK(PROTECT) 때문에 Appointment 삭제가 막힐 수 있으므로
+            # REQUESTED 예약에 연결된 요청 이력도 함께 정리한다.
+            AppointmentRequest.objects.filter(
+                appointment=appointment,
+            ).delete()
+
+            appointment.delete()
+
+            return Response(
+                {
+                    "detail": "예약 요청이 취소되었습니다.",
+                    "appointment_id": appointment_id_value,
+                    "deleted": True,
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # CONFIRMED 예약은 즉시 취소하지 않고
+        # CANCEL / PENDING 요청만 생성한다.
+        if (
+            appointment.appointment_status
+            == Appointment.AppointmentStatus.CONFIRMED
+        ):
+            pending_requests = (
+                AppointmentRequest.objects
+                .select_for_update()
+                .filter(
+                    appointment=appointment,
+                    status=AppointmentRequest.Status.PENDING,
+                )
+            )
+
+            # 이미 취소 요청이 대기 중이면 중복 생성하지 않는다.
+            if pending_requests.filter(
+                request_type=(
+                    AppointmentRequest
+                    .RequestType
+                    .CANCEL
+                ),
+            ).exists():
+                return Response(
+                    {
+                        "detail": "이미 취소 요청된 예약입니다.",
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            # 변경 요청이 대기 중인 상태에서 환자가 취소를 요청하면
+            # 기존 CHANGE 요청은 이력으로 남기되 REJECTED로 종료한다.
+            pending_change_requests = (
+                pending_requests.filter(
+                    request_type=(
+                        AppointmentRequest
+                        .RequestType
+                        .CHANGE
+                    ),
+                )
+            )
+
+            for change_request in pending_change_requests:
+                change_request.status = (
+                    AppointmentRequest
+                    .Status
+                    .REJECTED
+                )
+                change_request.processed_at = timezone.now()
+                change_request.rejection_reason = (
+                    "환자가 예약 취소를 요청하여 "
+                    "기존 변경 요청이 종료되었습니다."
+                )
+                change_request.save(
+                    update_fields=[
+                        "status",
+                        "processed_at",
+                        "rejection_reason",
+                        "updated_at",
+                    ],
+                )
+
+            AppointmentRequest.objects.create(
+                appointment=appointment,
+                request_type=(
+                    AppointmentRequest
+                    .RequestType
+                    .CANCEL
+                ),
+                status=(
+                    AppointmentRequest
+                    .Status
+                    .PENDING
+                ),
+                original_scheduled_at=(
+                    appointment.scheduled_at
+                ),
+                requested_scheduled_at=None,
+                reason=cancellation_reason,
+                requested_by_patient_account=(
+                    patient_account
+                ),
+            )
+
+            # Appointment는 CONFIRMED 상태 그대로 유지한다.
+            # 실제 CANCELLED 처리는 원무과 승인 API에서 수행한다.
+            return Response(
+                AppointmentSerializer(
+                    appointment,
+                ).data,
+                status=status.HTTP_201_CREATED,
             )
 
         if (
@@ -1901,44 +2058,35 @@ class PatientAppointmentCancelRequestAPIView(APIView):
             == Appointment.AppointmentStatus.CANCELLED
         ):
             return Response(
-                {"detail": "이미 취소된 예약입니다."},
+                {
+                    "detail": "이미 취소된 예약입니다.",
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        if AppointmentRequest.objects.filter(
-            appointment=appointment,
-            status=AppointmentRequest.Status.PENDING,
-        ).exists():
-            return Response(
-                {"detail": "처리 대기 중인 예약 요청이 있습니다."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        AppointmentRequest.objects.create(
-            appointment=appointment,
-            request_type=AppointmentRequest.RequestType.CANCEL,
-            original_scheduled_at=appointment.scheduled_at,
-            reason=serializer.validated_data.get("cancellation_reason"),
-            requested_by_patient_account=patient_account,
-        )
 
         return Response(
-            AppointmentSerializer(appointment).data,
-            status=status.HTTP_201_CREATED,
+            {
+                "detail": (
+                    "현재 상태에서는 예약을 취소할 수 없습니다."
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
 
 
 @extend_schema(
     tags=["환자앱-예약"],
-    summary="환자 예약 변경 요청",
+    summary="환자 예약 일정 변경",
     description=(
-        "환자가 기존 예약의 변경을 요청합니다. "
-        "원무과 승인 전에는 기존 예약이 변경되지 않습니다."
+        "예약 요청(REQUESTED)은 기존 예약 행의 일시를 직접 변경합니다. "
+        "확정 예약(CONFIRMED)은 변경 요청을 생성하고, "
+        "원무과 승인 전까지 기존 예약 일시를 유지합니다. "
+        "승인 시 새로운 Appointment를 생성하지 않고 "
+        "기존 Appointment의 scheduled_at만 변경합니다."
     ),
     request=PatientAppointmentChangeRequestSerializer,
     responses=AppointmentSerializer,
 )
-
 class PatientAppointmentChangeRequestAPIView(APIView):
 
     authentication_classes = [
@@ -1951,17 +2099,19 @@ class PatientAppointmentChangeRequestAPIView(APIView):
     @transaction.atomic
     def post(self, request, appointment_id):
         serializer = PatientAppointmentChangeRequestSerializer(
-            data=request.data
+            data=request.data,
         )
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(
+            raise_exception=True,
+        )
 
-        patient_account = (
-            get_linked_patient_account(request)
+        patient_account = get_linked_patient_account(
+            request,
         )
         patient = patient_account.patient
 
         try:
-            old_appointment = (
+            appointment = (
                 Appointment.objects
                 .select_for_update()
                 .get(
@@ -1971,91 +2121,231 @@ class PatientAppointmentChangeRequestAPIView(APIView):
             )
         except Appointment.DoesNotExist:
             return Response(
-                {"detail": "기존 예약 정보를 찾을 수 없습니다."},
+                {
+                    "detail": "기존 예약 정보를 찾을 수 없습니다.",
+                },
                 status=status.HTTP_404_NOT_FOUND,
             )
 
         if (
-            old_appointment.appointment_status
+            appointment.appointment_status
             == Appointment.AppointmentStatus.CANCELLED
         ):
             return Response(
-                {"detail": "이미 취소된 예약은 변경할 수 없습니다."},
+                {
+                    "detail": "이미 취소된 예약은 변경할 수 없습니다.",
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if AppointmentRequest.objects.filter(
-            appointment=old_appointment,
-            status=AppointmentRequest.Status.PENDING,
-        ).exists():
+        if appointment.appointment_status not in [
+            Appointment.AppointmentStatus.REQUESTED,
+            Appointment.AppointmentStatus.CONFIRMED,
+        ]:
             return Response(
-                {"detail": "처리 대기 중인 예약 요청이 있습니다."},
+                {
+                    "detail": (
+                        "현재 상태에서는 예약 일정을 변경할 수 없습니다."
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         if (
-            old_appointment.visit_status
+            appointment.visit_status
             != Appointment.VisitStatus.SCHEDULED
         ):
             return Response(
-                {"detail": "방문 예정 상태의 예약만 변경할 수 있습니다."},
+                {
+                    "detail": (
+                        "방문 예정 상태의 예약만 변경할 수 있습니다."
+                    ),
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 변경/취소를 포함해 PENDING 요청은 예약당 하나만 허용한다.
+        pending_request_exists = (
+            AppointmentRequest.objects
+            .filter(
+                appointment=appointment,
+                status=AppointmentRequest.Status.PENDING,
+            )
+            .exists()
+        )
+
+        if pending_request_exists:
+            return Response(
+                {
+                    "detail": (
+                        "이미 처리 대기 중인 예약 요청이 있습니다."
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         new_scheduled_at = serializer.validated_data[
             "new_scheduled_at"
         ]
+        reason = serializer.validated_data.get(
+            "reason",
+        )
 
-        if new_scheduled_at == old_appointment.scheduled_at:
+        if new_scheduled_at == appointment.scheduled_at:
             return Response(
-                {"detail": "기존 예약 시간과 동일한 시간으로는 변경할 수 없습니다."},
+                {
+                    "detail": (
+                        "기존 예약 시간과 동일한 시간으로는 변경할 수 없습니다."
+                    ),
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if old_appointment.doctor is not None:
-            doctor_duplicate_exists = Appointment.objects.filter(
-                doctor=old_appointment.doctor,
-                scheduled_at=new_scheduled_at,
-                appointment_status__in=[
-                    Appointment.AppointmentStatus.REQUESTED,
-                    Appointment.AppointmentStatus.CONFIRMED,
-                ],
-            ).exists()
-
-            if doctor_duplicate_exists:
+        # 실제 의료진 스케줄상 예약 가능한 시간인지 확인한다.
+        if appointment.doctor_id is not None:
+            try:
+                slot_available = (
+                    is_appointment_slot_available(
+                        doctor_id=appointment.doctor_id,
+                        scheduled_at=new_scheduled_at,
+                    )
+                )
+            except AppointmentAvailabilityError as error:
                 return Response(
-                    {"detail": "해당 의료진의 같은 시간에 이미 예약이 존재합니다."},
+                    {
+                        "detail": str(error),
+                    },
+                    status=(
+                        status.HTTP_503_SERVICE_UNAVAILABLE
+                    ),
+                )
+
+            if not slot_available:
+                return Response(
+                    {
+                        "detail": "선택한 시간은 예약할 수 없습니다.",
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-        duplicate_exists = Appointment.objects.filter(
-            patient=patient,
-            scheduled_at=new_scheduled_at,
-            appointment_status__in=[
-                Appointment.AppointmentStatus.REQUESTED,
-                Appointment.AppointmentStatus.CONFIRMED,
-            ],
-        ).exists()
+        active_statuses = [
+            Appointment.AppointmentStatus.REQUESTED,
+            Appointment.AppointmentStatus.CONFIRMED,
+        ]
 
-        if duplicate_exists:
+        if appointment.doctor_id is not None:
+            doctor_duplicate_exists = (
+                Appointment.objects
+                .filter(
+                    doctor_id=appointment.doctor_id,
+                    scheduled_at=new_scheduled_at,
+                    appointment_status__in=active_statuses,
+                )
+                .exclude(
+                    id=appointment.id,
+                )
+                .exists()
+            )
+
+            if doctor_duplicate_exists:
+                return Response(
+                    {
+                        "detail": (
+                            "해당 의료진의 같은 시간에 이미 예약이 존재합니다."
+                        ),
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        patient_duplicate_exists = (
+            Appointment.objects
+            .filter(
+                patient=patient,
+                scheduled_at=new_scheduled_at,
+                appointment_status__in=active_statuses,
+            )
+            .exclude(
+                id=appointment.id,
+            )
+            .exists()
+        )
+
+        if patient_duplicate_exists:
             return Response(
-                {"detail": "같은 시간에 이미 예약이 존재합니다."},
+                {
+                    "detail": "같은 시간에 이미 예약이 존재합니다.",
+                },
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        AppointmentRequest.objects.create(
-            appointment=old_appointment,
-            request_type=AppointmentRequest.RequestType.CHANGE,
-            original_scheduled_at=old_appointment.scheduled_at,
-            requested_scheduled_at=new_scheduled_at,
-            reason=serializer.validated_data.get("reason"),
-            requested_by_patient_account=patient_account,
-        )
+        # REQUESTED는 아직 원무과 확정 전이므로
+        # 새 행을 만들지 않고 기존 Appointment의 시간만 변경한다.
+        if (
+            appointment.appointment_status
+            == Appointment.AppointmentStatus.REQUESTED
+        ):
+            appointment.scheduled_at = new_scheduled_at
+            appointment.save(
+                update_fields=[
+                    "scheduled_at",
+                    "updated_at",
+                ],
+            )
+
+            return Response(
+                AppointmentSerializer(
+                    appointment,
+                ).data,
+                status=status.HTTP_200_OK,
+            )
+
+        # CONFIRMED는 기존 Appointment를 지금 수정하지 않는다.
+        # CHANGE / PENDING 요청을 생성하고 원무과 승인을 기다린다.
+        if (
+            appointment.appointment_status
+            == Appointment.AppointmentStatus.CONFIRMED
+        ):
+            AppointmentRequest.objects.create(
+                appointment=appointment,
+                request_type=(
+                    AppointmentRequest
+                    .RequestType
+                    .CHANGE
+                ),
+                status=(
+                    AppointmentRequest
+                    .Status
+                    .PENDING
+                ),
+                original_scheduled_at=(
+                    appointment.scheduled_at
+                ),
+                requested_scheduled_at=(
+                    new_scheduled_at
+                ),
+                reason=reason,
+                requested_by_patient_account=(
+                    patient_account
+                ),
+            )
+
+            # 승인 전에는 appointment.scheduled_at을 변경하지 않는다.
+            return Response(
+                AppointmentSerializer(
+                    appointment,
+                ).data,
+                status=status.HTTP_201_CREATED,
+            )
 
         return Response(
-            AppointmentSerializer(old_appointment).data,
-            status=status.HTTP_201_CREATED,
+            {
+                "detail": (
+                    "현재 상태에서는 예약 일정을 변경할 수 없습니다."
+                ),
+            },
+            status=status.HTTP_400_BAD_REQUEST,
         )
+
 
 # ─────────────────────────────────────────────
 # 환자앱 FCM 기기 토큰 등록 / 비활성화

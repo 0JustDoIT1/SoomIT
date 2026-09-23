@@ -5,7 +5,14 @@ import 'models/appointment_doctor.dart';
 import 'services/appointment_service.dart';
 
 class AppointmentRequestSheet extends StatefulWidget {
-  const AppointmentRequestSheet({super.key});
+  final bool embedded;
+  final VoidCallback? onCreated;
+
+  const AppointmentRequestSheet({
+    super.key,
+    this.embedded = false,
+    this.onCreated,
+  });
 
   @override
   State<AppointmentRequestSheet> createState() =>
@@ -343,7 +350,14 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
 
       if (!mounted) return;
 
-      Navigator.pop(context, true);
+      if (widget.embedded) {
+        setState(() {
+          _submitting = false;
+        });
+        widget.onCreated?.call();
+      } else {
+        Navigator.pop(context, true);
+      }
     } catch (_) {
       if (!mounted) return;
 
@@ -374,7 +388,12 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
 
     return SafeArea(
       child: Padding(
-        padding: EdgeInsets.fromLTRB(20, 12, 20, 20 + bottomInset),
+        padding: EdgeInsets.fromLTRB(
+          20,
+          widget.embedded ? 18 : 12,
+          20,
+          (widget.embedded ? 28 : 20) + bottomInset,
+        ),
         child: SingleChildScrollView(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -382,40 +401,37 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
             crossAxisAlignment: CrossAxisAlignment.start,
 
             children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFD1D6DC),
-                    borderRadius: BorderRadius.circular(10),
+              if (!widget.embedded) ...[
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFD1D6DC),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
                   ),
                 ),
-              ),
-
-              const SizedBox(height: 20),
-
-              const Text(
-                '진료 예약 요청',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: _textPrimary,
+                const SizedBox(height: 20),
+                const Text(
+                  '진료 예약 요청',
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w800,
+                    color: _textPrimary,
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 6),
-
-              const Text(
-                '예약 가능한 날짜와 시간을 선택해주세요.',
-                style: TextStyle(
-                  fontSize: 14,
-                  color: _textSecondary,
-                  height: 1.45,
+                const SizedBox(height: 6),
+                const Text(
+                  '예약 가능한 날짜와 시간을 선택해주세요.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: _textSecondary,
+                    height: 1.45,
+                  ),
                 ),
-              ),
-
-              const SizedBox(height: 12),
+                const SizedBox(height: 12),
+              ],
 
               _buildReservationPolicyNotice(),
 
@@ -1445,7 +1461,10 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
     );
   }
 
-  Widget _buildSelectionGuide({required IconData icon, required String text}) {
+  Widget _buildSelectionGuide({
+    required IconData icon,
+    required String text,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
@@ -1461,7 +1480,10 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
+              style: const TextStyle(
+                fontSize: 13,
+                color: Color(0xFF8B95A1),
+              ),
             ),
           ),
         ],
