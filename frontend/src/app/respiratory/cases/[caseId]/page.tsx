@@ -32,7 +32,7 @@ import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
-import { CaseWorkflowDecision } from "./case-workflow-decision";
+import { CaseWorkflowDecision, type WorkflowDecisionCompletion } from "./case-workflow-decision";
 import { XrayWorkflowDecision } from "./xray-workflow-decision";
 import { CtWorkflowDecision } from "./ct-workflow-decision";
 import { StageExaminationOrder } from "./stage-examination-order";
@@ -1026,7 +1026,34 @@ export default function RespiratoryCaseDetailPage() {
     }
   };
 
-  const refreshAdvancedCase = async () => {
+  const applyWorkflowDecisionServerState = useCallback((completion: WorkflowDecisionCompletion) => {
+    if (!completion.currentStage && !completion.caseStatus) return;
+    const applyServerState = (item: CaseItem): CaseItem => ({
+      ...item,
+      ...(completion.currentStage ? { current_stage: completion.currentStage } : {}),
+      ...(completion.caseStatus ? { case_status: completion.caseStatus } : {}),
+    });
+    setSelectedCase((current) => current ? applyServerState(current) : current);
+    setCases((current) => current.map((item) => item.id === caseId ? applyServerState(item) : item));
+  }, [caseId]);
+
+  const handleWorkflowDecisionCompleted = useCallback((completion: WorkflowDecisionCompletion) => {
+    if (completion.closed) {
+      router.push("/respiratory/cases");
+      return;
+    }
+    applyWorkflowDecisionServerState(completion);
+    setCaseRefreshVersion((current) => current + 1);
+    setStageOrderNotice(completion.message);
+  }, [applyWorkflowDecisionServerState, router]);
+
+  const refreshAdvancedCase = async (completion: WorkflowDecisionCompletion) => {
+    if (completion.closed) {
+      router.push("/respiratory/cases");
+      return;
+    }
+    applyWorkflowDecisionServerState(completion);
+    setStageOrderNotice(completion.message);
     await refreshCaseResults();
   };
 
@@ -1135,6 +1162,15 @@ export default function RespiratoryCaseDetailPage() {
   const activePdl1Order = caseOrders.find(
     (order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status),
   );
+  const cancelledPdl1Order = caseOrders.some(
+    (order) => order.order_type === "PDL1" && order.status === "CANCELLED",
+  );
+  const completedPdl1Order = caseOrders.some(
+    (order) => order.order_type === "PDL1" && order.status === "COMPLETED",
+  );
+  const hasPdl1Result = tnmClinicalResults.some(
+    (result) => result.workflow_stage === "PDL1",
+  );
   const canCreatePdl1Order = selectedCase?.current_stage === "PATHOLOGY_GENE"
     && Boolean(confirmedPathologyResult)
     && !activePdl1Order
@@ -1143,6 +1179,11 @@ export default function RespiratoryCaseDetailPage() {
     && Boolean(confirmedPathologyResult)
     && Boolean(activePdl1Order)
     && !confirmedPdl1Result;
+  const canReorderCancelledPdl1 = selectedCase?.current_stage === "PDL1"
+    && !activePdl1Order
+    && cancelledPdl1Order
+    && !completedPdl1Order
+    && !hasPdl1Result;
   const selectedInfoAccess = getCaseInfoAccessState({
     key: selectedInfoMenu,
     currentStage: selectedCase?.current_stage,
@@ -1218,36 +1259,6 @@ export default function RespiratoryCaseDetailPage() {
     tnmAnalysisResults,
     selectedAiType,
   ) as TnmAnalysisResult | undefined;
-
-  const activatePdl1AfterOrderCreation = async () => {
-    if (!confirmedPathologyResult?.id) return;
-    const toastId = `case-pdl1-transition-${caseId}`;
-    showToast.info("PD-L1 단계로 전환하고 있습니다.", { id: toastId });
-    try {
-      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/workflow-decision/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "PROCEED_NEXT_STAGE",
-          source_clinical_result_id: confirmedPathologyResult.id,
-          target_stage: "PDL1",
-          reason: "",
-          retry_purpose: "",
-          retry_priority: "NORMAL",
-          retry_clinical_note: "",
-        }),
-      });
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "PD-L1 단계 활성화에 실패했습니다.");
-      showToast.success("PD-L1 검사 결과 대기 단계로 이동했습니다.", { id: toastId });
-      setStageOrderNotice("PD-L1 오더 요청됨");
-    } catch (cause) {
-      console.error(cause);
-      showToast.error("오더는 생성되었지만 다음 단계 전환에 실패했습니다.", { id: toastId });
-    } finally {
-      setCaseRefreshVersion((current) => current + 1);
-    }
-  };
 
   const confirmSubmittedPathologyResult = async () => {
     if (!submittedPathologyResult?.id || confirmingPathologyResult) return;
@@ -1938,11 +1949,11 @@ export default function RespiratoryCaseDetailPage() {
                 {confirmingPathologyResult ? "확정 중" : "결과 확인 및 확정"}
               </button>
             )}
-            {selectedCase?.case_status === "ACTIVE" && canCreatePdl1Order && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
-              <StageExaminationOrder caseId={caseId} orderType="PDL1" onCreated={() => { void activatePdl1AfterOrderCreation(); }} />
+            {selectedCase?.case_status === "ACTIVE" && (canCreatePdl1Order || canRetryPdl1StageTransition) && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
+              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" triggerLabel={canRetryPdl1StageTransition ? "PD-L1 단계 전환 재시도" : "PD-L1 검사 오더"} confirmedResultId={confirmedPathologyResult?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
-            {selectedCase?.case_status === "ACTIVE" && canRetryPdl1StageTransition && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
-              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" triggerLabel="PD-L1 단계 전환 재시도" confirmedResultId={confirmedPathologyResult?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+            {selectedCase?.case_status === "ACTIVE" && canReorderCancelledPdl1 && selectedInfoMenu === "PDL1" && (
+              <StageExaminationOrder caseId={caseId} orderType="PDL1" followUpPathologyOrder triggerLabel="PD-L1 재오더" onCreated={() => { void refreshCaseResults(); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "XRAY" && selectedInfoMenu === "XRAY" && (
               <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
@@ -1951,10 +1962,10 @@ export default function RespiratoryCaseDetailPage() {
               <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} aiNodules={ctAnalysisResult?.result_detail?.ct?.nodules} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PDL1" && Boolean(confirmedPdl1Result) && ["PDL1", "TREATMENT"].includes(selectedInfoMenu) && (
-              <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+              <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && !["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(selectedCase.current_stage) && (
-              <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} secondary={selectedCase.current_stage === "TREATMENT" || selectedCase.current_stage === "PRESCRIPTION"} triggerLabel={selectedCase.current_stage === "TREATMENT" ? "단계 처리 메뉴" : undefined} exceptionsOnly={(selectedCase.current_stage === "PET_CT_TNM" && !currentStageClinicalResult?.result_detail?.tnm?.stage_group?.trim()) || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={({ message, closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); setStageOrderNotice(message); }} />
+              <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} secondary={selectedCase.current_stage === "TREATMENT" || selectedCase.current_stage === "PRESCRIPTION"} triggerLabel={selectedCase.current_stage === "TREATMENT" ? "단계 처리 메뉴" : undefined} exceptionsOnly={selectedCase.current_stage === "PET_CT_TNM" || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
           </div>
         </div>

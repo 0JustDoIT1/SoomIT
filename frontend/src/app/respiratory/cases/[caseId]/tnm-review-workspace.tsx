@@ -3,7 +3,7 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import { DecisionActions, DecisionStatus } from "./decision-ui";
 import { CaseDicomEvidence } from "./case-dicom-evidence";
-import { CaseWorkflowDecision } from "./case-workflow-decision";
+import { CaseWorkflowDecision, type WorkflowDecisionCompletion } from "./case-workflow-decision";
 import { showToast } from "@/components/ui/toast/toast";
 
 export type TnmCategory = "T" | "N" | "M";
@@ -15,7 +15,7 @@ const OPTIONS: Record<TnmCategory, string[]> = { T: ["TX","T0","Tis","T1mi","T1a
 const META: Record<TnmCategory, string> = { T: "T 원발 종양", N: "N 림프절", M: "M 원격 전이" };
 const EMPTY_DRAFT: TnmDraft = { selectedValue: "", decisionType: "", opinion: "", rationale: "", unresolvedIssue: "", dirty: false };
 
-export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clinicalResultId, clinicalResultStatus, modelName, modelVersion, caseId, apiBaseUrl, authorizedFetch, onConfirmed, onStageAdvanced, onDirtyChange }: { actionable?: boolean; aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; clinicalResultId?: string; clinicalResultStatus?: string; modelName?: string; modelVersion?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onConfirmed?: () => void | Promise<void>; onStageAdvanced?: () => void | Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
+export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clinicalResultId, clinicalResultStatus, modelName, modelVersion, caseId, apiBaseUrl, authorizedFetch, onConfirmed, onStageAdvanced, onDirtyChange }: { actionable?: boolean; aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm; clinicalResultId?: string; clinicalResultStatus?: string; modelName?: string; modelVersion?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onConfirmed?: () => void | Promise<void>; onStageAdvanced?: (completion: WorkflowDecisionCompletion) => void | Promise<void>; onDirtyChange?: (dirty: boolean) => void }) {
   const [category, setCategory] = useState<TnmCategory>("T");
   const [edits, setEdits] = useState<Partial<Record<TnmCategory, TnmDraft>>>({});
   const [savedDrafts, setSavedDrafts] = useState<Record<TnmCategory, TnmDraft> | null>(null);
@@ -148,11 +148,11 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
       <div className="mx-2 shrink-0 rounded border border-violet-100 bg-violet-50 px-3 py-1 text-xs text-slate-700">Stage 후보: {format(stage?.stage_group_candidate)} · cTNM: {format(stage?.ctnm_candidate)} · {stageConfirmed ? "최종 확정 완료" : candidateReady ? "확정 가능" : "Stage 계산 대기"}{(stage?.warnings?.length ?? 0) > 0 && <div role="alert" className="mt-1 max-h-16 overflow-y-auto text-amber-700">{stage?.warnings?.join(" / ")}</div>}</div>
       <div className="shrink-0 border-t border-slate-200 py-2 pl-3 pr-16 [&>div]:mt-1 [&>p]:mt-1">
         {dirty && <p className="text-xs text-amber-700">저장되지 않은 변경사항이 있습니다. 확정 시 최신값을 먼저 저장합니다.</p>}
-        <DecisionStatus error={error} message={!actionable ? "현재 단계에서는 결과 조회만 가능합니다. 선행 단계 완료 후 처리하세요." : message} />
+        <DecisionStatus error={error} message={!actionable ? "현재 Case 단계가 아니므로 결과 조회만 가능합니다." : message} />
         {stageConfirmed ? (
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-slate-600">Stage Group 확정 완료</p>
-            {caseId && authorizedFetch && activeResultId && (
+            {actionable && caseId && authorizedFetch && activeResultId && (
               <CaseWorkflowDecision
                 caseId={caseId}
                 currentStage="PET_CT_TNM"
@@ -161,11 +161,11 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
                 showCaseCloseOption
                 triggerLabel="다음 처리 선택"
                 authorizedFetch={authorizedFetch}
-                onCompleted={() => { void onStageAdvanced?.(); }}
+                onCompleted={(completion) => { void onStageAdvanced?.(completion); }}
               />
             )}
           </div>
-        ) : <DecisionActions busy={busy} disabled={!actionable || !canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} />}
+        ) : actionable ? <DecisionActions busy={busy} disabled={!canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} /> : null}
       </div>
     </section>
   );

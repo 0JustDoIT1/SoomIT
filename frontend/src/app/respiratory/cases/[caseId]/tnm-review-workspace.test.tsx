@@ -42,6 +42,15 @@ describe("TnmReviewWorkspace", () => {
     expect(screen.getByText("cN0")).toBeTruthy();
   });
 
+  it("keeps a completed past TNM stage read-only without workflow actions", () => {
+    render(<TnmReviewWorkspace {...apiProps} actionable={false} authorizedFetch={vi.fn()} clinicalResultId="tnm-1" clinicalResultStatus="CONFIRMED" clinicalTnm={{ t_category: "T1", n_category: "N0", m_category: "M0", stage_group: "IIA", evidence: { stage: { stage_group_candidate: "IIA", stage_group_status: "candidate_ready" } } }} />);
+
+    expect(screen.getByText("Stage Group 확정 완료")).toBeInTheDocument();
+    expect(screen.getByText("현재 Case 단계가 아니므로 결과 조회만 가능합니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "다음 처리 선택" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: finalizeLabel })).not.toBeInTheDocument();
+  });
+
   it("keeps a category draft while moving between TNM tabs", async () => {
     const user = userEvent.setup();
     render(<TnmReviewWorkspace />);
@@ -65,7 +74,8 @@ describe("TnmReviewWorkspace", () => {
       .mockResolvedValueOnce(response({ id: "draft-1" }))
       .mockResolvedValueOnce(response({ id: "draft-1", result_status: "CONFIRMED" }))
       .mockResolvedValueOnce(response({ id: "draft-1", evidence: { stage: ready } }))
-      .mockResolvedValueOnce(response({ id: "draft-1", stage_group: "IIA", evidence: { stage: ready } }));
+      .mockResolvedValueOnce(response({ id: "draft-1", stage_group: "IIA", evidence: { stage: ready } }))
+      .mockResolvedValueOnce(response({ current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" }));
     const onStageAdvanced = vi.fn();
     render(<TnmReviewWorkspace {...apiProps} authorizedFetch={authorizedFetch} onStageAdvanced={onStageAdvanced} />);
 
@@ -83,6 +93,14 @@ describe("TnmReviewWorkspace", () => {
     expect(onStageAdvanced).not.toHaveBeenCalled();
     expect(JSON.parse(authorizedFetch.mock.calls[3][1].body)).toEqual({ advance_to_next_stage: false });
     expect(screen.getByText("Stage Group 확정 완료")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "다음 처리 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "다음 단계 진행" }));
+    await waitFor(() => expect(onStageAdvanced).toHaveBeenCalledWith(expect.objectContaining({
+      closed: false,
+      currentStage: "PATHOLOGY_GENE",
+      caseStatus: "ACTIVE",
+    })));
   });
 
   it("does not continue when the latest TNM save fails", async () => {

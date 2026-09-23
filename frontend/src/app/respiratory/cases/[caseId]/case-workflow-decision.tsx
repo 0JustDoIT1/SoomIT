@@ -14,9 +14,11 @@ const NEXT_STAGE: Record<string, { key: string; label: string } | undefined> = {
   TREATMENT: { key: "PRESCRIPTION", label: "처방" },
 };
 
-type WorkflowDecisionCompletion = {
+export type WorkflowDecisionCompletion = {
   message: string;
   closed: boolean;
+  currentStage?: string;
+  caseStatus?: string;
 };
 
 export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, showCaseCloseOption = false, exceptionsOnly = false, secondary = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; showCaseCloseOption?: boolean; exceptionsOnly?: boolean; secondary?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
@@ -30,7 +32,7 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
   const disabled = !confirmedResultId;
   const canProceed = Boolean(!exceptionsOnly && next && confirmedResultId && (currentStage !== "PET_CT_TNM" || confirmedStageGroup?.trim()));
   const proceedLabel = currentStage === "PATHOLOGY_GENE"
-    ? "확정 및 PD-L1 진행"
+    ? "PD-L1 검사 오더 및 진행"
     : currentStage === "PDL1"
       ? "치료결정으로 진행"
       : currentStage === "TREATMENT"
@@ -62,6 +64,8 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
       onCompleted({
         message,
         closed: body.case_status === "CLOSED" || body.case_status === "REFERRED_OUT",
+        currentStage: typeof body.current_stage === "string" ? body.current_stage : undefined,
+        caseStatus: typeof body.case_status === "string" ? body.case_status : undefined,
       });
     } catch (cause) {
       console.error(cause);

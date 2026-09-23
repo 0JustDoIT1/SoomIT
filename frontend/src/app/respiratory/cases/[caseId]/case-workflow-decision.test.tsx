@@ -49,7 +49,11 @@ describe("CaseWorkflowDecision", () => {
       source_clinical_result_id: "result-1",
       target_stage: "PET_CT_TNM",
     });
-    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ closed: false })));
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({
+      closed: false,
+      currentStage: "PET_CT_TNM",
+      caseStatus: "ACTIVE",
+    })));
   });
 
   it("uses a clinical action label when a confirmed PD-L1 result can enter treatment", () => {

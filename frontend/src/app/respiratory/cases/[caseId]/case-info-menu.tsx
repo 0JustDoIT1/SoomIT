@@ -52,6 +52,7 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
   const pdl1DraftReady = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "DRAFT");
   const activePdl1Order = orders.find((order) => order.order_type === "PDL1" && ["ORDERED", "SCHEDULED"].includes(order.status));
   const completedPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "COMPLETED");
+  const cancelledPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "CANCELLED");
   const pdl1AiCompleted = aiResults.some((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
   const ctRequiresFurtherEvaluation = ["NODULE_DETECTED", "INDETERMINATE"].includes(
     confirmedCt?.result_detail?.ct?.overall_assessment ?? "",
@@ -79,6 +80,9 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
     }
     if (currentStage === "PDL1" && completedPdl1Order) {
       return { state: "WAITING" as const, message: pdl1AiCompleted ? "PD-L1 분석 완료 · 병리과 검토를 기다리고 있습니다." : "PD-L1 검사/분석 진행 중입니다." };
+    }
+    if (currentStage === "PDL1" && cancelledPdl1Order) {
+      return { state: "ACTIONABLE" as const, message: "PD-L1 오더가 취소되었습니다. 재오더가 필요합니다." };
     }
     if (pathologyConfirmed) return { state: "ACTIONABLE" as const, message: "PD-L1 검사 오더를 요청할 수 있습니다." };
     if (currentIndex >= WORKFLOW_STAGES.indexOf("PATHOLOGY_GENE")) {
