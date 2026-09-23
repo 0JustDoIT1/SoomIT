@@ -652,6 +652,7 @@ class DoctorTreatmentDecisionAPIView(PulmonologyWritePermissionMixin, APIView):
             TreatmentDecision.objects
             .select_related(
                 "clinical_result",
+                "clinical_result__case",
                 "selected_regimen",
             )
             .filter(
@@ -779,6 +780,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
             TreatmentDecision.objects
             .select_related(
                 "selected_regimen",
+                "clinical_result__case",
             )
             .filter(
                 clinical_result=clinical_result,

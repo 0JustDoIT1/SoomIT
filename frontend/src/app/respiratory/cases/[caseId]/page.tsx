@@ -2024,8 +2024,14 @@ export default function RespiratoryCaseDetailPage() {
               caseId={caseId}
               apiBaseUrl={API_BASE_URL}
               authorizedFetch={authorizedFetch}
-              onTreatmentConfirmed={() => {
+              onTreatmentConfirmed={(decision) => {
                 setTreatmentView(null);
+                applyWorkflowDecisionServerState({
+                  message: "",
+                  closed: false,
+                  currentStage: decision.current_stage ?? undefined,
+                  caseStatus: decision.case_status ?? undefined,
+                });
                 setCaseRefreshVersion((current) => current + 1);
               }}
             />
