@@ -29,7 +29,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const clinicalRole = imaging || stage === "PET_CT_TNM" ? "호흡기내과 최종 판단" : "병리과 판독";
   const isImageWorkspace = showEvidence && (stage === "XRAY" || stage === "CT");
   return (
-    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex h-[calc(100dvh-168px)] min-h-[540px] max-h-[780px] flex-col" : ""}`}>
+    <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex h-full min-h-0 min-w-0 flex-1 flex-col" : ""}`}>
       {showWorkspaceHeader && !isImageWorkspace && <header className={`flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 ${isImageWorkspace ? "py-2" : "py-2.5"}`}>
         <div className="min-w-0">
           <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
@@ -42,7 +42,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </div>
       </header>}
 
-      <div className={isImageWorkspace ? "grid min-h-0 flex-1 gap-px overflow-hidden bg-slate-200 xl:grid-cols-[minmax(0,3.35fr)_minmax(286px,1fr)]" : ""}>
+      <div className={isImageWorkspace ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_286px] gap-px overflow-hidden bg-slate-200 2xl:grid-cols-[minmax(0,3.35fr)_minmax(286px,1fr)]" : ""}>
       {showEvidence && <div className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 p-1.5" : "border-b border-slate-200 bg-slate-50/50 px-4 py-3"}>
         {!isImageWorkspace && (
           <div className="mb-2 flex items-center justify-between gap-3">
@@ -53,14 +53,14 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
-      <aside className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
-        <SourcePanel compact={isImageWorkspace} eyebrow={imaging ? "호흡기내과" : config.department} title={clinicalRole} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
-          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" compact={isImageWorkspace} /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
+      <aside data-clinical-rail className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
+        <SourcePanel compact={isImageWorkspace || compactRail} eyebrow={imaging ? "호흡기내과" : config.department} title={clinicalRole} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
+          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
           {specialistAction && !clinicalError && clinicalResult?.result_status !== "CONFIRMED" && <div className="flex justify-center px-3 pb-3">{specialistAction}</div>}
         </SourcePanel>
 
-        <SourcePanel compact={isImageWorkspace} eyebrow="AI 분석" title="AI 분석 후보" meta={isImageWorkspace ? formatDateTime(aiResult?.completed_at) : [aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
-          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
+        <SourcePanel compact={isImageWorkspace || compactRail} eyebrow="AI 분석" title="AI 분석 후보" meta={isImageWorkspace ? formatDateTime(aiResult?.completed_at) : [aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
+          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
         </SourcePanel>
 
         {isImageWorkspace ? (
@@ -73,7 +73,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
               hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
             />
             {stage === "CT" ? (
-              <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} />
+              <details data-technical-metadata className="shrink-0 border-t border-slate-200 py-2 text-[10px]"><summary className="cursor-pointer font-semibold text-slate-500">분석 · 영상 정보</summary><AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /></details>
             ) : (
               <AiTraceabilityCard aiResult={aiResult} collapsible />
             )}

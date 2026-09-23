@@ -5,7 +5,7 @@ import type { AuthorizedFetch, RegimenCandidate, TreatmentDecision } from "./tre
 import { DecisionModal, DecisionMethodSelect, DecisionStatus, decisionTriggerClass } from "./decision-ui";
 import { TreatmentEvidencePanel } from "./treatment-evidence-panel";
 import { TreatmentOpinionPanel } from "./treatment-opinion-panel";
-import { WorkflowStatusFlow } from "./result-review-panel";
+
 import { showToast } from "@/components/ui/toast/toast";
 
 type Props = { actionable?: boolean; waitingMessage?: string; caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; onTreatmentChanged?: (decision: TreatmentDecision, confirmed: boolean) => void; onTreatmentConfirmed?: (decision: TreatmentDecision) => void };
@@ -96,14 +96,14 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
   if (loading) return <section className="rounded-lg bg-white p-4 text-sm text-slate-500">치료결정 정보를 불러오는 중입니다.</section>;
   const regimenRequired = REGIMEN_REQUIRED_TYPES.has(treatmentType);
   const canSave = Boolean(treatmentType && plan.trim() && (!regimenRequired || selected));
-  return <div className="space-y-3">
-    <div className="grid items-start gap-3 xl:grid-cols-[minmax(0,13fr)_minmax(280px,7fr)]">
-    <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
-      <header><p className="text-xs font-semibold text-emerald-600">호흡기내과 치료 결정</p><h2 className="mt-1 text-lg font-bold text-slate-800">최종 치료계획</h2><p className="mt-1 text-xs text-slate-500">확정 임상 결과와 치료요법 후보를 검토한 뒤 담당의가 저장·확정합니다.</p></header>
-      <p className="mt-3 whitespace-pre-wrap text-sm text-slate-600">{plan || (actionable ? "등록된 치료계획이 없습니다." : "현재 치료계획을 작성할 수 없습니다.")}</p>
+  return <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_minmax(260px,0.65fr)] gap-3" data-treatment-workspace>
+    <div className="flex min-h-0 min-w-0 flex-col">
+    <section className="flex min-h-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white p-3">
+      <header className="shrink-0"><p className="text-xs font-semibold text-emerald-600">호흡기내과 치료 결정</p><h2 className="mt-1 text-lg font-bold text-slate-800">최종 치료계획</h2><p className="mt-1 text-xs text-slate-500">{confirmed ? "최종 확정" : decisionStatus === "DRAFT" ? "작성 중" : "작성 대기"} · 치료 유형 및 Regimen 검토</p></header>
+      <div className="min-h-0 flex-1 overflow-y-auto py-2" aria-label="치료계획 및 Regimen 후보"><p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{plan || (actionable ? "등록된 치료계획이 없습니다." : "현재 치료계획을 작성할 수 없습니다.")}</p>
       {(treatmentType || selectedRegimenDetail || targetedPlan || rationale) && <TreatmentDecisionDetails treatmentType={nextLabel(treatmentType, TYPES)} aiAction={aiAction} regimen={selectedRegimenDetail} targetedPlan={targetedPlan} rationale={rationale} />}
-      <DecisionStatus error={!open ? error : undefined} message={confirmed ? "치료계획 확정 완료" : undefined} />
-      {!confirmed && <button type="button" disabled={!actionable} onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-4"}>결과 입력 및 처리</button>}
+      {!confirmed && <section className="mt-3 border-t border-slate-200 pt-3"><h3 className="text-sm font-semibold">Regimen 후보</h3>{candidates.length ? candidates.map(candidate => <div key={candidate.id} className="border-b border-slate-100 py-2 text-xs"><p className="font-semibold text-slate-800">{candidate.regimen_detail.regimen_name}</p><p className="mt-1 text-slate-600">{candidate.match_reasons.join(" · ") || "매칭 근거 없음"}</p><p className="mt-1 text-[10px] text-slate-400">{candidate.evidence_source ?? "근거 출처 정보 없음"}</p></div>) : <p className="py-2 text-xs text-slate-500">현재 조건과 일치하는 치료요법 후보가 없습니다.</p>}</section>}</div><div className="shrink-0 border-t border-slate-200 pt-2"><DecisionStatus error={!open ? error : undefined} message={confirmed ? "치료계획 확정 완료" : undefined} />
+      {!confirmed && <button type="button" disabled={!actionable} onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-2 w-full"}>결과 입력 및 처리</button>}</div>
       {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. 저장 후 확정하여 처방 단계로 진행합니다." busy={busy} error={error} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => { const nextTreatmentType = event.target.value; setTreatmentType(nextTreatmentType); if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true); }} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
@@ -118,9 +118,9 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
 
       </DecisionModal>}
     </section>
-    <aside className="rounded-lg border border-slate-200 bg-white p-3 shadow-sm"><WorkflowStatusFlow stage="TREATMENT" treatmentStatus={decisionStatus ?? (actionable ? "READY" : undefined)} />{!actionable && <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800"><p className="font-semibold">현재 치료결정 진행 대기</p><p className="mt-1 leading-4">{waitingMessage || "선행 결과 확정 후 치료계획 작성 가능"}</p></div>}<div className="mt-3 border-t border-slate-100 pt-3 text-[11px]"><p className="font-semibold text-slate-700">치료계획 작성</p><p className="mt-1 text-slate-500">{actionable ? "작성 및 확정 가능" : "선행 결과 대기"}</p></div></aside>
+
     </div>
-    <div className="grid items-start gap-3 lg:grid-cols-2"><TreatmentEvidencePanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /><TreatmentOpinionPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /></div>
+    <aside className="min-h-0 overflow-y-auto space-y-3" aria-label="치료 근거 및 의료진 판단">{!actionable && !confirmed && <p role="status" className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{waitingMessage || "선행 결과 확정 후 치료계획 작성 가능"}</p>}<TreatmentEvidencePanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /><TreatmentOpinionPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} /></aside>
   </div>;
 }
 
@@ -130,5 +130,5 @@ function nextLabel(value: string, options: readonly (readonly [string, string])[
 
 function TreatmentDecisionDetails({ treatmentType, aiAction, regimen, targetedPlan, rationale }: { treatmentType: string; aiAction: string; regimen: TreatmentDecision["selected_regimen_detail"]; targetedPlan: string; rationale: string }) {
   const rows = [["치료 유형", treatmentType], ["AI 추천 반영", aiAction], ["선택 Regimen", regimen ? `${regimen.regimen_name} (${regimen.regimen_code})` : "미선택"], ["표적치료 계획", targetedPlan || "-"], ["결정 근거", rationale || "-"]];
-  return <dl className="mt-3 grid gap-x-4 gap-y-2 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs sm:grid-cols-2">{rows.map(([label, value]) => <div key={label}><dt className="text-slate-400">{label}</dt><dd className="mt-0.5 whitespace-pre-wrap font-medium text-slate-700">{value}</dd></div>)}</dl>;
+  return <div className="mt-2 text-xs"><dl className="grid grid-cols-2 gap-2">{rows.filter(([label]) => label === "치료 유형" || label === "선택 Regimen").map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="mt-0.5 font-medium text-slate-800">{value}</dd></div>)}</dl><details className="mt-2 border-t border-slate-100 pt-2"><summary className="cursor-pointer text-slate-500">AI 반영 · 표적치료 계획 · 결정 근거</summary><dl className="mt-2 space-y-2">{rows.filter(([label]) => label !== "치료 유형" && label !== "선택 Regimen").map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="whitespace-pre-wrap text-slate-700">{value}</dd></div>)}</dl></details></div>;
 }

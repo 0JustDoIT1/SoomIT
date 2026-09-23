@@ -588,15 +588,15 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       ref={workspaceRef}
       tabIndex={0}
       onKeyDown={onWorkspaceKeyDown}
-      className="relative grid h-full min-h-0 grid-rows-[42px_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="relative grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
       aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동"
     >
       {/* PACS toolbar */}
-      <div className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-2.5">
+      <div className="flex min-h-[42px] min-w-0 flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-2.5 py-1">
         <div
           role="toolbar"
           aria-label="CT Viewer 도구"
-          className="flex min-w-0 items-center gap-1 overflow-x-auto"
+          className="flex min-w-0 flex-wrap items-center gap-1"
         >
           <div className="flex shrink-0 items-center rounded-md border border-slate-700 bg-slate-900 p-0.5">
             <button
@@ -688,7 +688,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
           </button>
         </div>
 
-        <div className="hidden shrink-0 items-center gap-2 text-[8px] text-slate-500 xl:flex">
+        <div className="hidden shrink-0 items-center gap-2 text-[8px] text-slate-500 2xl:flex">
           <span>휠 Slice</span>
           <span>·</span>
           <span>우클릭 Zoom</span>

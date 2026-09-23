@@ -18,20 +18,20 @@ export function TreatmentPrescriptionOverview({ mode = "TREATMENT", treatment, c
   const evidence = buildTreatmentEvidence(clinicalResults, aiResults);
 
   return (
-    <section className="mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <section className="mb-2 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
       <header className="flex h-9 items-center justify-between border-b border-slate-200 px-4">
         <h2 className="text-sm font-bold text-slate-900">선행 결과 요약</h2>
         <p className="text-[11px] text-slate-500">현재 조회된 확정 결과와 AI 분석 결과를 치료결정 근거로 확인합니다.</p>
       </header>
-      <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-5">
-        {evidence.map((item) => <EvidenceSummary key={item.label} {...item} />)}
-      </div>
+      <div className="grid grid-cols-1 divide-y divide-slate-200 md:grid-cols-2 md:divide-x md:divide-y-0 xl:grid-cols-3">
+        {evidence.slice(2).map((item) => <EvidenceSummary key={item.label} {...item} />)}
+      </div><details className="border-t border-slate-100 px-3 py-1 text-xs text-slate-500"><summary className="cursor-pointer">이전 영상 결과 · X-ray / CT</summary><div className="grid grid-cols-2">{evidence.slice(0, 2).map(item => <EvidenceSummary key={item.label} {...item} />)}</div></details>
     </section>
   );
 }
 
 function EvidenceSummary({ label, specialist, ai, emphasis = false }: { label: string; specialist: string; ai: string; emphasis?: boolean }) {
-  return <div className={`min-w-0 px-3 py-2.5 ${emphasis ? "bg-blue-50/35" : ""}`}><p className={`text-[10px] font-bold ${emphasis ? "text-blue-800" : "text-slate-700"}`}>{label}</p><div className="mt-1.5 flex min-w-0 items-center gap-2 text-[10px]"><span className="shrink-0 font-semibold text-emerald-700">확정</span><span className="min-w-0 truncate text-slate-600">{specialist}</span></div><div className="mt-1 flex min-w-0 items-center gap-2 text-[10px]"><span className="shrink-0 font-semibold text-blue-700">AI</span><span className="min-w-0 truncate text-slate-500">{ai}</span></div></div>;
+  return <div className={`min-w-0 px-3 py-2.5 ${emphasis ? "bg-blue-50/35" : ""}`}><p className={`text-xs font-bold ${emphasis ? "text-blue-800" : "text-slate-700"}`}>{label}</p><div className="mt-1.5 flex min-w-0 items-center gap-2 text-xs"><span className="shrink-0 font-semibold text-emerald-700">확정</span><span className="min-w-0 truncate text-slate-600">{specialist}</span></div><div className="mt-1 flex min-w-0 items-center gap-2 text-xs"><span className="shrink-0 font-semibold text-blue-700">AI</span><span className="min-w-0 truncate text-slate-500">{ai}</span></div></div>;
 }
 
 function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: AiEvidence[]) {
@@ -58,8 +58,8 @@ function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: 
 
 function PrescriptionTreatmentSummary({ treatment, prescriptionActionable }: { treatment: TreatmentSummary; prescriptionActionable: boolean }) {
   const hasTreatment = Boolean(treatment);
-  return <section className="mb-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
-    <header className="flex min-h-9 items-center justify-between gap-3 border-b border-slate-200 px-4 py-2">
+  return <section className="mb-2 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
+    <header className="sr-only">
       <h2 className="text-sm font-bold text-slate-900">치료결정 요약</h2>
       <p className="text-[11px] text-slate-500">현재 조회된 치료결정 결과를 기준으로 처방을 준비합니다.</p>
     </header>
@@ -73,7 +73,7 @@ function PrescriptionTreatmentSummary({ treatment, prescriptionActionable }: { t
 }
 
 function TreatmentSummaryItem({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
-  return <div className={`min-w-0 px-3 py-2.5 ${emphasis ? "bg-emerald-50/40" : ""}`}><p className="text-[10px] font-bold text-slate-500">{label}</p><p className={`mt-1 truncate text-xs font-semibold ${emphasis ? "text-emerald-700" : "text-slate-700"}`}>{value}</p></div>;
+  return <div className={`min-w-0 px-3 py-1.5 ${emphasis ? "bg-emerald-50/40" : ""}`}><p className="text-xs font-bold text-slate-500">{label}</p><p className={`mt-1 truncate text-xs font-semibold ${emphasis ? "text-emerald-700" : "text-slate-700"}`}>{value}</p></div>;
 }
 
 function summaryFrom(value: unknown, key: string, fields: string[]) {

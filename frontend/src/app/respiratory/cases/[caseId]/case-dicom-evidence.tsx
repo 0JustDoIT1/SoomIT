@@ -223,7 +223,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const openFullscreen = async () => { if (viewerFrameRef.current?.requestFullscreen) await viewerFrameRef.current.requestFullscreen(); };
 
   return (
-    <section ref={viewerFrameRef} className="relative grid h-full min-h-0 grid-rows-[48px_38px_minmax(0,1fr)_40px] overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
+    <section ref={viewerFrameRef} className="relative grid h-full min-h-0 min-w-0 grid-rows-[48px_38px_minmax(0,1fr)_40px] overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
       <header className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 bg-[#0b1220] px-3">
         <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-cyan-300">DICOM evidence</p><h2 className="truncate text-xs font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2></div>
         <div className="flex shrink-0 items-center gap-1 text-[9px]">

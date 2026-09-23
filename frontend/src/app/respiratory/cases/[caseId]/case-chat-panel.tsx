@@ -526,7 +526,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
   return (
     <div
       ref={chatContainerRef}
-      className="fixed bottom-5 right-5 z-40"
+      className="fixed bottom-3 right-5 z-40"
       style={{
         transform: `translate3d(${chatPosition.x}px, ${chatPosition.y}px, 0)`,
       }}
@@ -1169,7 +1169,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
         onPointerCancel={!open ? endChatDrag : undefined}
         onClick={toggleChat}
         aria-label={open ? "숨챗 닫기" : "숨챗 열기"}
-        className={`group relative inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/80 bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-[0_12px_28px_rgba(14,116,144,0.28)] transition hover:scale-105 hover:from-blue-700 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-2 ${
+        className={`group relative inline-flex h-8 w-8 items-center justify-center rounded-full border border-white/80 bg-gradient-to-br from-blue-600 to-cyan-500 text-white shadow-[0_12px_28px_rgba(14,116,144,0.28)] transition hover:scale-105 hover:from-blue-700 hover:to-cyan-600 focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-2 ${
           !open
             ? isDraggingChat
               ? "cursor-grabbing touch-none select-none"

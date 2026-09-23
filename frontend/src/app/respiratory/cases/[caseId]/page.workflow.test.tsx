@@ -1,4 +1,5 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 import Page from "./page";
 
@@ -44,9 +45,20 @@ function installCaseResponses({ stage, clinicalResults = [], orders = [], aiResu
 
 async function openCaseWorkspace(name: string) {
   const navigation = await screen.findByRole("navigation", { name: "Case 진료 정보 메뉴" });
-  fireEvent.click(within(navigation).getByRole("button", { name }));
+  await userEvent.click(within(navigation).getByRole("button", { name }));
   return navigation;
 }
+
+it("keeps the Case action outside the constrained stage body when switching imaging workspaces", async () => {
+  installCaseResponses({ stage: "CT", aiResults: [{ id: "analysis-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }] });
+  const { container } = render(<Page />);
+  for (const name of ["흉부 CT", "PET-CT / TNM 병기"]) {
+    await openCaseWorkspace(name);
+    const body = container.querySelector("[data-case-stage-body]");
+    expect(body).toHaveClass("flex-1", "min-h-0", "overflow-hidden");
+    expect(body).not.toContainElement(screen.getByRole("button", { name: "결과 입력 및 처리" }));
+  }
+});
 
 it("keeps the active CT action available while a future stage is waiting", async () => {
   installCaseResponses({ stage: "CT", aiResults: [{ id: "analysis-1", ai_result_id: "ai-result-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }] });

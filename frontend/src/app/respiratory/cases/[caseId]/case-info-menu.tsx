@@ -149,7 +149,7 @@ export function CaseInfoMenu({
         <h2 className="text-[15px] font-bold tracking-[-0.02em] text-slate-900">
           진료 정보
         </h2>
-        <p className="mt-1 text-[8px] font-medium leading-3.5 text-slate-400">
+        <p className="mt-1 text-[11px] font-medium leading-3.5 text-slate-400">
           검사·진료 상태 확인
         </p>
       </div>
@@ -266,7 +266,7 @@ export function CaseInfoMenu({
                               className={`h-1.5 w-1.5 shrink-0 rounded-full ${STATUS_DOT_CLASS[access.state]}`}
                             />
                             <span
-                              className={`whitespace-nowrap text-[8px] font-semibold leading-3.5 ${STATUS_TEXT_CLASS[access.state]}`}
+                              className={`whitespace-nowrap text-[11px] font-semibold leading-3.5 ${STATUS_TEXT_CLASS[access.state]}`}
                             >
                               {isCurrent && access.state === "ACTIONABLE"
                                 ? "현재 단계"
@@ -282,7 +282,7 @@ export function CaseInfoMenu({
                               }`}
                             />
                             <span
-                              className={`whitespace-nowrap text-[8px] font-semibold leading-3.5 ${
+                              className={`whitespace-nowrap text-[11px] font-semibold leading-3.5 ${
                                 selectedItem ? "text-blue-700" : "text-slate-400"
                               }`}
                             >
@@ -302,10 +302,10 @@ export function CaseInfoMenu({
 
       <div className="mx-2 mt-2 border-t border-slate-200 pt-2">
         <div className="rounded-lg bg-white px-2 py-2 ring-1 ring-slate-200/80">
-          <p className="text-[8px] font-semibold text-slate-600">
+          <p className="text-[11px] font-semibold text-slate-600">
             상태 안내
           </p>
-          <div className="mt-1.5 grid grid-cols-2 gap-x-1 gap-y-1">
+          <div className="mt-1.5 grid grid-cols-1 gap-1">
             <StatusLegend dotClass="bg-emerald-500" label="완료" />
             <StatusLegend dotClass="bg-blue-500" label="진행 중" />
             <StatusLegend dotClass="bg-amber-400" label="결과 대기" />
@@ -325,7 +325,7 @@ function StatusLegend({
   label: string;
 }) {
   return (
-    <span className="flex items-center gap-1 whitespace-nowrap text-[7px] font-medium text-slate-400">
+    <span className="flex items-center gap-1 whitespace-nowrap text-[10px] font-medium text-slate-400">
       <span className={`h-1.5 w-1.5 rounded-full ${dotClass}`} />
       {label}
     </span>

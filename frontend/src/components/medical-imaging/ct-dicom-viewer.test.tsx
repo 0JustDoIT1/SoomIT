@@ -7,7 +7,8 @@ describe("CtDicomViewer toolbar", () => {
   it("renders the compact toolbar and toggles the layout controls", () => {
     render(<CtDicomViewer orderId="order-1" assetId="asset-1" loadSeries={() => new Promise(() => undefined)} />);
 
-    expect(screen.getByRole("toolbar", { name: "CT Viewer 도구" })).toBeTruthy();
+    expect(screen.getByRole("toolbar", { name: "CT Viewer 도구" })).toHaveClass("flex-wrap");
+    expect(screen.getByRole("toolbar", { name: "CT Viewer 도구" })).not.toHaveClass("overflow-x-auto");
     expect(screen.getByRole("button", { name: "WL/WW" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "측정" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "ROI" })).toBeTruthy();

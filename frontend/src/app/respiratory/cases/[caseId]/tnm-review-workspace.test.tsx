@@ -18,6 +18,19 @@ async function enterTnm() {
 }
 
 describe("TnmReviewWorkspace", () => {
+  it("keeps Stage warnings and the single final action outside the scrolling review rail", () => {
+    render(<TnmReviewWorkspace clinicalTnm={{ evidence: { stage: { warnings: ["검토 필요"] } } }} />);
+    const workspace = screen.getByRole("region", { name: "TNM 작업공간" });
+    const rail = screen.getByRole("tabpanel");
+    expect(workspace).toHaveClass("min-h-0", "flex-1");
+    expect(workspace.firstElementChild).toHaveClass("grid-cols-[minmax(0,1fr)]");
+    expect(workspace.className).not.toMatch(/min-h-\[780px\]|overflow-auto/);
+    expect(rail).toHaveClass("overflow-y-auto");
+    expect(rail).not.toContainElement(screen.getByRole("alert"));
+    expect(rail).not.toContainElement(screen.getByRole("button", { name: finalizeLabel }));
+    expect(screen.getByRole("button", { name: finalizeLabel }).parentElement?.parentElement).toHaveClass("shrink-0");
+  });
+
   it("keeps specialist-confirmed values separate from AI candidates", async () => {
     const user = userEvent.setup();
     render(<TnmReviewWorkspace clinicalTnm={{ t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" }} aiTnm={{ predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM1", confidence: 0.82 }} />);
