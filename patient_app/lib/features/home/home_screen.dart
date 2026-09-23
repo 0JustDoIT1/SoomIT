@@ -139,7 +139,7 @@ class _HomeScreenState extends State<HomeScreen> {
           width: double.infinity,
 
           // 기존보다 조금 더 컴팩트하게
-          height: 178,
+          height: 155,
 
           clipBehavior: Clip.antiAlias,
 
@@ -196,8 +196,8 @@ class _HomeScreenState extends State<HomeScreen> {
 
               // 인사말
               Positioned(
-                left: 22,
-                top: 27,
+                left: 25,
+                top: 23,
                 right: 145,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -213,7 +213,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           ),
                           TextSpan(
                             text: name.isEmpty
-                                ? '환자님!'
+                                ? ''
                                 : '$name님!',
                             style: const TextStyle(
                               color: _strongBlue,
@@ -291,7 +291,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildHealthSection() {
     return Container(
-      padding: const EdgeInsets.all(15),
+      padding: const EdgeInsets.all(10),
 
       decoration: _sectionDecoration(),
 
@@ -366,7 +366,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
 
-              const SizedBox(width: 8),
+              const SizedBox(width: 3),
 
               // ===============================
               // 문진표
@@ -449,13 +449,13 @@ class _HomeScreenState extends State<HomeScreen> {
         borderRadius: BorderRadius.circular(18),
 
         child: Container(
-          height: 170,
+          height: 145,
 
           padding: const EdgeInsets.fromLTRB(
+            9,
             11,
-            13,
-            10,
-            13,
+            8,
+            11,
           ),
 
           decoration: BoxDecoration(

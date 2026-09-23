@@ -16,7 +16,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   static const Color _primaryBlue = Color(0xFF3198F4);
 
   @override
-  Size get preferredSize => const Size.fromHeight(82);
+  Size get preferredSize => const Size.fromHeight(60);
 
   @override
   Widget build(BuildContext context) {

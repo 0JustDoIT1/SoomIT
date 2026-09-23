@@ -12,7 +12,6 @@ import '../home/services/profile_service.dart';
 import '../medication/widgets/medication_history_tab.dart';
 import '../symptom/symptom_screen.dart';
 import 'font_size_setting_screen.dart';
-import 'language_setting_screen.dart';
 import 'notification_setting_screen.dart';
 import 'patient_qr_screen.dart';
 import 'profile_edit_screen.dart';
@@ -64,7 +63,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
           builder: (context, snapshot) {
             if (snapshot.connectionState == ConnectionState.waiting) {
               return const Center(
-                child: CircularProgressIndicator(color: _primary),
+                child: CircularProgressIndicator(
+                  color: _primary,
+                ),
               );
             }
 
@@ -175,15 +176,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
                       ),
                       _menuDivider(),
                       _buildMenuItem(
-                        icon: Icons.language_rounded,
-                        iconColor: const Color(0xFF426F9E),
-                        iconBackground: const Color(0xFFEDF4FA),
-                        title: '언어 설정',
-                        trailingText: _currentLanguageLabel,
-                        onTap: _openLanguageSettings,
-                      ),
-                      _menuDivider(),
-                      _buildMenuItem(
                         icon: Icons.dark_mode_outlined,
                         iconColor: const Color(0xFF426F9E),
                         iconBackground: const Color(0xFFEDF4FA),
@@ -195,7 +187,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
 
                   const SizedBox(height: 24),
 
-                  _buildSectionHeader(title: '약관 및 정책'),
+                  _buildSectionHeader(
+                    title: '약관 및 정책',
+                  ),
 
                   const SizedBox(height: 10),
 
@@ -222,12 +216,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
         ),
       ),
     );
-  }
-
-  String get _currentLanguageLabel {
-    return Localizations.localeOf(context).languageCode == 'en'
-        ? 'English'
-        : '한국어';
   }
 
   Widget _buildProfileCard(PatientProfile profile) {
@@ -317,13 +305,19 @@ class _MyPageScreenState extends State<MyPageScreen> {
             ],
           ),
           const SizedBox(height: 16),
-          Container(height: 1, color: const Color(0xFFEEF3F7)),
+          Container(
+            height: 1,
+            color: const Color(0xFFEEF3F7),
+          ),
           const SizedBox(height: 13),
           InkWell(
             borderRadius: BorderRadius.circular(12),
             onTap: () => _openProfileDetail(profile),
             child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 2, vertical: 3),
+              padding: EdgeInsets.symmetric(
+                horizontal: 2,
+                vertical: 3,
+              ),
               child: Row(
                 children: [
                   Expanded(
@@ -345,7 +339,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                     ),
                   ),
                   SizedBox(width: 3),
-                  Icon(Icons.chevron_right_rounded, size: 20, color: _primary),
+                  Icon(
+                    Icons.chevron_right_rounded,
+                    size: 20,
+                    color: _primary,
+                  ),
                 ],
               ),
             ),
@@ -362,14 +360,20 @@ class _MyPageScreenState extends State<MyPageScreen> {
       decoration: BoxDecoration(
         color: const Color(0xFFF1F7FD),
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: const Color(0xFFD6E8F8)),
+        border: Border.all(
+          color: const Color(0xFFD6E8F8),
+        ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Row(
             children: [
-              Icon(Icons.info_outline_rounded, color: _primary, size: 21),
+              Icon(
+                Icons.info_outline_rounded,
+                color: _primary,
+                size: 21,
+              ),
               SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -387,7 +391,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
           const Text(
             '병원에서 받은 환자코드를 연결하면 예약, 검사결과, '
             '복약관리와 건강 기록 기능을 사용할 수 있어요.',
-            style: TextStyle(color: _muted, fontSize: 12.5, height: 1.5),
+            style: TextStyle(
+              color: _muted,
+              fontSize: 12.5,
+              height: 1.5,
+            ),
           ),
           const SizedBox(height: 13),
           SizedBox(
@@ -411,7 +419,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
               ),
               child: const Text(
                 '환자코드 연결하기',
-                style: TextStyle(fontWeight: FontWeight.w700),
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
           ),
@@ -420,7 +430,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  Widget _buildSectionHeader({required String title, String? subtitle}) {
+  Widget _buildSectionHeader({
+    required String title,
+    String? subtitle,
+  }) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Column(
@@ -450,7 +463,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  Widget _buildMenuCard({required List<Widget> children}) {
+  Widget _buildMenuCard({
+    required List<Widget> children,
+  }) {
     return Container(
       decoration: BoxDecoration(
         color: _surface,
@@ -465,7 +480,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: Column(children: children),
+      child: Column(
+        children: children,
+      ),
     );
   }
 
@@ -491,7 +508,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
                 color: iconBackground,
                 borderRadius: BorderRadius.circular(11),
               ),
-              child: Icon(icon, color: iconColor, size: 20),
+              child: Icon(
+                icon,
+                color: iconColor,
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -553,7 +574,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  Future<void> _openProfileDetail(PatientProfile profile) async {
+  Future<void> _openProfileDetail(
+    PatientProfile profile,
+  ) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) {
@@ -572,7 +595,11 @@ class _MyPageScreenState extends State<MyPageScreen> {
   void _openPatientQr(PatientProfile profile) {
     if (profile.appLinkStatus != 'LINKED') {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('환자코드를 연결한 후 QR을 사용할 수 있습니다.')),
+        const SnackBar(
+          content: Text(
+            '환자코드를 연결한 후 QR을 사용할 수 있습니다.',
+          ),
+        ),
       );
       return;
     }
@@ -659,16 +686,6 @@ class _MyPageScreenState extends State<MyPageScreen> {
     );
   }
 
-  void _openLanguageSettings() {
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (context) {
-          return const LanguageSettingScreen();
-        },
-      ),
-    );
-  }
-
   void _openDarkModeSettings() {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -697,7 +714,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
       builder: (dialogContext) {
         return AlertDialog(
           title: const Text('로그아웃'),
-          content: const Text('숨-잇에서 로그아웃하시겠어요?'),
+          content: const Text(
+            '숨-잇에서 로그아웃하시겠어요?',
+          ),
           actions: [
             TextButton(
               onPressed: () {
@@ -741,9 +760,13 @@ class _MyPageScreenState extends State<MyPageScreen> {
     } catch (_) {
       if (!mounted) return;
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('로그아웃에 실패했습니다. 다시 시도해주세요.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '로그아웃에 실패했습니다. 다시 시도해주세요.',
+          ),
+        ),
+      );
 
       setState(() {
         _isLoggingOut = false;
@@ -762,7 +785,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFD95460),
           backgroundColor: Colors.white,
-          side: const BorderSide(color: Color(0xFFF1CCD0)),
+          side: const BorderSide(
+            color: Color(0xFFF1CCD0),
+          ),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -778,7 +803,9 @@ class _MyPageScreenState extends State<MyPageScreen> {
               )
             : Text(
                 l10n.logout,
-                style: const TextStyle(fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                ),
               ),
       ),
     );
@@ -799,7 +826,10 @@ class _MyPageScreenState extends State<MyPageScreen> {
             const SizedBox(height: 12),
             const Text(
               '환자 정보를 불러오지 못했습니다.',
-              style: TextStyle(color: _navy, fontWeight: FontWeight.w700),
+              style: TextStyle(
+                color: _navy,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 12),
             OutlinedButton(
@@ -844,7 +874,9 @@ class _SmallSquareButton extends StatelessWidget {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE4ECF4)),
+              border: Border.all(
+                color: const Color(0xFFE4ECF4),
+              ),
             ),
             child: const Icon(
               Icons.qr_code_2_rounded,
@@ -911,7 +943,10 @@ class _TermsAndPoliciesScreen extends StatelessWidget {
                 title: '이용약관',
                 subtitle: '숨-잇 서비스 이용에 관한 약관',
                 onTap: () {
-                  _openPolicyDocument(context, title: '이용약관');
+                  _openPolicyDocument(
+                    context,
+                    title: '이용약관',
+                  );
                 },
               ),
               _PolicyItemData(
@@ -919,7 +954,10 @@ class _TermsAndPoliciesScreen extends StatelessWidget {
                 title: '개인정보 처리방침',
                 subtitle: '개인정보 처리와 보호에 관한 안내',
                 onTap: () {
-                  _openPolicyDocument(context, title: '개인정보 처리방침');
+                  _openPolicyDocument(
+                    context,
+                    title: '개인정보 처리방침',
+                  );
                 },
               ),
               _PolicyItemData(
@@ -927,7 +965,10 @@ class _TermsAndPoliciesScreen extends StatelessWidget {
                 title: '동의 내역',
                 subtitle: '가입 시 동의한 항목과 버전을 확인',
                 onTap: () {
-                  _openPolicyDocument(context, title: '동의 내역');
+                  _openPolicyDocument(
+                    context,
+                    title: '동의 내역',
+                  );
                 },
               ),
             ],
@@ -944,7 +985,9 @@ class _TermsAndPoliciesScreen extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) {
-          return _PolicyDocumentScreen(title: title);
+          return _PolicyDocumentScreen(
+            title: title,
+          );
         },
       ),
     );
@@ -954,7 +997,9 @@ class _TermsAndPoliciesScreen extends StatelessWidget {
 class _PolicyCard extends StatelessWidget {
   final List<_PolicyItemData> items;
 
-  const _PolicyCard({required this.items});
+  const _PolicyCard({
+    required this.items,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -962,7 +1007,9 @@ class _PolicyCard extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: const Color(0xFFE3EBF3)),
+        border: Border.all(
+          color: const Color(0xFFE3EBF3),
+        ),
       ),
       clipBehavior: Clip.antiAlias,
       child: Column(
@@ -986,7 +1033,9 @@ class _PolicyCard extends StatelessWidget {
 class _PolicyRow extends StatelessWidget {
   final _PolicyItemData item;
 
-  const _PolicyRow({required this.item});
+  const _PolicyRow({
+    required this.item,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -1003,7 +1052,11 @@ class _PolicyRow extends StatelessWidget {
                 color: const Color(0xFFF0F5F9),
                 borderRadius: BorderRadius.circular(11),
               ),
-              child: Icon(item.icon, color: const Color(0xFF506A84), size: 20),
+              child: Icon(
+                item.icon,
+                color: const Color(0xFF506A84),
+                size: 20,
+              ),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -1029,7 +1082,10 @@ class _PolicyRow extends StatelessWidget {
                 ],
               ),
             ),
-            const Icon(Icons.chevron_right_rounded, color: Color(0xFFB0BAC6)),
+            const Icon(
+              Icons.chevron_right_rounded,
+              color: Color(0xFFB0BAC6),
+            ),
           ],
         ),
       ),
@@ -1054,10 +1110,138 @@ class _PolicyItemData {
 class _PolicyDocumentScreen extends StatelessWidget {
   final String title;
 
-  const _PolicyDocumentScreen({required this.title});
+  const _PolicyDocumentScreen({
+    required this.title,
+  });
+
+  List<_PolicySectionData> _sections() {
+    switch (title) {
+      case '개인정보 처리방침':
+        return const [
+          _PolicySectionData(
+            title: '1. 처리하는 개인정보',
+            body: '숨-잇은 회원 및 환자 연결, 건강관리 기능 제공을 위해 서비스 이용 과정에서 필요한 정보를 처리할 수 있습니다.\n\n'
+                '• 계정 정보: 이름, 이메일, 로그인 식별정보\n'
+                '• 환자 기본정보: 환자번호, 생년월일, 성별, 연락처 등 병원 연결에 필요한 정보\n'
+                '• 건강 관련 정보: 증상 기록, 문진표, 복약 일정 및 복용 기록, 예약 정보, 검사 일정과 검사 결과 등\n'
+                '• 서비스 이용 정보: 알림 설정, 앱 잠금 및 환경설정 정보\n\n'
+                '건강 관련 정보는 민감한 정보에 해당하므로 서비스 제공에 필요한 범위에서만 처리하는 것을 원칙으로 합니다.',
+          ),
+          _PolicySectionData(
+            title: '2. 이용 목적',
+            body: '처리한 정보는 다음 목적 범위에서 사용합니다.\n\n'
+                '• 환자 본인 확인 및 병원 환자정보 연결\n'
+                '• 진료 예약 및 일정 확인\n'
+                '• 검사 일정·결과 확인\n'
+                '• 복약 일정과 복용 기록 관리\n'
+                '• 증상 및 문진 기록 관리와 건강 리포트 제공\n'
+                '• 중요 알림 및 서비스 안내 제공\n'
+                '• 서비스 오류 확인과 보안 유지',
+          ),
+          _PolicySectionData(
+            title: '3. 보관 및 파기',
+            body: '개인정보는 서비스 제공 목적이 달성되거나 회원 탈퇴 등으로 보관 필요성이 없어지면 지체 없이 파기하는 것을 원칙으로 합니다. 다만 관계 법령 또는 의료기관의 정당한 보관 의무가 있는 정보는 해당 기간 동안 분리하여 보관할 수 있습니다.\n\n'
+                '실제 운영 시에는 정보 항목별 보관기간과 파기 절차를 운영기관 정책 및 관련 법령에 맞게 확정해야 합니다.',
+          ),
+          _PolicySectionData(
+            title: '4. 제3자 제공 및 병원 연동',
+            body: '숨-잇은 사용자가 연결한 의료기관의 진료·예약·검사·복약 정보를 앱에서 확인할 수 있도록 연동될 수 있습니다. 개인정보를 제3자에게 제공해야 하는 경우에는 법적 근거가 있거나 사용자의 별도 동의를 받은 범위에서 처리하는 것을 원칙으로 합니다.',
+          ),
+          _PolicySectionData(
+            title: '5. 안전한 정보 보호',
+            body: '숨-잇은 인증 토큰 관리, 접근권한 제한, 앱 잠금, 통신 구간 보호 등 개인정보와 건강정보를 안전하게 처리하기 위한 기술적·관리적 보호조치를 적용하도록 설계합니다. 사용자는 계정과 잠금정보를 다른 사람과 공유하지 않아야 합니다.',
+          ),
+          _PolicySectionData(
+            title: '6. 이용자의 권리',
+            body: '사용자는 본인의 개인정보에 대해 열람, 정정, 삭제 또는 처리 제한을 요청할 수 있습니다. 의료기관에서 생성·관리하는 진료정보는 해당 의료기관의 관련 절차가 적용될 수 있습니다.',
+          ),
+          _PolicySectionData(
+            title: '7. 문의',
+            body: '개인정보 관련 문의 창구와 책임자 정보는 실제 서비스 운영 주체가 확정되면 운영기관의 명칭, 연락처, 이메일을 기재해야 합니다.',
+          ),
+        ];
+
+      case '동의 내역':
+        return const [
+          _PolicySectionData(
+            title: '필수 동의 항목',
+            body: '• 숨-잇 서비스 이용약관 동의\n'
+                '• 개인정보 수집·이용 동의\n'
+                '• 건강정보 등 민감정보 처리 동의\n\n'
+                '환자 연결 및 건강관리 기능을 제공하기 위해 필요한 항목입니다.',
+          ),
+          _PolicySectionData(
+            title: '선택 동의 항목',
+            body: '• 푸시 알림 수신 동의\n\n'
+                '선택 항목은 동의하지 않아도 기본 서비스 이용에는 영향을 주지 않도록 구성하는 것을 원칙으로 합니다. 단, 알림을 끄면 예약·복약·검사결과 등 일부 안내를 즉시 받지 못할 수 있습니다.',
+          ),
+          _PolicySectionData(
+            title: '동의 이력 표시',
+            body: '현재 화면은 숨-잇에 필요한 동의 항목을 안내하기 위한 화면입니다. 실제 사용자의 동의 일시, 약관 버전, 철회 이력은 서버의 동의 이력 데이터와 연결한 뒤 표시해야 합니다.',
+          ),
+        ];
+
+      default:
+        return const [
+          _PolicySectionData(
+            title: '1. 목적',
+            body: '이 약관은 숨-잇(Soom-it) 환자용 애플리케이션에서 제공하는 건강관리 및 병원 연동 서비스의 이용 조건과 사용자 및 서비스 운영 주체의 기본적인 권리·의무를 정하는 것을 목적으로 합니다.',
+          ),
+          _PolicySectionData(
+            title: '2. 주요 서비스',
+            body: '숨-잇은 환자가 자신의 건강 관련 정보를 보다 편리하게 확인하고 기록할 수 있도록 다음과 같은 기능을 제공합니다.\n\n'
+                '• 병원 환자정보 연결 및 본인 정보 확인\n'
+                '• 진료 예약 요청 및 일정 확인\n'
+                '• 검사 일정과 검사 결과 확인\n'
+                '• 복약 일정 및 복용 기록 관리\n'
+                '• 증상 기록, 문진표 작성, 건강 리포트 확인\n'
+                '• 의료진 또는 병원과의 서비스 내 소통 기능\n'
+                '• 건강 관련 안내 및 AI 기반 정보 제공 기능',
+          ),
+          _PolicySectionData(
+            title: '3. 의료행위에 대한 안내',
+            body: '숨-잇에서 제공하는 증상 상태, 통계, 건강 리포트, AI 안내 등은 자기관리와 정보 확인을 돕기 위한 참고 정보이며 의료진의 진단, 처방 또는 응급의료 판단을 대신하지 않습니다.\n\n'
+                '증상이 지속되거나 악화되거나 응급상황이 의심되는 경우에는 앱의 안내에만 의존하지 말고 의료진, 의료기관 또는 119 등 적절한 응급의료체계를 이용해야 합니다.',
+          ),
+          _PolicySectionData(
+            title: '4. 계정 및 환자 연결',
+            body: '사용자는 본인의 계정과 환자정보를 정확하게 사용해야 하며, 타인의 환자번호 또는 인증정보를 사용해서는 안 됩니다. 계정 또는 앱 잠금정보의 관리 책임은 사용자에게 있으며, 비정상적인 사용이 확인되는 경우 서비스 이용이 제한될 수 있습니다.',
+          ),
+          _PolicySectionData(
+            title: '5. 건강정보 기록',
+            body: '사용자가 직접 입력한 증상, 복약 완료 여부, 문진 답변 등의 정보는 사용자가 입력한 내용을 바탕으로 저장됩니다. 정확한 건강관리를 위해 실제 상태와 다른 정보를 고의로 입력하거나 타인의 정보를 등록해서는 안 됩니다.',
+          ),
+          _PolicySectionData(
+            title: '6. 서비스 이용 제한 및 변경',
+            body: '점검, 시스템 장애, 의료기관 연동 상태 또는 네트워크 환경 등에 따라 일부 기능이 일시적으로 제한될 수 있습니다. 서비스 기능이나 화면 구성은 안정성 및 사용성 개선을 위해 변경될 수 있으며 중요한 변경사항은 적절한 방법으로 안내합니다.',
+          ),
+          _PolicySectionData(
+            title: '7. 개인정보 보호',
+            body: '서비스 이용 과정에서 처리되는 개인정보와 건강 관련 정보는 개인정보 처리방침에 따라 관리합니다. 자세한 내용은 약관 및 정책 메뉴의 「개인정보 처리방침」에서 확인할 수 있습니다.',
+          ),
+          _PolicySectionData(
+            title: '8. 약관의 변경',
+            body: '약관 내용이 변경되는 경우 변경 사유와 적용일을 서비스 내 공지 등 적절한 방법으로 안내합니다. 실제 서비스 운영 시에는 약관 버전과 시행일을 별도로 관리해야 합니다.',
+          ),
+        ];
+    }
+  }
+
+  String get _introText {
+    switch (title) {
+      case '개인정보 처리방침':
+        return '숨-잇에서 어떤 정보를 왜 처리하는지 확인할 수 있어요.';
+      case '동의 내역':
+        return '숨-잇 서비스 이용에 필요한 동의 항목을 확인할 수 있어요.';
+      default:
+        return '숨-잇 서비스를 이용할 때 필요한 기본 이용 기준이에요.';
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
+    final sections = _sections();
+
     return Scaffold(
       backgroundColor: const Color(0xFFF4F7FB),
       appBar: _detailAppBar(title),
@@ -1066,20 +1250,91 @@ class _PolicyDocumentScreen extends StatelessWidget {
         children: [
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.all(18),
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFE3EBF3)),
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: const Color(0xFFDCEBFA),
+              ),
             ),
-            child: Text(
-              title == '동의 내역'
-                  ? '가입 시 동의한 항목, 동의 일시, 약관 버전 정보를 이 화면에 연결하면 됩니다.'
-                  : '[$title]\n\n추후 확정된 $title 본문을 이 영역에 연결하면 됩니다.',
-              style: const TextStyle(
-                color: Color(0xFF566579),
-                fontSize: 13,
-                height: 1.7,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Icon(
+                  Icons.info_outline_rounded,
+                  color: Color(0xFF2F80ED),
+                  size: 20,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    _introText,
+                    style: const TextStyle(
+                      color: Color(0xFF566579),
+                      fontSize: 12.5,
+                      height: 1.5,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          for (final section in sections) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(18),
+                border: Border.all(
+                  color: const Color(0xFFE3EBF3),
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    section.title,
+                    style: const TextStyle(
+                      color: Color(0xFF2A3748),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Text(
+                    section.body,
+                    style: const TextStyle(
+                      color: Color(0xFF566579),
+                      fontSize: 12.5,
+                      height: 1.7,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+          ],
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF8E8),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFFF3E2B7),
+              ),
+            ),
+            child: const Text(
+              '현재 문구는 숨-잇 프로젝트 기능에 맞춘 서비스용 초안입니다. '
+              '실제 배포 전에는 운영기관 정보, 보관기간, 제3자 제공·처리위탁 현황, '
+              '개인정보 문의창구와 약관 시행일 등을 실제 운영정책에 맞게 확정해야 합니다.',
+              style: TextStyle(
+                color: Color(0xFF846B32),
+                fontSize: 11,
+                height: 1.5,
               ),
             ),
           ),
@@ -1089,6 +1344,16 @@ class _PolicyDocumentScreen extends StatelessWidget {
   }
 }
 
+class _PolicySectionData {
+  final String title;
+  final String body;
+
+  const _PolicySectionData({
+    required this.title,
+    required this.body,
+  });
+}
+
 PreferredSizeWidget _detailAppBar(String title) {
   return AppBar(
     backgroundColor: Colors.white,
@@ -1096,7 +1361,9 @@ PreferredSizeWidget _detailAppBar(String title) {
     elevation: 0,
     scrolledUnderElevation: 0,
     centerTitle: false,
-    iconTheme: const IconThemeData(color: Color(0xFF27364B)),
+    iconTheme: const IconThemeData(
+      color: Color(0xFF27364B),
+    ),
     title: Text(
       title,
       style: const TextStyle(
@@ -1107,7 +1374,10 @@ PreferredSizeWidget _detailAppBar(String title) {
     ),
     bottom: const PreferredSize(
       preferredSize: Size.fromHeight(1),
-      child: Divider(height: 1, color: Color(0xFFE8EEF4)),
+      child: Divider(
+        height: 1,
+        color: Color(0xFFE8EEF4),
+      ),
     ),
   );
 }
@@ -1116,10 +1386,12 @@ class _DarkModeSettingScreen extends StatefulWidget {
   const _DarkModeSettingScreen();
 
   @override
-  State<_DarkModeSettingScreen> createState() => _DarkModeSettingScreenState();
+  State<_DarkModeSettingScreen> createState() =>
+      _DarkModeSettingScreenState();
 }
 
-class _DarkModeSettingScreenState extends State<_DarkModeSettingScreen> {
+class _DarkModeSettingScreenState
+    extends State<_DarkModeSettingScreen> {
   static const Color _primary = Color(0xFF2F80ED);
 
   bool? _isDark;
@@ -1148,13 +1420,16 @@ class _DarkModeSettingScreenState extends State<_DarkModeSettingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isDark = _isDark ?? Theme.of(context).brightness == Brightness.dark;
+    final isDark =
+        _isDark ?? Theme.of(context).brightness == Brightness.dark;
 
     final background = isDark
         ? const Color(0xFF101820)
         : const Color(0xFFF4F7FB);
 
-    final surface = isDark ? const Color(0xFF17212B) : Colors.white;
+    final surface = isDark
+        ? const Color(0xFF17212B)
+        : Colors.white;
 
     final titleColor = isDark
         ? const Color(0xFFF5F7FA)
@@ -1190,7 +1465,10 @@ class _DarkModeSettingScreenState extends State<_DarkModeSettingScreen> {
         scrolledUnderElevation: 0,
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(1),
-          child: Divider(height: 1, color: borderColor),
+          child: Divider(
+            height: 1,
+            color: borderColor,
+          ),
         ),
       ),
       body: ListView(
@@ -1201,7 +1479,9 @@ class _DarkModeSettingScreenState extends State<_DarkModeSettingScreen> {
             decoration: BoxDecoration(
               color: surface,
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: borderColor),
+              border: Border.all(
+                color: borderColor,
+              ),
             ),
             child: Row(
               children: [
@@ -1215,8 +1495,12 @@ class _DarkModeSettingScreenState extends State<_DarkModeSettingScreen> {
                     borderRadius: BorderRadius.circular(13),
                   ),
                   child: Icon(
-                    isDark ? Icons.dark_mode_rounded : Icons.dark_mode_outlined,
-                    color: isDark ? const Color(0xFF6EADFF) : _primary,
+                    isDark
+                        ? Icons.dark_mode_rounded
+                        : Icons.dark_mode_outlined,
+                    color: isDark
+                        ? const Color(0xFF6EADFF)
+                        : _primary,
                     size: 22,
                   ),
                 ),
@@ -1261,9 +1545,10 @@ class _DarkModeSettingScreenState extends State<_DarkModeSettingScreen> {
                       ? const Color(0xFF394959)
                       : const Color(0xFFE0E6ED),
                   inactiveThumbColor: Colors.white,
-                  trackOutlineColor: const WidgetStatePropertyAll<Color>(
-                    Colors.transparent,
-                  ),
+                  trackOutlineColor:
+                      const WidgetStatePropertyAll<Color>(
+                        Colors.transparent,
+                      ),
                 ),
               ],
             ),
