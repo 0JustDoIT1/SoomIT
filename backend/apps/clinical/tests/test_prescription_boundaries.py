@@ -1,5 +1,6 @@
 from contextlib import ExitStack
 from decimal import Decimal
+import json
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
@@ -25,7 +26,9 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.decisions = mock("TreatmentDecision.objects")
         self.drugs = mock("RegimenDrug.objects")
         self.profiles = mock("PatientHealthProfile.objects")
+        self.medications = mock("CurrentMedication.objects")
         self.labs = mock("LabResult.objects")
+        self.snapshot = mock("_safety_input_snapshot")
         self.output = mock("DoctorPrescriptionSerializer")
         self.atomic = mock("transaction.atomic")
         self.request = NS(user=object(), data={})
@@ -46,6 +49,12 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.prescription = MagicMock(prescription_status="VALIDATED")
         self.prescription.case.current_stage = "PRESCRIPTION"
         self.prescription.treatment_decision.clinical_result.result_status = "CONFIRMED"
+        self.snapshot.return_value = {"snapshot": "current"}
+        self.medications.filter.return_value.select_related.return_value = []
+        (
+            self.prescription.safety_check_results.filter.return_value
+            .order_by.return_value.first.return_value
+        ) = NS(message=json.dumps(self.snapshot.return_value))
         self.rx.select_for_update.return_value.filter.return_value.first.return_value = self.prescription
         self.rx.select_for_update.return_value.select_related.return_value.filter.return_value.first.return_value = self.prescription
         self.rx.select_for_update.return_value.select_related.return_value.prefetch_related.return_value.filter.return_value.first.return_value = self.prescription
@@ -237,11 +246,65 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         self.prescription.save.assert_not_called()
 
+    def test_finalize_rejects_missing_malformed_or_stale_safety_snapshot(self):
+        items = self.prescription.items.all.return_value
+        safety = self.prescription.safety_check_results.all.return_value
+        items.exists.return_value = True
+        items.filter.return_value.exists.return_value = False
+        safety.exists.return_value = True
+        safety.filter.return_value.exists.return_value = False
+        snapshot_result = (
+            self.prescription.safety_check_results.filter.return_value
+            .order_by.return_value.first
+        )
+
+        for saved_result in (
+            None,
+            NS(message="not-json"),
+            NS(message=json.dumps({"snapshot": "old"})),
+        ):
+            with self.subTest(saved_result=saved_result):
+                self.prescription.prescription_status = "VALIDATED"
+                self.prescription.save.reset_mock()
+                snapshot_result.return_value = saved_result
+
+                response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
+
+                self.assertEqual(response.status_code, 400)
+                self.prescription.save.assert_not_called()
+
+    def test_prescription_serializer_hides_internal_safety_snapshot(self):
+        internal = NS(source_code="SAFETY_INPUT_SNAPSHOT")
+        visible = NS(source_code="DUPLICATION_CHECK")
+        prescription = NS(safety_check_results=MagicMock())
+        prescription.safety_check_results.all.return_value = [internal, visible]
+
+        with patch("apps.clinical.serializers.SafetyCheckResultSerializer") as serializer:
+            serializer.return_value.data = [{"source_code": "DUPLICATION_CHECK"}]
+            data = DoctorPrescriptionSerializer().get_safety_check_results(prescription)
+
+        serializer.assert_called_once_with([visible], many=True)
+        self.assertEqual(data, [{"source_code": "DUPLICATION_CHECK"}])
+
     def test_finalized_items_cannot_be_patched(self):
         self.prescription.prescription_status = "FINAL"
         response = Update.patch.__wrapped__(Update(), self.request, "case", "rx", "item")
         self.assertEqual(response.status_code, 400)
         self.items.filter.assert_not_called()
+
+    def test_prescription_mutations_require_the_prescription_stage(self):
+        self.prescription.case.current_stage = "TREATMENT"
+
+        update_response = Update.patch.__wrapped__(Update(), self.request, "case", "rx", "item")
+        safety_response = Safety.post.__wrapped__(Safety(), self.request, "case", "rx")
+        acknowledge_response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
+
+        self.assertEqual(update_response.status_code, 400)
+        self.assertEqual(safety_response.status_code, 400)
+        self.assertEqual(acknowledge_response.status_code, 400)
+        self.items.filter.assert_not_called()
+        self.prescription.safety_check_results.all.return_value.delete.assert_not_called()
+        self.prescription.safety_check_results.filter.assert_not_called()
 
     def test_warning_acknowledgment_requires_a_reason(self):
         warning_results = self.prescription.safety_check_results.filter.return_value

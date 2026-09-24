@@ -509,8 +509,14 @@ def _allergy_names(patient_profile):
     if patient_profile is None:
         return set(), False
 
+    allergy_status = getattr(patient_profile, "allergy_status", None)
     allergies = getattr(patient_profile, "allergies", None)
     if not isinstance(allergies, list):
+        return set(), False
+
+    if allergy_status == PatientHealthProfile.AllergyStatus.NONE:
+        return (set(), True) if not allergies else (set(), False)
+    if allergy_status != PatientHealthProfile.AllergyStatus.PRESENT:
         return set(), False
 
     names = set()
@@ -518,7 +524,7 @@ def _allergy_names(patient_profile):
         if not isinstance(allergy, str) or not allergy.strip():
             return names, False
         names.add(allergy.strip().casefold())
-    return names, True
+    return (names, True) if names else (set(), False)
 
 
 def _dur_message(operation, row):
@@ -1163,21 +1169,20 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
             )
 
         snapshot_query = prescription.safety_check_results.filter(source_code="SAFETY_INPUT_SNAPSHOT")
-        snapshot_result = snapshot_query.order_by("-checked_at").first() if hasattr(snapshot_query, "order_by") else None
-        if snapshot_result is None and hasattr(snapshot_query, "order_by"):
+        snapshot_result = snapshot_query.order_by("-checked_at").first()
+        if snapshot_result is None:
             return Response({"detail": "Safety re-run is required."}, status=400)
-        if snapshot_result is not None and isinstance(getattr(snapshot_result, "message", None), str):
-            patient = prescription.case.patient
-            current_profile = PatientHealthProfile.objects.filter(patient=patient).first()
-            current_medications = list(CurrentMedication.objects.filter(patient=patient, is_active=True).select_related("drug"))
-            current_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at").first()
-            current_snapshot = _safety_input_snapshot(items=list(items), medications=current_medications, patient_profile=current_profile, latest_lab=current_lab)
-            try:
-                saved_snapshot = json.loads(snapshot_result.message or "")
-            except (TypeError, ValueError):
-                saved_snapshot = None
-            if saved_snapshot != current_snapshot:
-                return Response({"detail": "Safety inputs changed; re-run is required."}, status=400)
+        patient = prescription.case.patient
+        current_profile = PatientHealthProfile.objects.filter(patient=patient).first()
+        current_medications = list(CurrentMedication.objects.filter(patient=patient, is_active=True).select_related("drug"))
+        current_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at").first()
+        current_snapshot = _safety_input_snapshot(items=list(items), medications=current_medications, patient_profile=current_profile, latest_lab=current_lab)
+        try:
+            saved_snapshot = json.loads(snapshot_result.message or "")
+        except (TypeError, ValueError):
+            return Response({"detail": "Safety snapshot is invalid; re-run is required."}, status=400)
+        if saved_snapshot != current_snapshot:
+            return Response({"detail": "Safety inputs changed; re-run is required."}, status=400)
 
         if safety_results.filter(result="BLOCK").exists():
             return Response(
@@ -1388,6 +1393,12 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
                 status=404,
             )
 
+        if prescription.case.current_stage != WorkflowStage.PRESCRIPTION:
+            return Response(
+                {"detail": "처방 단계에서만 WARNING을 확인할 수 있습니다."},
+                status=400,
+            )
+
         if prescription.prescription_status != "VALIDATED":
             return Response(
                 {"detail": "VALIDATED 상태의 처방만 WARNING을 확인할 수 있습니다."},
@@ -1581,9 +1592,15 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 status=404,
             )
 
-        if prescription.prescription_status not in {"DRAFT", "VALIDATED"}:
+        if prescription.case.current_stage != WorkflowStage.PRESCRIPTION:
             return Response(
-                {"detail": "DRAFT 또는 VALIDATED 상태의 처방만 Safety Check를 수행할 수 있습니다."},
+                {"detail": "처방 단계에서만 Safety Check를 수행할 수 있습니다."},
+                status=400,
+            )
+
+        if prescription.prescription_status != Prescription.PrescriptionStatus.DRAFT:
+            return Response(
+                {"detail": "DRAFT 상태의 처방만 Safety Check를 수행할 수 있습니다."},
                 status=400,
             )
 

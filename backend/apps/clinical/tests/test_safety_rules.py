@@ -34,7 +34,7 @@ class SafetyRuleTests(SimpleTestCase):
         self.safety_results.filter.return_value.exists.return_value = False
         self.prescription = NS(
             prescription_status="DRAFT",
-            case=NS(patient=self.patient),
+            case=NS(patient=self.patient, current_stage="PRESCRIPTION"),
             items=MagicMock(),
             safety_check_results=self.safety_results,
             id="prescription",
@@ -109,7 +109,7 @@ class SafetyRuleTests(SimpleTestCase):
         item = self.prescription_item(drug_name="Pemetrexed", ingredient="Pemetrexed")
         self.prescription.items.all.return_value = [item]
 
-        self.profiles.filter.return_value.first.return_value = NS(allergies=["pemetrexed"])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=["pemetrexed"], allergy_status="PRESENT")
         self.post()
         self.assertEqual(self.created(source_code="ALLERGY_CHECK", result="BLOCK")[0]["prescription_item"], item)
 
@@ -119,19 +119,34 @@ class SafetyRuleTests(SimpleTestCase):
         self.assertTrue(self.created(source_code="ALLERGY_UNCONFIRMED", result="WARNING"))
 
         self.results.create.reset_mock()
-        self.profiles.filter.return_value.first.return_value = NS(allergies={"invalid": "shape"})
+        self.profiles.filter.return_value.first.return_value = NS(allergies={"invalid": "shape"}, allergy_status="PRESENT")
         self.post()
         self.assertTrue(self.created(source_code="ALLERGY_UNCONFIRMED", result="WARNING"))
 
     def test_allergy_empty_list_is_confirmed_and_fuzzy_name_does_not_block(self):
         item = self.prescription_item(drug_name="Pemetrexed", ingredient="Pemetrexed")
         self.prescription.items.all.return_value = [item]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=["Pemetrexed sodium"])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=["Pemetrexed sodium"], allergy_status="PRESENT")
 
         self.post()
         self.assertTrue(self.created(source_code="ALLERGY_CHECK", result="PASS"))
         self.assertFalse(self.created(source_code="ALLERGY_CHECK", result="BLOCK"))
-        self.assertEqual(_allergy_names(NS(allergies=[])), (set(), True))
+        self.assertEqual(_allergy_names(NS(allergies=[], allergy_status="NONE")), (set(), True))
+
+    def test_unconfirmed_empty_allergy_list_is_not_treated_as_safe(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(
+            allergies=[], allergy_status="UNCONFIRMED",
+        )
+        self.safety_results.filter.side_effect = lambda **kwargs: NS(
+            exists=lambda: kwargs.get("source_code__in") is not None,
+        )
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(self.created(source_code="ALLERGY_UNCONFIRMED", result="WARNING"))
+        self.assertEqual(self.prescription.prescription_status, "DRAFT")
 
     def test_dur_exact_pair_blocks_and_unmapped_medication_warns(self):
         item = self.prescription_item(item_seq="100")
@@ -142,7 +157,7 @@ class SafetyRuleTests(SimpleTestCase):
             drug=NS(mfds_item_seq="200"),
         )
         self.prescription.items.all.return_value = [item]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
         self.medications.filter.return_value.select_related.return_value = [medication]
 
         def query(operation, item_seq):
@@ -172,7 +187,7 @@ class SafetyRuleTests(SimpleTestCase):
     def test_dur_error_and_textual_rule_are_warnings(self):
         item = self.prescription_item(item_seq="100")
         self.prescription.items.all.return_value = [item]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
 
         self.dur_client.return_value.query.return_value = NS(status="ERROR", rows=[])
         self.post()
@@ -201,7 +216,7 @@ class SafetyRuleTests(SimpleTestCase):
     def test_lab_presence_is_not_a_normality_assessment(self):
         item = self.prescription_item()
         self.prescription.items.all.return_value = [item]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
         self.post()
         messages = [call.kwargs["message"] for call in self.results.create.call_args_list[-2:]]
         self.assertTrue(all("값의 존재" in message for message in messages))
@@ -222,7 +237,7 @@ class SafetyRuleTests(SimpleTestCase):
 
     def test_clean_safety_check_transitions_to_validated(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
 
         response = self.post()
 
@@ -231,7 +246,7 @@ class SafetyRuleTests(SimpleTestCase):
 
     def test_unresolved_warning_keeps_prescription_in_draft_for_recheck(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
         self.safety_results.filter.side_effect = lambda **kwargs: NS(
             exists=lambda: kwargs.get("source_code__in") is not None,
         )
@@ -243,7 +258,7 @@ class SafetyRuleTests(SimpleTestCase):
 
     def test_block_result_keeps_prescription_in_draft(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
         self.safety_results.filter.side_effect = lambda **kwargs: NS(
             exists=lambda: kwargs.get("result") == "BLOCK",
         )
@@ -253,12 +268,40 @@ class SafetyRuleTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.prescription.prescription_status, "DRAFT")
 
-    def test_validated_prescription_can_run_safety_check_again(self):
+    def test_validated_prescription_cannot_run_safety_check_again(self):
         self.prescription.prescription_status = "VALIDATED"
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
-        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
 
         response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
 
-        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.status_code, 400)
+        self.safety_results.all.return_value.delete.assert_not_called()
+
+    def test_unexpected_safety_failure_rolls_back_without_validation(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(
+            allergies=[], allergy_status="NONE",
+        )
+        failure = RuntimeError("result write failed")
+        self.results.create.side_effect = [MagicMock(), failure]
+
+        with patch("django.db.transaction.Atomic.__enter__"), \
+                patch("django.db.transaction.Atomic.__exit__", return_value=False) as exit_atomic:
+            with self.assertRaises(RuntimeError):
+                Safety().post(self.request, "case", "prescription")
+
+        self.assertIs(exit_atomic.call_args.args[1], failure)
+        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+        self.prescription.save.assert_not_called()
+
+    def test_clean_safety_check_cannot_be_submitted_twice(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
+
+        first_response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
+        second_response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
+
+        self.assertEqual(first_response.status_code, 200)
+        self.assertEqual(second_response.status_code, 400)
         self.safety_results.all.return_value.delete.assert_called_once()

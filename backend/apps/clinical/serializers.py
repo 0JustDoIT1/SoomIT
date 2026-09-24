@@ -785,10 +785,15 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
         many=True,
         read_only=True,
     )
-    safety_check_results = SafetyCheckResultSerializer(
-        many=True,
-        read_only=True,
-    )
+    safety_check_results = serializers.SerializerMethodField()
+
+    def get_safety_check_results(self, obj):
+        results = [
+            result
+            for result in obj.safety_check_results.all()
+            if result.source_code != "SAFETY_INPUT_SNAPSHOT"
+        ]
+        return SafetyCheckResultSerializer(results, many=True).data
 
     class Meta:
         model = Prescription

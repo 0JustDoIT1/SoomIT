@@ -26,8 +26,9 @@ it("keeps the safety action separate from the medication scroll and preserves it
   expect(list).not.toContainElement(action);
   expect(list).toHaveClass("overflow-y-auto");
   expect(screen.getByText(/Day 1/)).toBeInTheDocument();
-  fireEvent.click(action);
+  act(() => { action.click(); action.click(); });
   await waitFor(() => expect(authorizedFetch).toHaveBeenCalledWith("http://test/api/doctor/cases/case-1/prescriptions/rx-1/safety-check/", { method: "POST" }));
+  expect(authorizedFetch.mock.calls.filter(([url, init]) => String(url).endsWith("/safety-check/") && init?.method === "POST")).toHaveLength(1);
 });
 
 it.each(["WARNING", "BLOCK"])("keeps %s visible and prevents final confirmation", async result => {
@@ -93,4 +94,11 @@ it("keeps unresolved safety warnings in the recheck path", async () => {
   expect(await screen.findByRole("alert")).toHaveTextContent("Safety Check를 다시 실행");
   expect(screen.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "WARNING 확인" })).not.toBeInTheDocument();
+});
+
+it("does not offer another Safety Check after validation", async () => {
+  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("VALIDATED")} />);
+
+  expect(await screen.findByText(/Safety Check/)).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: /안전성 검사/ })).not.toBeInTheDocument();
 });
