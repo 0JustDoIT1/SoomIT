@@ -183,6 +183,74 @@ it("keeps treatment and prescription in a single waiting view until the confirme
   expect(screen.queryByTestId("treatment-final-plan")).not.toBeInTheDocument();
 });
 
+it.each([
+  { label: "no PD-L1 result", clinicalResults: [] },
+  { label: "a PD-L1 draft", clinicalResults: [{ id: "pdl1-draft", workflow_stage: "PDL1", result_status: "DRAFT", result_detail: { pdl1: { tps_percent: 35 } } }] },
+])("does not offer treatment advancement with $label", async ({ clinicalResults }) => {
+  installCaseResponses({ stage: "PDL1", clinicalResults });
+  render(<Page />);
+
+  await openCaseWorkspace("PD-L1");
+  expect(screen.queryByRole("button", { name: "다음 단계 결정" })).not.toBeInTheDocument();
+});
+
+it("advances a confirmed PD-L1 result to treatment and keeps the past PD-L1 view read-only", async () => {
+  let stage = "PDL1";
+  const clinicalResults = [{ id: "pdl1-1", workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 60 } } }];
+  mocks.authorizedFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+    const url = new URL(input).pathname;
+    if (url === "/api/doctor/cases/case-1/workflow-decision/" && init?.method === "POST") {
+      stage = "TREATMENT";
+      return response({ current_stage: stage, case_status: "ACTIVE" });
+    }
+    if (url === "/api/doctor/cases/") return response([baseCase(stage)]);
+    if (url === "/api/doctor/cases/case-1/") return response(baseCase(stage));
+    if (url.endsWith("/clinical-results/")) return response(clinicalResults);
+    if (url.endsWith("/orders/") || url.endsWith("/ai-results/") || url.endsWith("/prescriptions/")) return response([]);
+    if (url.endsWith("/treatment-decision/")) return response({}, 404);
+    if (url.endsWith("/regimen-candidates/")) return response([]);
+    return response([]);
+  });
+  render(<Page />);
+
+  await openCaseWorkspace("PD-L1");
+  await userEvent.click(await screen.findByRole("button", { name: "다음 단계 결정" }));
+  await userEvent.click(screen.getByRole("button", { name: "치료결정으로 진행" }));
+
+  await waitFor(() => expect(screen.getByText("현재 Case 단계 · 치료 결정")).toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: "다음 단계 결정" })).not.toBeInTheDocument();
+
+  await openCaseWorkspace("치료계획·처방");
+  expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
+
+  await openCaseWorkspace("PD-L1");
+  expect(screen.queryByRole("button", { name: "결과 확인 및 확정" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "다음 단계 결정" })).not.toBeInTheDocument();
+
+  const workflowCalls = mocks.authorizedFetch.mock.calls.filter(([input, init]) => new URL(input as string).pathname.endsWith("/workflow-decision/") && (init as RequestInit | undefined)?.method === "POST");
+  expect(workflowCalls).toHaveLength(1);
+  expect(JSON.parse((workflowCalls[0][1] as RequestInit).body as string)).toMatchObject({
+    action: "PROCEED_NEXT_STAGE",
+    source_clinical_result_id: "pdl1-1",
+    target_stage: "TREATMENT",
+  });
+});
+
+it("does not restore PD-L1 actions after refreshing an already advanced treatment Case", async () => {
+  installCaseResponses({
+    stage: "TREATMENT",
+    clinicalResults: [{ id: "pdl1-1", workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: 60 } } }],
+  });
+  render(<Page />);
+
+  await openCaseWorkspace("PD-L1");
+  expect(screen.queryByRole("button", { name: "결과 확인 및 확정" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "다음 단계 결정" })).not.toBeInTheDocument();
+
+  await openCaseWorkspace("치료계획·처방");
+  expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
+});
+
 it("does not expose duplicate PD-L1 ordering while an active PD-L1 order exists", async () => {
   installCaseResponses({
     stage: "PATHOLOGY_GENE",

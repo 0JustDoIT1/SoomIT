@@ -122,6 +122,66 @@ class TnmWorkflowValidationTests(SimpleTestCase):
         create_order.assert_not_called()
         decisions.create.assert_called_once()
 
+    def test_confirmed_pdl1_advancement_updates_stage_without_creating_an_order(self):
+        case = Mock(id=uuid4(), current_stage=WorkflowStage.PDL1, case_status="ACTIVE")
+        result = Mock(id=uuid4(), workflow_stage=WorkflowStage.PDL1)
+        request = SimpleNamespace(user=Mock(), data={
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": WorkflowStage.TREATMENT,
+            "reason": "",
+        })
+        with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+             patch("apps.cases.views.ClinicalResult.objects") as results, \
+             patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+             patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
+             patch("apps.cases.views.create_examination_order") as create_order:
+            cases.select_for_update.return_value.filter.return_value.first.return_value = case
+            results.select_for_update.return_value.filter.return_value.first.return_value = result
+
+            response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["current_stage"], WorkflowStage.TREATMENT)
+        self.assertEqual(case.current_stage, WorkflowStage.TREATMENT)
+        results.select_for_update.return_value.filter.assert_called_once_with(
+            id=result.id,
+            case=case,
+            workflow_stage__in=[WorkflowStage.PDL1],
+            result_status="CONFIRMED",
+        )
+        orders.filter.assert_not_called()
+        create_order.assert_not_called()
+        decisions.create.assert_called_once()
+
+    def test_pdl1_advancement_rejects_unconfirmed_or_stale_stage_result(self):
+        for current_stage in (WorkflowStage.PDL1, WorkflowStage.TREATMENT):
+            with self.subTest(current_stage=current_stage):
+                case = Mock(id=uuid4(), current_stage=current_stage, case_status="ACTIVE")
+                result_id = uuid4()
+                request = SimpleNamespace(user=Mock(), data={
+                    "action": "PROCEED_NEXT_STAGE",
+                    "source_clinical_result_id": str(result_id),
+                    "target_stage": WorkflowStage.TREATMENT,
+                    "reason": "",
+                })
+                with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+                     patch("apps.cases.views.ClinicalResult.objects") as results, \
+                     patch("apps.cases.views.ClinicianDecision.objects") as decisions:
+                    cases.select_for_update.return_value.filter.return_value.first.return_value = case
+                    # A DRAFT result, or a confirmed result from a past stage, is excluded by this lookup.
+                    results.select_for_update.return_value.filter.return_value.first.return_value = None
+
+                    response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                        DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+                    )
+
+                self.assertEqual(response.status_code, 400)
+                decisions.create.assert_not_called()
+                case.save.assert_not_called()
+
     def test_unfinalized_stage_does_not_block_referral_or_closure(self):
         for action in ("REFERRED_OUT", "CASE_CLOSED"):
             with self.subTest(action=action):
