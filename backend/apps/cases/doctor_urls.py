@@ -23,6 +23,7 @@ from apps.clinical.views import (
 )
 from apps.patients.views import DoctorAllergyProfileAPIView
 from apps.clinical.mfds_product_views import DoctorMfdsProductSearchAPIView
+from apps.annotations.views import DoctorCaseImageAnnotationDetailAPIView, DoctorCaseImageAnnotationListCreateAPIView
 
 from .views import (
     DoctorCaseImageAssetListAPIView,
@@ -79,6 +80,8 @@ urlpatterns = [
         DoctorCaseImageAssetListAPIView.as_view(),
         name="doctor-case-image-asset-list",
     ),
+    path("<uuid:case_id>/image-annotations/", DoctorCaseImageAnnotationListCreateAPIView.as_view(), name="doctor-case-image-annotation-list-create"),
+    path("<uuid:case_id>/image-annotations/<uuid:annotation_id>/", DoctorCaseImageAnnotationDetailAPIView.as_view(), name="doctor-case-image-annotation-detail"),
     path(
         "<uuid:case_id>/image-assets/<uuid:asset_id>/preview/",
         DoctorCaseImageAssetPreviewAPIView.as_view(),

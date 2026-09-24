@@ -9,6 +9,7 @@ from apps.common.models import TimestampedUUIDModel, UUIDModel
 # ── 8-1. image_annotations ──────────────────────────────────────
 class ImageAnnotation(TimestampedUUIDModel):
     class AnnotationType(models.TextChoices):
+        LENGTH = "LENGTH", "길이 측정"
         POINT = "POINT", "점"
         BOUNDING_BOX = "BOUNDING_BOX", "박스"
         POLYGON = "POLYGON", "다각형"
