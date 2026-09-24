@@ -2,6 +2,7 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_naver_map/flutter_naver_map.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/settings/font_scale_controller.dart';
@@ -14,13 +15,11 @@ import 'l10n/app_localizations.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  await FlutterNaverMap().init(clientId: 'kcrblwf7b5');
 
-  FirebaseMessaging.onBackgroundMessage(
-    firebaseMessagingBackgroundHandler,
-  );
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
   // 저장된 글자 크기 설정 불러오기
   await fontScaleController.load();
@@ -83,25 +82,19 @@ class MedicalAppState extends State<MedicalApp> {
 
     // 저장은 화면 변경 뒤에 처리.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(
-      _languagePreferenceKey,
-      languageCode,
-    );
+    await prefs.setString(_languagePreferenceKey, languageCode);
   }
 
   Future<void> _loadSavedThemeMode() async {
     final prefs = await SharedPreferences.getInstance();
-    final darkModeEnabled =
-        prefs.getBool(_darkModePreferenceKey) ?? false;
+    final darkModeEnabled = prefs.getBool(_darkModePreferenceKey) ?? false;
 
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _themeMode = darkModeEnabled
-          ? ThemeMode.dark
-          : ThemeMode.light;
+      _themeMode = darkModeEnabled ? ThemeMode.dark : ThemeMode.light;
     });
   }
 
@@ -110,18 +103,13 @@ class MedicalAppState extends State<MedicalApp> {
     // 테마 상태부터 먼저 변경
     if (mounted) {
       setState(() {
-        _themeMode = enabled
-            ? ThemeMode.dark
-            : ThemeMode.light;
+        _themeMode = enabled ? ThemeMode.dark : ThemeMode.light;
       });
     }
 
     // 저장은 UI 변경 뒤에 처리.
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setBool(
-      _darkModePreferenceKey,
-      enabled,
-    );
+    await prefs.setBool(_darkModePreferenceKey, enabled);
   }
 
   ThemeData _buildLightTheme() {
@@ -154,9 +142,7 @@ class MedicalAppState extends State<MedicalApp> {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: primary,
       brightness: Brightness.dark,
-    ).copyWith(
-      surface: const Color(0xFF17212B),
-    );
+    ).copyWith(surface: const Color(0xFF17212B));
 
     return ThemeData(
       useMaterial3: true,
@@ -185,10 +171,7 @@ class MedicalAppState extends State<MedicalApp> {
 
           locale: _locale,
 
-          supportedLocales: const [
-            Locale('ko'),
-            Locale('en'),
-          ],
+          supportedLocales: const [Locale('ko'), Locale('en')],
 
           localizationsDelegates: const [
             AppLocalizations.delegate,
@@ -207,9 +190,7 @@ class MedicalAppState extends State<MedicalApp> {
 
             return MediaQuery(
               data: mediaQuery.copyWith(
-                textScaler: TextScaler.linear(
-                  fontScaleController.scale,
-                ),
+                textScaler: TextScaler.linear(fontScaleController.scale),
               ),
               child: child ?? const SizedBox.shrink(),
             );

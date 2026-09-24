@@ -243,11 +243,22 @@ class PatientListAPIView(ListCreateAPIView):
 
 
 class PatientHospitalListAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
     def get(self, request):
         hospitals = Hospital.objects.order_by("code", "id")
         return Response(
             [
-                {"id": str(hospital.id), "code": hospital.code, "name": hospital.name}
+                {
+                    "id": str(hospital.id),
+                    "code": hospital.code,
+                    "name": hospital.name,
+                    "address": hospital.address,
+                    "address_detail": hospital.address_detail,
+                    "latitude": hospital.latitude,
+                    "longitude": hospital.longitude,
+                }
                 for hospital in hospitals
             ]
         )

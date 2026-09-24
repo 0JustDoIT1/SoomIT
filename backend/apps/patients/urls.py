@@ -7,6 +7,7 @@ from .auth_views import (
     PatientRegistrationAPIView,
     PatientTokenRefreshAPIView,
 )
+from .pharmacy_views import NearbyPharmacyAPIView
 
 from .views import (
     AppointmentListAPIView,
@@ -43,6 +44,12 @@ from .views import (
 
 
 urlpatterns = [
+    path(
+        "public/nearby-pharmacies/",
+        NearbyPharmacyAPIView.as_view(),
+        name="nearby-pharmacies",
+    ),
+
     # QR
     path(
         "qr-token/public-resolve/",
