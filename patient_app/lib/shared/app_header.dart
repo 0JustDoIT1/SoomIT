@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   final VoidCallback onMenuPressed;
   final VoidCallback onNotificationPressed;
-
   final bool hasUnreadNotification;
 
   const AppHeader({
@@ -13,10 +12,8 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
     this.hasUnreadNotification = false,
   });
 
-  static const Color _primaryBlue = Color(0xFF3198F4);
-
   @override
-  Size get preferredSize => const Size.fromHeight(60);
+  Size get preferredSize => const Size.fromHeight(70);
 
   @override
   Widget build(BuildContext context) {
@@ -26,30 +23,20 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
       scrolledUnderElevation: 0,
       backgroundColor: Colors.white,
       surfaceTintColor: Colors.white,
-      toolbarHeight: 82,
-      titleSpacing: 20,
+      toolbarHeight: 80,
+      titleSpacing: 15,
 
-      title: Row(
-        children: [
-          Image.asset(
-            'assets/images/APP_ICON.png',
-            width: 47,
-            height: 47,
+      title: Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(
+          width: 140,
+          height: 45,
+          child: Image.asset(
+            'assets/images/가로_숨잇_logo.png',
             fit: BoxFit.contain,
+            alignment: Alignment.centerLeft,
           ),
-
-          const SizedBox(width: 9),
-
-          const Text(
-            '숨-잇',
-            style: TextStyle(
-              color: _primaryBlue,
-              fontSize: 24,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -1,
-            ),
-          ),
-        ],
+        ),
       ),
 
       actions: [
@@ -84,7 +71,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
           ],
         ),
 
-        const SizedBox(width: 16),
+        const SizedBox(width: 15),
       ],
     );
   }
@@ -94,7 +81,10 @@ class _HeaderButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _HeaderButton({required this.icon, required this.onTap});
+  const _HeaderButton({
+    required this.icon,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -105,9 +95,13 @@ class _HeaderButton extends StatelessWidget {
         onTap: onTap,
         customBorder: const CircleBorder(),
         child: SizedBox(
-          width: 46,
-          height: 46,
-          child: Icon(icon, size: 26, color: const Color(0xFF2F8DFE)),
+          width: 50,
+          height: 50,
+          child: Icon(
+            icon,
+            size: 25,
+            color: const Color(0xFF2F8DFE),
+          ),
         ),
       ),
     );

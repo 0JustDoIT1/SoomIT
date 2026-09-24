@@ -111,7 +111,13 @@ class DoseRuleTests(SimpleTestCase):
             case = NS(patient=object(), current_stage="PRESCRIPTION")
             stack.enter_context(patch.object(view, "get_case", return_value=case))
             regimen = NS(induction_cycles=4)
-            decision.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = NS(selected_regimen=regimen)
+            # 처방 생성 경로는 약물 처방이 필요한 치료 결정만 허용한다.
+            # 실제 모델의 신규 플래그를 테스트 대역에도 명시해 CI에서의
+            # ``AttributeError``를 방지한다.
+            decision.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = NS(
+                selected_regimen=regimen,
+                requires_drug_prescription=True,
+            )
             prescriptions.filter.return_value.exists.return_value = False
             serializer = serializers.return_value
             serializer.validated_data = {"cycle_number": 1, "phase": "INDUCTION"}
