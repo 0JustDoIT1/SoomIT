@@ -74,21 +74,21 @@ class NoduleObservationWriteSerializer(serializers.Serializer):
 class DoctorCtResultWriteSerializer(serializers.Serializer):
     reviewed_ai_result_id = serializers.UUIDField()
     overall_assessment = serializers.ChoiceField(choices=CtResult.OverallAssessment.choices)
-    overall_malignancy_risk = serializers.DecimalField(max_digits=5, decimal_places=2, min_value=Decimal("0"), max_value=Decimal("100"), required=False, allow_null=True)
     finding_summary = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     nodule_observations = NoduleObservationWriteSerializer(many=True, required=False)
 
     def validate(self, attrs):
         case = self.context["case"]
-        order = self.context["order"]
         from apps.ai_results.models import AiAnalysis, AnalysisType
-        result = AiAnalysis.objects.filter(
+        analysis = AiAnalysis.objects.select_related("examination_order").filter(
             ai_result__id=attrs["reviewed_ai_result_id"], case=case,
-            examination_order=order, analysis_type=AnalysisType.CT_ANALYSIS,
+            examination_order__order_type="CT",
+            analysis_type=AnalysisType.CT_ANALYSIS,
             status=AiAnalysis.Status.SUCCEEDED,
-        ).exists()
-        if not result:
+        ).first()
+        if analysis is None:
             raise serializers.ValidationError({"reviewed_ai_result_id": "A succeeded CT AI result for this order is required."})
+        self.context["validated_order_id"] = analysis.examination_order_id
         nodule_numbers = [item["nodule_no"] for item in attrs.get("nodule_observations", [])]
         if len(nodule_numbers) != len(set(nodule_numbers)):
             raise serializers.ValidationError({"nodule_observations": "Nodule numbers must be unique."})

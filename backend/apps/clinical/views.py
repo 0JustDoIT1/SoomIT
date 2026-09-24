@@ -137,17 +137,32 @@ def _ai_ct_nodule_observations(ai_result):
     except AttributeError:
         return []
 
+    def decimal_value(value, decimal_places):
+        if value is None or isinstance(value, bool):
+            return None
+        try:
+            parsed = Decimal(str(value))
+        except (ArithmeticError, TypeError, ValueError):
+            return None
+        if not parsed.is_finite():
+            return None
+        quantum = Decimal(1).scaleb(-decimal_places)
+        return parsed.quantize(quantum, rounding=ROUND_HALF_UP)
+
     observations = []
     for item in ai_nodules:
         payload = item.finding_payload if isinstance(item.finding_payload, dict) else {}
         quantification = payload.get("quantification") if isinstance(payload.get("quantification"), dict) else {}
+        diameter = quantification.get("maximum_3d_diameter_mm")
+        if diameter is None:
+            diameter = quantification.get("equivalent_diameter_mm")
         observations.append({
             "nodule_no": item.nodule_no,
-            "max_diameter_mm": quantification.get("maximum_3d_diameter_mm") or quantification.get("equivalent_diameter_mm"),
-            "volume_mm3": quantification.get("volume_mm3"),
-            "surface_area_mm2": quantification.get("surface_area_mm2"),
-            "sphericity": quantification.get("sphericity"),
-            "malignancy_risk": item.malignancy_risk,
+            "max_diameter_mm": decimal_value(diameter, 2),
+            "volume_mm3": decimal_value(quantification.get("volume_mm3"), 2),
+            "surface_area_mm2": decimal_value(quantification.get("surface_area_mm2"), 2),
+            "sphericity": decimal_value(quantification.get("sphericity"), 4),
+            "malignancy_risk": decimal_value(item.malignancy_risk, 2),
         })
     return observations
 
@@ -182,25 +197,25 @@ class DoctorCtResultAPIView(APIView):
     permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
 
     def _context(self, request, case_id):
-        case = LungCancerCase.objects.select_for_update(of=("self",)).filter(
+        return LungCancerCase.objects.select_for_update(of=("self",)).filter(
             id=case_id, primary_doctor=request.user, case_status="ACTIVE",
         ).first()
-        if case is None:
-            return None, None
-        order = ExaminationOrder.objects.select_for_update(of=("self",)).filter(
-            case=case,
-            order_type=ExaminationOrder.OrderType.CT,
-        ).order_by("-created_at").first()
-        return case, order
 
     @transaction.atomic
     def post(self, request, case_id):
-        case, order = self._context(request, case_id)
-        if case is None or order is None:
+        case = self._context(request, case_id)
+        if case is None:
             return Response({"detail": "CT order was not found."}, status=404)
-        serializer = DoctorCtResultWriteSerializer(data=request.data, context={"case": case, "order": order})
+        serializer = DoctorCtResultWriteSerializer(data=request.data, context={"case": case})
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
+        order = ExaminationOrder.objects.select_for_update(of=("self",)).filter(
+            id=serializer.context["validated_order_id"],
+            case=case,
+            order_type=ExaminationOrder.OrderType.CT,
+        ).first()
+        if order is None:
+            return Response({"detail": "CT order was not found."}, status=404)
         result = ClinicalResult.objects.select_for_update(of=("self",)).filter(
             case=case, examination_order=order, workflow_stage="CT",
         ).first()
@@ -210,15 +225,15 @@ class DoctorCtResultAPIView(APIView):
         reviewed_ai_result = AiResult.objects.get(id=values["reviewed_ai_result_id"])
         if result is None:
             result = ClinicalResult.objects.create(case=case, examination_order=order, workflow_stage="CT", reviewed_ai_result=reviewed_ai_result, result_status=ClinicalResult.ResultStatus.DRAFT)
-            detail = CtResult.objects.create(clinical_result=result, overall_assessment=values["overall_assessment"], overall_malignancy_risk=values.get("overall_malignancy_risk"), finding_summary=values.get("finding_summary"))
+            detail = CtResult.objects.create(clinical_result=result, overall_assessment=values["overall_assessment"], finding_summary=values.get("finding_summary"))
             created = True
         else:
             result.reviewed_ai_result = reviewed_ai_result
             result.save(update_fields=["reviewed_ai_result", "updated_at"])
             detail = result.ct_detail
-            for key in ("overall_assessment", "overall_malignancy_risk", "finding_summary"):
+            for key in ("overall_assessment", "finding_summary"):
                 setattr(detail, key, values.get(key))
-            detail.save(update_fields=["overall_assessment", "overall_malignancy_risk", "finding_summary"])
+            detail.save(update_fields=["overall_assessment", "finding_summary"])
             created = False
         _sync_ct_nodule_observations(
             case=case,
@@ -248,33 +263,61 @@ class DoctorCtResultConfirmAPIView(APIView):
         ).first() if case is not None else None
         if result is None:
             return Response({"detail": "CT result was not found."}, status=404)
-        if result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
-            return Response({"detail": "CT result is already confirmed."}, status=409)
+        already_confirmed = result.result_status == ClinicalResult.ResultStatus.CONFIRMED
         if not hasattr(result, "ct_detail"):
             return Response({"detail": "CT result detail is missing."}, status=400)
-        result.result_status = ClinicalResult.ResultStatus.CONFIRMED
-        result.confirmed_by_user = request.user
-        result.confirmed_at = timezone.now()
-        result.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
-        if request.data.get("advance_to_next_stage") is True:
-            if result.case.current_stage != WorkflowStage.CT:
-                return Response({"detail": "CT is not the current workflow stage."}, status=400)
-            from apps.cases.services.examination_orders import ExaminationOrderCreationError, create_examination_order
-            try:
-                create_examination_order(
-                    case=result.case,
-                    requesting_doctor=request.user,
-                    order_type=ExaminationOrder.OrderType.PET_CT_TNM,
-                    priority=ExaminationOrder.Priority.NORMAL,
-                    purpose="CT result confirmed; proceed with PET-CT/TNM",
-                    clinical_note="",
-                )
-            except ExaminationOrderCreationError as exc:
-                return Response({"detail": str(exc)}, status=400)
-            result.case.current_stage = WorkflowStage.PET_CT_TNM
-            result.case.save(update_fields=["current_stage", "updated_at"])
+        advance_to_next_stage = request.data.get("advance_to_next_stage") is True
+        if already_confirmed and not advance_to_next_stage:
+            return Response({"detail": "CT result is already confirmed."}, status=409)
+        if already_confirmed and advance_to_next_stage and case.current_stage == WorkflowStage.PET_CT_TNM:
+            return Response({
+                "id": str(result.id),
+                "workflow_stage": result.workflow_stage,
+                "result_status": result.result_status,
+                "reviewed_ai_result_id": str(result.reviewed_ai_result_id),
+                "confirmed_by_user_id": str(result.confirmed_by_user_id) if result.confirmed_by_user_id else None,
+                "confirmed_at": result.confirmed_at,
+                "current_stage": case.current_stage,
+                "case_status": case.case_status,
+            })
+        if advance_to_next_stage and case.current_stage != WorkflowStage.CT:
+            return Response({"detail": "CT is not the current workflow stage."}, status=400)
+
+        active_pet_order_exists = False
+        if advance_to_next_stage:
+            active_pet_order_exists = ExaminationOrder.objects.select_for_update().filter(
+                case=case,
+                order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+                status__in=[
+                    ExaminationOrder.Status.ORDERED,
+                    ExaminationOrder.Status.SCHEDULED,
+                ],
+            ).exists()
+
+        if not already_confirmed:
+            result.result_status = ClinicalResult.ResultStatus.CONFIRMED
+            result.confirmed_by_user = request.user
+            result.confirmed_at = timezone.now()
+            result.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"])
+        if advance_to_next_stage:
+            if not active_pet_order_exists:
+                from apps.cases.services.examination_orders import ExaminationOrderCreationError, create_examination_order
+                try:
+                    create_examination_order(
+                        case=case,
+                        requesting_doctor=request.user,
+                        order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+                        priority=ExaminationOrder.Priority.NORMAL,
+                        purpose="CT result confirmed; proceed with PET-CT/TNM",
+                        clinical_note="",
+                    )
+                except ExaminationOrderCreationError as exc:
+                    transaction.set_rollback(True)
+                    return Response({"detail": str(exc)}, status=400)
+            case.current_stage = WorkflowStage.PET_CT_TNM
+            case.save(update_fields=["current_stage", "updated_at"])
             ClinicianDecision.objects.create(
-                case=result.case,
+                case=case,
                 source_stage=WorkflowStage.CT,
                 source_clinical_result=result,
                 decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
@@ -283,7 +326,16 @@ class DoctorCtResultConfirmAPIView(APIView):
                 decided_by_user=request.user,
                 decided_at=timezone.now(),
             )
-        return Response({"id": str(result.id), "workflow_stage": result.workflow_stage, "result_status": result.result_status, "reviewed_ai_result_id": str(result.reviewed_ai_result_id), "confirmed_by_user_id": str(request.user.id), "confirmed_at": result.confirmed_at})
+        return Response({
+            "id": str(result.id),
+            "workflow_stage": result.workflow_stage,
+            "result_status": result.result_status,
+            "reviewed_ai_result_id": str(result.reviewed_ai_result_id),
+            "confirmed_by_user_id": str(result.confirmed_by_user_id) if result.confirmed_by_user_id else None,
+            "confirmed_at": result.confirmed_at,
+            "current_stage": case.current_stage,
+            "case_status": case.case_status,
+        })
 
 
 class DoctorTnmConfirmAPIView(APIView):

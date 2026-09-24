@@ -13,14 +13,13 @@ describe("CtWorkflowDecision", () => {
     const authorizedFetch = vi
       .fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-1" }), { status: 201 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-1", result_status: "CONFIRMED" }), { status: 200 }));
+      .mockResolvedValueOnce(new Response(JSON.stringify({ id: "draft-1", result_status: "CONFIRMED", current_stage: "PET_CT_TNM", case_status: "ACTIVE" }), { status: 200 }));
     const onCompleted = vi.fn();
 
     render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
 
     fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
     fireEvent.change(screen.getByLabelText("종합 판정"), { target: { value: "NODULE_DETECTED" } });
-    fireEvent.change(screen.getByLabelText("악성 위험도 (%)"), { target: { value: "82.5" } });
     fireEvent.change(screen.getByLabelText("호흡기내과 소견"), { target: { value: "우상엽 결절을 확인했습니다." } });
     fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
 
@@ -30,22 +29,23 @@ describe("CtWorkflowDecision", () => {
     expect(JSON.parse((draftRequest[1] as RequestInit).body as string)).toEqual({
       reviewed_ai_result_id: "ai-1",
       overall_assessment: "NODULE_DETECTED",
-      overall_malignancy_risk: 82.5,
       finding_summary: "우상엽 결절을 확인했습니다.",
     });
     expect(authorizedFetch.mock.calls[1][0]).toContain("/api/doctor/cases/case-1/clinical-results/ct/draft-1/confirm/");
-    expect(onCompleted).toHaveBeenCalledOnce();
+    expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({
+      closed: false,
+      currentStage: "PET_CT_TNM",
+      caseStatus: "ACTIVE",
+    }));
   });
 
-  it("rejects an out-of-range malignancy risk before sending a request", () => {
-    const authorizedFetch = vi.fn();
-    render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={authorizedFetch} onCompleted={vi.fn()} />);
+  it("does not expose doctor-entered malignancy risk in the confirmation dialog", () => {
+    render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={vi.fn()} onCompleted={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
-    fireEvent.change(screen.getByLabelText("악성 위험도 (%)"), { target: { value: "101" } });
-    fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
 
-    expect(authorizedFetch).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText("악성 위험도 (%)")).not.toBeInTheDocument();
+    expect(screen.queryByText("CT 판정 상세 (선택)")).not.toBeInTheDocument();
   });
 
   it("includes AI nodule details when saving the confirmed CT draft", async () => {
@@ -56,7 +56,7 @@ describe("CtWorkflowDecision", () => {
     render(<CtWorkflowDecision
       caseId="case-1"
       aiResultId="ai-1"
-      aiNodules={[{ nodule_no: 1, malignancy_risk: 82.5, finding_payload: { quantification: { maximum_3d_diameter_mm: 12.4, volume_mm3: 486.2 } } }]}
+      aiNodules={[{ nodule_no: 1, malignancy_risk: "93.11", finding_payload: { quantification: { maximum_3d_diameter_mm: 28.800000381469726, volume_mm3: 486.23456, surface_area_mm2: 123.4567, sphericity: 0.812345 } } }]}
       authorizedFetch={authorizedFetch}
       onCompleted={vi.fn()}
     />);
@@ -66,7 +66,14 @@ describe("CtWorkflowDecision", () => {
 
     await vi.waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(2));
     expect(JSON.parse((authorizedFetch.mock.calls[0][1] as RequestInit).body as string)).toMatchObject({
-      nodule_observations: [{ nodule_no: 1, max_diameter_mm: 12.4, volume_mm3: 486.2, malignancy_risk: 82.5 }],
+      nodule_observations: [{
+        nodule_no: 1,
+        max_diameter_mm: 28.8,
+        volume_mm3: 486.23,
+        surface_area_mm2: 123.46,
+        sphericity: 0.8123,
+        malignancy_risk: 93.11,
+      }],
     });
   });
 });
@@ -107,7 +114,7 @@ it("retries only the downstream decision after CT confirmation succeeded", async
   fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "REFERRED_OUT" } });
   fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "전원" } });
   fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 의뢰 처리" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("검사 결과는 확정되었지만 다음 단계 전환에 실패했습니다.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("전원 실패");
   expect(screen.getByLabelText("종합 판정")).toBeDisabled();
   expect(screen.getByPlaceholderText("결정 사유")).toHaveValue("전원");
   fireEvent.click(screen.getByRole("button", { name: "의뢰 처리" }));
@@ -127,7 +134,7 @@ it("reconciles a committed confirmation after advancement failed without resavin
   render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
   fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
   fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
-  expect(await screen.findByRole("alert")).toHaveTextContent("검사 결과는 확정되었지만 다음 단계 전환에 실패했습니다.");
+  expect(await screen.findByRole("alert")).toHaveTextContent("다음 검사 생성 실패");
   const retry = await screen.findByRole("button", { name: "PET-CT/TNM 진행" });
   await vi.waitFor(() => expect(retry).toBeEnabled());
   fireEvent.click(retry);
@@ -167,4 +174,30 @@ it("loads a confirmed CT result delivered after mount and skips save/confirm", a
   await vi.waitFor(() => expect(props.onCompleted).toHaveBeenCalledOnce());
   expect(authorizedFetch).toHaveBeenCalledOnce();
   expect(authorizedFetch.mock.calls[0][0]).toContain("/workflow-decision/");
+});
+
+it("shows the safe backend detail when CT confirmation fails", async () => {
+  const authorizedFetch = vi.fn()
+    .mockResolvedValueOnce(response({ id: "ct-1" }, 201))
+    .mockResolvedValueOnce(response({ detail: "PET-CT/TNM 오더를 생성할 수 없습니다." }, 400))
+    .mockResolvedValueOnce(response([{ id: "ct-1", result_status: "DRAFT" }]))
+    .mockResolvedValueOnce(response({ current_stage: "CT", case_status: "ACTIVE" }));
+  render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={authorizedFetch} onCompleted={vi.fn()} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
+  fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("PET-CT/TNM 오더를 생성할 수 없습니다.");
+});
+
+it("shows a serializer field error without exposing server internals", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValueOnce(response({
+    reviewed_ai_result_id: ["현재 CT 오더의 성공한 AI 결과가 필요합니다."],
+  }, 400));
+  render(<CtWorkflowDecision caseId="case-1" aiResultId="ai-1" authorizedFetch={authorizedFetch} onCompleted={vi.fn()} />);
+
+  fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
+  fireEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
+
+  expect(await screen.findByRole("alert")).toHaveTextContent("현재 CT 오더의 성공한 AI 결과가 필요합니다.");
 });
