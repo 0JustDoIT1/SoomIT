@@ -11,16 +11,52 @@ type OrientationViewport = {
   element: HTMLElement;
 };
 
-// The backend generates this labelmap on the exact same voxel grid as the CT
-// volume with an identity direction matrix (verified against geometry.json:
-// direction = [1,0,0, 0,1,0, 0,0,1]), so a volume axis (i/j/k) maps directly
-// to one world axis (x/y/z) with no rotation - axial/coronal/sagittal each
-// slice along a fixed axis of the raw voxel array.
-const AXIS_FOR_ORIENTATION: Record<Orientation, 0 | 1 | 2> = {
+const WORLD_AXIS_FOR_ORIENTATION: Record<Orientation, 0 | 1 | 2> = {
   sagittal: 0,
   coronal: 1,
   axial: 2,
 };
+
+export function voxelAxisForOrientation(
+  direction: number[],
+  orientation: Orientation,
+): 0 | 1 | 2 {
+  const worldAxis = WORLD_AXIS_FOR_ORIENTATION[orientation];
+  let bestAxis: 0 | 1 | 2 = 0;
+  let bestAlignment = -1;
+  for (let voxelAxis = 0; voxelAxis < 3; voxelAxis += 1) {
+    const alignment = Math.abs(direction[worldAxis * 3 + voxelAxis] ?? 0);
+    if (alignment > bestAlignment) {
+      bestAlignment = alignment;
+      bestAxis = voxelAxis as 0 | 1 | 2;
+    }
+  }
+  return bestAxis;
+}
+
+export function ijkFromWorld(
+  metadata: CtCornerstoneSegmentation["metadata"],
+  world: Types.Point3,
+): [number, number, number] | null {
+  const { direction, origin, spacing } = metadata;
+  const a = direction[0]; const b = direction[1]; const c = direction[2];
+  const d = direction[3]; const e = direction[4]; const f = direction[5];
+  const g = direction[6]; const h = direction[7]; const i = direction[8];
+  if ([a, b, c, d, e, f, g, h, i, ...origin, ...spacing].some((value) => !Number.isFinite(value))) return null;
+  const determinant = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
+  if (Math.abs(determinant) < 1e-8 || spacing.some((value) => value === 0)) return null;
+  const inverse = [
+    (e * i - f * h) / determinant, (c * h - b * i) / determinant, (b * f - c * e) / determinant,
+    (f * g - d * i) / determinant, (a * i - c * g) / determinant, (c * d - a * f) / determinant,
+    (d * h - e * g) / determinant, (b * g - a * h) / determinant, (a * e - b * d) / determinant,
+  ];
+  const delta = [world[0] - origin[0], world[1] - origin[1], world[2] - origin[2]];
+  return [0, 1, 2].map((row) => (
+    inverse[row * 3] * delta[0]
+    + inverse[row * 3 + 1] * delta[1]
+    + inverse[row * 3 + 2] * delta[2]
+  ) / spacing[row]) as [number, number, number];
+}
 
 function buildSliceColorLut(metadata: CtCornerstoneSegmentation["metadata"]) {
   const maxIndex = metadata.segments.reduce((max, segment) => Math.max(max, segment.segment_index), 0);
@@ -118,7 +154,7 @@ export function attachCtCornerstoneLabelmapOverlay(
   renderingEngine: RenderingEngine,
   segmentation: CtCornerstoneSegmentation,
 ): () => void {
-  const axis = AXIS_FOR_ORIENTATION[orientation];
+  const axis = voxelAxisForOrientation(segmentation.metadata.direction, orientation);
   const colorLut = buildSliceColorLut(segmentation.metadata);
   const [nx, ny, nz] = segmentation.metadata.dimensions;
   const axisDimension = [nx, ny, nz][axis];
@@ -152,8 +188,9 @@ export function attachCtCornerstoneLabelmapOverlay(
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     const { focalPoint } = viewport.getCamera();
-    const { origin, spacing } = segmentation.metadata;
-    const sliceIndex = Math.round((focalPoint[axis] - origin[axis]) / spacing[axis]);
+    const focalIJK = ijkFromWorld(segmentation.metadata, focalPoint);
+    if (!focalIJK) return;
+    const sliceIndex = Math.round(focalIJK[axis]);
     if (sliceIndex < 0 || sliceIndex >= axisDimension) return;
 
     if (sliceIndex !== cachedSliceIndex) {
@@ -169,11 +206,11 @@ export function attachCtCornerstoneLabelmapOverlay(
     let uIJK: [number, number, number];
     let vIJK: [number, number, number];
     if (axis === 2) {
-      originIJK = [0, 0, sliceIndex]; uIJK = [nx, 0, sliceIndex]; vIJK = [0, ny, sliceIndex];
+      originIJK = [-0.5, -0.5, sliceIndex]; uIJK = [nx - 0.5, -0.5, sliceIndex]; vIJK = [-0.5, ny - 0.5, sliceIndex];
     } else if (axis === 1) {
-      originIJK = [0, sliceIndex, 0]; uIJK = [nx, sliceIndex, 0]; vIJK = [0, sliceIndex, nz];
+      originIJK = [-0.5, sliceIndex, -0.5]; uIJK = [nx - 0.5, sliceIndex, -0.5]; vIJK = [-0.5, sliceIndex, nz - 0.5];
     } else {
-      originIJK = [sliceIndex, 0, 0]; uIJK = [sliceIndex, ny, 0]; vIJK = [sliceIndex, 0, nz];
+      originIJK = [sliceIndex, -0.5, -0.5]; uIJK = [sliceIndex, ny - 0.5, -0.5]; vIJK = [sliceIndex, -0.5, nz - 0.5];
     }
     const originCanvas = viewport.worldToCanvas(worldFromIJK(segmentation.metadata, originIJK));
     const uCanvas = viewport.worldToCanvas(worldFromIJK(segmentation.metadata, uIJK));

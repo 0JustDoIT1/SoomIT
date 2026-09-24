@@ -20,7 +20,12 @@ vi.mock("./case-image-evidence", () => ({ CaseImageEvidence: () => null }));
 vi.mock("./case-wsi-evidence", () => ({ CaseWsiEvidence: () => null }));
 vi.mock("./pathology-gene-imaging-workstation", () => ({ PathologyGeneReviewPanel: () => null }));
 vi.mock("./pdl1-imaging-workstation", () => ({ Pdl1ResultPanel: () => null }));
-vi.mock("./result-review-panel", () => ({ ResultReviewPanel: ({ specialistAction }: { specialistAction?: import("react").ReactNode }) => specialistAction ?? null, WorkflowStatusFlow: () => null }));
+vi.mock("./result-review-panel", () => ({
+  ResultReviewPanel: ({ stage, specialistAction }: { stage: string; specialistAction?: import("react").ReactNode }) => (
+    <div data-testid={`result-panel-${stage}`}>{specialistAction}</div>
+  ),
+  WorkflowStatusFlow: () => null,
+}));
 vi.mock("./treatment-decision-panel", () => ({
   TreatmentDecisionPanel: ({ onTreatmentConfirmed }: { onTreatmentConfirmed?: (decision: { current_stage?: string; case_status?: string }) => void }) => (
     <div data-testid="treatment-final-plan">
@@ -114,11 +119,14 @@ it("applies the CT confirmation response stage and keeps it after refetch", asyn
     expect(futureStage).toHaveAttribute("data-access-state", "LOCKED");
   }
 
+  const originalCtPanel = screen.getByTestId("result-panel-CT");
   await userEvent.click(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" }));
   expect(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" })).toHaveAttribute("aria-current", "page");
+  expect(originalCtPanel).toBeInTheDocument();
 
   await userEvent.click(within(navigation).getByRole("button", { name: "흉부 CT" }));
   expect(within(navigation).getByRole("button", { name: "흉부 CT" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByTestId("result-panel-CT")).toBe(originalCtPanel);
   expect(screen.queryByRole("button", { name: "결과 입력 및 처리" })).not.toBeInTheDocument();
 });
 

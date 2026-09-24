@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ensureCornerstoneInitialized } from "@/app/radiology/_lib/cornerstone-init";
 import { loadCtDicomWebSeries } from "@/app/radiology/_lib/cornerstone-dicomweb-loader";
@@ -12,6 +12,8 @@ type CtDicomViewerProps = {
   orderId: string;
   assetId: string;
   analysisId?: string;
+  cacheKey?: string;
+  nodules?: unknown[];
   loadSeries?: (orderId: string, assetId: string) => Promise<{ imageIds: string[]; sopInstanceUids?: string[] }>;
   loadSegmentation?: (analysisId: string) => Promise<CtCornerstoneSegmentation>;
   seriesInstanceUid?: string | null;
@@ -46,6 +48,30 @@ type MprToolBindings = {
   text: string;
 };
 
+type ViewerSession = {
+  focusedView: ViewKey | null;
+  selectedView: ViewKey;
+  activeTool: MprToolMode;
+  segmentationVisible: boolean;
+  selectedNoduleId: string | null;
+  cameras?: Record<string, unknown>;
+};
+
+type NoduleFocus = { id: string; label: string; world: [number, number, number] };
+
+const viewerSessionCache = new Map<string, ViewerSession>();
+const MAX_VIEWER_SESSIONS = 8;
+
+function writeViewerSession(key: string, session: ViewerSession) {
+  viewerSessionCache.delete(key);
+  viewerSessionCache.set(key, session);
+  while (viewerSessionCache.size > MAX_VIEWER_SESSIONS) {
+    const oldest = viewerSessionCache.keys().next().value;
+    if (typeof oldest !== "string") break;
+    viewerSessionCache.delete(oldest);
+  }
+}
+
 const TOOL_GROUP_ID = "ct-dicom-viewer-mpr-tools";
 const VOLUME3D_TOOL_GROUP_ID = "ct-dicom-viewer-volume3d-tools";
 const AXIAL_VIEWPORT_ID = "ct-dicom-viewer-axial";
@@ -62,13 +88,9 @@ const VIEW_LABELS: Record<ViewKey, string> = {
   volume3d: "3D Volume",
 };
 
-function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
-  if (!result || typeof result !== "object" || !("result" in result)) return null;
-  const detail = result.result;
-  if (!detail || typeof detail !== "object" || !("nodules" in detail) || !Array.isArray(detail.nodules)) return null;
-  const firstNodule = detail.nodules[0];
-  if (!firstNodule || typeof firstNodule !== "object" || !("finding_payload" in firstNodule)) return null;
-  const payload = firstNodule.finding_payload;
+function getNoduleFocus(nodule: unknown, index: number): NoduleFocus | null {
+  if (!nodule || typeof nodule !== "object" || !("finding_payload" in nodule)) return null;
+  const payload = nodule.finding_payload;
   if (!payload || typeof payload !== "object" || !("quantification" in payload)) return null;
   const quantification = payload.quantification;
   if (!quantification || typeof quantification !== "object" || !("centroid_world_xyz_mm" in quantification)) return null;
@@ -76,10 +98,41 @@ function getNoduleFocusWorld(result: unknown): [number, number, number] | null {
   if (!Array.isArray(centroid) || centroid.length !== 3) return null;
   const [x, y, z] = centroid;
   if (typeof x !== "number" || typeof y !== "number" || typeof z !== "number") return null;
-  return [-x, -y, z];
+  const rawId = "nodule_no" in nodule ? nodule.nodule_no : index + 1;
+  const id = String(rawId);
+  return { id, label: `결절 #${id}`, world: [-x, -y, z] };
 }
 
-export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted }: CtDicomViewerProps) {
+function getNodulesFromAnalysisResult(result: unknown): unknown[] {
+  if (!result || typeof result !== "object" || !("result" in result)) return [];
+  const detail = result.result;
+  if (!detail || typeof detail !== "object" || !("nodules" in detail) || !Array.isArray(detail.nodules)) return [];
+  return detail.nodules;
+}
+
+async function runWithConcurrency<T>(items: T[], limit: number, task: (item: T) => Promise<void>) {
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const item = items[cursor];
+      cursor += 1;
+      await task(item);
+    }
+  });
+  await Promise.all(workers);
+}
+
+export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules = [], loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted }: CtDicomViewerProps) {
+  const resolvedCacheKey = cacheKey ?? `${orderId}:${assetId}:${seriesInstanceUid ?? ""}:${analysisId ?? ""}`;
+  const restoredSession = viewerSessionCache.get(resolvedCacheKey);
+  const currentNoduleFoci = useMemo(
+    () => nodules.map(getNoduleFocus).filter((value): value is NoduleFocus => Boolean(value)),
+    [nodules],
+  );
+  const restoredNoduleId = restoredSession?.selectedNoduleId;
+  const initialNoduleId = restoredNoduleId && currentNoduleFoci.some((nodule) => nodule.id === restoredNoduleId)
+    ? restoredNoduleId
+    : currentNoduleFoci[0]?.id ?? null;
   const workspaceRef = useRef<HTMLDivElement>(null);
   const axialRef = useRef<HTMLDivElement>(null);
   const coronalRef = useRef<HTMLDivElement>(null);
@@ -95,12 +148,16 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   const [building, setBuilding] = useState(false);
   const [error, setError] = useState("");
   const [viewerError, setViewerError] = useState("");
+  const [segmentationState, setSegmentationState] = useState<"IDLE" | "LOADING" | "READY" | "ERROR">(analysisId ? "LOADING" : "IDLE");
+  const [segmentationError, setSegmentationError] = useState("");
   const [seriesProgress, setSeriesProgress] = useState({ loaded: 0, total: 0 });
   // null = 2x2 grid; otherwise the single view shown full-size. Purely a layout
   // switch - the underlying viewports/volume are never rebuilt by this.
-  const [focusedView, setFocusedView] = useState<ViewKey | null>(null);
-  const [selectedView, setSelectedView] = useState<ViewKey>("axial");
-  const [activeTool, setActiveTool] = useState<MprToolMode>("WL");
+  const [focusedView, setFocusedView] = useState<ViewKey | null>(restoredSession?.focusedView ?? null);
+  const [selectedView, setSelectedView] = useState<ViewKey>(restoredSession?.selectedView ?? "axial");
+  const [activeTool, setActiveTool] = useState<MprToolMode>(restoredSession?.activeTool ?? "WL");
+  const [segmentationVisible, setSegmentationVisible] = useState(restoredSession?.segmentationVisible ?? true);
+  const [selectedNoduleId, setSelectedNoduleId] = useState<string | null>(initialNoduleId);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [annotationText, setAnnotationText] = useState("");
 
@@ -109,14 +166,23 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   const onAnnotationCreatedRef = useRef(onAnnotationCreated);
   const onAnnotationUpdatedRef = useRef(onAnnotationUpdated);
   const annotationTextRef = useRef("");
-  const noduleFocusWorldRef = useRef<[number, number, number] | null>(null);
+  const noduleFociRef = useRef<NoduleFocus[]>(currentNoduleFoci);
+  const selectedNoduleIdRef = useRef<string | null>(selectedNoduleId);
+  const sessionRef = useRef<ViewerSession>({
+    focusedView: restoredSession?.focusedView ?? null,
+    selectedView: restoredSession?.selectedView ?? "axial",
+    activeTool: restoredSession?.activeTool ?? "WL",
+    segmentationVisible: restoredSession?.segmentationVisible ?? true,
+    selectedNoduleId: initialNoduleId,
+    cameras: restoredSession?.cameras,
+  });
   // All 4 viewports are built once per series and kept alive for the component's
   // lifetime; this ref lets the maximize/restore effect resize them without
   // rebuilding anything.
   const renderingEngineRef = useRef<import("@cornerstonejs/core").RenderingEngine | null>(null);
   const mprToolGroupRef = useRef<MprToolGroup | null>(null);
   const mprToolBindingsRef = useRef<MprToolBindings | null>(null);
-  const activeToolRef = useRef<MprToolMode>("WL");
+  const activeToolRef = useRef<MprToolMode>(restoredSession?.activeTool ?? "WL");
   // Caches the loaded labelmap data across re-renders, keyed by analysis+
   // volume, so it is only downloaded once per series.
   const segmentationCacheRef = useRef<{ key: string; segmentation: CtCornerstoneSegmentation } | null>(null);
@@ -132,6 +198,35 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
   useEffect(() => {
     annotationTextRef.current = annotationText;
   }, [annotationText]);
+
+  useEffect(() => {
+    noduleFociRef.current = currentNoduleFoci;
+  }, [currentNoduleFoci]);
+
+  useEffect(() => {
+    selectedNoduleIdRef.current = selectedNoduleId;
+    sessionRef.current = {
+      ...sessionRef.current,
+      focusedView,
+      selectedView,
+      activeTool,
+      segmentationVisible,
+      selectedNoduleId,
+    };
+    writeViewerSession(resolvedCacheKey, sessionRef.current);
+  }, [activeTool, focusedView, resolvedCacheKey, segmentationVisible, selectedNoduleId, selectedView]);
+
+  const focusNodule = useCallback((noduleId: string) => {
+    setSelectedNoduleId(noduleId);
+    const focus = noduleFociRef.current.find((nodule) => nodule.id === noduleId);
+    const renderingEngine = renderingEngineRef.current;
+    if (!focus || !renderingEngine) return;
+    MPR_VIEWPORT_IDS.forEach((viewportId) => {
+      const viewport = renderingEngine.getViewport(viewportId) as { jumpToWorld?: (world: [number, number, number]) => void };
+      viewport.jumpToWorld?.(focus.world);
+    });
+    renderingEngine.render();
+  }, []);
 
   const selectAnnotation = (annotation: ClinicianImageAnnotation) => {
     setSelectedAnnotationId(annotation.id);
@@ -199,7 +294,14 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
         const { imageIds } = series;
         imageIdsRef.current = imageIds;
         sopInstanceUidsRef.current = (series as { sopInstanceUids?: string[] }).sopInstanceUids ?? [];
-        noduleFocusWorldRef.current = getNoduleFocusWorld(analysisResult);
+        if (noduleFociRef.current.length === 0) {
+          noduleFociRef.current = getNodulesFromAnalysisResult(analysisResult)
+            .map(getNoduleFocus)
+            .filter((value): value is NoduleFocus => Boolean(value));
+          if (!selectedNoduleIdRef.current) {
+            selectedNoduleIdRef.current = noduleFociRef.current[0]?.id ?? null;
+          }
+        }
         setSeriesProgress({ loaded: 0, total: imageIds.length });
         setLoading(false);
       })
@@ -234,8 +336,19 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       if (!axialRef.current || !coronalRef.current || !sagittalRef.current || !volume3dRef.current) return;
       setBuilding(true);
       setViewerError("");
+      setSegmentationError("");
       const imageIds = imageIdsRef.current;
       if (!imageIds) return;
+      const segmentationPromise = analysisId
+        ? (() => {
+            setSegmentationState("LOADING");
+            const request = loadSegmentation ? loadSegmentation(analysisId) : loadCtCornerstoneSegmentation(analysisId);
+            return request.then(
+              (segmentation) => ({ segmentation, error: null }),
+              (reason: unknown) => ({ segmentation: null, error: reason }),
+            );
+          })()
+        : null;
 
       if (process.env.NODE_ENV !== "production") {
         // These dev-only listeners were never removed on effect cleanup, so
@@ -405,11 +518,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       // plane metadata while constructing the volume, so creating it first
       // leaves pixelRepresentation undefined for locally managed files.
       let loadedImageCount = 0;
-      await Promise.all(imageIds.map(async (imageId) => {
+      await runWithConcurrency(imageIds, 6, async (imageId) => {
         await core.imageLoader.loadAndCacheImage(imageId);
         loadedImageCount += 1;
         if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
-      }));
+      });
       if (disposed) return;
 
       const volume = await core.volumeLoader.createAndCacheVolume(volumeId, { imageIds, progressiveRendering: true });
@@ -466,12 +579,21 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
         }
       }
 
-      const noduleFocusWorld = noduleFocusWorldRef.current;
-      if (noduleFocusWorld) {
-        MPR_VIEWPORT_IDS.forEach((viewportId) => {
-          const viewport = renderingEngine?.getViewport(viewportId) as InstanceType<typeof core.VolumeViewport>;
-          viewport.jumpToWorld(noduleFocusWorld);
+      const restoredCameras = sessionRef.current.cameras;
+      if (restoredCameras) {
+        Object.entries(restoredCameras).forEach(([viewportId, camera]) => {
+          const viewport = renderingEngine?.getViewport(viewportId) as { setCamera?: (value: unknown) => void } | undefined;
+          viewport?.setCamera?.(camera);
         });
+      } else {
+        const selectedFocus = noduleFociRef.current.find((nodule) => nodule.id === selectedNoduleIdRef.current)
+          ?? noduleFociRef.current[0];
+        if (selectedFocus) {
+          MPR_VIEWPORT_IDS.forEach((viewportId) => {
+            const viewport = renderingEngine?.getViewport(viewportId) as InstanceType<typeof core.VolumeViewport>;
+            viewport.jumpToWorld(selectedFocus.world);
+          });
+        }
       }
       renderingEngine.render();
       if ("load" in volume && typeof volume.load === "function") {
@@ -490,8 +612,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
             ? segmentationCacheRef.current.segmentation
             : null;
           if (!segmentation) {
-            segmentation = await (loadSegmentation ? loadSegmentation(analysisId) : loadCtCornerstoneSegmentation(analysisId));
+            const loadedSegmentation = await segmentationPromise;
             if (disposed) return;
+            if (loadedSegmentation?.error) throw loadedSegmentation.error;
+            segmentation = loadedSegmentation?.segmentation ?? null;
+            if (!segmentation) throw new Error("Segmentation 데이터가 없습니다.");
             segmentationCacheRef.current = { key: segmentationKey, segmentation };
           }
           const overlayTargets: Array<[string, "axial" | "coronal" | "sagittal", HTMLDivElement | null, HTMLCanvasElement | null]> = [
@@ -507,11 +632,12 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
           }
           // The labelmap overlay is only drawn on the 2D MPR canvases; the 3D
           // volume-rendering view stays CT-only.
+          setSegmentationState("READY");
         } catch (reason) {
           if (!disposed) {
-
             console.error("[ct-dicom-viewer] segmentation setup failed", reason);
-            setViewerError(reason instanceof Error ? `Segmentation을 불러오지 못했습니다: ${reason.message}` : "Segmentation을 불러오지 못했습니다.");
+            setSegmentationState("ERROR");
+            setSegmentationError(reason instanceof Error ? reason.message : "Segmentation을 불러오지 못했습니다.");
           }
         }
       }
@@ -530,6 +656,16 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
 
     return () => {
       disposed = true;
+      if (renderingEngine) {
+        const cameras: Record<string, unknown> = {};
+        MPR_VIEWPORT_IDS.forEach((viewportId) => {
+          const viewport = renderingEngine?.getViewport(viewportId) as { getCamera?: () => unknown } | undefined;
+          const camera = viewport?.getCamera?.();
+          if (camera) cameras[viewportId] = camera;
+        });
+        sessionRef.current = { ...sessionRef.current, cameras };
+        writeViewerSession(resolvedCacheKey, sessionRef.current);
+      }
       resizeObserver?.disconnect();
       removeProgressListener?.();
       removeDevListeners?.();
@@ -538,7 +674,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
       renderingEngine?.destroy();
       renderingEngineRef.current = null;
     };
-  }, [loading, error, analysisId, orderId, assetId, annotations, loadSegmentation, setMprToolMode, seriesInstanceUid]);
+  }, [loading, error, analysisId, orderId, assetId, annotations, loadSegmentation, resolvedCacheKey, setMprToolMode, seriesInstanceUid]);
 
   // Pure layout switch: maximizing/restoring a view never re-fetches or rebuilds
   // anything - the already-built viewports just need a resize once their
@@ -583,6 +719,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
     seriesProgress.total > 0
       ? Math.round((seriesProgress.loaded / seriesProgress.total) * 100)
       : 0;
+  const visibleNodules = currentNoduleFoci;
+  const effectiveSelectedNoduleId = visibleNodules.some((nodule) => nodule.id === selectedNoduleId)
+    ? selectedNoduleId
+    : visibleNodules[0]?.id ?? null;
   return (
     <div
       ref={workspaceRef}
@@ -686,6 +826,30 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
           >
             주석 삭제
           </button>
+
+          {analysisId && (
+            <button
+              type="button"
+              aria-pressed={segmentationVisible}
+              disabled={segmentationState !== "READY"}
+              onClick={() => setSegmentationVisible((current) => !current)}
+              className="h-7 shrink-0 rounded-md border border-violet-700 bg-violet-950/60 px-2 text-[9px] font-semibold text-violet-200 transition hover:bg-violet-900/70 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              SEG {segmentationVisible ? "ON" : "OFF"}
+            </button>
+          )}
+
+          {visibleNodules.map((nodule) => (
+            <button
+              key={nodule.id}
+              type="button"
+              aria-pressed={effectiveSelectedNoduleId === nodule.id}
+              onClick={() => focusNodule(nodule.id)}
+              className={`h-7 shrink-0 rounded-md border px-2 text-[9px] font-semibold transition ${effectiveSelectedNoduleId === nodule.id ? "border-violet-400 bg-violet-600 text-white" : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"}`}
+            >
+              {nodule.label}
+            </button>
+          ))}
         </div>
 
         <div className="hidden shrink-0 items-center gap-2 text-[8px] text-slate-500 2xl:flex">
@@ -779,7 +943,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
                 {overlayRefs[key] && (
                   <canvas
                     ref={overlayRefs[key]}
-                    className="pointer-events-none absolute inset-0"
+                    className={`pointer-events-none absolute inset-0 z-10 ${segmentationVisible ? "" : "hidden"}`}
                   />
                 )}
 
@@ -864,6 +1028,18 @@ export function CtDicomViewer({ orderId, assetId, analysisId, loadSeries, loadSe
             className="absolute bottom-2 left-2 right-2 z-50 rounded-md border border-rose-800/60 bg-rose-950/90 px-3 py-2 text-[9px] text-rose-200 shadow-lg"
           >
             {error || viewerError}
+          </div>
+        )}
+
+        {!loading && !error && !viewerError && segmentationState === "ERROR" && (
+          <div role="status" className="absolute bottom-2 left-2 z-50 rounded-md border border-amber-700/60 bg-amber-950/90 px-3 py-2 text-[9px] text-amber-100 shadow-lg">
+            CT 원본은 정상 표시 중입니다. Segmentation을 사용할 수 없습니다{segmentationError ? `: ${segmentationError}` : "."}
+          </div>
+        )}
+
+        {!loading && !error && segmentationState === "LOADING" && (
+          <div role="status" className="pointer-events-none absolute bottom-2 left-2 z-40 rounded-md border border-violet-700/50 bg-violet-950/80 px-2.5 py-1.5 text-[8px] text-violet-100">
+            Segmentation 로딩 중
           </div>
         )}
       </div>

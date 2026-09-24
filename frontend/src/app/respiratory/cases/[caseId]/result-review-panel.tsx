@@ -23,6 +23,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
   const ctDetail = stage === "CT" ? asRecord(asRecord(aiResult?.result_detail)?.ct) : null;
+  const ctNodules = Array.isArray(ctDetail?.nodules) ? ctDetail.nodules : [];
   const hasCtAiData = ctDetail !== null;
   const config = STAGE_CONFIG[stage] ?? { title: "검사·결과", description: "의료진 판독 결과와 AI 분석 후보를 구분해 확인합니다.", department: "담당 진료과" };
   const imaging = stage === "XRAY" || stage === "CT";
@@ -50,7 +51,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
             <p className="whitespace-nowrap text-[10px] text-slate-400">영상 조작은 뷰어 안에서 바로 수행합니다.</p>
           </div>
         )}
-        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
+        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} nodules={ctNodules} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
       <aside data-clinical-rail className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">

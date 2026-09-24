@@ -487,6 +487,11 @@ export default function RespiratoryCaseDetailPage() {
 
   const [selectedResultMenu, setSelectedResultMenu] =
   useState<ResultSubMenu>("XRAY");
+  const [ctViewerVisitedCaseId, setCtViewerVisitedCaseId] = useState<string | null>(null);
+  const selectResultMenu = useCallback((menu: ResultSubMenu) => {
+    if (menu === "CT") setCtViewerVisitedCaseId(caseId);
+    setSelectedResultMenu(menu);
+  }, [caseId]);
 
   const [selectedAiMenu, setSelectedAiMenu] =
   useState<AiSubMenu>("PET_CT_TNM");
@@ -1098,7 +1103,7 @@ export default function RespiratoryCaseDetailPage() {
     setSelectedInfoMenu(workspaceMenu);
     const navigation = getCaseMenuNavigation(workspaceMenu);
     if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
-    if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
+    if (navigation.resultMenu) selectResultMenu(navigation.resultMenu);
     if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
   };
 
@@ -1136,7 +1141,7 @@ export default function RespiratoryCaseDetailPage() {
       setSelectedInfoMenu(stage);
       const navigation = getCaseMenuNavigation(stage);
       if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
-      if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
+      if (navigation.resultMenu) selectResultMenu(navigation.resultMenu);
       if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
       if (stage === "TREATMENT") setSelectedTreatmentMenu("FINAL_PLAN");
       return;
@@ -1145,7 +1150,7 @@ export default function RespiratoryCaseDetailPage() {
     // Workflow 전환은 접근 가능 범위만 갱신한다. 사용자가 보고 있던 단계가
     // 새 current_stage의 과거 단계라면 읽기 전용 화면으로 그대로 유지한다.
     // 미래 workspace가 선택된 비정상 상태만 위의 LOCKED 분기에서 복구한다.
-  }, [caseId, caseOrders, currentCaseStage, selectedCase?.case_status, selectedInfoMenu, tnmAnalysisResults, tnmClinicalResults]);
+  }, [caseId, caseOrders, currentCaseStage, selectedCase?.case_status, selectedInfoMenu, selectResultMenu, tnmAnalysisResults, tnmClinicalResults]);
 
   const latestPdl1Result =
     pdl1Results.length > 0
@@ -1273,6 +1278,10 @@ export default function RespiratoryCaseDetailPage() {
   const selectedClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === selectedResultMenu,
   );
+  const ctClinicalResult = tnmClinicalResults.find(
+    (result) => result.workflow_stage === "CT",
+  );
+
 
   const selectedAiType = {
     XRAY: "XRAY_ANALYSIS",
@@ -1907,7 +1916,7 @@ export default function RespiratoryCaseDetailPage() {
                   <SubMenuList
                     menus={workspaceResultSubMenus}
                     selected={selectedResultMenu}
-                    onSelect={setSelectedResultMenu}
+                    onSelect={selectResultMenu}
                   />
                 )}
                 {expanded && menu.key === "AI" && (
@@ -2009,6 +2018,29 @@ export default function RespiratoryCaseDetailPage() {
           <TreatmentPrescriptionOverview mode={selectedInfoMenu === "PRESCRIPTION" || prescriptionActionable ? "PRESCRIPTION" : "TREATMENT"} treatment={caseTreatmentDecision} prescriptions={casePrescriptions} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptionActionable={prescriptionActionable} />
         )}
 
+        {((selectedMainMenu === "RESULTS" && selectedResultMenu === "CT") || ctViewerVisitedCaseId === caseId) && (
+          <div className={selectedMainMenu === "RESULTS" && selectedResultMenu === "CT" ? "contents" : "hidden"}>
+            <ResultReviewPanel
+              stage="CT"
+              caseId={caseId}
+              apiBaseUrl={API_BASE_URL}
+              authorizedFetch={authorizedFetch}
+              clinicalResult={ctClinicalResult}
+              aiResult={ctAnalysisResult}
+              clinicalError={clinicalResultError}
+              aiError={aiResultError}
+              clinicalRetrying={panelRetrying === "CLINICAL"}
+              aiRetrying={panelRetrying === "AI"}
+              onRetryClinical={retryClinicalResults}
+              onRetryAi={retryAiResults}
+              lastSyncedAt={lastResultSyncAt}
+              syncingResults={resultsSyncing}
+              onRefreshResults={() => { void refreshCaseResults(); }}
+              syncNotice={resultSyncNotice}
+            />
+          </div>
+        )}
+
         {selectedInfoMenu === "OVERVIEW" ? (
           <div>
             <CaseOverviewPanel caseData={selectedCase} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptions={casePrescriptions} orders={caseOrders} ordersLoaded={ordersLoaded} />
@@ -2028,7 +2060,7 @@ export default function RespiratoryCaseDetailPage() {
               onRetry={retryAiResults}
               evidenceByAnalysis={{
                 XRAY_ANALYSIS: <CaseImageEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="XRAY" />,
-                CT_ANALYSIS: <CaseCtSegmentationEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={ctAnalysisResult?.id} />,
+                CT_ANALYSIS: <CaseCtSegmentationEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={ctAnalysisResult?.id} nodules={ctAnalysisResult?.result_detail?.ct?.nodules ?? []} />,
                 PET_CT_TNM_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="PET_CT_TNM" />,
                 PATHOLOGY_GENE_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="HE" fillHeight />,
                 PDL1_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="PDL1" fillHeight />,
@@ -3030,24 +3062,28 @@ export default function RespiratoryCaseDetailPage() {
           syncNotice={resultSyncNotice}
         />
         ) : selectedMainMenu === "RESULTS" ? (
-        <ResultReviewPanel
-          stage={selectedResultMenu}
-          caseId={caseId}
-          apiBaseUrl={API_BASE_URL}
-          authorizedFetch={authorizedFetch}
-          clinicalResult={selectedClinicalResult}
-          aiResult={selectedAiResult}
-          clinicalError={clinicalResultError}
-          aiError={aiResultError}
-          clinicalRetrying={panelRetrying === "CLINICAL"}
-          aiRetrying={panelRetrying === "AI"}
-          onRetryClinical={retryClinicalResults}
-          onRetryAi={retryAiResults}
-          lastSyncedAt={lastResultSyncAt}
-          syncingResults={resultsSyncing}
-          onRefreshResults={() => { void refreshCaseResults(); }}
-          syncNotice={resultSyncNotice}
-        />
+        <>
+          {selectedResultMenu !== "CT" && (
+            <ResultReviewPanel
+              stage={selectedResultMenu}
+              caseId={caseId}
+              apiBaseUrl={API_BASE_URL}
+              authorizedFetch={authorizedFetch}
+              clinicalResult={selectedClinicalResult}
+              aiResult={selectedAiResult}
+              clinicalError={clinicalResultError}
+              aiError={aiResultError}
+              clinicalRetrying={panelRetrying === "CLINICAL"}
+              aiRetrying={panelRetrying === "AI"}
+              onRetryClinical={retryClinicalResults}
+              onRetryAi={retryAiResults}
+              lastSyncedAt={lastResultSyncAt}
+              syncingResults={resultsSyncing}
+              onRefreshResults={() => { void refreshCaseResults(); }}
+              syncNotice={resultSyncNotice}
+            />
+          )}
+        </>
         ) : (
         <div className="rounded-2xl border border-emerald-100 bg-white p-8 shadow-sm">
             <div className="flex min-h-[520px] items-center justify-center">

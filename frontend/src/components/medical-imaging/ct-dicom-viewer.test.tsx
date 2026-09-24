@@ -19,6 +19,24 @@ describe("CtDicomViewer toolbar", () => {
     expect(screen.getByRole("button", { name: "2×2" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("selects the first real nodule and allows switching the requested focus", () => {
+    render(
+      <CtDicomViewer
+        orderId="order-nodules"
+        assetId="asset-nodules"
+        loadSeries={() => new Promise(() => undefined)}
+        nodules={[
+          { nodule_no: 1, finding_payload: { quantification: { centroid_world_xyz_mm: [10, 20, 30] } } },
+          { nodule_no: 2, finding_payload: { quantification: { centroid_world_xyz_mm: [40, 50, 60] } } },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "결절 #1" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "결절 #2" }));
+    expect(screen.getByRole("button", { name: "결절 #2" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("selects a saved text annotation before updating or deleting it", () => {
     const onAnnotationUpdated = vi.fn();
     const onAnnotationDeleted = vi.fn();

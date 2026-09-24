@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CtDicomViewer, type ClinicianImageAnnotation, type PendingImageAnnotation } from "@/components/medical-imaging/ct-dicom-viewer";
 import { showToast } from "@/components/ui/toast/toast";
@@ -23,6 +23,43 @@ type Asset = {
 };
 
 type DicomRow = Record<string, { Value?: unknown[] }>;
+
+type SeriesData = { imageIds: string[]; sopInstanceUids: string[] };
+
+const assetRequestCache = new Map<string, Promise<Asset>>();
+const seriesRequestCache = new Map<string, Promise<SeriesData>>();
+const segmentationRequestCache = new Map<string, Promise<CtCornerstoneSegmentation>>();
+const MAX_CT_CACHE_ENTRIES = 8;
+
+function cachedRequest<T>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>) {
+  const existing = cache.get(key);
+  if (existing) return existing;
+  const request = load().catch((reason) => {
+    cache.delete(key);
+    throw reason;
+  });
+  cache.set(key, request);
+  while (cache.size > MAX_CT_CACHE_ENTRIES) {
+    const oldest = cache.keys().next().value;
+    if (typeof oldest !== "string") break;
+    cache.delete(oldest);
+  }
+  return request;
+}
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>) {
+  const results = new Array<R>(items.length);
+  let cursor = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (cursor < items.length) {
+      const index = cursor;
+      cursor += 1;
+      results[index] = await task(items[index]);
+    }
+  });
+  await Promise.all(workers);
+  return results;
+}
 
 export type CtEvidenceInfo = {
   seriesInstanceUid?: string | null;
@@ -49,21 +86,32 @@ export function CaseCtSegmentationEvidence({
   authorizedFetch,
   caseId,
   analysisId,
+  nodules = [],
   onEvidenceInfoChange,
 }: {
   apiBaseUrl: string;
   authorizedFetch: AuthorizedFetch;
   caseId: string;
   analysisId?: string;
+  nodules?: unknown[];
   onEvidenceInfoChange?: (info: CtEvidenceInfo) => void;
 }) {
   const [asset, setAsset] = useState<Asset | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"DICOM" | "SEGMENTATION">("DICOM");
+  const [segmentationViewVisited, setSegmentationViewVisited] = useState(false);
   const [imageCount, setImageCount] = useState<number | null>(null);
   const [segmentationAvailable, setSegmentationAvailable] = useState(false);
   const [annotations, setAnnotations] = useState<ClinicianImageAnnotation[]>([]);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -75,33 +123,31 @@ export function CaseCtSegmentationEvidence({
       setSegmentationAvailable(false);
 
       try {
-        const response = await authorizedFetch(
-          `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/`,
-          { signal: controller.signal },
+        const selected = await cachedRequest(
+          assetRequestCache,
+          `${caseId}:${analysisId ?? ""}`,
+          async () => {
+            const response = await authorizedFetch(
+              `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/`,
+            );
+            const body: unknown = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error(detail(body, "CT 영상 목록을 불러오지 못했습니다."));
+            }
+            const selectedAsset = (Array.isArray(body) ? body : []).find(
+              (item): item is Asset =>
+                Boolean(item) &&
+                typeof item === "object" &&
+                "id" in item &&
+                typeof item.id === "string" &&
+                item.workflow_stage === "CT" &&
+                item.image_type === "CT" &&
+                item.status === "READY",
+            );
+            if (!selectedAsset) throw new Error("조회 가능한 CT DICOM Series가 없습니다.");
+            return selectedAsset;
+          },
         );
-
-        const body: unknown = await response.json().catch(() => ({}));
-
-        if (!response.ok) {
-          throw new Error(
-            detail(body, "CT 영상 목록을 불러오지 못했습니다."),
-          );
-        }
-
-        const selected = (Array.isArray(body) ? body : []).find(
-          (item): item is Asset =>
-            Boolean(item) &&
-            typeof item === "object" &&
-            "id" in item &&
-            typeof item.id === "string" &&
-            item.workflow_stage === "CT" &&
-            item.image_type === "CT" &&
-            item.status === "READY",
-        );
-
-        if (!selected) {
-          throw new Error("조회 가능한 CT DICOM Series가 없습니다.");
-        }
 
         if (!controller.signal.aborted) {
           setAsset(selected);
@@ -129,14 +175,17 @@ export function CaseCtSegmentationEvidence({
     apiBaseUrl,
     authorizedFetch,
     caseId,
+    analysisId,
     onEvidenceInfoChange,
   ]);
 
   const loadSeries = useCallback(
     async (_orderId: string, assetId: string) => {
-      const instancesResponse = await authorizedFetch(
+      const cacheKey = `${caseId}:${assetId}:${asset?.series_instance_uid ?? ""}`;
+      const series = await cachedRequest(seriesRequestCache, cacheKey, async () => {
+        const instancesResponse = await authorizedFetch(
         `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/`,
-      );
+        );
 
       const instanceBody: unknown = await instancesResponse
         .json()
@@ -159,14 +208,13 @@ export function CaseCtSegmentationEvidence({
         throw new Error("CT DICOM instance가 없습니다.");
       }
 
-      setImageCount(uids.length);
-      onEvidenceInfoChange?.({ imageCount: uids.length });
-
       const { dicomImageLoader } =
         await ensureCornerstoneInitialized();
 
-      const imageIds = await Promise.all(
-        uids.map(async (uid) => {
+      const imageIds = await mapWithConcurrency(
+        uids,
+        6,
+        async (uid) => {
           const response = await authorizedFetch(
             `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/${uid}/`,
             {
@@ -187,13 +235,20 @@ export function CaseCtSegmentationEvidence({
               type: "application/dicom",
             }),
           );
-        }),
+        },
       );
 
       return { imageIds, sopInstanceUids: uids };
+      });
+      if (mountedRef.current) {
+        setImageCount(series.sopInstanceUids.length);
+        onEvidenceInfoChange?.({ imageCount: series.sopInstanceUids.length });
+      }
+      return series;
     },
     [
       apiBaseUrl,
+      asset?.series_instance_uid,
       authorizedFetch,
       caseId,
       onEvidenceInfoChange,
@@ -273,6 +328,10 @@ export function CaseCtSegmentationEvidence({
     async (
       id: string,
     ): Promise<CtCornerstoneSegmentation> => {
+      const segmentation = await cachedRequest(
+        segmentationRequestCache,
+        `${caseId}:${asset?.id ?? ""}:${asset?.series_instance_uid ?? ""}:${id}`,
+        async () => {
       const [metadataResponse, labelmapResponse] =
         await Promise.all([
           authorizedFetch(
@@ -338,19 +397,23 @@ export function CaseCtSegmentationEvidence({
         );
       }
 
-      setSegmentationAvailable(true);
-      onEvidenceInfoChange?.({
-        segmentationAvailable: true,
-      });
-
       return {
         metadata:
           metadata as CtCornerstoneSegmentation["metadata"],
         voxels,
       };
+        },
+      );
+      if (mountedRef.current) {
+        setSegmentationAvailable(true);
+        onEvidenceInfoChange?.({ segmentationAvailable: true });
+      }
+      return segmentation;
     },
     [
       apiBaseUrl,
+      asset?.id,
+      asset?.series_instance_uid,
       authorizedFetch,
       caseId,
       onEvidenceInfoChange,
@@ -457,7 +520,7 @@ export function CaseCtSegmentationEvidence({
           <button
             type="button"
             aria-pressed={view === "SEGMENTATION"}
-            onClick={() => setView("SEGMENTATION")}
+            onClick={() => { setSegmentationViewVisited(true); setView("SEGMENTATION"); }}
             className={`h-7 rounded px-2.5 text-[9px] font-semibold transition ${
               view === "SEGMENTATION"
                 ? "bg-violet-600 text-white shadow-sm"
@@ -470,11 +533,14 @@ export function CaseCtSegmentationEvidence({
       </header>
 
       <div className="min-h-0 overflow-hidden bg-[#02050d]">
-        {view === "DICOM" ? (
+        <div className={view === "DICOM" ? "h-full min-h-0" : "hidden h-full min-h-0"}>
           <CtDicomViewer
+            key={`${caseId}:${asset.id}:${asset.series_instance_uid ?? ""}:${analysisId ?? ""}`}
             orderId={asset.id}
             assetId={asset.id}
             analysisId={analysisId}
+            cacheKey={`${caseId}:${asset.id}:${asset.series_instance_uid ?? ""}:${analysisId ?? ""}`}
+            nodules={nodules}
             loadSeries={loadSeries}
             loadSegmentation={loadSegmentation}
             seriesInstanceUid={asset.series_instance_uid}
@@ -483,14 +549,15 @@ export function CaseCtSegmentationEvidence({
             onAnnotationUpdated={updateAnnotation}
             onAnnotationDeleted={deleteAnnotation}
           />
-        ) : (
-          <CaseCtVisualization
+        </div>
+        <div className={view === "SEGMENTATION" ? "h-full min-h-0" : "hidden h-full min-h-0"}>
+          {segmentationViewVisited && <CaseCtVisualization
             apiBaseUrl={apiBaseUrl}
             authorizedFetch={authorizedFetch}
             caseId={caseId}
             analysisId={analysisId}
-          />
-        )}
+          />}
+        </div>
       </div>
     </section>
   );
