@@ -21,7 +21,7 @@ from apps.patients.models import Appointment
 from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
-from apps.clinical.models import ClinicalResult, Prescription, XrayResult
+from apps.clinical.models import ClinicalResult, Prescription, TreatmentDecision, XrayResult
 from apps.radiology.models import RadiologyReview
 from apps.clinical.views import DoctorTreatmentEvidenceAPIView
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
@@ -770,12 +770,28 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
             case.save(update_fields=["case_status", "closed_at", "updated_at"])
             target_stage = None
         else:  # CASE_CLOSED
-            if not Prescription.objects.filter(
+            has_final_prescription = Prescription.objects.filter(
                 case=case,
                 prescription_status=Prescription.PrescriptionStatus.FINAL,
-            ).exists():
+            ).exists()
+            treatment_decision = None
+            try:
+                treatment_decision = source_result.treatment_detail
+            except TreatmentDecision.DoesNotExist:
+                pass
+            non_drug_without_prescriptions = (
+                treatment_decision is not None
+                and treatment_decision.requires_drug_prescription is False
+                and not Prescription.objects.filter(case=case).exists()
+            )
+            if not has_final_prescription and not non_drug_without_prescriptions:
                 return Response(
-                    {"detail": "Case can only be closed after a FINAL prescription exists."},
+                    {
+                        "detail": (
+                            "Case can only be closed after a FINAL prescription exists, "
+                            "unless the confirmed treatment plan does not require medication."
+                        )
+                    },
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             case.case_status = LungCancerCase.CaseStatus.CLOSED

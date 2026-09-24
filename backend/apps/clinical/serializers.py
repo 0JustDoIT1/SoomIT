@@ -618,6 +618,18 @@ class RegimenSummarySerializer(serializers.ModelSerializer):
 
 
 class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
+    decision_status = serializers.CharField(
+        source="clinical_result.result_status",
+        read_only=True,
+    )
+    current_stage = serializers.CharField(
+        source="clinical_result.case.current_stage",
+        read_only=True,
+    )
+    case_status = serializers.CharField(
+        source="clinical_result.case.case_status",
+        read_only=True,
+    )
     selected_regimen_detail = RegimenSummarySerializer(
         source="selected_regimen",
         read_only=True,
@@ -630,15 +642,23 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
         source="get_treatment_type_display",
         read_only=True,
     )
+    requires_prescription = serializers.BooleanField(
+        source="requires_drug_prescription",
+        read_only=True,
+    )
 
     class Meta:
         model = TreatmentDecision
         fields = [
             "clinical_result",
+            "decision_status",
+            "current_stage",
+            "case_status",
             "ai_recommendation_action",
             "ai_recommendation_action_label",
             "treatment_type",
             "treatment_type_label",
+            "requires_prescription",
             "selected_regimen",
             "selected_regimen_detail",
             "treatment_plan",

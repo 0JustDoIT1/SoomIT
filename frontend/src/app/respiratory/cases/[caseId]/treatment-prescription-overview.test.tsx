@@ -12,6 +12,13 @@ describe("TreatmentPrescriptionOverview", () => {
     expect(screen.getByText("작성 가능")).toBeTruthy();
   });
 
+  it("describes the terminal path for a confirmed non-drug treatment", () => {
+    render(<TreatmentPrescriptionOverview mode="PRESCRIPTION" prescriptionActionable treatment={{ treatment_type_label: "경과관찰", requires_prescription: false, selected_regimen_detail: null }} prescriptions={[]} />);
+    expect(screen.getByText("비약물 치료")).toBeTruthy();
+    expect(screen.getByText("종료·의뢰 가능")).toBeTruthy();
+    expect(screen.queryByText("작성 가능")).toBeNull();
+  });
+
   it("keeps the prescription summary in a waiting state without a treatment decision", () => {
     render(<TreatmentPrescriptionOverview mode="PRESCRIPTION" treatment={null} prescriptions={[]} />);
     expect(screen.getByText("현재 조회된 치료결정 결과가 없습니다.")).toBeTruthy();

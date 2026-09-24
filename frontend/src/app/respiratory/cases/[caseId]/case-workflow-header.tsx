@@ -101,10 +101,10 @@ export function CaseSummaryHeader({
 
   return (
     <section
-      className="grid min-h-[48px] w-full items-stretch gap-0 overflow-hidden rounded-lg border border-cyan-300 bg-white shadow-sm"
+      className="grid min-h-[48px] w-full shrink-0 items-stretch gap-0 overflow-hidden rounded-lg border border-cyan-300 bg-white shadow-sm"
       style={{
         gridTemplateColumns:
-          "minmax(220px, 1.35fr) minmax(120px, 1fr) minmax(150px, 1fr) minmax(150px, 1fr) minmax(160px, 1fr) minmax(90px, 0.65fr)",
+          "minmax(180px, 1.35fr) repeat(4, minmax(0, 1fr)) minmax(70px, 0.65fr)",
       }}
     >
       {/* Patient */}
@@ -177,12 +177,12 @@ function SummaryField({
 }) {
   return (
     <div className="flex min-w-0 w-full flex-col justify-center border-r border-slate-100 px-5 py-1.5">
-      <p className="truncate text-[8px] font-medium text-slate-400">
+      <p className="truncate text-[11px] font-medium text-slate-400">
         {label}
       </p>
 
       <p
-        className={`mt-0.5 truncate text-[10px] font-bold ${
+        className={`mt-0.5 truncate text-xs font-bold ${
           emphasis ? "text-blue-700" : "text-slate-800"
         }`}
         title={value}
@@ -206,7 +206,7 @@ export function CaseWorkflowBar({
 
   return (
     <section
-      className="relative overflow-hidden rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-sm"
+      className="relative shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white px-4 py-2 shadow-sm"
       aria-label="Case 진행 단계"
     >
       <div
@@ -265,13 +265,13 @@ export function CaseWorkflowBar({
             >
               <span
                 data-stage-state={state}
-                className={`mx-auto flex h-4 w-4 items-center justify-center rounded-full text-[7px] font-bold ${visual.dot}`}
+                className={`mx-auto flex h-4 w-4 items-center justify-center rounded-full text-[10px] font-bold ${visual.dot}`}
               >
                 {visual.symbol}
               </span>
 
               <p
-                className={`mt-1 truncate text-[8px] font-semibold ${visual.text}`}
+                className={`mt-1 truncate text-[11px] font-semibold ${visual.text}`}
                 title={stage.label}
               >
                 {stage.label}

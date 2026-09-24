@@ -124,6 +124,103 @@ class DoctorFollowUpPathologyOrderAPITests(TestCase):
             case=self.case, order_type=ExaminationOrder.OrderType.PDL1,
         ).count(), 0)
 
+    def test_reorders_cancelled_pdl1_at_pdl1_stage_with_a_new_work_item(self):
+        self.confirm_subtype()
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        cancelled_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.doctor,
+            purpose="Cancelled PD-L1 order",
+            status=ExaminationOrder.Status.CANCELLED,
+        )
+        cancelled_work_item = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=cancelled_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+            status=PathologyWorkItem.Status.CANCELLED,
+        )
+
+        response = self.client.post(self.url, self.payload("PDL1"), format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.PDL1)
+        replacement_order = ExaminationOrder.objects.get(id=response.data["examination_order_id"])
+        replacement_work_item = PathologyWorkItem.objects.get(id=response.data["pathology_work_item_id"])
+        self.assertEqual(replacement_order.status, ExaminationOrder.Status.ORDERED)
+        self.assertEqual(replacement_work_item.examination_order, replacement_order)
+        self.assertEqual(replacement_work_item.task_type, PathologyWorkItem.TaskType.WSI_UPLOAD)
+        self.assertEqual(replacement_work_item.status, PathologyWorkItem.Status.PENDING)
+        cancelled_order.refresh_from_db()
+        self.assertEqual(cancelled_order.status, ExaminationOrder.Status.CANCELLED)
+        cancelled_work_item.refresh_from_db()
+        self.assertEqual(cancelled_work_item.status, PathologyWorkItem.Status.CANCELLED)
+
+    def test_reorder_rejects_an_active_pdl1_order_and_prevents_duplicate_clicks(self):
+        self.confirm_subtype()
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.doctor,
+            purpose="Cancelled PD-L1 order",
+            status=ExaminationOrder.Status.CANCELLED,
+        )
+
+        created = self.client.post(self.url, self.payload("PDL1"), format="json")
+        duplicate = self.client.post(self.url, self.payload("PDL1"), format="json")
+
+        self.assertEqual(created.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(duplicate.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            status__in=[ExaminationOrder.Status.ORDERED, ExaminationOrder.Status.SCHEDULED],
+        ).count(), 1)
+        self.assertEqual(PathologyWorkItem.objects.filter(
+            case=self.case,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+            status=PathologyWorkItem.Status.PENDING,
+        ).count(), 1)
+
+    def test_reorder_rejects_completed_or_result_ready_pdl1(self):
+        self.confirm_subtype()
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.doctor,
+            purpose="Cancelled PD-L1 order",
+            status=ExaminationOrder.Status.CANCELLED,
+        )
+        completed_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.doctor,
+            purpose="Completed PD-L1 order",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+
+        self.assertEqual(
+            self.client.post(self.url, self.payload("PDL1"), format="json").status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+        completed_order.delete()
+        ClinicalResult.objects.create(
+            case=self.case,
+            workflow_stage=WorkflowStage.PDL1,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+
+        self.assertEqual(
+            self.client.post(self.url, self.payload("PDL1"), format="json").status_code,
+            status.HTTP_400_BAD_REQUEST,
+        )
+
     def test_blocks_same_type_active_duplicate(self):
         self.confirm_subtype()
         self.client.post(self.url, self.payload("PDL1"), format="json")

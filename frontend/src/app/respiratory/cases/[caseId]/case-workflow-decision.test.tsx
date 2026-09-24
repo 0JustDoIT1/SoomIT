@@ -49,7 +49,11 @@ describe("CaseWorkflowDecision", () => {
       source_clinical_result_id: "result-1",
       target_stage: "PET_CT_TNM",
     });
-    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ closed: false })));
+    await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({
+      closed: false,
+      currentStage: "PET_CT_TNM",
+      caseStatus: "ACTIVE",
+    })));
   });
 
   it("uses a clinical action label when a confirmed PD-L1 result can enter treatment", () => {
@@ -103,6 +107,18 @@ it("allows Case closure from PRESCRIPTION only with a FINAL prescription", async
   fireEvent.click(screen.getByRole("button", { name: "Case 종료" }));
   await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ closed: true })));
   expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ action: "CASE_CLOSED", target_stage: null, reason: "정기 추적" });
+});
+
+it("allows Case closure without a FINAL prescription for a confirmed non-drug plan", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ case_status: "CLOSED" })));
+  const onCompleted = vi.fn();
+  render(<CaseWorkflowDecision caseId="case-1" currentStage="PRESCRIPTION" confirmedResultId="result-1" allowCaseCloseWithoutFinalPrescription authorizedFetch={authorizedFetch} onCompleted={onCompleted} />);
+  fireEvent.click(screen.getByRole("button", { name: "결과 입력 및 처리" }));
+  fireEvent.change(screen.getByLabelText("처리 방법"), { target: { value: "CASE_CLOSED" } });
+  fireEvent.change(screen.getByPlaceholderText("결정 사유"), { target: { value: "경과관찰 계획 확정" } });
+  fireEvent.click(screen.getByRole("button", { name: "Case 종료" }));
+  await vi.waitFor(() => expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ closed: true })));
+  expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ action: "CASE_CLOSED" });
 });
 
 it("requires both reason and purpose for a biopsy retry", async () => {

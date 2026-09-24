@@ -3,7 +3,7 @@
 import { useEffect, useId, useRef, type ReactNode } from "react";
 
 export const decisionInputClass = "mt-1 w-full rounded-md border border-slate-300 bg-white p-2 text-sm";
-export const decisionTriggerClass = "rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-200";
+export const decisionTriggerClass = "rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-blue-500 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500";
 
 export function DecisionStatus({ error, message }: { error?: string; message?: string }) {
   return <>{message && <p role="status" className="mt-3 text-xs text-slate-600">{message}</p>}{error && <p role="alert" className="mt-3 rounded bg-rose-50 px-3 py-2 text-xs text-rose-700">{error}</p>}</>;
@@ -23,7 +23,7 @@ export function DecisionModal({ title, description, children, busy, error, messa
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4">
-    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} className="max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-5 shadow-2xl" onKeyDown={(event) => {
+    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} className="flex max-h-[90dvh] w-full max-w-xl flex-col rounded-lg bg-white p-4 shadow-2xl" onKeyDown={(event) => {
       if (event.key === "Escape" && !busy) { event.stopPropagation(); onClose(); }
       if (event.key !== "Tab") return;
       const fields = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') ?? []).filter((item) => item.getClientRects().length > 0);
@@ -35,7 +35,7 @@ export function DecisionModal({ title, description, children, busy, error, messa
       <p className="text-xs font-semibold text-blue-700">호흡기내과 최종 판단</p>
       <h2 id={titleId} className="mt-1 text-base font-bold text-slate-900">{title}</h2>
       {description && <p className="mt-2 text-xs leading-5 text-slate-600">{description}</p>}
-      <fieldset disabled={busy} className="mt-4 space-y-3">{children}</fieldset>
+      <fieldset disabled={busy} className="mt-3 min-h-0 overflow-y-auto space-y-3 pr-1">{children}</fieldset>
       <DecisionStatus error={error} message={busy ? "처리 중입니다. 완료될 때까지 기다려 주세요." : message} />
       <DecisionActions busy={busy} disabled={disabled} label={primaryLabel} onSubmit={onSubmit} onCancel={onClose} />
     </section>

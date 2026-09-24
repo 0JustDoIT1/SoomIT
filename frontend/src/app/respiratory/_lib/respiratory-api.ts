@@ -8,6 +8,8 @@ export type ExaminationOrderStatus = "ORDERED" | "SCHEDULED" | "COMPLETED" | "CA
 export type ExaminationOrder = { id: string; case_id: string; order_type: ExaminationOrderType; order_type_label: string; priority: ExaminationOrderPriority; status: ExaminationOrderStatus; purpose?: string; clinical_note?: string | null; pathology_work_item_id?: string | null; created_at: string; scheduled_at?: string | null; appointment_status?: "REQUESTED" | "CONFIRMED" | "CANCELLED" | null };
 export type ExaminationOrderRequest = { order_type: ExaminationOrderType; priority: ExaminationOrderPriority; purpose: string; clinical_note: string };
 export type ExaminationOrderUpdateRequest = Partial<Pick<ExaminationOrderRequest, "priority" | "purpose" | "clinical_note">>;
+export type FollowUpPathologyOrderRequest = { pathology_test_type: "PDL1"; priority: ExaminationOrderPriority; purpose: string; clinical_note: string };
+export type FollowUpPathologyOrderResponse = { examination_order_id: string; pathology_work_item_id: string; order_type: ExaminationOrderType; order_type_label: string; order_status: ExaminationOrderStatus; created_at: string };
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 export async function fetchExaminationOrders(authorizedFetch: AuthorizedFetch, caseId: string) {
@@ -22,6 +24,13 @@ export async function createExaminationOrder(authorizedFetch: AuthorizedFetch, c
   const data = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "검사 오더 생성에 실패했습니다.");
   return data as ExaminationOrder;
+}
+
+export async function createFollowUpPathologyOrder(authorizedFetch: AuthorizedFetch, caseId: string, order: FollowUpPathologyOrderRequest) {
+  const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/pathology-orders/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(order) });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "PD-L1 재오더 생성에 실패했습니다.");
+  return data as FollowUpPathologyOrderResponse;
 }
 
 export async function updateExaminationOrder(authorizedFetch: AuthorizedFetch, caseId: string, orderId: string, order: ExaminationOrderUpdateRequest) {

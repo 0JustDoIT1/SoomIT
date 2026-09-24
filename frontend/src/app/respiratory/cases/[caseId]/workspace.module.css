@@ -1,0 +1,30 @@
+.workspace [data-clinical-rail] h2,
+.workspace [data-clinical-rail] h3,
+.workspace [data-treatment-workspace] h2,
+.workspace [data-treatment-workspace] h3 {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.workspace [data-clinical-rail] [class*="text-[10px]"],
+.workspace [data-clinical-rail] [class*="text-[9px]"],
+.workspace [aria-label="TNM 작업공간"] [class*="text-[9px]"] {
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.workspace [data-technical-metadata],
+.workspace [data-technical-metadata] [class*="text-"] {
+  font-size: 10px;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.workspace [data-clinical-rail] > section {
+  box-shadow: none;
+}
+
+.workspace [data-clinical-rail] [class*="overflow-y-auto"] {
+  overflow-y: visible;
+  max-height: none;
+}

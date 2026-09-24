@@ -247,6 +247,13 @@ class TreatmentDecision(models.Model):
         OBSERVATION = "OBSERVATION", "경과관찰"
         OTHER = "OTHER", "기타"
 
+    REGIMEN_REQUIRED_TYPES = frozenset({
+        TreatmentType.CHEMOTHERAPY,
+        TreatmentType.TARGETED_THERAPY,
+        TreatmentType.IMMUNOTHERAPY,
+        TreatmentType.COMBINATION,
+    })
+
     clinical_result = models.OneToOneField(
         ClinicalResult, on_delete=models.CASCADE, primary_key=True, related_name="treatment_detail"
     )
@@ -262,6 +269,14 @@ class TreatmentDecision(models.Model):
     treatment_plan = models.TextField()
     targeted_therapy_plan = models.TextField(null=True, blank=True)
     rationale = models.TextField(null=True, blank=True)
+
+    @property
+    def requires_drug_prescription(self):
+        """Return whether this confirmed plan must continue through drug prescribing."""
+        return (
+            self.treatment_type in self.REGIMEN_REQUIRED_TYPES
+            or self.selected_regimen_id is not None
+        )
 
     class Meta:
         db_table = "treatment_decisions"

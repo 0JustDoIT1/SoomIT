@@ -10,8 +10,9 @@ from apps.clinical.views import (
     DoctorTreatmentDecisionAPIView as Save,
     DoctorTreatmentDecisionConfirmAPIView as Confirm,
 )
-from apps.clinical.models import Regimen, TreatmentRule
-from apps.clinical.serializers import TreatmentRuleCandidateSerializer
+from apps.cases.models import LungCancerCase
+from apps.clinical.models import ClinicalResult, Regimen, TreatmentDecision, TreatmentRule
+from apps.clinical.serializers import DoctorTreatmentDecisionSerializer, TreatmentRuleCandidateSerializer
 
 
 class TreatmentDecisionCandidateTests(SimpleTestCase):
@@ -164,6 +165,27 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
 
 
 class CandidateContractTests(SimpleTestCase):
+    def test_treatment_decision_response_exposes_server_workflow_state(self):
+        case = LungCancerCase(current_stage="PRESCRIPTION", case_status="ACTIVE")
+        clinical_result = ClinicalResult(
+            case=case,
+            workflow_stage="TREATMENT",
+            result_status="CONFIRMED",
+        )
+        decision = TreatmentDecision(
+            clinical_result=clinical_result,
+            ai_recommendation_action="NOT_USED",
+            treatment_type="OBSERVATION",
+            treatment_plan="Observation",
+        )
+
+        payload = DoctorTreatmentDecisionSerializer(decision).data
+
+        self.assertEqual(payload["decision_status"], "CONFIRMED")
+        self.assertEqual(payload["current_stage"], "PRESCRIPTION")
+        self.assertEqual(payload["case_status"], "ACTIVE")
+        self.assertFalse(payload["requires_prescription"])
+
     def test_queryset_order_and_response_contract(self):
         view = Candidates()
         r1 = Regimen(regimen_code="R1", regimen_name="R1", cancer_type="NSCLC")

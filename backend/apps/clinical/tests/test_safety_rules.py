@@ -219,3 +219,46 @@ class SafetyRuleTests(SimpleTestCase):
         )
         self.post()
         self.assertTrue(self.created(source_code="LAB_MISSING", result="WARNING"))
+
+    def test_clean_safety_check_transitions_to_validated(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
+
+    def test_unresolved_warning_keeps_prescription_in_draft_for_recheck(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.safety_results.filter.side_effect = lambda **kwargs: NS(
+            exists=lambda: kwargs.get("source_code__in") is not None,
+        )
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+
+    def test_block_result_keeps_prescription_in_draft(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+        self.safety_results.filter.side_effect = lambda **kwargs: NS(
+            exists=lambda: kwargs.get("result") == "BLOCK",
+        )
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+
+    def test_validated_prescription_can_run_safety_check_again(self):
+        self.prescription.prescription_status = "VALIDATED"
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[])
+
+        response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
+
+        self.assertEqual(response.status_code, 200)
+        self.safety_results.all.return_value.delete.assert_called_once()

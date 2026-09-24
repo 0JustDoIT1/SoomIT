@@ -154,7 +154,7 @@ export function CasePatientSidebar({
 
         {/* Filter */}
         <div
-          className="mt-2 grid grid-cols-[0.9fr_1.28fr_0.9fr] gap-1.5"
+          className="mt-2 grid grid-cols-[0.85fr_1fr_1.25fr] gap-1.5"
           role="group"
           aria-label="Case 상태 필터"
         >
@@ -321,7 +321,7 @@ function FilterButton({
       type="button"
       aria-pressed={active}
       onClick={onClick}
-      className={`flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-lg border px-2 text-[11px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
+      className={`flex h-10 min-w-0 items-center justify-center gap-1 rounded-lg border px-1 text-[10px] font-semibold transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
         active
           ? "border-blue-600 bg-blue-600 text-white shadow-sm shadow-blue-100"
           : "border-slate-200 bg-white text-slate-600 hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"

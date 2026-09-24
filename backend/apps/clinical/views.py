@@ -652,6 +652,7 @@ class DoctorTreatmentDecisionAPIView(PulmonologyWritePermissionMixin, APIView):
             TreatmentDecision.objects
             .select_related(
                 "clinical_result",
+                "clinical_result__case",
                 "selected_regimen",
             )
             .filter(
@@ -779,6 +780,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
             TreatmentDecision.objects
             .select_related(
                 "selected_regimen",
+                "clinical_result__case",
             )
             .filter(
                 clinical_result=clinical_result,
@@ -866,12 +868,15 @@ class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
             cases = cases.select_for_update(of=("self",))
         return cases.filter(id=case_id, primary_doctor=user, case_status="ACTIVE").first()
 
+    def get_readable_case(self, case_id, user):
+        return LungCancerCase.objects.filter(id=case_id, primary_doctor=user).first()
+
     # 처방 목록 조회
     @extend_schema(
         responses={200: DoctorPrescriptionSerializer(many=True)},
     )
     def get(self, request, case_id):
-        case = self.get_case(case_id, request.user)
+        case = self.get_readable_case(case_id, request.user)
 
         if case is None:
             return Response(
@@ -940,6 +945,12 @@ class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
         if treatment_decision is None:
             return Response(
                 {"detail": "확정된 치료 결정이 없습니다."},
+                status=400,
+            )
+
+        if not treatment_decision.requires_drug_prescription:
+            return Response(
+                {"detail": "비약물 치료계획에는 약물 처방을 생성하지 않습니다. 종료 또는 의뢰 처리를 진행해 주세요."},
                 status=400,
             )
 
@@ -1348,7 +1359,23 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
                 status=400,
             )
 
-        note = request.data.get("acknowledgment_note", "")
+        note = request.data.get("acknowledgment_note", "").strip()
+
+        if not note:
+            return Response(
+                {"detail": "WARNING 확인 사유를 입력해 주세요."},
+                status=400,
+            )
+
+        warning_results = warning_results.exclude(
+            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
+        )
+
+        if not warning_results.exists():
+            return Response(
+                {"detail": "재검사가 필요한 미해결 WARNING만 존재합니다."},
+                status=400,
+            )
 
         warning_results.update(
             acknowledged_by_user=request.user,
@@ -1503,9 +1530,9 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 status=404,
             )
 
-        if prescription.prescription_status != "DRAFT":
+        if prescription.prescription_status not in {"DRAFT", "VALIDATED"}:
             return Response(
-                {"detail": "DRAFT 상태의 처방만 Safety Check를 수행할 수 있습니다."},
+                {"detail": "DRAFT 또는 VALIDATED 상태의 처방만 Safety Check를 수행할 수 있습니다."},
                 status=400,
             )
 
@@ -1805,10 +1832,15 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
         )
 
         has_block = prescription.safety_check_results.filter(result="BLOCK").exists()
+        has_unresolved_warning = prescription.safety_check_results.filter(
+            result="WARNING",
+            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
+        ).exists()
 
-        if not has_block:
-            prescription.prescription_status = "VALIDATED"
-            prescription.save(update_fields=["prescription_status", "updated_at"])
+        prescription.prescription_status = (
+            "VALIDATED" if not has_block and not has_unresolved_warning else "DRAFT"
+        )
+        prescription.save(update_fields=["prescription_status", "updated_at"])
 
         prescription = (
             Prescription.objects

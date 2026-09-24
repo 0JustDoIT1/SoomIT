@@ -46,12 +46,16 @@ class DoctorExaminationOrderAPITests(TestCase):
     def post_order(self, order_type):
         return self.client.post(self.url, {"order_type": order_type, "priority": "NORMAL", "purpose": "Next examination", "clinical_note": ""}, format="json")
 
-    def prepare_prescription_stage(self, prescription_status=None):
+    def prepare_prescription_stage(
+        self,
+        prescription_status=None,
+        treatment_type=TreatmentDecision.TreatmentType.OBSERVATION,
+    ):
         result = self.confirm(WorkflowStage.TREATMENT)
         treatment_decision = TreatmentDecision.objects.create(
             clinical_result=result,
             ai_recommendation_action=TreatmentDecision.AiRecommendationAction.NOT_USED,
-            treatment_type=TreatmentDecision.TreatmentType.OBSERVATION,
+            treatment_type=treatment_type,
             treatment_plan="Follow the confirmed treatment plan.",
         )
         self.case.current_stage = WorkflowStage.PRESCRIPTION
@@ -485,6 +489,38 @@ class DoctorExaminationOrderAPITests(TestCase):
         repeated = self.client.post(url, payload, format="json")
         self.assertEqual(repeated.status_code, 404)
         self.assertEqual(ClinicianDecision.objects.filter(case=self.case).count(), 1)
+
+    def _assert_non_drug_treatment_can_close_without_prescription(self, treatment_type):
+        result = self.prepare_prescription_stage(treatment_type=treatment_type)
+        response = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": "CASE_CLOSED",
+                "source_clinical_result_id": str(result.id),
+                "reason": "Confirmed non-drug treatment plan",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.CLOSED)
+        self.assertFalse(Prescription.objects.filter(case=self.case).exists())
+
+    def test_surgery_can_close_without_a_prescription(self):
+        self._assert_non_drug_treatment_can_close_without_prescription(
+            TreatmentDecision.TreatmentType.SURGERY,
+        )
+
+    def test_radiation_can_close_without_a_prescription(self):
+        self._assert_non_drug_treatment_can_close_without_prescription(
+            TreatmentDecision.TreatmentType.RADIATION,
+        )
+
+    def test_observation_can_close_without_a_prescription(self):
+        self._assert_non_drug_treatment_can_close_without_prescription(
+            TreatmentDecision.TreatmentType.OBSERVATION,
+        )
 
     def test_workflow_referral_does_not_require_a_final_prescription(self):
         result = self.confirm(WorkflowStage.XRAY)

@@ -62,16 +62,8 @@ export function PathologyGeneReviewPanel({
   authorizedFetch,
 }: Props) {
   return (
-    <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-slate-200 px-4 py-2.5">
-        <div>
-          <p className="text-[10px] font-semibold text-blue-600">검사 결과 · 영상 작업공간</p>
-          <h1 className="mt-0.5 text-base font-bold text-slate-900">조직/유전자</h1>
-        </div>
-        <p className="text-right text-[10px] text-slate-500">병리과 확정 결과와 병리 AI 후보 및 원본 병리 근거를 확인합니다.</p>
-      </header>
-
-      <div className="grid min-h-0 flex-1 gap-2 bg-slate-100/70 p-2 xl:grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
+    <section aria-label="조직/유전자 작업공간" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"><h1 className="sr-only">조직/유전자</h1>
+      <div className="grid min-h-0 flex-1 gap-2 bg-slate-50 p-1 grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
         <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
           {caseId && apiBaseUrl && authorizedFetch ? (
             <CaseWsiEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stain="HE" fillHeight />
@@ -80,7 +72,7 @@ export function PathologyGeneReviewPanel({
           )}
         </div>
 
-        <aside className="min-h-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 [scrollbar-gutter:stable]" aria-label="병리 검사 결과 rail">
+        <aside data-clinical-rail className="min-h-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 [scrollbar-gutter:stable]" aria-label="병리 검사 결과 rail">
           <ResultReviewPanel
             stage="PATHOLOGY_GENE"
             clinicalResult={pathologyClinicalResult ?? geneClinicalResult}

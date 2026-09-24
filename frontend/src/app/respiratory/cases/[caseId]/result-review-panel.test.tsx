@@ -43,6 +43,13 @@ it("uses analysis and sync details instead of the duplicate CT review-status car
 });
 
 describe("ResultReviewPanel", () => {
+  it.each(["XRAY", "CT"])("sizes %s to its parent instead of a second viewport calculation", (stage) => {
+    const { container } = render(<ResultReviewPanel stage={stage} />);
+    expect(container.firstElementChild).toHaveClass("flex-1", "min-h-0", "h-full");
+    expect(container.firstElementChild?.className).not.toMatch(/100dvh|min-h-\[540px\]|max-h-\[780px\]/);
+    expect(container.querySelector("aside.overflow-y-auto")).toHaveClass("min-h-0", "overflow-y-auto");
+  });
+
   it("shows the specialist-confirmed result before the AI candidate", () => {
     render(<ResultReviewPanel stage="PET_CT_TNM" clinicalResult={{ workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_status_label: "확정", result_detail: { tnm: { t_category: "cT2", n_category: "cN1", m_category: "cM0", stage_group: "IIB" } } }} aiResult={{ analysis_type: "PET_CT_TNM_ANALYSIS", status: "SUCCEEDED", status_label: "성공", result_detail: { tnm: { predicted_t: "cT1", predicted_n: "cN0", predicted_m: "cM0", confidence: 0.82 } } }} />);
     const specialist = screen.getByRole("heading", { name: "호흡기내과 최종 판단" });

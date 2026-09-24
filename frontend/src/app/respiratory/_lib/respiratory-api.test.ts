@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { cancelExaminationOrder, createExaminationOrder, fetchExaminationOrders, updateExaminationOrder } from "./respiratory-api";
+import { cancelExaminationOrder, createExaminationOrder, createFollowUpPathologyOrder, fetchExaminationOrders, updateExaminationOrder } from "./respiratory-api";
 
 describe("examination order API", () => {
   it("uses the common orders endpoint for listing", async () => {
@@ -13,6 +13,14 @@ describe("examination order API", () => {
     await createExaminationOrder(authorizedFetch, "case-1", { order_type: "PET_CT_TNM", priority: "URGENT", purpose: "TNM 병기 평가", clinical_note: "CT 확정 결과 참고" });
     expect(authorizedFetch.mock.calls[0][0]).toContain("/api/doctor/cases/case-1/orders/");
     expect(JSON.parse((authorizedFetch.mock.calls[0][1] as RequestInit).body as string)).toEqual({ order_type: "PET_CT_TNM", priority: "URGENT", purpose: "TNM 병기 평가", clinical_note: "CT 확정 결과 참고" });
+  });
+
+  it("uses the existing follow-up pathology endpoint for a PD-L1 reorder", async () => {
+    const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ examination_order_id: "order-2", pathology_work_item_id: "work-item-2", order_type: "PDL1", order_status: "ORDERED" }), { status: 201 }));
+    await createFollowUpPathologyOrder(authorizedFetch, "case-1", { pathology_test_type: "PDL1", priority: "NORMAL", purpose: "Cancelled PD-L1 reorder", clinical_note: "" });
+    expect(authorizedFetch.mock.calls[0][0]).toContain("/api/doctor/cases/case-1/pathology-orders/");
+    expect((authorizedFetch.mock.calls[0][1] as RequestInit).method).toBe("POST");
+    expect(JSON.parse((authorizedFetch.mock.calls[0][1] as RequestInit).body as string)).toEqual({ pathology_test_type: "PDL1", priority: "NORMAL", purpose: "Cancelled PD-L1 reorder", clinical_note: "" });
   });
 
   it("updates an ordered examination through its order detail endpoint", async () => {

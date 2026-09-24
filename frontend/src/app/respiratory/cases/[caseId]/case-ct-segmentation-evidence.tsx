@@ -359,7 +359,7 @@ export function CaseCtSegmentationEvidence({
 
   if (loading) {
     return (
-      <div className="flex h-full min-h-[360px] items-center justify-center overflow-hidden rounded-md border border-slate-800 bg-[#050812]">
+      <div className="flex h-full min-h-0 items-center justify-center rounded-md border border-slate-800 bg-[#050812]">
         <div className="text-center">
           <div className="mx-auto h-8 w-8 animate-pulse rounded-full border border-slate-700 bg-slate-900" />
           <p className="mt-3 text-xs font-semibold text-slate-200">
@@ -377,7 +377,7 @@ export function CaseCtSegmentationEvidence({
     return (
       <div
         role="alert"
-        className="flex h-full min-h-[360px] items-center justify-center overflow-hidden rounded-md border border-rose-900/50 bg-[#050812]"
+        className="flex h-full min-h-0 items-center justify-center overflow-y-auto rounded-md border border-rose-900/50 bg-[#050812]"
       >
         <div className="max-w-sm px-6 text-center">
           <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full border border-rose-500/30 bg-rose-500/10 text-sm font-bold text-rose-300">

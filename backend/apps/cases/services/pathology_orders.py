@@ -67,12 +67,37 @@ def create_follow_up_pathology_order(
     )
 
     if order_type == ExaminationOrder.OrderType.PDL1:
-        if locked_case.current_stage != WorkflowStage.PATHOLOGY_GENE:
+        if locked_case.current_stage == WorkflowStage.PATHOLOGY_GENE:
+            if not has_pathology_gene_review_completed(locked_case):
+                raise PathologyOrderCreationError(
+                    "조직·유전자 검사 결과를 병리사가 의사에게 제출한 뒤 PD-L1 검사를 처방할 수 있습니다."
+                )
+        elif locked_case.current_stage == WorkflowStage.PDL1:
+            if ClinicalResult.objects.filter(
+                case=locked_case,
+                workflow_stage=WorkflowStage.PDL1,
+            ).exists():
+                raise PathologyOrderCreationError(
+                    "PD-L1 결과가 이미 생성되어 재오더할 수 없습니다."
+                )
+            if ExaminationOrder.objects.filter(
+                case=locked_case,
+                order_type=ExaminationOrder.OrderType.PDL1,
+                status=ExaminationOrder.Status.COMPLETED,
+            ).exists():
+                raise PathologyOrderCreationError(
+                    "완료된 PD-L1 검사의 분석 또는 병리과 검토가 끝날 때까지 재오더할 수 없습니다."
+                )
+            if not ExaminationOrder.objects.filter(
+                case=locked_case,
+                order_type=ExaminationOrder.OrderType.PDL1,
+                status=ExaminationOrder.Status.CANCELLED,
+            ).exists():
+                raise PathologyOrderCreationError(
+                    "취소된 PD-L1 오더가 있을 때만 재오더할 수 있습니다."
+                )
+        else:
             raise PathologyOrderCreationError("현재 진료 단계에서는 PD-L1 오더를 생성할 수 없습니다.")
-        if not has_pathology_gene_review_completed(locked_case):
-            raise PathologyOrderCreationError(
-                "조직·유전자 검사 결과를 병리사가 의사에게 제출한 뒤 PD-L1 검사를 처방할 수 있습니다."
-            )
 
     if has_active_pathology_order(locked_case, order_type):
         raise PathologyOrderCreationError(
