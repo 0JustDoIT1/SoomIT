@@ -26,12 +26,16 @@ class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
     def get(self, request, case_id):
         case = self.get_case(request, case_id)
         asset_id = request.query_params.get("image_asset_id")
+        series_instance_uid = request.query_params.get("series_instance_uid", "").strip()
         if not asset_id:
             return Response({"detail": "image_asset_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+        if not series_instance_uid:
+            return Response({"detail": "series_instance_uid is required."}, status=status.HTTP_400_BAD_REQUEST)
         asset = get_object_or_404(
             CaseImageAsset,
             id=asset_id,
             case=case,
+            series_instance_uid=series_instance_uid,
             image_type__in=[CaseImageAsset.ImageType.CT, CaseImageAsset.ImageType.PET],
         )
         annotations = ImageAnnotation.objects.filter(image_asset=asset).select_related("created_by_user", "clinical_result").order_by("created_at")

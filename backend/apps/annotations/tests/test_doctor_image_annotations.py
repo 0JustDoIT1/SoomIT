@@ -280,7 +280,10 @@ class DoctorImageAnnotationAPITests(TestCase):
         self.assertEqual(response.data["created_by_user_name"], self.doctor.name)
 
     def test_list_is_empty_then_scoped_to_requested_ct_or_pet_asset(self):
-        empty = self.client.get(self.list_url, {"image_asset_id": self.ct.id})
+        empty = self.client.get(self.list_url, {
+            "image_asset_id": self.ct.id,
+            "series_instance_uid": self.ct.series_instance_uid,
+        })
         self.assertEqual(empty.status_code, 200)
         self.assertEqual(empty.data, [])
 
@@ -310,8 +313,14 @@ class DoctorImageAnnotationAPITests(TestCase):
             created_by_user=self.doctor,
         )
 
-        ct_response = self.client.get(self.list_url, {"image_asset_id": self.ct.id})
-        pet_response = self.client.get(self.list_url, {"image_asset_id": self.pet.id})
+        ct_response = self.client.get(self.list_url, {
+            "image_asset_id": self.ct.id,
+            "series_instance_uid": self.ct.series_instance_uid,
+        })
+        pet_response = self.client.get(self.list_url, {
+            "image_asset_id": self.pet.id,
+            "series_instance_uid": self.pet.series_instance_uid,
+        })
         self.assertEqual(
             [row["id"] for row in ct_response.data],
             [str(ct_annotation.id), second_ct_response.data["id"]],
@@ -379,13 +388,26 @@ class DoctorImageAnnotationAPITests(TestCase):
         self.assertFalse(ImageAnnotation.objects.filter(id=annotation.id).exists())
         self.assertEqual(self.client.delete(url).status_code, 404)
         self.assertEqual(
-            self.client.get(self.list_url, {"image_asset_id": self.ct.id}).data,
+            self.client.get(self.list_url, {
+                "image_asset_id": self.ct.id,
+                "series_instance_uid": self.ct.series_instance_uid,
+            }).data,
             [],
         )
 
-    def test_requires_image_asset_query_parameter(self):
-        response = self.client.get(self.list_url)
-        self.assertEqual(response.status_code, 400)
+    def test_requires_asset_and_series_query_parameters(self):
+        self.assertEqual(self.client.get(self.list_url).status_code, 400)
+        self.assertEqual(
+            self.client.get(self.list_url, {"image_asset_id": self.ct.id}).status_code,
+            400,
+        )
+        self.assertEqual(
+            self.client.get(self.list_url, {
+                "image_asset_id": self.ct.id,
+                "series_instance_uid": "9.9.9.9",
+            }).status_code,
+            404,
+        )
 
     def test_denies_unauthenticated_and_non_pulmonology_user(self):
         self.client.credentials()
@@ -452,7 +474,10 @@ class DoctorImageAnnotationAPITests(TestCase):
                 )
                 self.assertEqual(response.status_code, 400)
                 self.assertEqual(
-                    self.client.get(self.list_url, {"image_asset_id": asset.id}).status_code,
+                    self.client.get(self.list_url, {
+                        "image_asset_id": asset.id,
+                        "series_instance_uid": asset.series_instance_uid,
+                    }).status_code,
                     404,
                 )
 

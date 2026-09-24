@@ -4,6 +4,13 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { ensureCornerstoneInitialized } from "../../../radiology/_lib/cornerstone-init";
 import { showToast } from "@/components/ui/toast/toast";
+import {
+  ImageAnnotationLoadError,
+  imageAnnotationRequestKey,
+  invalidateImageAnnotationRequest,
+  loadImageAnnotations,
+  shouldNotifyImageAnnotationLoadFailure,
+} from "./image-annotation-request";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Asset = { id: string; workflow_stage: string; image_type: string; file_format: string; status: string; series_instance_uid?: string | null };
@@ -24,12 +31,16 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [annotationLoading, setAnnotationLoading] = useState(false);
+  const [annotationLoadError, setAnnotationLoadError] = useState("");
   const [activeTool, setActiveTool] = useState<ToolMode>("WL");
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [annotationText, setAnnotationText] = useState("");
   const annotationSaveRef = useRef<(annotation: Omit<Annotation, "id">) => void>(() => undefined);
   const annotationUpdateRef = useRef<(annotationId: string, annotation: Omit<Annotation, "id">) => void>(() => undefined);
   const annotationTextRef = useRef("");
+  const assetCaseIdRef = useRef("");
+  const annotationRequestRef = useRef("");
   const asset = assets.find((item) => item.id === selectedAssetId) ?? null;
   const isTnm = stage === "PET_CT_TNM";
 
@@ -43,7 +54,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         if (!response.ok) throw new Error(message(payload, "영상 목록을 불러오지 못했습니다."));
         const nextAssets = (Array.isArray(payload) ? payload as Asset[] : []).filter((item) => item.workflow_stage === stage && item.status === "READY" && (item.image_type === "CT" || item.image_type === "PET"));
         if (!nextAssets.length) throw new Error("조회 가능한 DICOM Series가 없습니다.");
-        if (!controller.signal.aborted) { setAssets(nextAssets); setSelectedAssetId(nextAssets[0].id); }
+        if (!controller.signal.aborted) { assetCaseIdRef.current = caseId; setAssets(nextAssets); setSelectedAssetId(nextAssets[0].id); }
       } catch (cause) {
         if (!controller.signal.aborted) { setError(cause instanceof Error ? cause.message : "DICOM 조회 중 오류가 발생했습니다."); setLoading(false); }
       }
@@ -80,6 +91,9 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       const body: unknown = await response.json().catch(() => ({}));
       if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
       setAnnotations((current) => [...current, body as Annotation]);
+      if (asset.series_instance_uid) {
+        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+      }
       showToast.success("영상 주석을 저장했습니다.");
     } catch (error) {
       console.error(error);
@@ -95,12 +109,15 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       if (!response.ok) throw new Error("annotation delete failed");
       setAnnotations((current) => current.filter((annotation) => annotation.id !== selected.id));
       setSelectedAnnotationId(null);
+      if (asset?.series_instance_uid) {
+        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+      }
       showToast.success("영상 주석을 삭제했습니다.");
     } catch (error) {
       console.error(error);
       showToast.error("영상 주석 삭제에 실패했습니다.");
     }
-  }, [annotations, apiBaseUrl, authorizedFetch, caseId, selectedAnnotationId]);
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, selectedAnnotationId]);
 
   const updateAnnotation = useCallback(async (annotationId: string, annotation: Omit<Annotation, "id">) => {
     try {
@@ -110,12 +127,15 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       const body: unknown = await response.json().catch(() => ({}));
       if (!response.ok || !body || typeof body !== "object") throw new Error("annotation update failed");
       setAnnotations((current) => current.map((item) => item.id === annotationId ? body as Annotation : item));
+      if (asset?.series_instance_uid) {
+        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+      }
       showToast.success("영상 주석을 수정했습니다.");
     } catch (error) {
       console.error(error);
       showToast.error("영상 주석 수정에 실패했습니다.");
     }
-  }, [apiBaseUrl, authorizedFetch, caseId]);
+  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 
   useEffect(() => { annotationSaveRef.current = saveAnnotation; }, [saveAnnotation]);
   useEffect(() => { annotationUpdateRef.current = updateAnnotation; }, [updateAnnotation]);
@@ -126,21 +146,63 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   };
 
   useEffect(() => {
-    if (!asset) return;
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?image_asset_id=${asset.id}`, { signal: controller.signal });
-        const body: unknown = await response.json().catch(() => []);
-        if (!response.ok || !Array.isArray(body)) throw new Error("annotation load failed");
-        if (!controller.signal.aborted) setAnnotations(body as Annotation[]);
-      } catch (error) {
-        console.error(error);
-        if (!controller.signal.aborted) showToast.error("영상 주석을 불러오지 못했습니다.", { id: `pet-annotations-load-${asset.id}` });
-      }
-    })();
-    return () => controller.abort();
-  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+    const imageAssetId = asset?.id?.trim();
+    const seriesInstanceUid = asset?.series_instance_uid?.trim();
+    if (assetCaseIdRef.current !== caseId || !imageAssetId || !seriesInstanceUid) {
+      annotationRequestRef.current = "";
+      setAnnotations([]);
+      setSelectedAnnotationId(null);
+      setAnnotationLoading(false);
+      setAnnotationLoadError("");
+      return;
+    }
+
+    const requestKey = imageAnnotationRequestKey({ caseId, imageAssetId, seriesInstanceUid });
+    annotationRequestRef.current = requestKey;
+    let active = true;
+    setAnnotations([]);
+    setSelectedAnnotationId(null);
+    setAnnotationLoading(true);
+    setAnnotationLoadError("");
+
+    void loadImageAnnotations<Annotation>({
+      apiBaseUrl,
+      authorizedFetch,
+      caseId,
+      imageAssetId,
+      seriesInstanceUid,
+    })
+      .then((nextAnnotations) => {
+        if (!active || annotationRequestRef.current !== requestKey) return;
+        setAnnotations(nextAnnotations);
+      })
+      .catch((cause: unknown) => {
+        if (!active || annotationRequestRef.current !== requestKey) return;
+        const errorMessage = cause instanceof Error ? cause.message : "Annotation request failed.";
+        setAnnotationLoadError(errorMessage);
+        console.error("PET/CT annotation request failed", {
+          caseId,
+          imageAssetId,
+          seriesInstanceUid,
+          status: cause instanceof ImageAnnotationLoadError ? cause.status : null,
+          cause,
+        });
+        if (shouldNotifyImageAnnotationLoadFailure(requestKey)) {
+          showToast.error("영상 주석을 불러오지 못했습니다.", {
+            id: `pet-annotations-load-${requestKey}`,
+          });
+        }
+      })
+      .finally(() => {
+        if (active && annotationRequestRef.current === requestKey) {
+          setAnnotationLoading(false);
+        }
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [apiBaseUrl, asset?.id, asset?.series_instance_uid, authorizedFetch, caseId]);
 
   useEffect(() => {
     if (!asset || !uids[index] || !elementRef.current) return;
@@ -225,7 +287,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   return (
     <section ref={viewerFrameRef} className="relative grid h-full min-h-0 min-w-0 grid-rows-[48px_38px_minmax(0,1fr)_40px] overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
       <header className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 bg-[#0b1220] px-3">
-        <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-cyan-300">DICOM evidence</p><h2 className="truncate text-xs font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2></div>
+        <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-cyan-300">DICOM evidence</p><div className="flex items-center gap-2"><h2 className="truncate text-xs font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2>{annotationLoading && <span className="text-[8px] font-semibold text-slate-400">주석 로딩</span>}{annotationLoadError && <span className="text-[8px] font-semibold text-amber-300" title={annotationLoadError}>주석 조회 불가</span>}</div></div>
         <div className="flex shrink-0 items-center gap-1 text-[9px]">
           <ToolButton active label="1×1" title="현재 단일 Stack Viewport" />
           <ToolButton disabled label="2×2" title="현재 MPR·다중 Viewport는 지원하지 않습니다." />
