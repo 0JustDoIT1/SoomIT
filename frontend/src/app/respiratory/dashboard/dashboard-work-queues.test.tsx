@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDashboardReviewQueue, buildDashboardStageSummaries, buildDashboardWorkGroups, type DashboardCase, type DashboardCaseSnapshot } from "./dashboard-work-queues";
+import { buildDashboardAppointments, buildDashboardReviewQueue, buildDashboardStageSummaries, buildDashboardWorkGroups, type DashboardCase, type DashboardCaseSnapshot } from "./dashboard-work-queues";
 
 const cases: DashboardCase[] = [
   { id: "case-path", case_code: "CASE-1", patient_name: "환자 A", patient_code: "P1", current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" },
@@ -34,5 +34,38 @@ describe("dashboard work queues", () => {
     const summaries = buildDashboardStageSummaries(cases, snapshots);
     expect(summaries.find((item) => item.stage === "PATHOLOGY_GENE")).toEqual(expect.objectContaining({ total: 1, confirmationWaiting: 1 }));
     expect(summaries.find((item) => item.stage === "PDL1")).toEqual(expect.objectContaining({ total: 1, resultWaiting: 1 }));
+  });
+
+  it("merges refreshed patient appointments with existing examination-order events", () => {
+    const appointments = buildDashboardAppointments(cases, {
+      ...snapshots,
+      "case-pdl1": {
+        ...snapshots["case-pdl1"],
+        orders: [{
+          ...snapshots["case-pdl1"].orders[0],
+          scheduled_at: "2026-09-24T08:00:00+09:00",
+        }],
+      },
+    }, [
+      {
+        id: "appointment-1",
+        patient_code: "P9",
+        patient_name: "예약 환자",
+        case_code: null,
+        scheduled_at: "2026-09-24T09:00:00+09:00",
+        appointment_status: "REQUESTED",
+        appointment_status_label: "요청",
+        created_by_type: "PATIENT",
+      },
+    ]);
+
+    expect(appointments).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "order-1", orderType: "PDL1" }),
+      expect.objectContaining({
+        id: "patient-appointment-1",
+        orderType: "APPOINTMENT",
+        appointmentStatus: "REQUESTED",
+      }),
+    ]));
   });
 });

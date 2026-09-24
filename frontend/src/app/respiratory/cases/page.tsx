@@ -7,6 +7,7 @@ import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../_lib/respiratory-api";
 import {
   DashboardWorkQueues,
+  type DashboardPatientAppointment,
   type DashboardCaseSnapshot,
   type DashboardConsultation,
 } from "../dashboard/dashboard-work-queues";
@@ -83,6 +84,10 @@ export default function RespiratoryCasesPage() {
     DashboardConsultation[]
   >([]);
 
+  const [patientAppointments, setPatientAppointments] = useState<
+    DashboardPatientAppointment[]
+  >([]);
+
   /*
    * Dashboard 환자 진료 맵에 표시할 Case.
    *
@@ -156,6 +161,25 @@ export default function RespiratoryCasesPage() {
     },
     [authorizedFetch],
   );
+
+  const fetchPatientAppointments = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await authorizedFetch(
+        `${API_BASE_URL}/api/scheduling/doctor/appointments/`,
+        { signal },
+      );
+      if (!response.ok) return;
+      const data = await response.json();
+      if (Array.isArray(data)) {
+        setPatientAppointments(data as DashboardPatientAppointment[]);
+      }
+    } catch (error) {
+      // Keep the last successful calendar data when a polling request fails.
+      if (error instanceof DOMException && error.name === "AbortError") {
+        return;
+      }
+    }
+  }, [authorizedFetch]);
 
   /* ---------------------------------------------------------------------- */
   /* Cases                                                                  */
@@ -253,6 +277,49 @@ export default function RespiratoryCasesPage() {
       controller.abort();
     };
   }, [fetchCases]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    let disposed = false;
+    let polling = false;
+
+    const pollPatientAppointments = async (
+      signal?: AbortSignal,
+      force = false,
+    ) => {
+      if (disposed || polling || (!force && document.hidden)) {
+        return;
+      }
+
+      polling = true;
+      try {
+        await fetchPatientAppointments(signal);
+      } finally {
+        polling = false;
+      }
+    };
+
+    void pollPatientAppointments(controller.signal, true);
+
+    const interval = window.setInterval(() => {
+      void pollPatientAppointments(controller.signal);
+    }, 15_000);
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) {
+        void pollPatientAppointments(controller.signal);
+      }
+    };
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+      controller.abort();
+    };
+  }, [fetchPatientAppointments]);
 
   /* ---------------------------------------------------------------------- */
   /* Case polling                                                           */
@@ -913,6 +980,7 @@ export default function RespiratoryCasesPage() {
               snapshots={
                 caseSnapshots
               }
+              patientAppointments={patientAppointments}
               consultations={
                 consultations
               }

@@ -91,6 +91,17 @@ export type DashboardNotification = {
   read_at: string | null;
 };
 
+export type DashboardPatientAppointment = {
+  id: string;
+  patient_code: string;
+  patient_name: string;
+  case_code: string | null;
+  scheduled_at: string;
+  appointment_status: "REQUESTED" | "CONFIRMED";
+  appointment_status_label: string;
+  created_by_type: string;
+};
+
 export type DashboardQueueItem = {
   id: string;
   caseId: string;
@@ -615,9 +626,10 @@ function appointmentStatusClass(
   return "bg-slate-100 text-slate-600";
 }
 
-function buildDashboardAppointments(
+export function buildDashboardAppointments(
   cases: DashboardCase[],
   snapshots: Record<string, DashboardCaseSnapshot>,
+  patientAppointments: DashboardPatientAppointment[],
 ): DashboardAppointment[] {
   const caseById = new Map(
     cases.map((caseItem) => [caseItem.id, caseItem]),
@@ -657,6 +669,21 @@ function buildDashboardAppointments(
         status: order.status,
         appointmentStatus: order.appointment_status,
       });
+    });
+  });
+
+  patientAppointments.forEach((appointment) => {
+    appointments.push({
+      id: `patient-${appointment.id}`,
+      caseId: "",
+      caseCode: appointment.case_code ?? "",
+      patientName: appointment.patient_name || appointment.patient_code,
+      patientCode: appointment.patient_code,
+      orderType: "APPOINTMENT",
+      orderLabel: appointment.appointment_status === "CONFIRMED" ? "진료 예약" : "진료 예약 요청",
+      scheduledAt: appointment.scheduled_at,
+      status: appointment.appointment_status,
+      appointmentStatus: appointment.appointment_status,
     });
   });
 
@@ -832,6 +859,7 @@ export function DashboardWorkQueues({
   snapshots,
   consultations,
   notifications,
+  patientAppointments = [],
   unreadNotificationCount,
   selectedCaseId,
   onSelectCase,
@@ -844,6 +872,7 @@ export function DashboardWorkQueues({
   snapshots: Record<string, DashboardCaseSnapshot>;
   consultations: DashboardConsultation[];
   notifications: DashboardNotification[];
+  patientAppointments?: DashboardPatientAppointment[];
   unreadNotificationCount: number;
 
   /*
@@ -940,8 +969,8 @@ export function DashboardWorkQueues({
   );
 
   const appointments = useMemo(
-    () => buildDashboardAppointments(cases, snapshots),
-    [cases, snapshots],
+    () => buildDashboardAppointments(cases, snapshots, patientAppointments),
+    [cases, patientAppointments, snapshots],
   );
 
   const appointmentCountsByDate = useMemo(() => {
@@ -1431,10 +1460,9 @@ export function DashboardWorkQueues({
                         <button
                           key={appointment.id}
                           type="button"
-                          onClick={() =>
-                            onOpenCase(appointment.caseId)
-                          }
-                          className="group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition hover:border-blue-100 hover:bg-blue-50/60"
+                          disabled={!appointment.caseId}
+                          onClick={() => appointment.caseId && onOpenCase(appointment.caseId)}
+                          className="group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition hover:border-blue-100 hover:bg-blue-50/60 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent"
                         >
                           <span className="w-10 shrink-0 pt-0.5 text-[10px] font-bold tabular-nums text-slate-700">
                             {formatAppointmentTime(
