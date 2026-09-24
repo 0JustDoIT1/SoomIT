@@ -78,8 +78,10 @@ type TnmAnalysisResult = {
   completed_at?: string | null;
   result_detail: {
     ct?: {
+      overall_malignancy_risk?: number | string | null;
       nodules?: {
         nodule_no?: number;
+        detection_confidence?: number | string | null;
         malignancy_risk?: number | string | null;
         finding_payload?: {
           quantification?: {
@@ -88,6 +90,22 @@ type TnmAnalysisResult = {
             volume_mm3?: number | null;
             surface_area_mm2?: number | null;
             sphericity?: number | null;
+          };
+          texture?: {
+            prediction?: number | string | { pattern?: string | null } | null;
+            prediction_label?: string | null;
+          };
+          morphology?: {
+            spiculation?: { prediction?: string | null } | null;
+            lobulation?: { prediction?: string | null } | null;
+            prediction?: { spiculation?: string | null; lobulation?: string | null } | null;
+          };
+          malignancy?: {
+            prediction?: {
+              probability?: number | string | null;
+              malignancy_score?: number | string | null;
+              prediction?: string | null;
+            } | null;
           };
         } | null;
       }[];

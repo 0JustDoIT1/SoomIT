@@ -23,7 +23,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
   const ctDetail = stage === "CT" ? asRecord(asRecord(aiResult?.result_detail)?.ct) : null;
-  const hasCtAiData = ctDetail?.overall_malignancy_risk != null || (Array.isArray(ctDetail?.nodules) && ctDetail.nodules.length > 0);
+  const hasCtAiData = ctDetail !== null;
   const config = STAGE_CONFIG[stage] ?? { title: "검사·결과", description: "의료진 판독 결과와 AI 분석 후보를 구분해 확인합니다.", department: "담당 진료과" };
   const imaging = stage === "XRAY" || stage === "CT";
   const clinicalRole = imaging || stage === "PET_CT_TNM" ? "호흡기내과 최종 판단" : "병리과 판독";
@@ -103,22 +103,112 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
 function CtAiSummary({ detail }: { detail: unknown }) {
   const root = asRecord(detail);
   const ct = asRecord(root?.ct);
+  if (!ct) return null;
   const risk = ct?.overall_malignancy_risk;
-  const numericRisk = risk !== null && risk !== undefined && /^\d+(\.\d+)?$/.test(String(risk));
   const nodules = Array.isArray(ct?.nodules) ? ct.nodules : [];
-  if (risk == null && nodules.length === 0) return null;
-  return <div className="mx-4 mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-4">
-    <p className="text-xs font-semibold text-blue-800">CT AI 분석 요약</p>
-    <div className="mt-2 flex items-end justify-between gap-3">
-      <div><p className="text-[11px] text-slate-500">전체 악성 위험도</p><p className="mt-1 text-2xl font-bold text-rose-600">{numericRisk ? `${Number(risk).toFixed(2)}%` : risk == null ? "결과 없음" : String(risk)}</p></div>
-      <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-blue-700">검출 결절 {nodules.length}건</span>
+  return <div className="mx-3 my-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
+    <p className="text-[11px] font-semibold text-blue-800">CT AI 분석 결과</p>
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <CtSummaryValue label="악성 위험도" value={formatPercent(risk)} emphasis />
+      <CtSummaryValue label="결절 수" value={`${nodules.length}개`} />
     </div>
-    {nodules.length > 0 && <div className="mt-3 space-y-1.5 border-t border-blue-100 pt-3">{nodules.slice(0, 4).map((value, index) => {
-      const nodule = asRecord(value);
-      return <div key={`${nodule?.nodule_no ?? index}-${index}`} className="flex items-center justify-between gap-2 rounded-lg bg-white px-3 py-2 text-[11px]"><span className="font-bold text-slate-800">결절 {String(nodule?.nodule_no ?? index + 1)}</span><span className="text-slate-600">악성 위험도 {nodule?.malignancy_risk == null ? "결과 없음" : `${nodule.malignancy_risk}%`}</span><span className="text-slate-500">검출 신뢰도 {nodule?.detection_confidence == null ? "결과 없음" : `${(Number(nodule.detection_confidence) * 100).toFixed(1)}%`}</span></div>;
-    })}</div>}
+    {nodules.length > 0 ? <div className="mt-2 space-y-2">{nodules.map((value, index) => <CtNoduleDetail key={`${asRecord(value)?.nodule_no ?? index}-${index}`} value={value} index={index} />)}</div> : <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-white/70 px-3 py-3 text-center text-[10px] text-slate-500">검출된 결절이 없습니다.</div>}
     <p className="mt-3 text-[10px] leading-4 text-blue-800">AI 결과는 의료진 확정 판독과 함께 검토해야 합니다.</p>
   </div>;
+}
+
+function CtSummaryValue({ label, value, emphasis = false }: { label: string; value: string; emphasis?: boolean }) {
+  return <div className="min-w-0 rounded-md border border-blue-100 bg-white px-2.5 py-2"><p className="text-[9px] text-slate-500">{label}</p><p className={`mt-0.5 truncate font-bold ${emphasis ? "text-base text-rose-600" : "text-sm text-blue-700"}`}>{value}</p></div>;
+}
+
+function CtNoduleDetail({ value, index }: { value: unknown; index: number }) {
+  const nodule = asRecord(value);
+  const payload = asRecord(nodule?.finding_payload);
+  const quantification = asRecord(payload?.quantification);
+  const morphology = asRecord(payload?.morphology);
+  const texture = asRecord(payload?.texture);
+  const malignancy = asRecord(payload?.malignancy);
+  const malignancyPrediction = asRecord(malignancy?.prediction);
+  const morphologyPrediction = asRecord(morphology?.prediction);
+  const texturePrediction = asRecord(texture?.prediction);
+  const number = nodule?.nodule_no ?? index + 1;
+  const diameter = quantification?.maximum_3d_diameter_mm ?? quantification?.equivalent_diameter_mm;
+  const malignancyRisk = nodule?.malignancy_risk ?? malignancyPrediction?.malignancy_score ?? probabilityToPercent(malignancyPrediction?.probability);
+  const textureValue = texture?.prediction_label ?? texturePrediction?.pattern ?? (typeof texture?.prediction === "string" ? texture.prediction : null);
+  const spiculation = asRecord(morphology?.spiculation)?.prediction ?? morphologyPrediction?.spiculation;
+  const lobulation = asRecord(morphology?.lobulation)?.prediction ?? morphologyPrediction?.lobulation;
+  const malignancyLabel = formatMalignancyPrediction(malignancyPrediction?.prediction);
+
+  return <section data-testid={`ct-nodule-${number}`} className="rounded-md border border-slate-200 bg-white p-2.5">
+    <div className="flex items-center justify-between gap-2">
+      <h3 className="text-[11px] font-bold text-slate-800">결절 #{String(number)}</h3>
+      {malignancyLabel && <span className={`rounded-full px-2 py-0.5 text-[8px] font-semibold ${malignancyLabel === "악성 의심" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>{malignancyLabel}</span>}
+    </div>
+    <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-2">
+      <CtNoduleField label="직경" value={formatMeasurement(diameter, "mm")} />
+      <CtNoduleField label="부피" value={formatMeasurement(quantification?.volume_mm3, "mm³")} />
+      <CtNoduleField label="악성도" value={formatPercent(malignancyRisk)} />
+      <CtNoduleField label="질감(Texture)" value={formatTexture(textureValue)} />
+      <CtNoduleField label="Spiculation" value={formatPresence(spiculation)} />
+      <CtNoduleField label="Lobulation" value={formatPresence(lobulation)} />
+    </dl>
+  </section>;
+}
+
+function CtNoduleField({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0"><dt className="truncate text-[8px] text-slate-400" title={label}>{label}</dt><dd className="mt-0.5 break-words text-[9px] font-semibold leading-3.5 text-slate-700">{value}</dd></div>;
+}
+
+function formatMeasurement(value: unknown, unit: string) {
+  if (value === null || value === undefined || value === "") return "-";
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "-";
+  return `${number.toLocaleString("ko-KR", { maximumFractionDigits: 2 })} ${unit}`;
+}
+
+function formatPercent(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    const text = String(value).trim();
+    return ["NAN", "UNDEFINED", "NULL", "INFINITY", "-INFINITY"].includes(text.toUpperCase()) ? "-" : text;
+  }
+  return `${number.toFixed(2)}%`;
+}
+
+function probabilityToPercent(value: unknown) {
+  if (value === null || value === undefined || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number * 100 : null;
+}
+
+function formatTexture(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  const labels: Record<string, string> = {
+    SOLID: "고형(Solid)",
+    PART_SOLID: "부분고형(Part-solid)",
+    GGO: "간유리(GGO)",
+    GROUND_GLASS: "간유리(GGO)",
+  };
+  const normalized = String(value).trim().toUpperCase();
+  return labels[normalized] ?? String(value);
+}
+
+function formatPresence(value: unknown) {
+  if (value === null || value === undefined || value === "") return "-";
+  if (typeof value === "boolean") return value ? "있음" : "없음";
+  const normalized = String(value).trim().toUpperCase();
+  if (["POSITIVE", "PRESENT", "TRUE", "YES"].includes(normalized)) return "있음";
+  if (["NEGATIVE", "ABSENT", "FALSE", "NO"].includes(normalized)) return "없음";
+  if (["INDETERMINATE", "UNKNOWN"].includes(normalized)) return "판정불가";
+  return String(value);
+}
+
+function formatMalignancyPrediction(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : "";
+  if (normalized === "MALIGNANT") return "악성 의심";
+  if (normalized === "BENIGN") return "양성 의심";
+  return "";
 }
 
 function SourcePanel({ eyebrow, title, meta, tone, children, compact = false }: { eyebrow: string; title: string; meta: string; tone: "specialist" | "ai"; children: React.ReactNode; compact?: boolean }) {

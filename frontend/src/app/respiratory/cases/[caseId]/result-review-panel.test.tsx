@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ResultReviewPanel } from "./result-review-panel";
 
@@ -76,6 +76,70 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText("HIGH")).toBeTruthy();
     screen.getByRole("button", { name: "이 결과 다시 시도" }).click();
     expect(onRetryClinical).toHaveBeenCalledOnce();
+  });
+
+  it("shows every CT AI nodule with the detailed payload fields", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{
+      analysis_type: "CT_ANALYSIS",
+      status: "SUCCEEDED",
+      result_detail: { ct: { overall_malignancy_risk: "93.11", nodules: [
+        {
+          nodule_no: 1,
+          malignancy_risk: "93.11",
+          finding_payload: {
+            quantification: { maximum_3d_diameter_mm: 28.8, volume_mm3: 6834 },
+            texture: { prediction_label: "SOLID" },
+            morphology: { spiculation: { prediction: "NEGATIVE" }, lobulation: { prediction: "POSITIVE" } },
+            malignancy: { prediction: { prediction: "MALIGNANT", probability: 0.9311 } },
+          },
+        },
+        {
+          nodule_no: 2,
+          malignancy_risk: 12,
+          finding_payload: {
+            quantification: { equivalent_diameter_mm: 4.25 },
+            texture: { prediction: { pattern: "GROUND_GLASS" } },
+            morphology: { spiculation: { prediction: "POSITIVE" }, lobulation: { prediction: "NEGATIVE" } },
+            malignancy: { prediction: { prediction: "BENIGN" } },
+          },
+        },
+      ] } },
+    }} />);
+
+    expect(screen.getByText("CT AI 분석 결과")).toBeTruthy();
+    expect(screen.getByText("2개")).toBeTruthy();
+    const first = within(screen.getByTestId("ct-nodule-1"));
+    expect(first.getByText("28.8 mm")).toBeTruthy();
+    expect(first.getByText("6,834 mm³")).toBeTruthy();
+    expect(first.getByText("93.11%")).toBeTruthy();
+    expect(first.getByText("고형(Solid)")).toBeTruthy();
+    expect(first.getByText("없음")).toBeTruthy();
+    expect(first.getByText("있음")).toBeTruthy();
+    expect(first.getByText("악성 의심")).toBeTruthy();
+    const second = within(screen.getByTestId("ct-nodule-2"));
+    expect(second.getByText("4.25 mm")).toBeTruthy();
+    expect(second.getByText("간유리(GGO)")).toBeTruthy();
+    expect(second.getByText("-")).toBeTruthy();
+    expect(second.getByText("양성 의심")).toBeTruthy();
+  });
+
+  it("distinguishes a successful zero-nodule CT result from an AI loading error", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: null, nodules: [] } } }} />);
+
+    expect(screen.getByText("0개")).toBeTruthy();
+    expect(screen.getByText("검출된 결절이 없습니다.")).toBeTruthy();
+    expect(screen.queryByText("현재 검사에 연결된 AI 분석 후보가 없습니다.")).toBeNull();
+  });
+
+  it("renders one CT nodule safely when detailed values are missing", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: "NaN", nodules: [{ nodule_no: 1, malignancy_risk: null, finding_payload: { quantification: { maximum_3d_diameter_mm: null, volume_mm3: null } } }] } } }} />);
+
+    expect(screen.getByText("1개")).toBeTruthy();
+    const nodule = within(screen.getByTestId("ct-nodule-1"));
+    expect(nodule.getByText("결절 #1")).toBeTruthy();
+    expect(nodule.getAllByText("-")).toHaveLength(6);
+    expect(screen.queryByText("NaN")).toBeNull();
+    expect(screen.queryByText("null")).toBeNull();
   });
 
   it("retries the AI panel independently", () => {
