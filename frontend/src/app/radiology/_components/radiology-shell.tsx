@@ -37,7 +37,7 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen min-w-0 flex-col bg-slate-50 text-slate-900">
+    <div className="radiology-cursor flex min-h-screen min-w-0 flex-col bg-slate-50 text-slate-900">
       <header className="relative isolate shrink-0 border-b border-violet-100 bg-gradient-to-r from-violet-100/80 via-blue-50 to-emerald-50/50 before:pointer-events-none before:absolute before:inset-y-0 before:right-[4%] before:z-[-1] before:w-[52%] before:bg-[url('/images/radiology-ct-header.png')] before:bg-cover before:bg-[center_right] before:bg-no-repeat before:opacity-50 before:content-['']">
         <div className="mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
           <div>

@@ -1480,13 +1480,13 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(draft.source_image_asset, self.image_asset)
         self.assertEqual(draft.reviewed_ai_result.ai_analysis_id, analysis.id)
         self.assertEqual(draft.pathology_detail.subtype, "LUAD")
-        review = PathologyWorkItem.objects.get(
-            case=self.case,
-            examination_order=self.pathology_order,
-            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        self.assertFalse(
+            PathologyWorkItem.objects.filter(
+                case=self.case,
+                examination_order=self.pathology_order,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            ).exists()
         )
-        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
-        self.assertEqual(review.wsi_id, self.wsi.id)
 
     @patch("apps.pathology.tasks.request_pathology_prediction")
     def test_pathology_gene_task_preserves_existing_draft(self, prediction):
@@ -1515,13 +1515,12 @@ class PathologyReadAPITestCase(APITestCase):
             ).count(),
             1,
         )
-        self.assertEqual(
+        self.assertFalse(
             PathologyWorkItem.objects.filter(
                 case=self.case,
                 examination_order=self.pathology_order,
                 task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
-            ).count(),
-            1,
+            ).exists()
         )
 
     @patch("apps.pathology.tasks.request_pathology_prediction")
@@ -1553,7 +1552,7 @@ class PathologyReadAPITestCase(APITestCase):
 
     @patch("apps.pathology.tasks.request_pdl1_prediction")
     @patch("apps.pathology.tasks.download_pdl1_annotation_bytes", return_value=b"annotation")
-    def test_pdl1_task_creates_draft_and_diagnostic_review_after_ai_succeeds(self, annotation, prediction):
+    def test_pdl1_task_creates_draft_without_diagnostic_review_after_ai_succeeds(self, annotation, prediction):
         order = ExaminationOrder.objects.create(
             case=self.case,
             order_type=ExaminationOrder.OrderType.PDL1,
@@ -1622,21 +1621,20 @@ class PathologyReadAPITestCase(APITestCase):
             workflow_stage=WorkflowStage.PDL1,
         )
         self.assertEqual(draft.result_status, ClinicalResult.ResultStatus.DRAFT)
-        review = PathologyWorkItem.objects.get(
-            case=self.case,
-            examination_order=order,
-            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
-        )
-        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
-        self.assertEqual(review.wsi_id, wsi.id)
-        self.assertEqual(run_pdl1_analysis(str(analysis.id)), "already_completed")
-        self.assertEqual(
+        self.assertFalse(
             PathologyWorkItem.objects.filter(
                 case=self.case,
                 examination_order=order,
                 task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
-            ).count(),
-            1,
+            ).exists()
+        )
+        self.assertEqual(run_pdl1_analysis(str(analysis.id)), "already_completed")
+        self.assertFalse(
+            PathologyWorkItem.objects.filter(
+                case=self.case,
+                examination_order=order,
+                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            ).exists()
         )
 
     def test_workstation_excludes_analysis_for_noncurrent_he_wsi(self):

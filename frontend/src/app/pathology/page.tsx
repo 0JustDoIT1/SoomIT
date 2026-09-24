@@ -5,6 +5,7 @@ import Image from "next/image";
 import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
 import { showToast } from "@/components/ui/toast/toast";
+import { formatPatientSex } from "@/lib/patient-display";
 
 import {
   fetchPathologyCaseWorkflow,
@@ -262,13 +263,19 @@ function AnalysisProgress({
 
   return (
     <div className="mt-4 rounded-lg border-l-2 border-[#3446B8] bg-[#F1F3FF] px-3 py-3">
-      <p className="text-xs font-semibold text-[#3446B8]">{label ?? "분석 중"}</p>
-
-      <div className="mt-2 h-1.5 overflow-hidden bg-blue-100">
-        <div className="h-full w-1/2 animate-pulse bg-[#3446B8]" />
+      <div className="flex items-center gap-2">
+        <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-[#DDE2F7] border-t-[#3446B8]" aria-hidden="true" />
+        <p className="text-xs font-semibold text-[#3446B8]">{label ?? (status === "PENDING" ? "분석 요청을 준비하고 있습니다" : "AI 분석을 진행하고 있습니다")}</p>
       </div>
+      <p className="mt-2 text-xs text-slate-500">AI 분석이 완료될 때까지 잠시만 기다려 주세요.</p>
     </div>
   );
+}
+
+function diagnosticReviewDisplayStatus(status: string | null | undefined) {
+  if (status === "PENDING") return "의사 검토 대기";
+  if (status === "IN_PROGRESS") return "의사 검토 중";
+  return "분석 결과를 호흡기내과 의사에게 제출합니다.";
 }
 
 function AnalysisStatus({
@@ -324,7 +331,7 @@ function PatientSummary({
     ["환자코드", item.patient.patient_code],
     [
       "성별 / 생년월일",
-      `${item.patient.sex || "-"} / ${item.patient.birth_date || "-"}`,
+      `${formatPatientSex(item.patient.sex)} / ${item.patient.birth_date || "-"}`,
     ],
     ["Case Code", item.case.case_code || "-"],
     ["현재 검사", item.order_type_label ?? "-"],
@@ -335,38 +342,23 @@ function PatientSummary({
   return (
     <section
       aria-labelledby="pathology-selected-patient-heading"
-      className="min-h-0 overflow-y-auto rounded-xl border border-[#DDE2F7] bg-white shadow-sm"
+      className="min-h-0 overflow-y-auto bg-gradient-to-b from-violet-50/50 to-blue-50/30 p-4"
     >
-      <div className="border-b border-[#E2E5F2] bg-[#F8F8FF] px-4 py-3">
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-          선택 환자
-        </p>
-
-        <div className="mt-1 flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h2
-              id="pathology-selected-patient-heading"
-              className="text-lg font-bold text-slate-900"
-            >
-              {item.patient.name}
-            </h2>
-
-            <p className="text-xs text-slate-500">
-              {item.patient.patient_code}
-            </p>
+      <div className="flex items-center gap-3 rounded-t-2xl border border-violet-100 bg-gradient-to-r from-white to-violet-50/70 px-5 py-4 shadow-sm">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-500">선택 환자</p>
+          <div className="mt-1 flex min-w-0 items-baseline gap-2">
+            <h2 id="pathology-selected-patient-heading" className="truncate text-lg font-bold text-slate-900">{item.patient.name}</h2>
+            <span className="shrink-0 rounded-full bg-white px-2 py-0.5 text-xs text-slate-500">{item.patient.patient_code}</span>
           </div>
-
-          <span className="shrink-0 whitespace-nowrap rounded-full border border-[#CDD3EE] bg-white px-2.5 py-1 text-[11px] font-semibold text-[#3446B8]">
-            {workflowDisplayStatus(item)}
-          </span>
         </div>
       </div>
 
-      <dl className="grid grid-cols-2 gap-x-4 gap-y-4 px-4 py-4 text-xs">
+      <dl className="grid gap-x-4 gap-y-3 border-x border-violet-100 bg-white px-5 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
         {summaryRows.map(([label, value]) => (
           <div key={label}>
             <dt className="text-[11px] text-slate-400">{label}</dt>
-            <dd className="mt-1 break-words font-semibold text-slate-800">
+            <dd className="mt-1 break-words font-medium text-slate-800">
               {value}
             </dd>
           </div>
@@ -399,48 +391,35 @@ function SelectedCaseOverview({
   staffName: string;
 }) {
   return (
-    <section className="overflow-hidden border-b border-[#E2E5F2] bg-white">
-      <div className="relative flex flex-wrap items-start justify-between gap-4 overflow-hidden border-b border-[#E2E5F2] bg-[#F8F8FF] px-5 py-4">
-        <div>
-          <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-[#5364C7]">
-            선택 환자 정보
+    <section className="overflow-hidden rounded-xl border border-violet-100 bg-white px-5 py-3 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-[11px] font-bold uppercase tracking-wide text-[#6674B8]">
+            선택 환자 병리검사
           </p>
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-            <h1 className="text-xl font-extrabold text-slate-900">
-              {workflow.patient.name}
-            </h1>
-            <span className="text-xs text-slate-500">
-              {workflow.patient.patient_code}
-            </span>
+          <div className="mt-0.5 flex min-w-0 items-baseline gap-2">
+            <h1 className="truncate text-lg font-bold text-slate-900">{workflow.patient.name}</h1>
+            <span className="shrink-0 text-xs font-medium text-slate-500">{workflow.patient.patient_code}</span>
           </div>
+          <p className="mt-1 text-xs font-medium leading-4 text-slate-500">
+            <span>{formatPatientSex(workflow.patient.sex)}</span>
+            <span className="mx-1.5 text-slate-400">·</span>
+            <span>{workflow.patient.birth_date || "-"}</span>
+            <span className="mx-1.5 text-slate-400">·</span>
+            <span>{workflow.case.case_code || "-"}</span>
+          </p>
         </div>
-
-        {item ? (
-          <span className="rounded-full border border-[#CDD3EE] bg-white px-3 py-1.5 text-xs font-semibold text-[#3446B8] shadow-sm">
-            {workflowDisplayStatus(item)}
-          </span>
-        ) : null}
-      </div>
-
-      <dl className="grid gap-x-6 gap-y-4 px-5 py-4 text-xs sm:grid-cols-2 lg:grid-cols-4">
-        {[
-          ["생년월일", workflow.patient.birth_date || "-"],
-          ["성별", workflow.patient.sex || "-"],
-          ["Case Code", workflow.case.case_code || "-"],
-          ["현재 단계", workflow.case.current_stage || "-"],
-          ["Case 상태", workflow.case.case_status || "-"],
-          ["담당자", staffName],
-          ["의뢰 의사", item?.requesting_doctor?.name ?? "-"],
-          ["현재 검사", item?.order_type_label ?? "-"],
-        ].map(([label, value]) => (
-          <div key={label} className="border-l border-[#E8EAF5] pl-3">
-            <dt className="text-[11px] text-slate-400">{label}</dt>
-            <dd className={`mt-1 break-words ${label === "?꾩옱 ?④퀎" || label === "?꾩옱 寃??" ? "font-semibold text-slate-900" : "font-medium text-slate-700"}`}>
-              {value}
-            </dd>
+        <dl className="flex shrink-0 items-center gap-x-3 text-xs">
+          <div>
+            <dt className="text-[11px] text-slate-400">담당자</dt>
+            <dd className="mt-1 font-semibold text-slate-800">{staffName || "-"}</dd>
           </div>
-        ))}
-      </dl>
+          <div>
+            <dt className="text-[11px] text-slate-400">의뢰 의사</dt>
+            <dd className="mt-1 font-semibold text-slate-800">{item?.requesting_doctor?.name ?? "-"}</dd>
+          </div>
+        </dl>
+      </div>
     </section>
   );
 }
@@ -593,9 +572,9 @@ function Pdl1AnalysisResults({
   modelRevision: string;
 }) {
   const probabilityEntries = [
-    { key: "class_0", label: "Class 0", value: result.probabilities.class_0 },
-    { key: "class_1", label: "Class 1", value: result.probabilities.class_1 },
-    { key: "class_2", label: "Class 2", value: result.probabilities.class_2 },
+    { key: "class_0", label: "Class 0", rangeLabel: "PD-L1 발현 구간 · TPS < 1%", value: result.probabilities.class_0 },
+    { key: "class_1", label: "Class 1", rangeLabel: "PD-L1 발현 구간 · TPS 1–49%", value: result.probabilities.class_1 },
+    { key: "class_2", label: "Class 2", rangeLabel: "PD-L1 발현 구간 · TPS ≥ 50%", value: result.probabilities.class_2 },
   ];
   const comparableValues = probabilityEntries.map(({ value }) => {
     const numericValue = Number(value);
@@ -627,7 +606,7 @@ function Pdl1AnalysisResults({
       <section>
         <h4 className="text-xs font-semibold text-slate-700">Class별 확률</h4>
         <dl className="mt-2 grid grid-cols-3 gap-2 sm:gap-3">
-          {probabilityEntries.map(({ key, label, value }, index) => {
+          {probabilityEntries.map(({ key, label, rangeLabel, value }, index) => {
             const isHighest = highestProbabilityIndexes.has(index);
             return (
               <div
@@ -637,6 +616,7 @@ function Pdl1AnalysisResults({
                 <dt className={`text-xs ${isHighest ? "font-semibold text-[#5364C7]" : "text-slate-500"}`}>
                   {label}
                 </dt>
+                <p className="mt-0.5 text-[10px] font-normal leading-4 text-slate-400">{rangeLabel}</p>
                 <dd className={`mt-1.5 text-base ${isHighest ? "font-bold text-[#3446B8]" : "font-medium text-slate-700"}`}>
                   {percent(value)}
                 </dd>
@@ -1110,11 +1090,6 @@ function WorkArea({
     : isPdl1
       ? "PD-L1 검사"
       : "검사 종류 미확인";
-  const testDescription = isPathologyGene
-    ? "조직·유전자 분석"
-    : isPdl1
-      ? "PD-L1 TPS 분석"
-      : "현재 오더의 검사 종류를 확인할 수 없습니다.";
   const workflowSteps = [
     {
       label: "조직데이터",
@@ -1166,20 +1141,11 @@ function WorkArea({
     <section className="overflow-hidden border-b border-[#E2E5F2] bg-white last:border-b-0">
       <header className="relative flex flex-wrap items-start justify-between gap-3 overflow-hidden border-b border-[#DDE2F7] bg-[#F8F8FF] px-5 py-4">
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-            병리 분석 Workstation
-          </p>
-
-          <h2 className="mt-1 text-lg font-bold text-[#3446B8]">
-            {String(sectionNumber).padStart(2, "0")} · {testTitle}
+          <h2 className="text-lg font-bold leading-6 text-[#6670B8]">
+            {String(sectionNumber).padStart(2, "0")} {testTitle}
           </h2>
-
-          <p className="mt-1 text-xs text-slate-500">
-            {testDescription} · {item.patient.name} ·{" "}
-            {item.specimen?.specimen_code ?? "검체 미연결"}
-          </p>
         </div>
-        <span className="rounded-full border border-[#DDE2F7] bg-white px-2.5 py-1 text-xs font-semibold text-[#3446B8]">
+        <span className="rounded-full bg-[#F1EFFB] px-2.5 py-1 text-xs font-semibold text-[#6670B8] ring-1 ring-inset ring-[#D9D6EE]">
           {workflowDisplayStatus(item)}
         </span>
       </header>
@@ -1188,31 +1154,31 @@ function WorkArea({
         {isKnownTestType ? (
           <ol
             aria-label={`${testTitle} workflow`}
-            className="grid overflow-visible rounded-lg border border-[#DDE2F7] bg-white sm:grid-cols-4"
+            className="relative grid grid-cols-4 gap-1 rounded-xl border border-violet-100 bg-gradient-to-r from-violet-50/70 via-white to-blue-50/70 p-2"
           >
             {workflowSteps.map((step, index) => (
               <li
                 key={step.label}
-                className={`relative flex items-center gap-3 border-b border-[#E2E5F2] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 ${indicatorWorkflowStepIndex === index ? "pr-12" : ""} ${
-                  indicatorWorkflowStepIndex === index
-                    ? "border-violet-200 bg-violet-50/70"
-                    : "bg-white"
-                }`}
+                className={`relative flex w-full min-w-0 min-h-[70px] flex-col justify-center overflow-visible rounded-xl border py-3 pl-2 pr-6 transition-colors ${indicatorWorkflowStepIndex === index ? "border-[#7566C4] bg-[#DDD7FA] text-[#43358A] shadow-[0_2px_8px_rgba(91,76,160,0.12)]" : step.completed ? "border-[#C7BFEA] bg-[#F1EEFF] text-[#6252A6]" : "border-slate-100 bg-white/70 text-slate-400"} ${indicatorWorkflowStepIndex === index ? "pr-10" : ""}`}
               >
                 <span
-                  className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${
+                  className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold ${
                     indicatorWorkflowStepIndex === index
-                      ? "border border-violet-300 bg-violet-100 text-violet-800"
-                      : "border border-[#CDD3EE] bg-white text-slate-400"
+                      ? "bg-[#B2A5E5] text-[#43358A]"
+                      : step.completed
+                        ? "bg-[#DCD5F5] text-[#6252A6]"
+                        : "bg-slate-100 text-slate-400"
                   }`}
                 >
                   {String(index + 1).padStart(2, "0")}
                 </span>
                 <span
-                  className={`text-xs font-semibold ${
+                    className={`mt-1 text-xs font-semibold ${
                     indicatorWorkflowStepIndex === index
-                      ? "font-semibold text-violet-800"
-                      : "font-medium text-slate-500"
+                      ? "font-bold text-[#43358A]"
+                      : step.completed
+                        ? "font-semibold text-[#6252A6]"
+                        : "font-medium text-slate-500"
                   }`}
                 >
                   {step.label}
@@ -1495,6 +1461,7 @@ function WorkArea({
                 <select value={pdl1RoiLayer} disabled={uploadingPdl1Input || pdl1InputReady} onChange={(event) => setPdl1RoiLayer(event.target.value as "Tumor" | "Tumor-JS")} className="mt-2 block rounded border border-slate-300 bg-white px-2 py-1 disabled:bg-slate-100">
                   <option value="Tumor">Tumor</option><option value="Tumor-JS">Tumor-JS</option>
                 </select>
+                <span className="mt-1 block text-[11px] font-normal text-slate-400">HALO annotation 내부 ROI layer 이름과 일치하는 항목을 선택하세요.</span>
               </label>
               <div className="flex flex-wrap items-center justify-between gap-3 text-xs">
                 <p className="text-slate-500">{pdl1InputReady ? "PD-L1 입력 파일이 서버에 등록되었습니다." : pdl1WsiFile || pdl1AnnotationFile ? `선택 파일: ${[pdl1WsiFile?.name, pdl1AnnotationFile?.name].filter(Boolean).join(" · ")}` : "업로드할 WSI와 HALO annotation 파일을 선택하세요."}</p>
@@ -1589,10 +1556,8 @@ function WorkArea({
             <div>
               <p className="text-sm font-semibold text-slate-800">
                 {item.workflow_status === "REVIEW_COMPLETED"
-                  ? "호흡기내과 확정 완료"
-                  : alreadySubmitted
-                    ? "의사에게 제출 완료"
-                    : "분석 결과를 호흡기내과 의사에게 제출합니다."}
+                  ? "의사 검토 완료"
+                  : diagnosticReviewDisplayStatus(item.diagnostic_review_status)}
               </p>
               <p className="mt-1 text-xs text-slate-500">
                 {alreadySubmitted
@@ -1609,7 +1574,7 @@ function WorkArea({
               {submittingReview
                 ? "제출 중"
                 : alreadySubmitted
-                  ? "의사에게 제출 완료"
+                  ? diagnosticReviewDisplayStatus(item.diagnostic_review_status)
                   : "의사에게 제출"}
             </button>
           </section>
@@ -1757,10 +1722,8 @@ function WorkArea({
               <div>
                 <p className="text-sm font-semibold text-slate-700">
                   {item.workflow_status === "REVIEW_COMPLETED"
-                    ? "호흡기내과 확정 완료"
-                    : alreadySubmitted
-                      ? "의사에게 제출 완료"
-                      : "분석 결과를 호흡기내과 의사에게 제출합니다."}
+                    ? "의사 검토 완료"
+                    : diagnosticReviewDisplayStatus(item.diagnostic_review_status)}
                 </p>
                 <p className="mt-1 text-xs text-slate-500">
                   {alreadySubmitted
@@ -1786,7 +1749,7 @@ function WorkArea({
                   {submittingReview
                     ? "제출 중"
                     : alreadySubmitted
-                      ? "의사에게 제출 완료"
+                      ? diagnosticReviewDisplayStatus(item.diagnostic_review_status)
                       : "의사에게 제출"}
                 </button>
               </div>
@@ -1873,6 +1836,11 @@ export default function PathologyDashboardPage() {
           : [];
 
         setItems(nextItems);
+
+        setSelectedItem((currentItem) => {
+          if (!currentItem) return null;
+          return nextItems.find((item) => item.case_id === currentItem.case_id) ?? currentItem;
+        });
 
         setTotalCount(
           typeof data?.count === "number"
@@ -2005,7 +1973,6 @@ export default function PathologyDashboardPage() {
     setError("");
     setExamFilter(nextFilter);
     setPage(1);
-    setSelectedId(null);
   };
 
   const changeWorkflowStatusFilter = (
@@ -2021,7 +1988,6 @@ export default function PathologyDashboardPage() {
     setError("");
     setWorkflowStatusFilter(nextFilter);
     setPage(1);
-    setSelectedId(null);
   };
 
   const changeTab = (nextTab: Tab) => {
@@ -2388,14 +2354,16 @@ export default function PathologyDashboardPage() {
                 staffName={pathologyStaffName}
               />
               {currentWorkflowOrder ? (
-                <WorkArea
-                  key={currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}
-                  item={currentWorkflowOrder}
-                  sectionNumber={1}
-                  onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
-                  onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
-                  onGeneAnalysisCompleted={refreshCurrentWorkflow}
-                />
+                <div className="mt-5">
+                  <WorkArea
+                    key={currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}
+                    item={currentWorkflowOrder}
+                    sectionNumber={1}
+                    onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                    onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                    onGeneAnalysisCompleted={refreshCurrentWorkflow}
+                  />
+                </div>
               ) : selectedWorkflow.orders.length === 0 ? (
                 <StateMessage
                   variant="empty"

@@ -6,6 +6,7 @@ import { RecentPatients, useRecentPatients, type RecentPatient } from "@/compone
 
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
+import { formatPatientSex } from "@/lib/patient-display";
 
 import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
 import { RadiologyCompletedHistory } from "./_components/radiology-completed-history";
@@ -142,7 +143,7 @@ function RadiologyCaseDetail({
               <span className="ml-2 text-sm font-medium text-slate-500">{workflow.patient.patient_code}</span>
             </h2>
             <p className="mt-1 text-xs text-slate-500">
-              {workflow.patient.sex} · {workflow.patient.birth_date} · {workflow.case.case_code}
+              {formatPatientSex(workflow.patient.sex)} · {workflow.patient.birth_date} · {workflow.case.case_code}
             </p>
           </div>
           <div className="text-right text-xs text-slate-500">
@@ -200,13 +201,25 @@ export default function RadiologyWorklistPage() {
   }
 
   function handleFiltersChange(nextFilters: RadiologyWorklistFilters) {
-    setRecentSelection(null);
+    if (selectedItem) {
+      setRecentSelection({
+        case_id: selectedItem.case.id,
+        patient_name: selectedItem.patient.name,
+        birth_date: selectedItem.patient.birth_date,
+      });
+    }
     setCurrentPage(1);
     setFilters(nextFilters);
   }
 
   function handleWorkflowStatusFilterChange(nextStatus: string) {
-    setRecentSelection(null);
+    if (selectedItem) {
+      setRecentSelection({
+        case_id: selectedItem.case.id,
+        patient_name: selectedItem.patient.name,
+        birth_date: selectedItem.patient.birth_date,
+      });
+    }
     setCurrentPage(1);
     setWorkflowStatusFilter(nextStatus);
   }

@@ -36,6 +36,12 @@ function getStoredUserName() {
   }
 }
 
+function getTodayLabel() {
+  const today = new Date();
+  const weekdays = ["일", "월", "화", "수", "목", "금", "토"];
+  return `${String(today.getMonth() + 1).padStart(2, "0")}.${String(today.getDate()).padStart(2, "0")} (${weekdays[today.getDay()]})`;
+}
+
 export default function CoordinatorLayout({
   children,
 }: {
@@ -62,7 +68,7 @@ export default function CoordinatorLayout({
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="coordinator-cursor min-h-screen bg-slate-50">
       {/* 상단 고정 영역 */}
       <header className="sticky top-0 z-50 bg-white">
         {/* 1. Header */}
@@ -100,29 +106,7 @@ export default function CoordinatorLayout({
 
             {/* 우측 */}
             <div className="ml-auto flex items-center gap-3 sm:gap-4">
-              {/* 알림 - 기능은 추후 연결 */}
-              <button
-                type="button"
-                className="relative flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#6B7280] transition hover:bg-[#F8EEF3] hover:text-[#D96B91]"
-                aria-label="알림"
-              >
-                <svg
-                  width="19"
-                  height="19"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.8"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
-                  <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                </svg>
-
-                {/* 알림이 생기면 숫자로 변경 */}
-                <span className="absolute right-[7px] top-[7px] h-1.5 w-1.5 rounded-full bg-[#D96B91]" />
-              </button>
+              <span className="text-xs text-slate-400">{getTodayLabel()}</span>
 
               <div className="text-right">
                 <p className="text-sm font-bold text-[#243653]">
