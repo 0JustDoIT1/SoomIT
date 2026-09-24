@@ -24,7 +24,6 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
   static const Color _textPrimary = Color(0xFF172033);
   static const Color _textSecondary = Color(0xFF748198);
   static const Color _border = Color(0xFFE3EBF3);
-  static const Color _softBlue = Color(0xFFEAF6FF);
 
   bool _termsAgreed = false;
   bool _privacyAgreed = false;
