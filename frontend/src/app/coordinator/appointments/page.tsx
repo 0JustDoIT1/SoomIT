@@ -879,7 +879,7 @@ export default function AppointmentsPage() {
 
                     {doctors.map((doctor) => (
                       <th
-                        key={doctor}
+                        key={doctor.id}
                         className="min-w-0 border-l border-[#F7E5EB] px-1 py-2 text-center sm:px-2"
                       >
                         <p className="text-sm font-semibold text-slate-800">
@@ -901,10 +901,10 @@ export default function AppointmentsPage() {
                         {time}
                       </td>
 
-                      {doctors.map(({ name: doctor }) => {
+                      {doctors.map((doctor) => {
                         const appointment =
                           getSlotAppointment(
-                            doctor,
+                            doctor.name,
                             selectedDate,
                             time
                           );
@@ -915,13 +915,13 @@ export default function AppointmentsPage() {
                         );
 
                         if (loading) {
-                          return <td key={`${doctor}-${time}`} className="border-l border-slate-100 px-1 py-1 sm:px-1.5"><SkeletonBlock className="min-h-[38px] w-full" /></td>;
+                          return <td key={`${doctor.id}-${time}`} className="border-l border-slate-100 px-1 py-1 sm:px-1.5"><SkeletonBlock className="min-h-[38px] w-full" /></td>;
                         }
 
                         if (appointment) {
                           return (
                             <td
-                              key={`${doctor}-${time}`}
+                              key={`${doctor.id}-${time}`}
                               className="min-w-0 border-l border-slate-100 px-1 py-1 sm:px-1.5"
                             >
                               <button
@@ -962,7 +962,7 @@ export default function AppointmentsPage() {
 
                         return (
                           <td
-                            key={`${doctor}-${time}`}
+                            key={`${doctor.id}-${time}`}
                             className="min-w-0 border-l border-slate-100 px-1 py-1 sm:px-1.5"
                           >
                             <div className="min-h-[38px] min-w-0" aria-hidden="true" />
