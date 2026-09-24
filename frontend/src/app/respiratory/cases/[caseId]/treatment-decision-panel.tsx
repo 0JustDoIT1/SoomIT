@@ -28,6 +28,7 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
   const submittingRef = useRef(false);
 
   useEffect(() => {
@@ -59,25 +60,64 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
     return () => { active = false; };
   }, [apiBaseUrl, authorizedFetch, caseId]);
 
-  const saveAndConfirm = async () => {
-    if (!actionable || confirmed || submittingRef.current || !treatmentType || !plan.trim()) return;
+  const treatmentPayload = () => ({
+    selected_regimen: regimenRequired ? selected || null : null,
+    treatment_type: treatmentType,
+    ai_recommendation_action: aiAction,
+    treatment_plan: plan.trim(),
+    targeted_therapy_plan: targetedPlan.trim() || null,
+    rationale: rationale.trim() || null,
+  });
+
+  const saveDraftRequest = async (notifyChange: boolean) => {
+    const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-decision/`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(treatmentPayload()),
+    });
+    const payload = await response.json().catch(() => ({})) as TreatmentDecision & { detail?: string };
+    if (!response.ok) throw new Error(payload.detail || "치료계획 저장에 실패했습니다.");
+    setDecisionStatus(payload.decision_status ?? "DRAFT");
+    setSelected(payload.selected_regimen ?? "");
+    setSelectedRegimenDetail(payload.selected_regimen_detail ?? null);
+    if (notifyChange) onTreatmentChanged?.(payload, false);
+    return payload;
+  };
+
+  const saveDraft = async () => {
+    if (!actionable || confirmed || submittingRef.current || !canSave) return;
     submittingRef.current = true;
-    setBusy(true); setError("");
+    setBusy(true); setError(""); setMessage("");
+    const toastId = `case-treatment-draft-${caseId}`;
+    showToast.info("치료계획 DRAFT를 저장하고 있습니다.", { id: toastId });
+    try {
+      await saveDraftRequest(true);
+      setMessage("치료계획 DRAFT가 저장되었습니다.");
+      showToast.success("치료계획 DRAFT가 저장되었습니다.", { id: toastId });
+    } catch (caught) {
+      console.error(caught);
+      const detail = caught instanceof Error ? caught.message : "치료계획 저장에 실패했습니다.";
+      setError(detail);
+      showToast.error(detail, { id: toastId });
+    } finally {
+      submittingRef.current = false; setBusy(false);
+    }
+  };
+
+  const saveAndConfirm = async () => {
+    if (!actionable || confirmed || submittingRef.current || !canSave) return;
+    submittingRef.current = true;
+    setBusy(true); setError(""); setMessage("");
     const toastId = `case-treatment-confirm-${caseId}`;
     let saved = false;
+    let savedDecision: TreatmentDecision | null = null;
     showToast.info("치료계획을 저장하고 있습니다.", { id: toastId });
     try {
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-decision/`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selected_regimen: selected || null, treatment_type: treatmentType, ai_recommendation_action: aiAction, treatment_plan: plan.trim(), targeted_therapy_plan: targetedPlan.trim() || null, rationale: rationale.trim() || null }),
-      });
-      const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.detail || "치료결정 처리에 실패했습니다.");
+      savedDecision = await saveDraftRequest(false);
       saved = true;
       const confirmResponse = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-decision/confirm/`, { method: "POST", headers: { "Content-Type": "application/json" } });
-      const confirmedPayload = await confirmResponse.json().catch(() => ({}));
+      const confirmedPayload = await confirmResponse.json().catch(() => ({})) as TreatmentDecision & { detail?: string };
       if (!confirmResponse.ok) throw new Error(confirmedPayload.detail || "치료계획 확정에 실패했습니다.");
-      const confirmedDecision = confirmedPayload as TreatmentDecision;
+      const confirmedDecision = confirmedPayload;
       setConfirmed(true);
       setDecisionStatus("CONFIRMED");
       setOpen(false);
@@ -86,9 +126,12 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
       else onTreatmentChanged?.(confirmedDecision, true);
     } catch (caught) {
       console.error(caught);
-      const message = saved ? "치료계획은 저장되었지만 확정에 실패했습니다." : "치료계획 저장에 실패했습니다.";
-      setError(message);
-      showToast.error(message, { id: toastId });
+      if (savedDecision) onTreatmentChanged?.(savedDecision, false);
+      const prefix = saved ? "치료계획은 저장되었지만 확정에 실패했습니다." : "치료계획 저장에 실패했습니다.";
+      const detail = caught instanceof Error ? caught.message : "";
+      const errorMessage = detail && !prefix.includes(detail) ? `${prefix} ${detail}` : prefix;
+      setError(errorMessage);
+      showToast.error(errorMessage, { id: toastId });
     }
     finally { submittingRef.current = false; setBusy(false); }
   };
@@ -104,17 +147,19 @@ export function TreatmentDecisionPanel({ actionable = true, waitingMessage, case
       {(treatmentType || selectedRegimenDetail || targetedPlan || rationale) && <TreatmentDecisionDetails treatmentType={nextLabel(treatmentType, TYPES)} aiAction={aiAction} regimen={selectedRegimenDetail} targetedPlan={targetedPlan} rationale={rationale} />}
       {!confirmed && <section className="mt-3 border-t border-slate-200 pt-3"><h3 className="text-sm font-semibold">Regimen 후보</h3>{candidates.length ? candidates.map(candidate => <div key={candidate.id} className="border-b border-slate-100 py-2 text-xs"><p className="font-semibold text-slate-800">{candidate.regimen_detail.regimen_name}</p><p className="mt-1 text-slate-600">{candidate.match_reasons.join(" · ") || "매칭 근거 없음"}</p><p className="mt-1 text-[10px] text-slate-400">{candidate.evidence_source ?? "근거 출처 정보 없음"}</p></div>) : <p className="py-2 text-xs text-slate-500">현재 조건과 일치하는 치료요법 후보가 없습니다.</p>}</section>}</div><div className="shrink-0 border-t border-slate-200 pt-2"><DecisionStatus error={!open ? error : undefined} message={confirmed ? "치료계획 확정 완료" : undefined} />
       {actionable && !confirmed && <button type="button" onClick={() => setOpen(true)} className={decisionTriggerClass + " mt-2 w-full"}>결과 입력 및 처리</button>}</div>
-      {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. 저장 후 확정하여 처방 단계로 진행합니다." busy={busy} error={error} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
+      {open && <DecisionModal title="치료계획 입력 및 처리" description="확정 임상 결과를 근거로 치료계획을 입력하세요. DRAFT로 저장하거나 최종 확정하여 처방 단계로 진행할 수 있습니다." busy={busy} error={error} message={message} primaryLabel="치료계획 확정 및 처방 진행" disabled={!actionable || !canSave || confirmed} onSubmit={() => void saveAndConfirm()} onClose={() => { if (!submittingRef.current) setOpen(false); }}>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => { const nextTreatmentType = event.target.value; setTreatmentType(nextTreatmentType); if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true); }} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="text-xs font-semibold text-slate-700">치료 유형<select value={treatmentType} disabled={busy} onChange={(event) => { const nextTreatmentType = event.target.value; setTreatmentType(nextTreatmentType); if (REGIMEN_REQUIRED_TYPES.has(nextTreatmentType)) setEvidenceOpen(true); else { setSelected(""); setSelectedRegimenDetail(null); } }} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="">선택</option>{TYPES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label className="text-xs font-semibold text-slate-700">AI 추천 반영<select value={aiAction} disabled={busy} onChange={(event) => setAiAction(event.target.value)} className="mt-1 w-full rounded border border-slate-300 bg-white p-2 text-sm"><option value="NOT_USED">미사용</option><option value="ACCEPTED">수용</option><option value="MODIFIED">수정</option><option value="REJECTED">거부</option></select></label></div>
       <label className="mt-3 block text-xs font-semibold text-slate-700">치료 계획<textarea value={plan} disabled={busy} onChange={(event) => setPlan(event.target.value)} rows={3} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>
       {regimenRequired && !selected && <p className="mt-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">선택한 치료 유형은 Regimen을 선택한 후 치료계획을 확정할 수 있습니다.</p>}
       <DecisionMethodSelect value="CONFIRM" onChange={() => undefined} options={[{ value: "CONFIRM", label: "치료계획 확정 및 처방 진행" }]} />
       <details open={evidenceOpen} onToggle={(event) => setEvidenceOpen(event.currentTarget.open)}><summary className="cursor-pointer text-xs text-slate-600">치료요법 후보 및 추가 근거{regimenRequired ? " · Regimen 선택 필수" : ""}</summary>
-      <div className="mt-4 space-y-2"><p className="text-xs font-semibold text-slate-700">치료요법 후보</p>{candidates.length === 0 ? <p className="rounded bg-slate-50 p-3 text-xs text-slate-500">현재 조건과 일치하는 치료요법 후보가 없습니다.</p> : candidates.map((candidate) => <button type="button" key={candidate.id} disabled={busy} onClick={() => setSelected(candidate.regimen_detail.id)} className={`block w-full rounded border p-3 text-left ${selected === candidate.regimen_detail.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}><p className="text-sm font-semibold">{candidate.regimen_detail.regimen_name} <span className="font-normal text-slate-500">({candidate.regimen_detail.regimen_code})</span></p><p className="mt-1 text-xs text-slate-500">{candidate.match_reasons.join(" · ") || "매칭 근거 없음"}</p><p className="mt-1 text-[11px] text-slate-400">{candidate.evidence_source ?? "근거 출처 정보 없음"}</p></button>)}</div>
+      <div className="mt-4 space-y-2"><p className="text-xs font-semibold text-slate-700">치료요법 후보</p>{!regimenRequired ? <p className="rounded bg-slate-50 p-3 text-xs text-slate-500">선택한 비약물 치료는 Regimen과 약물 처방이 필요하지 않습니다.</p> : candidates.length === 0 ? <p className="rounded bg-slate-50 p-3 text-xs text-slate-500">현재 조건과 일치하는 치료요법 후보가 없습니다.</p> : candidates.map((candidate) => <button type="button" key={candidate.id} disabled={busy} onClick={() => { setSelected(candidate.regimen_detail.id); setSelectedRegimenDetail(candidate.regimen_detail); }} className={`block w-full rounded border p-3 text-left ${selected === candidate.regimen_detail.id ? "border-emerald-500 bg-emerald-50" : "border-slate-200"}`}><p className="text-sm font-semibold">{candidate.regimen_detail.regimen_name} <span className="font-normal text-slate-500">({candidate.regimen_detail.regimen_code})</span></p><p className="mt-1 text-xs text-slate-500">{candidate.match_reasons.join(" · ") || "매칭 근거 없음"}</p><p className="mt-1 text-[11px] text-slate-400">{candidate.evidence_source ?? "근거 출처 정보 없음"}</p></button>)}</div>
       <label className="mt-3 block text-xs font-semibold text-slate-700">표적치료 계획 <span className="font-normal text-slate-400">(선택)</span><textarea value={targetedPlan} disabled={busy} onChange={(event) => setTargetedPlan(event.target.value)} rows={2} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>
       <label className="mt-3 block text-xs font-semibold text-slate-700">결정 근거 <span className="font-normal text-slate-400">(선택)</span><textarea value={rationale} disabled={busy} onChange={(event) => setRationale(event.target.value)} rows={2} className="mt-1 w-full resize-none rounded border border-slate-300 p-2 text-sm" /></label>
       </details>
+
+      <button type="button" disabled={busy || !canSave || confirmed} onClick={() => void saveDraft()} className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">치료계획 DRAFT 저장</button>
 
       </DecisionModal>}
     </section>

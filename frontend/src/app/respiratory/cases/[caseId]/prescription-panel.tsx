@@ -24,7 +24,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
   const [cycleNumber, setCycleNumber] = useState("1"); const [phase, setPhase] = useState("INDUCTION"); const [cycleStartDate, setCycleStartDate] = useState("");
 
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true); setError("");
     try { const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`); const d = await r.json().catch(() => ([])); if (!r.ok) throw new Error(d.detail || "처방 목록을 불러오지 못했습니다."); setPrescriptions(d as Prescription[]); }
     catch (e) { setError(e instanceof Error ? e.message : "처방 목록을 불러오지 못했습니다."); }
     finally { setLoading(false); }

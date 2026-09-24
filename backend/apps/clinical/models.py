@@ -273,10 +273,10 @@ class TreatmentDecision(models.Model):
     @property
     def requires_drug_prescription(self):
         """Return whether this confirmed plan must continue through drug prescribing."""
-        return (
-            self.treatment_type in self.REGIMEN_REQUIRED_TYPES
-            or self.selected_regimen_id is not None
-        )
+        # Treatment type is the workflow source of truth.  A stale regimen left
+        # on a legacy non-drug draft must not force surgery/radiation/observation
+        # down the medication-prescription path.
+        return self.treatment_type in self.REGIMEN_REQUIRED_TYPES
 
     class Meta:
         db_table = "treatment_decisions"

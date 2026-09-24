@@ -669,6 +669,24 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
             "clinical_result",
         ]
 
+    def validate(self, attrs):
+        treatment_type = attrs.get(
+            "treatment_type",
+            getattr(self.instance, "treatment_type", None),
+        )
+        selected_regimen = attrs.get(
+            "selected_regimen",
+            getattr(self.instance, "selected_regimen", None),
+        )
+        if (
+            selected_regimen is not None
+            and treatment_type not in TreatmentDecision.REGIMEN_REQUIRED_TYPES
+        ):
+            raise serializers.ValidationError({
+                "selected_regimen": "비약물 치료 유형에는 Regimen을 선택할 수 없습니다.",
+            })
+        return attrs
+
 from .models import Prescription, PrescriptionItem, SafetyCheckResult
 
 

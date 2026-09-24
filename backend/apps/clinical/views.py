@@ -846,15 +846,8 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 status=404,
             )
 
-        regimen_required_types = {
-            "CHEMOTHERAPY",
-            "TARGETED_THERAPY",
-            "IMMUNOTHERAPY",
-            "COMBINATION",
-        }
-
         if (
-            treatment_decision.treatment_type in regimen_required_types
+            treatment_decision.treatment_type in TreatmentDecision.REGIMEN_REQUIRED_TYPES
             and treatment_decision.selected_regimen is None
         ):
             return Response(
@@ -1493,6 +1486,12 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
             return Response(
                 {"detail": "처방을 찾을 수 없습니다."},
                 status=404,
+            )
+
+        if prescription.case.current_stage != WorkflowStage.PRESCRIPTION:
+            return Response(
+                {"detail": "처방 단계에서만 처방 약물 정보를 수정할 수 있습니다."},
+                status=400,
             )
 
         if prescription.prescription_status not in {"DRAFT", "VALIDATED"}:

@@ -2054,8 +2054,19 @@ export default function RespiratoryCaseDetailPage() {
               caseId={caseId}
               apiBaseUrl={API_BASE_URL}
               authorizedFetch={authorizedFetch}
+              onTreatmentChanged={(decision) => {
+                setCaseTreatmentDecision(decision as CaseTreatmentDecision);
+                setCaseTreatmentForm({
+                  treatment_type: decision.treatment_type ?? "",
+                  selected_regimen: decision.selected_regimen ?? "",
+                  treatment_plan: decision.treatment_plan ?? "",
+                  targeted_therapy_plan: decision.targeted_therapy_plan ?? "",
+                  rationale: decision.rationale ?? "",
+                });
+              }}
               onTreatmentConfirmed={(decision) => {
                 setTreatmentView({ caseId, tab: "TREATMENT" });
+                setCaseTreatmentDecision(decision as CaseTreatmentDecision);
                 applyWorkflowDecisionServerState({
                   message: "",
                   closed: false,

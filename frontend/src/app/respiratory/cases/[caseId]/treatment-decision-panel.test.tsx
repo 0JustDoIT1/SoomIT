@@ -56,6 +56,47 @@ it("saves the current treatment plan before confirming and only notifies complet
   expect(onTreatmentChanged).not.toHaveBeenCalled();
 });
 
+it("saves a treatment DRAFT without confirming and reports it to the case workspace", async () => {
+  const authorizedFetch = setupFetch().mockResolvedValueOnce(response({ ...initial, treatment_plan: "저장된 초안" }));
+  const onTreatmentChanged = vi.fn();
+  const onTreatmentConfirmed = vi.fn();
+  render(<TreatmentDecisionPanel {...props} authorizedFetch={authorizedFetch} onTreatmentChanged={onTreatmentChanged} onTreatmentConfirmed={onTreatmentConfirmed} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "결과 입력 및 처리" }));
+  fireEvent.change(screen.getByLabelText("치료 계획"), { target: { value: "저장된 초안" } });
+  fireEvent.click(screen.getByRole("button", { name: "치료계획 DRAFT 저장" }));
+
+  expect(await screen.findByRole("status")).toHaveTextContent("치료계획 DRAFT가 저장되었습니다.");
+  expect(authorizedFetch).toHaveBeenCalledTimes(3);
+  expect(onTreatmentChanged).toHaveBeenCalledWith(expect.objectContaining({
+    decision_status: "DRAFT",
+    treatment_plan: "저장된 초안",
+  }), false);
+  expect(onTreatmentConfirmed).not.toHaveBeenCalled();
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+});
+
+it("clears a drug regimen when the draft changes to non-drug treatment", async () => {
+  const candidate = { id: "rule-1", match_reasons: [], regimen_detail: { id: "regimen-1", regimen_code: "R1", regimen_name: "Regimen 1" } };
+  const drugDraft = { ...initial, treatment_type: "CHEMOTHERAPY", selected_regimen: "regimen-1", selected_regimen_detail: candidate.regimen_detail };
+  const authorizedFetch = vi.fn()
+    .mockResolvedValueOnce(response([candidate]))
+    .mockResolvedValueOnce(response(drugDraft))
+    .mockResolvedValueOnce(response({ ...initial, selected_regimen: null, selected_regimen_detail: null }));
+  render(<TreatmentDecisionPanel {...props} authorizedFetch={authorizedFetch} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "결과 입력 및 처리" }));
+  fireEvent.change(screen.getByLabelText("치료 유형"), { target: { value: "SURGERY" } });
+  expect(screen.getByText("선택한 비약물 치료는 Regimen과 약물 처방이 필요하지 않습니다.")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "치료계획 DRAFT 저장" }));
+
+  await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(3));
+  expect(JSON.parse(authorizedFetch.mock.calls[2][1].body)).toMatchObject({
+    treatment_type: "SURGERY",
+    selected_regimen: null,
+  });
+});
+
 it("keeps the panel and error after confirmation fails and allows a successful retry", async () => {
   const authorizedFetch = setupFetch()
     .mockResolvedValueOnce(response(initial))
@@ -71,7 +112,7 @@ it("keeps the panel and error after confirmation fails and allows a successful r
   expect(await screen.findByRole("alert")).toHaveTextContent("치료계획은 저장되었지만 확정에 실패했습니다.");
   expect(plan).toBeInTheDocument();
   expect(plan).toHaveValue("관찰");
-  expect(onTreatmentChanged).not.toHaveBeenCalled();
+  expect(onTreatmentChanged).toHaveBeenCalledWith(expect.objectContaining({ decision_status: "DRAFT" }), false);
   expect(onTreatmentConfirmed).not.toHaveBeenCalled();
   fireEvent.click(screen.getByRole("button", { name: "치료계획 확정 및 처방 진행" }));
   await waitFor(() => expect(onTreatmentConfirmed).toHaveBeenCalledOnce());

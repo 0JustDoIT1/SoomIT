@@ -165,6 +165,25 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
 
 
 class CandidateContractTests(SimpleTestCase):
+    def test_non_drug_treatment_ignores_a_stale_legacy_regimen(self):
+        decision = TreatmentDecision(
+            treatment_type=TreatmentDecision.TreatmentType.OBSERVATION,
+        )
+        decision.selected_regimen_id = "legacy-regimen"
+
+        self.assertFalse(decision.requires_drug_prescription)
+
+    def test_non_drug_draft_rejects_an_explicit_regimen(self):
+        serializer = DoctorTreatmentDecisionSerializer()
+
+        with self.assertRaises(ValidationError) as error:
+            serializer.validate({
+                "treatment_type": TreatmentDecision.TreatmentType.SURGERY,
+                "selected_regimen": object(),
+            })
+
+        self.assertIn("selected_regimen", error.exception.detail)
+
     def test_treatment_decision_response_exposes_server_workflow_state(self):
         case = LungCancerCase(current_stage="PRESCRIPTION", case_status="ACTIVE")
         clinical_result = ClinicalResult(
