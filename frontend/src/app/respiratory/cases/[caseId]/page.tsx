@@ -1199,13 +1199,11 @@ export default function RespiratoryCaseDetailPage() {
   const hasPdl1Result = tnmClinicalResults.some(
     (result) => result.workflow_stage === "PDL1",
   );
-  const canCreatePdl1Order = selectedCase?.current_stage === "PATHOLOGY_GENE"
-    && Boolean(confirmedPathologyResult)
-    && !activePdl1Order
-    && !confirmedPdl1Result;
-  const canRetryPdl1StageTransition = selectedCase?.current_stage === "PATHOLOGY_GENE"
-    && Boolean(confirmedPathologyResult)
-    && Boolean(activePdl1Order)
+  const pathologyResultForPdl1 = submittedPathologyResult?.workflow_stage === "PATHOLOGY_GENE"
+    ? submittedPathologyResult
+    : confirmedPathologyResult;
+  const canAdvancePathologyToPdl1 = selectedCase?.current_stage === "PATHOLOGY_GENE"
+    && Boolean(pathologyResultForPdl1)
     && !confirmedPdl1Result;
   const canReorderCancelledPdl1 = selectedCase?.current_stage === "PDL1"
     && !activePdl1Order
@@ -1968,7 +1966,7 @@ export default function RespiratoryCaseDetailPage() {
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}
-            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && submittedPathologyResult && (
+            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === "PDL1" && selectedInfoMenu === selectedCase.current_stage && submittedPathologyResult?.workflow_stage === "PDL1" && (
               <button
                 type="button"
                 disabled={confirmingPathologyResult}
@@ -1978,8 +1976,8 @@ export default function RespiratoryCaseDetailPage() {
                 {confirmingPathologyResult ? "확정 중" : "결과 확인 및 확정"}
               </button>
             )}
-            {selectedCase?.case_status === "ACTIVE" && (canCreatePdl1Order || canRetryPdl1StageTransition) && ["PATHOLOGY_GENE", "PDL1"].includes(selectedInfoMenu) && (
-              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" triggerLabel={canRetryPdl1StageTransition ? "PD-L1 단계 전환 재시도" : "PD-L1 검사 오더"} confirmedResultId={confirmedPathologyResult?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
+            {selectedCase?.case_status === "ACTIVE" && canAdvancePathologyToPdl1 && selectedInfoMenu === "PATHOLOGY_GENE" && (
+              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" directProceed triggerLabel="결과 확정 및 PD-L1 검사 오더" confirmedResultId={pathologyResultForPdl1?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
             {selectedCase?.case_status === "ACTIVE" && canReorderCancelledPdl1 && selectedInfoMenu === "PDL1" && (
               <StageExaminationOrder caseId={caseId} orderType="PDL1" followUpPathologyOrder triggerLabel="PD-L1 재오더" onCreated={() => { void refreshCaseResults(); }} />

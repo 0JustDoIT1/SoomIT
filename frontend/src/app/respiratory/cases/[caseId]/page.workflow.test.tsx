@@ -186,13 +186,14 @@ it("keeps the confirmed TNM workspace selected after advancing to pathology", as
   expect(await screen.findByText("현재 Case 단계가 아니므로 결과 조회만 가능합니다.")).toBeInTheDocument();
 });
 
-it("keeps PD-L1 waiting until the pathology result is confirmed", async () => {
+it("offers one atomic pathology confirmation and PD-L1 order action for a submitted draft", async () => {
   installCaseResponses({ stage: "PATHOLOGY_GENE", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT", result_detail: {} }] });
   render(<Page />);
 
   const navigation = await openCaseWorkspace("조직/유전자");
   expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "LOCKED");
-  expect(screen.queryByRole("button", { name: "PD-L1 오더" })).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "결과 확인 및 확정" })).not.toBeInTheDocument();
 });
 
 it("does not offer a PD-L1 order before a pathology result exists", async () => {
@@ -200,25 +201,26 @@ it("does not offer a PD-L1 order before a pathology result exists", async () => 
   render(<Page />);
 
   await openCaseWorkspace("조직/유전자");
-  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).not.toBeInTheDocument();
 });
 
-it("offers the PD-L1 order after a confirmed pathology result", async () => {
+it("offers the same one-click PD-L1 transition for a legacy confirmed pathology result", async () => {
   installCaseResponses({ stage: "PATHOLOGY_GENE", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} }] });
   render(<Page />);
 
   await openCaseWorkspace("조직/유전자");
-  expect(await screen.findByRole("button", { name: "PD-L1 검사 오더" })).toBeEnabled();
+  expect(await screen.findByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).toBeEnabled();
 });
 
-it("creates the PD-L1 order and advances through the atomic workflow decision", async () => {
+it("confirms the pathology result, creates the PD-L1 order, and advances with one request", async () => {
   let stage = "PATHOLOGY_GENE";
-  const clinicalResults = [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} }];
+  const clinicalResults = [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT", result_detail: {} }];
   const orders: unknown[] = [];
   mocks.authorizedFetch.mockImplementation(async (input: string, init?: RequestInit) => {
     const url = new URL(input).pathname;
     if (url === "/api/doctor/cases/case-1/workflow-decision/" && init?.method === "POST") {
       stage = "PDL1";
+      clinicalResults[0].result_status = "CONFIRMED";
       orders.push({ id: "pdl1-order", order_type: "PDL1", status: "ORDERED", priority: "NORMAL", created_at: "2026-09-23T00:00:00Z" });
       return response({ current_stage: stage, case_status: "ACTIVE" });
     }
@@ -233,14 +235,13 @@ it("creates the PD-L1 order and advances through the atomic workflow decision", 
   render(<Page />);
 
   await openCaseWorkspace("조직/유전자");
-  await userEvent.click(await screen.findByRole("button", { name: "PD-L1 검사 오더" }));
-  await userEvent.click(screen.getByRole("button", { name: "PD-L1 검사 오더 및 진행" }));
+  await userEvent.click(await screen.findByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" }));
 
   await waitFor(() => expect(screen.getByText("현재 Case 단계 · PD-L1")).toBeInTheDocument());
   const navigation = screen.getByRole("navigation", { name: "Case 진료 정보 메뉴" });
   expect(within(navigation).getByRole("button", { name: "조직/유전자" })).toHaveAttribute("aria-current", "page");
   expect(within(navigation).getByRole("button", { name: "PD-L1" })).toBeEnabled();
-  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).not.toBeInTheDocument();
   const workflowCalls = mocks.authorizedFetch.mock.calls.filter(([input, init]) => new URL(input as string).pathname.endsWith("/workflow-decision/") && (init as RequestInit | undefined)?.method === "POST");
   const directOrderPosts = mocks.authorizedFetch.mock.calls.filter(([input, init]) => new URL(input as string).pathname.endsWith("/orders/") && (init as RequestInit | undefined)?.method === "POST");
   expect(workflowCalls).toHaveLength(1);
@@ -252,7 +253,7 @@ it("creates the PD-L1 order and advances through the atomic workflow decision", 
   });
 
   await openCaseWorkspace("조직/유전자");
-  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "PD-L1 단계 전환 재시도" })).not.toBeInTheDocument();
 });
 
@@ -368,7 +369,7 @@ it("does not restore PD-L1 actions after refreshing an already advanced treatmen
   expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
 });
 
-it("does not expose duplicate PD-L1 ordering while an active PD-L1 order exists", async () => {
+it("reuses an active PD-L1 order through the same one-click transition", async () => {
   installCaseResponses({
     stage: "PATHOLOGY_GENE",
     clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} }],
@@ -378,8 +379,8 @@ it("does not expose duplicate PD-L1 ordering while an active PD-L1 order exists"
 
   const navigation = await openCaseWorkspace("조직/유전자");
   await waitFor(() => expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "LOCKED"));
-  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "PD-L1 단계 전환 재시도" })).toBeEnabled();
+  expect(screen.getByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "PD-L1 단계 전환 재시도" })).not.toBeInTheDocument();
 });
 
 it("keeps pathology read-only after a refreshed Case is already in PD-L1", async () => {
@@ -391,7 +392,7 @@ it("keeps pathology read-only after a refreshed Case is already in PD-L1", async
   render(<Page />);
 
   await openCaseWorkspace("조직/유전자");
-  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "PD-L1 단계 전환 재시도" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "결과 확인 및 확정" })).not.toBeInTheDocument();
 });

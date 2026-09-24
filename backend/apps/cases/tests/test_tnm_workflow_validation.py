@@ -8,9 +8,10 @@ from uuid import uuid4
 
 from django.test import SimpleTestCase
 
-from apps.cases.models import WorkflowStage
+from apps.cases.models import ExaminationOrder, WorkflowStage
 from apps.cases.views import DoctorCaseWorkflowDecisionAPIView
-from apps.clinical.models import TnmResult
+from apps.clinical.models import ClinicalResult, TnmResult
+from apps.pathology.models import PathologyWorkItem
 from apps.clinical.serializers import TNM_M_VALUES
 from apps.clinical.views import (
     PULMONOLOGY_WRITE_PERMISSIONS,
@@ -82,7 +83,8 @@ class TnmWorkflowValidationTests(SimpleTestCase):
              patch("apps.cases.views.create_examination_order") as create_order:
             cases.select_for_update.return_value.filter.return_value.first.return_value = case
             results.select_for_update.return_value.filter.return_value.first.return_value = result
-            orders.filter.return_value.exists.side_effect = [False, True]
+            orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = None
+            create_order.return_value = (Mock(status=ExaminationOrder.Status.ORDERED), Mock())
 
             response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
                 DoctorCaseWorkflowDecisionAPIView(), request, case.id,
@@ -107,11 +109,14 @@ class TnmWorkflowValidationTests(SimpleTestCase):
         with patch("apps.cases.views.LungCancerCase.objects") as cases, \
              patch("apps.cases.views.ClinicalResult.objects") as results, \
              patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+             patch("apps.cases.views.PathologyWorkItem.objects") as work_items, \
              patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
              patch("apps.cases.views.create_examination_order") as create_order:
             cases.select_for_update.return_value.filter.return_value.first.return_value = case
             results.select_for_update.return_value.filter.return_value.first.return_value = result
-            orders.filter.return_value.exists.return_value = True
+            active_order = Mock(status=ExaminationOrder.Status.ORDERED, priority=ExaminationOrder.Priority.NORMAL)
+            orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = active_order
+            work_items.filter.return_value.exists.return_value = True
 
             response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
                 DoctorCaseWorkflowDecisionAPIView(), request, case.id,
@@ -120,7 +125,184 @@ class TnmWorkflowValidationTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(case.current_stage, WorkflowStage.PDL1)
         create_order.assert_not_called()
+        work_items.create.assert_not_called()
         decisions.create.assert_called_once()
+
+    def test_submitted_pathology_draft_is_confirmed_and_advanced_in_one_request(self):
+        case = Mock(id=uuid4(), current_stage=WorkflowStage.PATHOLOGY_GENE, case_status="ACTIVE")
+        result = Mock(
+            id=uuid4(),
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+            examination_order_id=uuid4(),
+        )
+        review = Mock(status=PathologyWorkItem.Status.PENDING)
+        request = SimpleNamespace(user=Mock(), data={
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": WorkflowStage.PDL1,
+            "reason": "",
+        })
+        with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+             patch("apps.cases.views.ClinicalResult.objects") as results, \
+             patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+             patch("apps.cases.views.PathologyWorkItem.objects") as work_items, \
+             patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
+             patch("apps.cases.views.create_examination_order") as create_order:
+            cases.select_for_update.return_value.filter.return_value.first.return_value = case
+            results.select_for_update.return_value.filter.return_value.first.return_value = result
+            work_items.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = review
+            orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = None
+            create_order.return_value = (Mock(status=ExaminationOrder.Status.ORDERED), Mock())
+
+            response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(review.status, PathologyWorkItem.Status.COMPLETED)
+        self.assertEqual(case.current_stage, WorkflowStage.PDL1)
+        result.save.assert_called_once()
+        review.save.assert_called_once()
+        create_order.assert_called_once()
+        decisions.create.assert_called_once()
+
+    def test_scheduled_and_completed_pdl1_orders_are_reused_without_duplicates(self):
+        for order_status in (ExaminationOrder.Status.SCHEDULED, ExaminationOrder.Status.COMPLETED):
+            with self.subTest(order_status=order_status):
+                case = Mock(id=uuid4(), current_stage=WorkflowStage.PATHOLOGY_GENE, case_status="ACTIVE")
+                result = Mock(id=uuid4(), workflow_stage=WorkflowStage.PATHOLOGY_GENE)
+                request = SimpleNamespace(user=Mock(), data={
+                    "action": "PROCEED_NEXT_STAGE",
+                    "source_clinical_result_id": str(result.id),
+                    "target_stage": WorkflowStage.PDL1,
+                    "reason": "",
+                })
+                with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+                     patch("apps.cases.views.ClinicalResult.objects") as results, \
+                     patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+                     patch("apps.cases.views.PathologyWorkItem.objects") as work_items, \
+                     patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
+                     patch("apps.cases.views.create_examination_order") as create_order:
+                    cases.select_for_update.return_value.filter.return_value.first.return_value = case
+                    results.select_for_update.return_value.filter.return_value.first.return_value = result
+                    existing_order = Mock(status=order_status, priority=ExaminationOrder.Priority.NORMAL)
+                    orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = existing_order
+                    work_items.filter.return_value.exists.return_value = True
+
+                    response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                        DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+                    )
+
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(case.current_stage, WorkflowStage.PDL1)
+                create_order.assert_not_called()
+                work_items.create.assert_not_called()
+                decisions.create.assert_called_once()
+
+    def test_reused_active_pdl1_order_recovers_a_missing_wsi_upload_work_item(self):
+        case = Mock(id=uuid4(), current_stage=WorkflowStage.PATHOLOGY_GENE, case_status="ACTIVE")
+        result = Mock(id=uuid4(), workflow_stage=WorkflowStage.PATHOLOGY_GENE)
+        active_order = Mock(
+            status=ExaminationOrder.Status.ORDERED,
+            priority=ExaminationOrder.Priority.NORMAL,
+        )
+        request = SimpleNamespace(user=Mock(), data={
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": WorkflowStage.PDL1,
+            "reason": "",
+        })
+        with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+             patch("apps.cases.views.ClinicalResult.objects") as results, \
+             patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+             patch("apps.cases.views.PathologyWorkItem.objects") as work_items, \
+             patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
+             patch("apps.cases.views.create_examination_order") as create_order:
+            cases.select_for_update.return_value.filter.return_value.first.return_value = case
+            results.select_for_update.return_value.filter.return_value.first.return_value = result
+            orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = active_order
+            work_items.filter.return_value.exists.return_value = False
+
+            response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        create_order.assert_not_called()
+        work_items.create.assert_called_once_with(
+            case=case,
+            examination_order=active_order,
+            task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+            status=PathologyWorkItem.Status.PENDING,
+            priority=ExaminationOrder.Priority.NORMAL,
+        )
+        decisions.create.assert_called_once()
+
+    def test_cancelled_pdl1_history_allows_one_replacement_order(self):
+        case = Mock(id=uuid4(), current_stage=WorkflowStage.PATHOLOGY_GENE, case_status="ACTIVE")
+        result = Mock(id=uuid4(), workflow_stage=WorkflowStage.PATHOLOGY_GENE)
+        request = SimpleNamespace(user=Mock(), data={
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": WorkflowStage.PDL1,
+            "reason": "",
+        })
+        with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+             patch("apps.cases.views.ClinicalResult.objects") as results, \
+             patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+             patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
+             patch("apps.cases.views.create_examination_order") as create_order:
+            cases.select_for_update.return_value.filter.return_value.first.return_value = case
+            results.select_for_update.return_value.filter.return_value.first.return_value = result
+            # CANCELLED is intentionally excluded from the reusable-status query.
+            orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = None
+            create_order.return_value = (Mock(status=ExaminationOrder.Status.ORDERED), Mock())
+
+            response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+            )
+
+        self.assertEqual(response.status_code, 200)
+        create_order.assert_called_once()
+        decisions.create.assert_called_once()
+
+    def test_order_failure_marks_the_atomic_one_click_transition_for_rollback(self):
+        case = Mock(id=uuid4(), current_stage=WorkflowStage.PATHOLOGY_GENE, case_status="ACTIVE")
+        result = Mock(
+            id=uuid4(),
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+            examination_order_id=uuid4(),
+        )
+        review = Mock(status=PathologyWorkItem.Status.PENDING)
+        request = SimpleNamespace(user=Mock(), data={
+            "action": "PROCEED_NEXT_STAGE",
+            "source_clinical_result_id": str(result.id),
+            "target_stage": WorkflowStage.PDL1,
+            "reason": "",
+        })
+        with patch("apps.cases.views.LungCancerCase.objects") as cases, \
+             patch("apps.cases.views.ClinicalResult.objects") as results, \
+             patch("apps.cases.views.ExaminationOrder.objects") as orders, \
+             patch("apps.cases.views.PathologyWorkItem.objects") as work_items, \
+             patch("apps.cases.views.ClinicianDecision.objects") as decisions, \
+             patch("apps.cases.views.transaction.set_rollback") as set_rollback, \
+             patch("apps.cases.views.create_examination_order", side_effect=ExaminationOrderCreationError("failed")):
+            cases.select_for_update.return_value.filter.return_value.first.return_value = case
+            results.select_for_update.return_value.filter.return_value.first.return_value = result
+            work_items.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = review
+            orders.select_for_update.return_value.filter.return_value.order_by.return_value.first.return_value = None
+
+            response = DoctorCaseWorkflowDecisionAPIView.post.__wrapped__(
+                DoctorCaseWorkflowDecisionAPIView(), request, case.id,
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(case.current_stage, WorkflowStage.PATHOLOGY_GENE)
+        set_rollback.assert_called_once_with(True)
+        decisions.create.assert_not_called()
 
     def test_confirmed_pdl1_advancement_updates_stage_without_creating_an_order(self):
         case = Mock(id=uuid4(), current_stage=WorkflowStage.PDL1, case_status="ACTIVE")

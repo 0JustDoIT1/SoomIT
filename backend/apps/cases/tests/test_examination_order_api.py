@@ -575,7 +575,7 @@ class DoctorExaminationOrderAPITests(TestCase):
             ClinicianDecision.DecisionType.REFERRED_OUT,
         )
 
-    def test_pathology_confirmation_creates_pdl1_order_work_item_and_advances_case(self):
+    def test_pathology_draft_confirmation_creates_pdl1_order_work_item_and_advances_case(self):
         pathology_order = ExaminationOrder.objects.create(
             case=self.case,
             order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
@@ -588,7 +588,13 @@ class DoctorExaminationOrderAPITests(TestCase):
             case=self.case,
             examination_order=pathology_order,
             workflow_stage=WorkflowStage.PATHOLOGY_GENE,
-            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        review = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pathology_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
         )
         self.case.current_stage = WorkflowStage.PATHOLOGY_GENE
         self.case.save(update_fields=["current_stage", "updated_at"])
@@ -605,7 +611,11 @@ class DoctorExaminationOrderAPITests(TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.case.refresh_from_db()
+        result.refresh_from_db()
+        review.refresh_from_db()
         self.assertEqual(self.case.current_stage, WorkflowStage.PDL1)
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(review.status, PathologyWorkItem.Status.COMPLETED)
         pdl1_order = ExaminationOrder.objects.get(
             case=self.case,
             order_type=ExaminationOrder.OrderType.PDL1,
@@ -814,6 +824,54 @@ class DoctorExaminationOrderAPITests(TestCase):
             decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
             target_stage=WorkflowStage.PET_CT_TNM,
         ).exists())
+
+    def test_pathology_to_pdl1_failure_rolls_back_confirmation_and_transition(self):
+        pathology_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PATHOLOGY_GENE,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Pathology and gene testing",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=pathology_order,
+            workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        review = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=pathology_order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+        self.case.current_stage = WorkflowStage.PATHOLOGY_GENE
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        with patch(
+            "apps.cases.views.create_examination_order",
+            side_effect=ExaminationOrderCreationError("PD-L1 order failed"),
+        ):
+            response = self.client.post(
+                reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+                {
+                    "action": "PROCEED_NEXT_STAGE",
+                    "source_clinical_result_id": str(result.id),
+                    "target_stage": "PDL1",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        self.case.refresh_from_db()
+        result.refresh_from_db()
+        review.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.PATHOLOGY_GENE)
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
+        self.assertFalse(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.PDL1).exists())
+        self.assertFalse(ClinicianDecision.objects.filter(case=self.case).exists())
 
     def test_ct_result_save_uses_the_order_linked_to_the_selected_ai_result(self):
         linked_order = ExaminationOrder.objects.create(

@@ -667,6 +667,62 @@ NEXT_WORKFLOW_STAGE = {
 }
 
 
+class SubmittedPathologyResultConfirmationError(ValueError):
+    pass
+
+
+def _confirm_submitted_pathology_result(*, case, result, confirming_user):
+    """Confirm a submitted pathology result inside the caller's transaction."""
+    if result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+        return result
+    if result.result_status != ClinicalResult.ResultStatus.DRAFT:
+        raise SubmittedPathologyResultConfirmationError("Only a draft pathology result can be confirmed.")
+    if case.current_stage != result.workflow_stage:
+        raise SubmittedPathologyResultConfirmationError(
+            "Only a result for the current workflow stage can be confirmed."
+        )
+    if result.examination_order_id is None:
+        raise SubmittedPathologyResultConfirmationError(
+            "The pathology result is not linked to an examination order."
+        )
+
+    review = (
+        PathologyWorkItem.objects.select_for_update()
+        .filter(
+            case=case,
+            examination_order_id=result.examination_order_id,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status__in=[
+                PathologyWorkItem.Status.PENDING,
+                PathologyWorkItem.Status.IN_PROGRESS,
+            ],
+        )
+        .order_by("-created_at")
+        .first()
+    )
+    if review is None:
+        raise SubmittedPathologyResultConfirmationError(
+            "The pathology result has not been submitted to the doctor."
+        )
+
+    confirmed_at = timezone.now()
+    result.result_status = ClinicalResult.ResultStatus.CONFIRMED
+    result.confirmed_by_user = confirming_user
+    result.confirmed_at = confirmed_at
+    result.save(
+        update_fields=[
+            "result_status",
+            "confirmed_by_user",
+            "confirmed_at",
+            "updated_at",
+        ]
+    )
+    review.status = PathologyWorkItem.Status.COMPLETED
+    review.completed_at = confirmed_at
+    review.save(update_fields=["status", "completed_at", "updated_at"])
+    return result
+
+
 class DoctorCaseWorkflowDecisionAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
@@ -684,25 +740,49 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
         serializer = DoctorCaseWorkflowDecisionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
+        action = values["action"]
+        target_stage = values.get("target_stage")
         decision_source_stage = case.current_stage
         source_stages = [case.current_stage]
-        if case.current_stage == WorkflowStage.PRESCRIPTION and values["action"] in {
+        if case.current_stage == WorkflowStage.PRESCRIPTION and action in {
             ClinicianDecision.DecisionType.REFERRED_OUT, "CASE_CLOSED",
         }:
             # Prescriptions are not ClinicalResults; retain the confirmed treatment
             # result as the clinical evidence for terminal prescription decisions.
             source_stages.append(WorkflowStage.TREATMENT)
+        confirms_pathology_and_advances = (
+            case.current_stage == WorkflowStage.PATHOLOGY_GENE
+            and action == ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE
+            and target_stage == WorkflowStage.PDL1
+        )
+        source_result_filters = {
+            "id": values["source_clinical_result_id"],
+            "case": case,
+            "workflow_stage__in": source_stages,
+        }
+        if confirms_pathology_and_advances:
+            source_result_filters["result_status__in"] = [
+                ClinicalResult.ResultStatus.CONFIRMED,
+                ClinicalResult.ResultStatus.DRAFT,
+            ]
+        else:
+            source_result_filters["result_status"] = ClinicalResult.ResultStatus.CONFIRMED
         source_result = ClinicalResult.objects.select_for_update().filter(
-            id=values["source_clinical_result_id"],
-            case=case,
-            workflow_stage__in=source_stages,
-            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+            **source_result_filters,
         ).first()
         if source_result is None:
             return Response({"detail": "현재 단계의 확정된 전문의 결과가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
 
-        action = values["action"]
-        target_stage = values.get("target_stage")
+        if confirms_pathology_and_advances and source_result.result_status == ClinicalResult.ResultStatus.DRAFT:
+            try:
+                _confirm_submitted_pathology_result(
+                    case=case,
+                    result=source_result,
+                    confirming_user=request.user,
+                )
+            except SubmittedPathologyResultConfirmationError as exc:
+                return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
         if action == ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE:
             if case.current_stage == WorkflowStage.PET_CT_TNM:
                 tnm = getattr(source_result, "tnm_detail", None)
@@ -713,18 +793,31 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
                 return Response({"detail": "현재 단계에서는 다음 진료 단계로 진행할 수 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
             if target_stage != expected_stage:
                 return Response({"detail": "현재 단계에서 허용되는 다음 진료 단계가 아닙니다."}, status=status.HTTP_400_BAD_REQUEST)
-            if target_stage in {
+            order_required = target_stage in {
                 WorkflowStage.CT,
                 WorkflowStage.PET_CT_TNM,
                 WorkflowStage.PATHOLOGY_GENE,
                 WorkflowStage.PDL1,
-            } and not ExaminationOrder.objects.filter(
-                case=case,
-                order_type=target_stage,
-                status__in=ACTIVE_ORDER_STATUSES,
-            ).exists():
+            }
+            reusable_statuses = list(ACTIVE_ORDER_STATUSES)
+            if target_stage == WorkflowStage.PDL1:
+                reusable_statuses.append(ExaminationOrder.Status.COMPLETED)
+            target_order = None
+            target_order_was_created = False
+            if order_required:
+                target_order = (
+                    ExaminationOrder.objects.select_for_update()
+                    .filter(
+                        case=case,
+                        order_type=target_stage,
+                        status__in=reusable_statuses,
+                    )
+                    .order_by("-created_at")
+                    .first()
+                )
+            if order_required and target_order is None:
                 try:
-                    create_examination_order(
+                    target_order, _ = create_examination_order(
                         case=case,
                         requesting_doctor=request.user,
                         order_type=target_stage,
@@ -732,18 +825,35 @@ class DoctorCaseWorkflowDecisionAPIView(APIView):
                         purpose=f"{source_result.get_workflow_stage_display()} 확정 후 {target_stage} 진행",
                         clinical_note=values.get("reason", "").strip(),
                     )
+                    target_order_was_created = True
                 except ExaminationOrderCreationError as exc:
+                    transaction.set_rollback(True)
                     return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-            if target_stage in {
-                WorkflowStage.CT,
-                WorkflowStage.PET_CT_TNM,
-                WorkflowStage.PATHOLOGY_GENE,
-                WorkflowStage.PDL1,
-            } and not ExaminationOrder.objects.filter(
-                case=case,
-                order_type=target_stage,
-                status__in=ACTIVE_ORDER_STATUSES,
-            ).exists():
+            if (
+                target_stage == WorkflowStage.PDL1
+                and target_order is not None
+                and not target_order_was_created
+                and target_order.status in ACTIVE_ORDER_STATUSES
+                and not PathologyWorkItem.objects.filter(
+                    examination_order=target_order,
+                    task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+                    status__in=[
+                        PathologyWorkItem.Status.PENDING,
+                        PathologyWorkItem.Status.IN_PROGRESS,
+                        PathologyWorkItem.Status.BLOCKED,
+                        PathologyWorkItem.Status.COMPLETED,
+                    ],
+                ).exists()
+            ):
+                PathologyWorkItem.objects.create(
+                    case=case,
+                    examination_order=target_order,
+                    task_type=PathologyWorkItem.TaskType.WSI_UPLOAD,
+                    status=PathologyWorkItem.Status.PENDING,
+                    priority=target_order.priority,
+                )
+            if order_required and target_order is None:
+                transaction.set_rollback(True)
                 return Response({"detail": "다음 단계로 진행하려면 해당 검사 오더가 필요합니다."}, status=status.HTTP_400_BAD_REQUEST)
             case.current_stage = target_stage
             case.save(update_fields=["current_stage", "updated_at"])
@@ -858,52 +968,17 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
                 {"detail": "The result is already confirmed."},
                 status=status.HTTP_409_CONFLICT,
             )
-        if case.current_stage != result.workflow_stage:
-            return Response(
-                {"detail": "Only a result for the current workflow stage can be confirmed."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-        if result.examination_order_id is None:
-            return Response(
-                {"detail": "The pathology result is not linked to an examination order."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        review = (
-            PathologyWorkItem.objects.select_for_update()
-            .filter(
+        try:
+            _confirm_submitted_pathology_result(
                 case=case,
-                examination_order_id=result.examination_order_id,
-                task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
-                status__in=[
-                    PathologyWorkItem.Status.PENDING,
-                    PathologyWorkItem.Status.IN_PROGRESS,
-                ],
+                result=result,
+                confirming_user=request.user,
             )
-            .order_by("-created_at")
-            .first()
-        )
-        if review is None:
+        except SubmittedPathologyResultConfirmationError as exc:
             return Response(
-                {"detail": "The pathology result has not been submitted to the doctor."},
+                {"detail": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-
-        confirmed_at = timezone.now()
-        result.result_status = ClinicalResult.ResultStatus.CONFIRMED
-        result.confirmed_by_user = request.user
-        result.confirmed_at = confirmed_at
-        result.save(
-            update_fields=[
-                "result_status",
-                "confirmed_by_user",
-                "confirmed_at",
-                "updated_at",
-            ]
-        )
-        review.status = PathologyWorkItem.Status.COMPLETED
-        review.completed_at = confirmed_at
-        review.save(update_fields=["status", "completed_at", "updated_at"])
 
         return Response(
             {

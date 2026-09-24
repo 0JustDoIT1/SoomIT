@@ -147,3 +147,39 @@ it("prevents repeated workflow submissions before the first response", async () 
   expect(authorizedFetch).toHaveBeenCalledOnce();
   await act(async () => resolve(new Response(JSON.stringify({ case_status: "ACTIVE" }))));
 });
+
+it("submits the pathology-to-PD-L1 transition directly and blocks rapid duplicate clicks", async () => {
+  let resolve!: (value: Response) => void;
+  const authorizedFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    void input;
+    void init;
+    return new Promise<Response>((done) => { resolve = done; });
+  });
+  const onCompleted = vi.fn();
+  render(
+    <CaseWorkflowDecision
+      caseId="case-1"
+      currentStage="PATHOLOGY_GENE"
+      confirmedResultId="pathology-draft-1"
+      directProceed
+      triggerLabel="결과 확정 및 PD-L1 검사 오더"
+      authorizedFetch={authorizedFetch}
+      onCompleted={onCompleted}
+    />,
+  );
+
+  const action = screen.getByRole("button", { name: "결과 확정 및 PD-L1 검사 오더" });
+  act(() => { action.click(); action.click(); });
+
+  expect(authorizedFetch).toHaveBeenCalledOnce();
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  const requestInit = authorizedFetch.mock.calls[0]?.[1];
+  expect(JSON.parse(requestInit?.body as string)).toMatchObject({
+    action: "PROCEED_NEXT_STAGE",
+    source_clinical_result_id: "pathology-draft-1",
+    target_stage: "PDL1",
+  });
+
+  await act(async () => resolve(new Response(JSON.stringify({ current_stage: "PDL1", case_status: "ACTIVE" }))));
+  expect(onCompleted).toHaveBeenCalledWith(expect.objectContaining({ currentStage: "PDL1", caseStatus: "ACTIVE" }));
+});

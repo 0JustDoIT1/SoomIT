@@ -21,7 +21,7 @@ export type WorkflowDecisionCompletion = {
   caseStatus?: string;
 };
 
-export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, allowCaseCloseWithoutFinalPrescription = false, showCaseCloseOption = false, exceptionsOnly = false, secondary = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; allowCaseCloseWithoutFinalPrescription?: boolean; showCaseCloseOption?: boolean; exceptionsOnly?: boolean; secondary?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
+export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, allowCaseCloseWithoutFinalPrescription = false, showCaseCloseOption = false, exceptionsOnly = false, secondary = false, directProceed = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; allowCaseCloseWithoutFinalPrescription?: boolean; showCaseCloseOption?: boolean; exceptionsOnly?: boolean; secondary?: boolean; directProceed?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
   const [action, setAction] = useState<"PROCEED_NEXT_STAGE" | "RETRY" | "REFERRED_OUT" | "CASE_CLOSED" | null>(null);
   const [reason, setReason] = useState("");
   const [retryPurpose, setRetryPurpose] = useState("");
@@ -40,27 +40,27 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
         ? "치료계획 확정 및 처방 진행"
         : "다음 단계 진행";
 
-  const submit = async () => {
-    if (!action || !confirmedResultId || submittingRef.current) return;
-    if (action === "PROCEED_NEXT_STAGE" && !canProceed) return;
-    if (action !== "PROCEED_NEXT_STAGE" && !reason.trim()) return;
-    if (action === "RETRY" && !retryPurpose.trim()) return;
+  const submit = async (requestedAction = action) => {
+    if (!requestedAction || !confirmedResultId || submittingRef.current) return;
+    if (requestedAction === "PROCEED_NEXT_STAGE" && !canProceed) return;
+    if (requestedAction !== "PROCEED_NEXT_STAGE" && !reason.trim()) return;
+    if (requestedAction === "RETRY" && !retryPurpose.trim()) return;
     submittingRef.current = true;
     setSubmitting(true);
     setError("");
-    const toastId = `case-workflow-${caseId}-${action}`;
-    showToast.info(action === "RETRY" ? "후속 처리를 다시 시도하고 있습니다." : "다음 단계 처리를 진행하고 있습니다.", { id: toastId });
+    const toastId = `case-workflow-${caseId}-${requestedAction}`;
+    showToast.info(requestedAction === "RETRY" ? "후속 처리를 다시 시도하고 있습니다." : "다음 단계 처리를 진행하고 있습니다.", { id: toastId });
     try {
       const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/workflow-decision/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, source_clinical_result_id: confirmedResultId, target_stage: action === "PROCEED_NEXT_STAGE" ? next?.key : null, reason, retry_purpose: retryPurpose, retry_priority: "NORMAL", retry_clinical_note: reason }),
+        body: JSON.stringify({ action: requestedAction, source_clinical_result_id: confirmedResultId, target_stage: requestedAction === "PROCEED_NEXT_STAGE" ? next?.key : null, reason, retry_purpose: retryPurpose, retry_priority: "NORMAL", retry_clinical_note: reason }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof body.detail === "string" ? body.detail : "진료 단계 변경에 실패했습니다.");
       setAction(null);
       setReason("");
-      const message = action === "CASE_CLOSED" ? "Case가 종료되었습니다." : action === "REFERRED_OUT" ? "의뢰·전원 처리가 완료되었습니다." : action === "RETRY" ? "후속 처리가 완료되었습니다." : `${next?.label ?? "다음"} 단계가 활성화되었습니다.`;
+      const message = requestedAction === "CASE_CLOSED" ? "Case가 종료되었습니다." : requestedAction === "REFERRED_OUT" ? "의뢰·전원 처리가 완료되었습니다." : requestedAction === "RETRY" ? "후속 처리가 완료되었습니다." : `${next?.label ?? "다음"} 단계가 활성화되었습니다.`;
       showToast.success(message, { id: toastId });
       onCompleted({
         message,
@@ -70,7 +70,7 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
       });
     } catch (cause) {
       console.error(cause);
-      const message = action === "CASE_CLOSED" ? "Case 종료에 실패했습니다." : action === "REFERRED_OUT" ? "의뢰·전원 처리에 실패했습니다." : action === "RETRY" ? "후속 처리 재시도에 실패했습니다." : "다음 단계 전환에 실패했습니다.";
+      const message = requestedAction === "CASE_CLOSED" ? "Case 종료에 실패했습니다." : requestedAction === "REFERRED_OUT" ? "의뢰·전원 처리에 실패했습니다." : requestedAction === "RETRY" ? "후속 처리 재시도에 실패했습니다." : "다음 단계 전환에 실패했습니다.";
       setError(message);
       showToast.error(message, { id: toastId });
     } finally {
@@ -82,8 +82,9 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
   const actionLabel = action === "RETRY" ? "재생검 요청" : action === "REFERRED_OUT" ? "의뢰·전원 처리" : action === "CASE_CLOSED" ? "Case 종료" : proceedLabel;
 
   return <>
-    <button type="button" disabled={disabled || submitting} title={disabled ? "현재 단계의 확정 결과가 필요합니다." : undefined} onClick={() => setAction(canProceed ? "PROCEED_NEXT_STAGE" : "REFERRED_OUT")} className={exceptionsOnly || secondary ? "rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-600 disabled:text-slate-400" : decisionTriggerClass}>{triggerLabel ?? (exceptionsOnly ? "종료·의뢰 처리" : "결과 입력 및 처리")}</button>
+    <button type="button" disabled={disabled || submitting} title={disabled ? "현재 단계의 결과가 필요합니다." : undefined} onClick={() => { if (directProceed) void submit("PROCEED_NEXT_STAGE"); else setAction(canProceed ? "PROCEED_NEXT_STAGE" : "REFERRED_OUT"); }} className={exceptionsOnly || secondary ? "rounded-md border border-slate-300 px-3 py-2 text-xs text-slate-600 disabled:text-slate-400" : decisionTriggerClass}>{submitting && directProceed ? "처리 중" : triggerLabel ?? (exceptionsOnly ? "종료·의뢰 처리" : "결과 입력 및 처리")}</button>
     {disabled && !exceptionsOnly && <p className="mt-1 text-xs text-slate-500">판독 결과 확정 대기: 확정 결과가 있어야 처리할 수 있습니다.</p>}
+    {directProceed && error && <p role="alert" className="mt-1 text-xs text-red-600">{error}</p>}
     {action && <DecisionModal title="결과 입력 및 처리" description="확정된 결과를 근거로 다음 처리를 선택하세요. 판독 결과 자체는 변경하지 않습니다." busy={submitting} error={error} primaryLabel={actionLabel} disabled={(action === "PROCEED_NEXT_STAGE" && !canProceed) || (action !== "PROCEED_NEXT_STAGE" && !reason.trim()) || (action === "RETRY" && !retryPurpose.trim())} onSubmit={() => void submit()} onClose={() => { setAction(null); setError(""); }}>
       <p className="text-xs text-slate-600">판독 결과: 완료</p>
       <DecisionMethodSelect value={action} onChange={(value) => { setAction(value); setError(""); }} options={[
