@@ -9,7 +9,9 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework_simplejwt.authentication import JWTAuthentication
-from apps.accounts.permissions import IsActiveStaff, IsAdministrationStaff
+from apps.accounts.constants import PULMONOLOGY_DEPARTMENT_CODE
+from apps.accounts.models import DepartmentRole, User
+from apps.accounts.permissions import IsActiveStaff, IsAdministrationStaff, get_token_hospital_id
 from apps.cases.models import ExaminationOrder
 from .appointment_serializers import (
     AppointmentCancelSerializer,
@@ -52,6 +54,28 @@ class AppointmentListAPIView(ListAPIView):
     )
 
     serializer_class = AppointmentSerializer
+
+
+class CoordinatorDoctorListAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsActiveStaff, IsAdministrationStaff]
+
+    def get(self, request):
+        hospital_id = get_token_hospital_id(request)
+        doctors = (
+            User.objects
+            .filter(
+                account_status=User.AccountStatus.ACTIVE,
+                department_role__role=DepartmentRole.Role.DOCTOR,
+                department_role__department__code=PULMONOLOGY_DEPARTMENT_CODE,
+                department_role__department__hospital_id=hospital_id,
+            )
+            .order_by("name", "id")
+        )
+        return Response(
+            [{"id": str(doctor.id), "name": doctor.name} for doctor in doctors],
+            status=status.HTTP_200_OK,
+        )
 
 
 # 원무과 - 예약 상세 조회

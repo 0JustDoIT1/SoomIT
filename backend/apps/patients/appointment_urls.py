@@ -9,11 +9,13 @@ from .appointment_views import (
     AppointmentRequestDetailAPIView,
     AppointmentRequestListAPIView,
     AppointmentRequestRejectAPIView,
+    CoordinatorDoctorListAPIView,
     CoordinatorExaminationOrderListAPIView,
 )
 
 urlpatterns = [
     path("", AppointmentListAPIView.as_view(), name="appointment-list"),
+    path("doctors/", CoordinatorDoctorListAPIView.as_view(), name="coordinator-doctor-list"),
     path("requests/", AppointmentRequestListAPIView.as_view(), name="appointment-request-list"),
     path("requests/<uuid:id>/", AppointmentRequestDetailAPIView.as_view(), name="appointment-request-detail"),
     path("requests/<uuid:id>/approve/", AppointmentRequestApproveAPIView.as_view(), name="appointment-request-approve"),

@@ -38,7 +38,7 @@ export function PathologyShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen min-w-0 flex-col bg-[#F7F8FC] text-slate-950">
+    <div className="pathology-cursor flex min-h-screen min-w-0 flex-col bg-[#F7F8FC] text-slate-950">
       <header className="relative shrink-0 overflow-hidden border-b border-[#CDD3EE] bg-gradient-to-r from-[#F8F7FF] via-[#F1F3FF] to-white">
         <Image src="/pathology/pathology-tissue-decor.png" alt="" aria-hidden="true" fill sizes="42vw" className="pointer-events-none !left-auto right-0 top-0 !w-[42%] object-cover opacity-[0.3]" />
         <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">

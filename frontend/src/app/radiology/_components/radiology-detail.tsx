@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { showToast } from "@/components/ui/toast/toast";
+import { formatPatientSex } from "@/lib/patient-display";
 
 import {
   groupBySeriesInstanceUid,
@@ -372,7 +373,7 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
     const { nodules, overall_malignancy_risk } = data.result;
     return <div className="space-y-3 text-xs">
       <dl className="grid gap-3 sm:grid-cols-2">
-        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">악성 위험도</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(overall_malignancy_risk, 1, 2)}%</dd></div>
+        <div className="rounded-xl border border-violet-100 bg-violet-50/60 p-4"><dt className="text-violet-600">악성 위험도</dt><dd className="mt-2 text-lg font-bold text-slate-900">{formatPercent(overall_malignancy_risk, 1, 2)}</dd></div>
         <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><dt className="text-blue-600">결절 수</dt><dd className="mt-2 text-lg font-bold text-slate-900">{nodules.length}</dd></div>
       </dl>
       {nodules.length > 0 ? (
@@ -401,8 +402,8 @@ function AnalysisResultView({ data, sourceImageUrl }: { data: RadiologyAnalysisR
       </section>
       <section className="min-h-28 rounded-lg border border-blue-100 bg-blue-50/30 p-4">
         <h4 className="text-xs font-medium text-blue-700">N 분석 결과</h4>
-        <p className="mt-2 text-xs text-slate-500">N+ 확률</p>
-        <p className="mt-1 text-2xl font-semibold text-slate-900">{formatTnmPercent(n?.nplus_probability)}</p>
+        <p className="mt-2 text-2xl font-semibold text-slate-900">{formatTnmPercent(n?.nplus_probability)}</p>
+        <p className="mt-1 text-xs text-slate-500">N 전이 확률</p>
       </section>
       <section className="min-h-28 rounded-lg border border-indigo-100 bg-indigo-50/30 p-4">
         <h4 className="text-xs font-medium text-indigo-700">M 분석 결과</h4>
@@ -494,9 +495,9 @@ export function RadiologyPatientSummary({ item, onClear }: {
         <RadiologyWorkflowBadge status={item.workflow_status} label={getWorkflowLabel(item.workflow_status)} />
         <button type="button" onClick={onClear} className="shrink-0 text-xs font-semibold text-slate-500 hover:text-slate-800">선택 해제</button>
       </div>
-      <dl className="grid gap-x-4 gap-y-3 border-x border-violet-100 bg-white px-5 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+      <dl className="grid gap-x-4 gap-y-3 border-x border-violet-100 bg-white px-5 py-4 text-xs sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 [&>div:nth-last-child(-n+2)]:hidden">
         <div><dt className="text-[11px] text-slate-400">환자코드</dt><dd className="mt-1 font-medium text-slate-800">{item.patient.patient_code}</dd></div>
-        <div><dt className="text-[11px] text-slate-400">성별 / 생년월일</dt><dd className="mt-1 font-medium text-slate-800">{item.patient.sex} / {item.patient.birth_date}</dd></div>
+        <div><dt className="text-[11px] text-slate-400">성별 / 생년월일</dt><dd className="mt-1 font-medium text-slate-800">{formatPatientSex(item.patient.sex)} / {item.patient.birth_date}</dd></div>
         <div><dt className="text-[11px] text-slate-400">Case</dt><dd className="mt-1 break-words font-medium text-slate-800">{item.case.case_code}</dd></div>
         <div><dt className="text-[11px] text-slate-400">현재 검사</dt><dd className="mt-1 font-semibold text-violet-700">{order.order_type_label}</dd></div>
         <div><dt className="text-[11px] text-slate-400">현재 상태</dt><dd className="mt-1 font-medium text-slate-800">{getWorkflowLabel(item.workflow_status)}</dd></div>
@@ -1037,9 +1038,8 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
 
           {analysisRunning ? (
             <div className="mt-4" role="status">
-              <div className="mb-2 flex items-center justify-between text-xs"><strong className="font-semibold text-blue-700">AI 분석 중</strong><span className="text-slate-400">실시간 진행률 정보는 제공되지 않습니다.</span></div>
-              <div className="h-1.5 overflow-hidden bg-slate-200"><div className="h-full w-1/3 animate-pulse bg-blue-600" /></div>
-              <p className="mt-2 text-xs text-slate-500">모델 분석을 처리하고 있습니다.</p>
+              <div className="flex items-center gap-2 text-xs"><span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-blue-100 border-t-blue-600" aria-hidden="true" /><strong className="font-semibold text-blue-700">{trackedAnalysis?.status === "PENDING" ? "분석 요청을 준비하고 있습니다" : "AI 분석을 진행하고 있습니다"}</strong></div>
+              <p className="mt-2 text-xs text-slate-500">AI 분석이 완료될 때까지 잠시만 기다려 주세요.</p>
             </div>
           ) : null}
           {trackedAnalysis?.status === "FAILED" ? <p className="mt-4 border-l-2 border-red-500 bg-red-50 px-3 py-2 text-xs text-red-700">AI 분석에 실패했습니다.{trackedAnalysis.error_message ? ` ${trackedAnalysis.error_message}` : ""}</p> : null}

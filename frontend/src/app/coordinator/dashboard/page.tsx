@@ -368,7 +368,16 @@ export default function CoordinatorDashboardPage() {
                   {pendingRequests.map((request) => (
                     <tr
                       key={request.id}
-                      className="text-slate-700 transition hover:bg-[#F5F7FA]"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => router.push("/coordinator/appointments")}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          router.push("/coordinator/appointments");
+                        }
+                      }}
+                      className="cursor-pointer text-slate-700 transition hover:bg-pink-50/30"
                     >
                       <td className="px-3 py-2.5">
                         <p className="font-semibold text-slate-800">{request.patientName}</p>
@@ -428,7 +437,23 @@ export default function CoordinatorDashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {examinationOrders.slice(0, 7).map((order) => (
-                    <tr key={order.id} className="text-slate-700 transition hover:bg-[#EEF1F7]/70">
+                    <tr
+                      key={order.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        const matchingCase = cases.find((caseItem) => caseItem.patient_code === order.patient_code);
+                        router.push(matchingCase ? `/coordinator/cases/${matchingCase.id}` : "/coordinator/patients");
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          const matchingCase = cases.find((caseItem) => caseItem.patient_code === order.patient_code);
+                          router.push(matchingCase ? `/coordinator/cases/${matchingCase.id}` : "/coordinator/patients");
+                        }
+                      }}
+                      className="cursor-pointer text-slate-700 transition hover:bg-pink-50/30"
+                    >
                       <td className="px-3 py-2.5">
                         <p className="font-semibold text-slate-800">{order.patient_name}</p>
                         <p className="mt-0.5 text-xs text-slate-500">{order.patient_code}</p>

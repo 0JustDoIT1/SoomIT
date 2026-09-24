@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, staffAuthenticatedFetch } from "@/lib/api";
 import { useEffect, useMemo, useState } from "react";
 import { showToast } from "@/components/ui/toast/toast";
 import { SkeletonBlock, SkeletonLine } from "../_components/skeleton";
@@ -36,6 +36,8 @@ type AppointmentRequest = {
   rejection_reason: string | null;
 };
 
+type Doctor = { id: string; name: string };
+
 type ViewMode = "WEEK" | "MONTH";
 
 const TIME_SLOTS = [
@@ -61,6 +63,7 @@ const WEEK_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [selectedAppointment, setSelectedAppointment] =
     useState<Appointment | null>(null);
   const [appointmentRequests, setAppointmentRequests] = useState<
@@ -69,7 +72,7 @@ export default function AppointmentsPage() {
   const [selectedAppointmentRequest, setSelectedAppointmentRequest] =
     useState<AppointmentRequest | null>(null);
 
-  const [viewMode, setViewMode] = useState<ViewMode>("WEEK");
+  const [viewMode, setViewMode] = useState<ViewMode>("MONTH");
 
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -141,11 +144,20 @@ export default function AppointmentsPage() {
     }
   };
 
+  const fetchDoctors = async () => {
+    const response = await staffAuthenticatedFetch(
+      `${API_BASE_URL}/api/appointments/doctors/`,
+    );
+    if (!response.ok) throw new Error("의사 목록을 불러오지 못했습니다.");
+    setDoctors(await response.json());
+  };
+
   useEffect(() => {
     // Initial data synchronization with the existing appointments API.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void fetchAppointments();
     void fetchAppointmentRequests();
+    void fetchDoctors().catch((err) => setError(err instanceof Error ? err.message : "의사 목록 조회 중 오류가 발생했습니다."));
   }, []);
 
   /*
@@ -463,19 +475,6 @@ export default function AppointmentsPage() {
    * 현재 별도의 호흡기내과 의사 조회 API가 없으므로
    * 예약 데이터에서 실제 확인되는 담당 의사만 사용합니다.
    */
-  const doctors = useMemo(() => {
-    const appointmentDoctors = appointments
-      .map((appointment) => appointment.doctor_name)
-      .filter(
-        (doctor): doctor is string =>
-          Boolean(doctor)
-      );
-
-    return Array.from(
-      new Set(appointmentDoctors)
-    );
-  }, [appointments]);
-
   /*
    * 승인 대기
    */
@@ -546,7 +545,7 @@ export default function AppointmentsPage() {
     let availableSlots = 0;
     let fullSlots = 0;
 
-    doctors.forEach((doctor) => {
+    doctors.forEach(({ name: doctor }) => {
       TIME_SLOTS.forEach((time) => {
         if (isPastSlot(selectedDate, time)) return;
         const bookedCount = selectedDateAppointments.filter((appointment) => {
@@ -752,19 +751,19 @@ export default function AppointmentsPage() {
             <div className="flex h-11 items-end gap-8">
               <button
                 type="button"
-                onClick={() => setViewMode("WEEK")}
-                className={`relative h-full px-0.5 text-sm font-semibold ${viewMode === "WEEK" ? "text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
-              >
-                주간 예약
-                {viewMode === "WEEK" && <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />}
-              </button>
-              <button
-                type="button"
                 onClick={() => setViewMode("MONTH")}
                 className={`relative h-full px-0.5 text-sm font-semibold ${viewMode === "MONTH" ? "text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
               >
                 월간 예약
                 {viewMode === "MONTH" && <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />}
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("WEEK")}
+                className={`relative h-full px-0.5 text-sm font-semibold ${viewMode === "WEEK" ? "text-slate-900" : "text-slate-400 hover:text-slate-700"}`}
+              >
+                주간 예약
+                {viewMode === "WEEK" && <span className="absolute bottom-0 left-0 h-[2px] w-full bg-pink-400" />}
               </button>
             </div>
           </div>
@@ -774,7 +773,7 @@ export default function AppointmentsPage() {
       {/* 주간 예약 */}
       {!error &&
         viewMode === "WEEK" && (
-          <section className="mt-5">
+          <section className="mt-5 rounded-lg border border-[#F1D3DE] bg-white px-3 py-3">
             {/* 주 이동 */}
             <div className="flex items-center justify-between">
               <button
@@ -810,7 +809,8 @@ export default function AppointmentsPage() {
             </div>
 
             {/* 요일 선택 */}
-            <div className="mt-5 grid grid-cols-7 border-y border-slate-200 bg-white">
+            <div className="mt-5 overflow-hidden rounded-lg border border-pink-100 bg-white">
+              <div className="grid grid-cols-7 border-b border-slate-200 bg-white">
               {weekDates.map((date, index) => {
                 const active = isSameDate(
                   date,
@@ -869,21 +869,21 @@ export default function AppointmentsPage() {
             </div>
 
             {/* 시간표 */}
-            <div className="mt-5 overflow-hidden border-y border-slate-200 bg-white">
+            <div className="mt-5 overflow-hidden border-y-2 border-slate-200 bg-white">
               <table className="w-full min-w-0 table-fixed text-left">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-50/80">
-                    <th className="w-[68px] px-2 py-3 text-xs font-semibold text-slate-500 sm:w-[76px] sm:px-3">
+                  <tr className="border-b border-[#F3E0E7] bg-[#FFF8FB]">
+                    <th className="w-14 px-1.5 py-2 text-xs font-semibold text-slate-500 sm:w-16 sm:px-2">
                       시간
                     </th>
 
                     {doctors.map((doctor) => (
                       <th
                         key={doctor}
-                        className="min-w-0 px-1 py-3 text-center sm:px-2"
+                        className="min-w-0 border-l border-[#F7E5EB] px-1 py-2 text-center sm:px-2"
                       >
-                        <p className="text-sm font-semibold text-slate-700">
-                          {loading ? <SkeletonLine className="mx-auto w-16" /> : <span className="block truncate">{doctor}</span>}
+                        <p className="text-sm font-semibold text-slate-800">
+                          {loading ? <SkeletonLine className="mx-auto w-16" /> : <span className="block truncate">{doctor.name}</span>}
                         </p>
 
                         <p className="mt-0.5 text-[11px] font-normal text-slate-400">
@@ -897,11 +897,11 @@ export default function AppointmentsPage() {
                 <tbody className="divide-y divide-slate-100">
                   {TIME_SLOTS.map((time) => (
                     <tr key={time}>
-                      <td className="px-2 py-3 text-xs font-medium text-slate-500 sm:px-3 sm:text-sm">
+                      <td className="px-1.5 py-1.5 text-right text-xs font-medium text-slate-500 sm:px-2 sm:text-sm">
                         {time}
                       </td>
 
-                      {doctors.map((doctor) => {
+                      {doctors.map(({ name: doctor }) => {
                         const appointment =
                           getSlotAppointment(
                             doctor,
@@ -915,14 +915,14 @@ export default function AppointmentsPage() {
                         );
 
                         if (loading) {
-                          return <td key={`${doctor}-${time}`} className="border-l border-slate-100 px-2 py-2"><SkeletonBlock className="min-h-[50px] w-full" /></td>;
+                          return <td key={`${doctor}-${time}`} className="border-l border-slate-100 px-1 py-1 sm:px-1.5"><SkeletonBlock className="min-h-[38px] w-full" /></td>;
                         }
 
                         if (appointment) {
                           return (
                             <td
                               key={`${doctor}-${time}`}
-                              className="min-w-0 border-l border-slate-100 px-1 py-2 sm:px-2"
+                              className="min-w-0 border-l border-slate-100 px-1 py-1 sm:px-1.5"
                             >
                               <button
                                 type="button"
@@ -931,7 +931,7 @@ export default function AppointmentsPage() {
                                     appointment.id
                                   )
                                 }
-                                className={`w-full min-w-0 rounded-lg border px-1.5 py-2 text-left transition hover:shadow-sm sm:px-2 ${getScheduleCellClass(
+                                className={`w-full min-w-0 rounded-md border border-l-2 px-1.5 py-2 text-left transition sm:px-2 ${getScheduleCellClass(
                                   appointment.appointment_status,
                                   past
                                 )}`}
@@ -943,14 +943,14 @@ export default function AppointmentsPage() {
                                     }
                                   </span>
 
-                                  <span className="shrink-0 text-[10px]">
+                                  <span className="shrink-0 rounded-sm bg-pink-100/70 px-1 py-0.5 text-[10px] text-pink-600">
                                     {getShortStatusLabel(
                                       appointment.appointment_status
                                     )}
                                   </span>
                                 </div>
 
-                                <p className="mt-1 truncate text-[10px] opacity-70">
+                                <p className="mt-1 truncate text-[10px] text-slate-500">
                                   {getAppointmentTypeLabel(
                                     appointment.created_by_type
                                   )}
@@ -963,19 +963,9 @@ export default function AppointmentsPage() {
                         return (
                           <td
                             key={`${doctor}-${time}`}
-                              className="min-w-0 border-l border-slate-100 px-1 py-2 sm:px-2"
+                            className="min-w-0 border-l border-slate-100 px-1 py-1 sm:px-1.5"
                           >
-                            <div
-                              className={`flex min-h-[50px] min-w-0 items-center justify-center rounded-lg text-center text-[11px] ${
-                                past
-                                  ? "bg-slate-50 text-slate-300"
-                                  : "border border-dashed border-slate-200 text-slate-400"
-                              }`}
-                            >
-                              {past
-                                ? "X"
-                                : "예약 가능"}
-                            </div>
+                            <div className="min-h-[38px] min-w-0" aria-hidden="true" />
                           </td>
                         );
                       })}
@@ -984,6 +974,7 @@ export default function AppointmentsPage() {
                 </tbody>
               </table>
             </div>
+            </div>
           </section>
         )}
 
@@ -991,7 +982,7 @@ export default function AppointmentsPage() {
       {!error &&
         viewMode === "MONTH" && (
           <section className="mt-5 space-y-5">
-            <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+            <div className="overflow-hidden rounded-lg border border-[#D6B8C1] bg-white">
               <div className="flex items-center justify-center gap-4 border-b border-slate-200 px-4 py-3">
                 <button
                   type="button"
@@ -1023,7 +1014,8 @@ export default function AppointmentsPage() {
                 {WEEK_LABELS.map((day) => (
                   <div
                     key={day}
-                    className="border-b border-r border-slate-200 bg-slate-50 px-2 py-2 text-center text-[11px] font-semibold text-slate-500 last:border-r-0"
+                    className="border-b border-r border-slate-200 bg-[#E7EBF2] px-2 py-2 text-center text-[11px] font-semibold text-[#596579] last:border-r-0"
+                    style={{ backgroundColor: "#E7EBF2" }}
                   >
                     {day}
                   </div>
@@ -1697,19 +1689,15 @@ function getScheduleCellClass(
   status: string,
   past: boolean
 ) {
-  if (past) {
-    if (status === "REQUESTED") {
-      return "border-pink-100 bg-pink-50/40 text-pink-300";
-    }
-
-    return "border-sky-100 bg-sky-50/40 text-slate-400";
-  }
-
   if (status === "REQUESTED") {
-    return "border-pink-200 bg-pink-50 text-pink-600";
+    return past
+      ? "border-l-pink-200 border-pink-100 bg-pink-50/40 text-pink-300"
+      : "border-l-pink-300 border-pink-200 bg-pink-50/70 text-pink-700";
   }
 
-  return "border-sky-100 bg-sky-50/70 text-slate-700";
+  return past
+    ? "border-l-pink-200 border-pink-100 bg-pink-50/40 text-slate-500"
+    : "border-l-pink-300 border-pink-200 bg-pink-50/70 text-slate-700";
 }
 
 function formatDateTime(
