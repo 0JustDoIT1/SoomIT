@@ -2,6 +2,7 @@ import { API_BASE_URL } from "@/lib/api";
 
 export type DoctorAvailability = { id: string; weekday: number; start_time: string; end_time: string; slot_minutes: 30; enabled: boolean };
 export type DoctorUnavailableSchedule = { id: string; start_at: string; end_at: string; reason: string | null };
+export type DoctorAppointment = { id: string; patient_code: string; patient_name: string; case_code: string | null; scheduled_at: string; appointment_status: "REQUESTED" | "CONFIRMED"; appointment_status_label: string; created_by_type: string; visit_status: string };
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 
 async function request<T>(authorizedFetch: AuthorizedFetch, path: string, init?: RequestInit): Promise<T> {
@@ -16,6 +17,7 @@ export const createWeeklyAvailability = (fetcher: AuthorizedFetch, body: Pick<Do
 export const updateWeeklyAvailability = (fetcher: AuthorizedFetch, id: string, body: Partial<Pick<DoctorAvailability, "enabled" | "weekday" | "start_time" | "end_time">>) => request<DoctorAvailability>(fetcher, `/api/scheduling/doctor/weekly-availability/${id}/`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteWeeklyAvailability = (fetcher: AuthorizedFetch, id: string) => request<void>(fetcher, `/api/scheduling/doctor/weekly-availability/${id}/`, { method: "DELETE" });
 export const fetchUnavailableSchedules = (fetcher: AuthorizedFetch) => request<DoctorUnavailableSchedule[]>(fetcher, "/api/scheduling/doctor/unavailable/");
+export const fetchDoctorAppointments = (fetcher: AuthorizedFetch) => request<DoctorAppointment[]>(fetcher, "/api/scheduling/doctor/appointments/");
 export const createUnavailableSchedule = (fetcher: AuthorizedFetch, body: Pick<DoctorUnavailableSchedule, "start_at" | "end_at" | "reason">) => request<DoctorUnavailableSchedule>(fetcher, "/api/scheduling/doctor/unavailable/", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const updateUnavailableSchedule = (fetcher: AuthorizedFetch, id: string, body: Partial<Pick<DoctorUnavailableSchedule, "start_at" | "end_at" | "reason">>) => request<DoctorUnavailableSchedule>(fetcher, `/api/scheduling/doctor/unavailable/${id}/`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
 export const deleteUnavailableSchedule = (fetcher: AuthorizedFetch, id: string) => request<void>(fetcher, `/api/scheduling/doctor/unavailable/${id}/`, { method: "DELETE" });

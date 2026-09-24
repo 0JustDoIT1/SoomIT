@@ -1,6 +1,7 @@
 from django.urls import path
 
 from .views import (
+    DoctorAppointmentListAPIView,
     DoctorAppointmentAvailabilityAPIView,
     DoctorSchedulingPreferenceAPIView,
     DoctorUnavailableDetailAPIView,
@@ -10,6 +11,7 @@ from .views import (
 )
 
 urlpatterns = [
+    path("doctor/appointments/", DoctorAppointmentListAPIView.as_view(), name="doctor-appointment-list"),
     path("doctor/weekly-availability/", DoctorWeeklyAvailabilityListCreateAPIView.as_view(), name="doctor-weekly-availability-list"),
     path("doctor/weekly-availability/<uuid:pk>/", DoctorWeeklyAvailabilityDetailAPIView.as_view(), name="doctor-weekly-availability-detail"),
     path("doctor/unavailable/", DoctorUnavailableListCreateAPIView.as_view(), name="doctor-unavailable-list"),

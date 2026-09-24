@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from apps.patients.models import Appointment
+
 from .models import DoctorSchedule, DoctorSchedulingPreference, DoctorWeeklyAvailability
 
 
@@ -48,3 +50,26 @@ class DoctorUnavailableSerializer(serializers.ModelSerializer):
         if start is not None and end is not None and end <= start:
             raise serializers.ValidationError({"end_at": "end_at must be after start_at."})
         return attrs
+
+
+class DoctorAppointmentSerializer(serializers.ModelSerializer):
+    patient_code = serializers.CharField(source="patient.patient_code", read_only=True)
+    patient_name = serializers.CharField(source="patient.name", read_only=True)
+    case_code = serializers.CharField(source="case.case_code", read_only=True, allow_null=True)
+    appointment_status_label = serializers.CharField(
+        source="get_appointment_status_display", read_only=True
+    )
+
+    class Meta:
+        model = Appointment
+        fields = [
+            "id",
+            "patient_code",
+            "patient_name",
+            "case_code",
+            "scheduled_at",
+            "appointment_status",
+            "appointment_status_label",
+            "created_by_type",
+            "visit_status",
+        ]

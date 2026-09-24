@@ -6,19 +6,29 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
-from apps.accounts.models import User
+from apps.accounts.models import Department, DepartmentRole, Hospital, User
+from apps.patients.models import Appointment, Patient
 
 from .models import DoctorSchedule, DoctorWeeklyAvailability
 
 
 class DoctorSchedulingAPITests(TestCase):
     def setUp(self):
+        hospital = Hospital.objects.create(name="Scheduling Clinic", code="SCHEDULING-CLINIC")
+        department = Department.objects.create(hospital=hospital, code="PULMONOLOGY", name="Pulmonology")
+        role = DepartmentRole.objects.create(department=department, role=DepartmentRole.Role.DOCTOR, display_name="Doctor")
         self.doctor = User.objects.create_user(
             login_id="schedule-doctor", password="test", name="Schedule doctor",
-            account_status=User.AccountStatus.ACTIVE,
+            account_status=User.AccountStatus.ACTIVE, department_role=role,
         )
+        self.hospital = hospital
         self.client = APIClient()
-        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {RefreshToken.for_user(self.doctor).access_token}")
+        token = RefreshToken.for_user(self.doctor)
+        token["role"] = role.role
+        token["department_id"] = str(department.id)
+        token["department_code"] = department.code
+        token["hospital_id"] = str(hospital.id)
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {token.access_token}")
 
     def test_doctor_can_manage_multiple_weekly_intervals(self):
         url = reverse("doctor-weekly-availability-list")
@@ -79,3 +89,48 @@ class DoctorSchedulingAPITests(TestCase):
         response = unauthenticated_client.get(url, HTTP_X_SERVICE_TOKEN="patient-app-test-token")
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data["weekly_availability"][0]["slot_minutes"], 30)
+
+    def test_doctor_appointment_feed_returns_only_own_active_appointments(self):
+        patient = Patient.objects.create(
+            hospital=self.hospital,
+            patient_code="SCHEDULE-PATIENT",
+            name="Scheduled Patient",
+            birth_date="1980-01-01",
+            sex=Patient.Sex.UNKNOWN,
+            phone_number="010-0000-0000",
+            phone_number_hash="schedule-patient",
+        )
+        other_doctor = User.objects.create_user(
+            login_id="other-schedule-doctor", password="test", name="Other doctor",
+            account_status=User.AccountStatus.ACTIVE, department_role=self.doctor.department_role,
+        )
+        own = Appointment.objects.create(
+            patient=patient,
+            doctor=self.doctor,
+            scheduled_at=timezone.make_aware(datetime(2026, 10, 1, 9)),
+            appointment_status=Appointment.AppointmentStatus.REQUESTED,
+            visit_status=Appointment.VisitStatus.SCHEDULED,
+            created_by_type=Appointment.CreatedByType.PATIENT,
+        )
+        Appointment.objects.create(
+            patient=patient,
+            doctor=other_doctor,
+            scheduled_at=timezone.make_aware(datetime(2026, 10, 1, 10)),
+            appointment_status=Appointment.AppointmentStatus.CONFIRMED,
+            visit_status=Appointment.VisitStatus.SCHEDULED,
+            created_by_type=Appointment.CreatedByType.PATIENT,
+        )
+        Appointment.objects.create(
+            patient=patient,
+            doctor=self.doctor,
+            scheduled_at=timezone.make_aware(datetime(2026, 10, 1, 11)),
+            appointment_status=Appointment.AppointmentStatus.CANCELLED,
+            visit_status=Appointment.VisitStatus.SCHEDULED,
+            created_by_type=Appointment.CreatedByType.PATIENT,
+        )
+
+        response = self.client.get(reverse("doctor-appointment-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data], [str(own.id)])
+        self.assertEqual(response.data[0]["appointment_status"], "REQUESTED")

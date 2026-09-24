@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 
-import type { DoctorAvailability, DoctorUnavailableSchedule } from "./schedule-api";
+import type { DoctorAppointment, DoctorAvailability, DoctorUnavailableSchedule } from "./schedule-api";
 
 const WEEKDAY_LABELS = ["월", "화", "수", "목", "금", "토", "일"];
 
@@ -24,12 +24,21 @@ function isUnavailableOnDate(item: DoctorUnavailableSchedule, date: Date) {
   return new Date(item.start_at) < nextDayStart && new Date(item.end_at) > dayStart;
 }
 
+function isAppointmentOnDate(item: DoctorAppointment, date: Date) {
+  const scheduledAt = new Date(item.scheduled_at);
+  return scheduledAt.getFullYear() === date.getFullYear()
+    && scheduledAt.getMonth() === date.getMonth()
+    && scheduledAt.getDate() === date.getDate();
+}
+
 export function ScheduleMonthCalendar({
   availability,
   unavailable,
+  appointments,
 }: {
   availability: DoctorAvailability[];
   unavailable: DoctorUnavailableSchedule[];
+  appointments: DoctorAppointment[];
 }) {
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const calendarDays = useMemo(() => {
@@ -67,6 +76,7 @@ export function ScheduleMonthCalendar({
           if (!date) return <div key={`blank-${index}`} className="min-h-28 border-b border-r border-slate-200 bg-slate-50/50" />;
           const dailyAvailability = availability.filter((item) => item.enabled && item.weekday === appointmentWeekday(date));
           const dailyUnavailable = unavailable.filter((item) => isUnavailableOnDate(item, date));
+          const dailyAppointments = appointments.filter((item) => isAppointmentOnDate(item, date));
           const isToday = date.toDateString() === new Date().toDateString();
           return (
             <div key={date.toISOString()} className={`min-h-28 border-b border-r border-slate-200 p-2 ${dailyUnavailable.length ? "bg-rose-50/50" : "bg-white"}`}>
@@ -74,6 +84,7 @@ export function ScheduleMonthCalendar({
               <div className="space-y-1">
                 {dailyUnavailable.length === 0 && dailyAvailability.map((item) => <p key={item.id} className="truncate rounded bg-emerald-50 px-1.5 py-0.5 text-[11px] font-medium text-emerald-700">진료 {formatTime(item.start_time)}–{formatTime(item.end_time)}</p>)}
                 {dailyUnavailable.map((item) => <p key={item.id} title={item.reason ?? "휴진·진료 불가"} className="truncate rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-medium text-rose-700">휴진{item.reason ? ` · ${item.reason}` : ""}</p>)}
+                {dailyAppointments.map((item) => <p key={item.id} title={`${formatTime(new Date(item.scheduled_at).toTimeString())} ${item.patient_name} · ${item.appointment_status_label}`} className={`truncate rounded px-1.5 py-0.5 text-[11px] font-medium ${item.appointment_status === "CONFIRMED" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-800"}`}>{formatTime(new Date(item.scheduled_at).toTimeString())} {item.patient_name} {item.appointment_status === "REQUESTED" ? "(요청)" : ""}</p>)}
               </div>
             </div>
           );
@@ -83,6 +94,8 @@ export function ScheduleMonthCalendar({
       <footer className="flex flex-wrap gap-3 px-5 py-3 text-xs text-slate-500">
         <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />기본 진료시간</span>
         <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-rose-500" />휴진·진료 불가</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-blue-500" />확정 예약</span>
+        <span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-amber-400" />예약 요청</span>
       </footer>
     </section>
   );

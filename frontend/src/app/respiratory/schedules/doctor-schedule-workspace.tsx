@@ -1,9 +1,9 @@
 "use client";
 
-import { type FormEvent, type ReactNode, useCallback, useEffect, useState } from "react";
+import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
-import { createUnavailableSchedule, createWeeklyAvailability, deleteUnavailableSchedule, deleteWeeklyAvailability, fetchUnavailableSchedules, fetchWeeklyAvailability, type DoctorAvailability, type DoctorUnavailableSchedule, updateUnavailableSchedule, updateWeeklyAvailability } from "./schedule-api";
+import { createUnavailableSchedule, createWeeklyAvailability, deleteUnavailableSchedule, deleteWeeklyAvailability, fetchDoctorAppointments, fetchUnavailableSchedules, fetchWeeklyAvailability, type DoctorAppointment, type DoctorAvailability, type DoctorUnavailableSchedule, updateUnavailableSchedule, updateWeeklyAvailability } from "./schedule-api";
 import { ScheduleMonthCalendar } from "./schedule-month-calendar";
 
 const WEEKDAYS = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"];
@@ -17,6 +17,7 @@ export function DoctorScheduleWorkspace() {
   const { authorizedFetch, isReady } = useRespiratoryAuth();
   const [availability, setAvailability] = useState<DoctorAvailability[]>([]);
   const [unavailable, setUnavailable] = useState<DoctorUnavailableSchedule[]>([]);
+  const [appointments, setAppointments] = useState<DoctorAppointment[]>([]);
   const [showAvailabilityForm, setShowAvailabilityForm] = useState(false);
   const [editingAvailability, setEditingAvailability] = useState<DoctorAvailability | null>(null);
   const [showUnavailableForm, setShowUnavailableForm] = useState(false);
@@ -24,14 +25,16 @@ export function DoctorScheduleWorkspace() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const appointmentPollingRef = useRef(false);
 
   const load = useCallback(async () => {
     if (!isReady) return;
     setLoading(true);
     try {
-      const [nextAvailability, nextUnavailable] = await Promise.all([fetchWeeklyAvailability(authorizedFetch), fetchUnavailableSchedules(authorizedFetch)]);
+      const [nextAvailability, nextUnavailable, nextAppointments] = await Promise.all([fetchWeeklyAvailability(authorizedFetch), fetchUnavailableSchedules(authorizedFetch), fetchDoctorAppointments(authorizedFetch)]);
       setAvailability(nextAvailability);
       setUnavailable(nextUnavailable);
+      setAppointments(nextAppointments);
       setMessage(null);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "일정 정보를 불러오지 못했습니다.");
@@ -44,6 +47,42 @@ export function DoctorScheduleWorkspace() {
     const timer = window.setTimeout(() => void load(), 0);
     return () => window.clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    if (!isReady) return;
+
+    let disposed = false;
+
+    const pollAppointments = async () => {
+      if (disposed || appointmentPollingRef.current || document.hidden) return;
+
+      appointmentPollingRef.current = true;
+      try {
+        const nextAppointments = await fetchDoctorAppointments(authorizedFetch);
+        if (!disposed) setAppointments(nextAppointments);
+      } catch {
+        // Keep the last successful calendar data when a polling request fails.
+      } finally {
+        appointmentPollingRef.current = false;
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void pollAppointments();
+    }, 15_000);
+
+    const refreshWhenVisible = () => {
+      if (!document.hidden) void pollAppointments();
+    };
+
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [authorizedFetch, isReady]);
 
   async function submitAvailability(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -139,7 +178,7 @@ export function DoctorScheduleWorkspace() {
         <p className="mt-1 text-sm text-slate-500">환자 예약에 사용할 요일별 기본 진료시간과 특정 날짜의 진료 불가 일정을 관리합니다.</p>
       </header>
       <main className="grid flex-1 grid-cols-[minmax(0,1fr)_340px] items-start gap-4 p-5">
-        <ScheduleMonthCalendar availability={availability} unavailable={unavailable} />
+        <ScheduleMonthCalendar availability={availability} unavailable={unavailable} appointments={appointments} />
         <aside className="space-y-4">
           <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-[11px] font-bold tracking-[0.08em] text-blue-700">예약 운영 기준</p><p className="mt-1 text-sm font-bold text-slate-900">30분 슬롯 · 최대 5명</p><p className="mt-1 text-xs leading-5 text-slate-600">모든 예약 가능시간에 동일하게 적용됩니다. 예약 현황은 환자 예약 화면에서 3 / 5처럼 표시됩니다.</p></section>
           <section className="rounded-xl border border-slate-200 bg-white">

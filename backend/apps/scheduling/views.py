@@ -2,17 +2,23 @@ from datetime import datetime, time
 
 from django.utils.dateparse import parse_date
 from drf_spectacular.utils import extend_schema
-from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView
+from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.models import User
+from apps.accounts.permissions import IsActiveStaff, IsDoctor
+from apps.patients.models import Appointment
 
 from .models import DoctorSchedule, DoctorWeeklyAvailability
 from .permissions import IsPatientAppService
-from .serializers import DoctorUnavailableSerializer, DoctorWeeklyAvailabilitySerializer
+from .serializers import (
+    DoctorAppointmentSerializer,
+    DoctorUnavailableSerializer,
+    DoctorWeeklyAvailabilitySerializer,
+)
 
 
 FIXED_SLOT_CAPACITY = 5
@@ -66,6 +72,27 @@ class DoctorSchedulingPreferenceAPIView(DoctorOwnedQuerysetMixin, APIView):
             {"detail": "예약 슬롯 정원은 30분당 5명으로 고정되어 있습니다."},
             status=405,
         )
+
+
+@extend_schema(tags=["Doctor scheduling"])
+class DoctorAppointmentListAPIView(DoctorOwnedQuerysetMixin, ListAPIView):
+    """Read-only appointment feed for the logged-in doctor's calendar views."""
+
+    serializer_class = DoctorAppointmentSerializer
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor]
+    queryset = Appointment.objects.select_related("patient", "case", "doctor").order_by("scheduled_at")
+
+    def get_queryset(self):
+        queryset = super().get_queryset().exclude(
+            appointment_status=Appointment.AppointmentStatus.CANCELLED
+        )
+        start = parse_date(self.request.query_params.get("start", ""))
+        end = parse_date(self.request.query_params.get("end", ""))
+        if start is not None:
+            queryset = queryset.filter(scheduled_at__date__gte=start)
+        if end is not None:
+            queryset = queryset.filter(scheduled_at__date__lte=end)
+        return queryset
 
 
 @extend_schema(tags=["Appointment availability"])
