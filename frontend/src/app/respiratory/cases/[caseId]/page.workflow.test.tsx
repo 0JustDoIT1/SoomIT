@@ -21,7 +21,15 @@ vi.mock("./case-wsi-evidence", () => ({ CaseWsiEvidence: () => null }));
 vi.mock("./pathology-gene-imaging-workstation", () => ({ PathologyGeneReviewPanel: () => null }));
 vi.mock("./pdl1-imaging-workstation", () => ({ Pdl1ResultPanel: () => null }));
 vi.mock("./result-review-panel", () => ({ ResultReviewPanel: ({ specialistAction }: { specialistAction?: import("react").ReactNode }) => specialistAction ?? null, WorkflowStatusFlow: () => null }));
-vi.mock("./treatment-decision-panel", () => ({ TreatmentDecisionPanel: () => <div data-testid="treatment-final-plan" /> }));
+vi.mock("./treatment-decision-panel", () => ({
+  TreatmentDecisionPanel: ({ onTreatmentConfirmed }: { onTreatmentConfirmed?: (decision: { current_stage?: string; case_status?: string }) => void }) => (
+    <div data-testid="treatment-final-plan">
+      <button type="button" onClick={() => onTreatmentConfirmed?.({ current_stage: "PRESCRIPTION", case_status: "ACTIVE" })}>
+        치료계획 확정 테스트
+      </button>
+    </div>
+  ),
+}));
 vi.mock("./evidence-viewer-panel", () => ({ EvidenceViewerPanel: () => null }));
 
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
@@ -52,7 +60,7 @@ async function openCaseWorkspace(name: string) {
 it("keeps the Case action outside the constrained stage body when switching imaging workspaces", async () => {
   installCaseResponses({ stage: "CT", aiResults: [{ id: "analysis-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }] });
   const { container } = render(<Page />);
-  for (const name of ["흉부 CT", "PET-CT / TNM 병기"]) {
+  for (const name of ["흉부 CT"]) {
     await openCaseWorkspace(name);
     const body = container.querySelector("[data-case-stage-body]");
     expect(body).toHaveClass("flex-1", "min-h-0", "overflow-hidden");
@@ -60,15 +68,58 @@ it("keeps the Case action outside the constrained stage body when switching imag
   }
 });
 
-it("keeps the active CT action available while a future stage is waiting", async () => {
+it("keeps the active CT action available while the future PET-CT/TNM stage is locked", async () => {
   installCaseResponses({ stage: "CT", aiResults: [{ id: "analysis-1", ai_result_id: "ai-result-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }] });
   render(<Page />);
 
   await openCaseWorkspace("흉부 CT");
   expect(await screen.findByRole("button", { name: "결과 입력 및 처리" })).toBeEnabled();
 
-  await openCaseWorkspace("PET-CT / TNM 병기");
+  const navigation = await screen.findByRole("navigation", { name: "Case 진료 정보 메뉴" });
+  expect(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "결과 입력 및 처리" })).toBeEnabled();
+});
+
+it("applies the CT confirmation response stage and keeps it after refetch", async () => {
+  let stage = "CT";
+  mocks.authorizedFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+    const url = new URL(input).pathname;
+    if (url.endsWith("/clinical-results/ct/") && init?.method === "POST") return response({ id: "ct-draft-1" }, 201);
+    if (url.endsWith("/clinical-results/ct/ct-draft-1/confirm/") && init?.method === "POST") {
+      stage = "PET_CT_TNM";
+      return response({ id: "ct-draft-1", result_status: "CONFIRMED", current_stage: "PET_CT_TNM", case_status: "ACTIVE" });
+    }
+    if (url === "/api/doctor/cases/") return response([baseCase(stage)]);
+    if (url === "/api/doctor/cases/case-1/") return response(baseCase(stage));
+    if (url.endsWith("/clinical-results/") || url.endsWith("/orders/")) return response([]);
+    if (url.endsWith("/ai-results/")) return response([{ id: "analysis-1", ai_result_id: "ai-result-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }]);
+    if (url.endsWith("/treatment-decision/")) return response({}, 404);
+    return response([]);
+  });
+  render(<Page />);
+
+  await openCaseWorkspace("흉부 CT");
+  await userEvent.click(await screen.findByRole("button", { name: "결과 입력 및 처리" }));
+  await userEvent.click(screen.getByRole("button", { name: "결과 확정 및 PET-CT/TNM 진행" }));
+
+  await waitFor(() => expect(screen.getByText("현재 Case 단계 · TNM")).toBeInTheDocument());
+  expect(screen.queryByRole("button", { name: "결과 입력 및 처리" })).not.toBeInTheDocument();
+
+  const navigation = screen.getByRole("navigation", { name: "Case 진료 정보 메뉴" });
+  expect(within(navigation).getByRole("button", { name: "흉부 CT" })).toHaveAttribute("aria-current", "page");
+  expect(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" })).toBeEnabled();
+  for (const name of ["조직/유전자", "PD-L1", "치료계획·처방"]) {
+    const futureStage = within(navigation).getByRole("button", { name });
+    expect(futureStage).toBeDisabled();
+    expect(futureStage).toHaveAttribute("data-access-state", "LOCKED");
+  }
+
+  await userEvent.click(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" }));
+  expect(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" })).toHaveAttribute("aria-current", "page");
+
+  await userEvent.click(within(navigation).getByRole("button", { name: "흉부 CT" }));
+  expect(within(navigation).getByRole("button", { name: "흉부 CT" })).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByRole("button", { name: "결과 입력 및 처리" })).not.toBeInTheDocument();
 });
 
 it("keeps a completed TNM workspace read-only after the Case advances to pathology", async () => {
@@ -101,12 +152,46 @@ it("keeps TNM next-stage progression in the TNM workspace only", async () => {
   expect(screen.queryByRole("button", { name: "결과 입력 및 처리" })).not.toBeInTheDocument();
 });
 
+it("keeps the confirmed TNM workspace selected after advancing to pathology", async () => {
+  let stage = "PET_CT_TNM";
+  const clinicalResults = [{
+    id: "tnm-1",
+    workflow_stage: "PET_CT_TNM",
+    result_status: "CONFIRMED",
+    result_detail: { tnm: { t_category: "T1", n_category: "N0", m_category: "M0", stage_group: "IIA", evidence: { stage: { stage_group_candidate: "IIA", stage_group_status: "candidate_ready" } } } },
+  }];
+  mocks.authorizedFetch.mockImplementation(async (input: string, init?: RequestInit) => {
+    const url = new URL(input).pathname;
+    if (url.endsWith("/workflow-decision/") && init?.method === "POST") {
+      stage = "PATHOLOGY_GENE";
+      return response({ current_stage: stage, case_status: "ACTIVE" });
+    }
+    if (url === "/api/doctor/cases/") return response([baseCase(stage)]);
+    if (url === "/api/doctor/cases/case-1/") return response(baseCase(stage));
+    if (url.endsWith("/clinical-results/")) return response(clinicalResults);
+    if (url.endsWith("/orders/") || url.endsWith("/ai-results/")) return response([]);
+    if (url.endsWith("/treatment-decision/")) return response({}, 404);
+    return response([]);
+  });
+  render(<Page />);
+
+  const navigation = await openCaseWorkspace("PET-CT / TNM 병기");
+  await userEvent.click(await screen.findByRole("button", { name: "다음 처리 선택" }));
+  await userEvent.click(screen.getByRole("button", { name: "다음 단계 진행" }));
+
+  await waitFor(() => expect(screen.getByText("현재 Case 단계 · 병리")).toBeInTheDocument());
+  expect(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" })).toHaveAttribute("aria-current", "page");
+  expect(within(navigation).getByRole("button", { name: "조직/유전자" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "다음 처리 선택" })).not.toBeInTheDocument();
+  expect(await screen.findByText("현재 Case 단계가 아니므로 결과 조회만 가능합니다.")).toBeInTheDocument();
+});
+
 it("keeps PD-L1 waiting until the pathology result is confirmed", async () => {
   installCaseResponses({ stage: "PATHOLOGY_GENE", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT", result_detail: {} }] });
   render(<Page />);
 
   const navigation = await openCaseWorkspace("조직/유전자");
-  expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "WAITING");
+  expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "LOCKED");
   expect(screen.queryByRole("button", { name: "PD-L1 오더" })).not.toBeInTheDocument();
 });
 
@@ -152,6 +237,10 @@ it("creates the PD-L1 order and advances through the atomic workflow decision", 
   await userEvent.click(screen.getByRole("button", { name: "PD-L1 검사 오더 및 진행" }));
 
   await waitFor(() => expect(screen.getByText("현재 Case 단계 · PD-L1")).toBeInTheDocument());
+  const navigation = screen.getByRole("navigation", { name: "Case 진료 정보 메뉴" });
+  expect(within(navigation).getByRole("button", { name: "조직/유전자" })).toHaveAttribute("aria-current", "page");
+  expect(within(navigation).getByRole("button", { name: "PD-L1" })).toBeEnabled();
+  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
   const workflowCalls = mocks.authorizedFetch.mock.calls.filter(([input, init]) => new URL(input as string).pathname.endsWith("/workflow-decision/") && (init as RequestInit | undefined)?.method === "POST");
   const directOrderPosts = mocks.authorizedFetch.mock.calls.filter(([input, init]) => new URL(input as string).pathname.endsWith("/orders/") && (init as RequestInit | undefined)?.method === "POST");
   expect(workflowCalls).toHaveLength(1);
@@ -175,12 +264,10 @@ it("keeps treatment and prescription in a single waiting view until the confirme
   render(<Page />);
 
   const navigation = await openCaseWorkspace("PD-L1");
-  expect(within(navigation).getByRole("button", { name: "치료계획·처방" })).toHaveAttribute("data-access-state", "ACTIONABLE");
+  expect(within(navigation).getByRole("button", { name: "치료계획·처방" })).toHaveAttribute("data-access-state", "LOCKED");
   expect(await screen.findByRole("button", { name: "다음 단계 결정" })).toBeEnabled();
 
-  await openCaseWorkspace("치료계획·처방");
-  expect(await screen.findByRole("heading", { name: "다음 단계 결정이 필요합니다." })).toBeInTheDocument();
-  expect(screen.queryByTestId("treatment-final-plan")).not.toBeInTheDocument();
+  expect(within(navigation).getByRole("button", { name: "치료계획·처방" })).toBeDisabled();
 });
 
 it.each([
@@ -220,6 +307,10 @@ it("advances a confirmed PD-L1 result to treatment and keeps the past PD-L1 view
   await waitFor(() => expect(screen.getByText("현재 Case 단계 · 치료 결정")).toBeInTheDocument());
   expect(screen.queryByRole("button", { name: "다음 단계 결정" })).not.toBeInTheDocument();
 
+  const navigation = screen.getByRole("navigation", { name: "Case 진료 정보 메뉴" });
+  expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("aria-current", "page");
+  expect(within(navigation).getByRole("button", { name: "치료계획·처방" })).toBeEnabled();
+
   await openCaseWorkspace("치료계획·처방");
   expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
 
@@ -234,6 +325,32 @@ it("advances a confirmed PD-L1 result to treatment and keeps the past PD-L1 view
     source_clinical_result_id: "pdl1-1",
     target_stage: "TREATMENT",
   });
+});
+
+it("keeps the treatment plan visible after confirmation advances to prescription", async () => {
+  let stage = "TREATMENT";
+  mocks.authorizedFetch.mockImplementation(async (input: string) => {
+    const url = new URL(input).pathname;
+    if (url === "/api/doctor/cases/") return response([baseCase(stage)]);
+    if (url === "/api/doctor/cases/case-1/") return response(baseCase(stage));
+    if (url.endsWith("/clinical-results/") || url.endsWith("/orders/") || url.endsWith("/ai-results/") || url.endsWith("/prescriptions/") || url.endsWith("/regimen-candidates/")) return response([]);
+    if (url.endsWith("/treatment-decision/")) return response({ decision_status: "DRAFT", selected_regimen: null });
+    return response([]);
+  });
+  render(<Page />);
+
+  const navigation = await openCaseWorkspace("치료계획·처방");
+  expect(screen.getByRole("button", { name: "치료계획 · 근거" })).toHaveAttribute("aria-pressed", "true");
+  stage = "PRESCRIPTION";
+  await userEvent.click(screen.getByRole("button", { name: "치료계획 확정 테스트" }));
+
+  await waitFor(() => expect(screen.getByText("현재 Case 단계 · 처방")).toBeInTheDocument());
+  expect(within(navigation).getByRole("button", { name: "치료계획·처방" })).toHaveAttribute("aria-current", "page");
+  expect(screen.getByRole("button", { name: "치료계획 · 근거" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByTestId("treatment-final-plan")).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "처방 · 안전성" }));
+  expect(screen.getByRole("button", { name: "처방 · 안전성" })).toHaveAttribute("aria-pressed", "true");
 });
 
 it("does not restore PD-L1 actions after refreshing an already advanced treatment Case", async () => {
@@ -260,7 +377,7 @@ it("does not expose duplicate PD-L1 ordering while an active PD-L1 order exists"
   render(<Page />);
 
   const navigation = await openCaseWorkspace("조직/유전자");
-  await waitFor(() => expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "WAITING"));
+  await waitFor(() => expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "LOCKED"));
   expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
   expect(screen.getByRole("button", { name: "PD-L1 단계 전환 재시도" })).toBeEnabled();
 });

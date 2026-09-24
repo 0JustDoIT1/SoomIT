@@ -1987,7 +1987,7 @@ export default function RespiratoryCaseDetailPage() {
               <XrayWorkflowDecision key={caseId} caseId={caseId} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "CT" && selectedInfoMenu === "CT" && (
-              <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} aiNodules={ctAnalysisResult?.result_detail?.ct?.nodules} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={({ closed }) => { if (closed) { router.push("/respiratory/cases"); return; } setCaseRefreshVersion((current) => current + 1); }} />
+              <CtWorkflowDecision key={caseId} caseId={caseId} aiResultId={ctAnalysisResult?.ai_result_id} aiNodules={ctAnalysisResult?.result_detail?.ct?.nodules} clinicalResult={selectedClinicalResult} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PDL1" && Boolean(confirmedPdl1Result) && ["PDL1", "TREATMENT"].includes(selectedInfoMenu) && (
               <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
@@ -2053,7 +2053,7 @@ export default function RespiratoryCaseDetailPage() {
               apiBaseUrl={API_BASE_URL}
               authorizedFetch={authorizedFetch}
               onTreatmentConfirmed={(decision) => {
-                setTreatmentView(null);
+                setTreatmentView({ caseId, tab: "TREATMENT" });
                 applyWorkflowDecisionServerState({
                   message: "",
                   closed: false,
