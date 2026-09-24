@@ -30,23 +30,14 @@ const NAVIGATION_GROUPS: { label: string; keys: CaseInfoKey[] }[] = [
   },
 ];
 
-const WORKFLOW_STAGES: CaseInfoKey[] = ["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"];
-
-const WAITING_MESSAGES: Partial<Record<CaseInfoKey, string>> = {
-  PET_CT_TNM: "PET-CT/TNM 검사 및 결과 확정이 필요합니다.",
-  PATHOLOGY_GENE: "PET-CT/TNM 확정 결과가 필요합니다.",
-  PDL1: "조직·유전자 결과의 호흡기내과 확인이 완료되어야 PD-L1을 진행할 수 있습니다.",
-  TREATMENT: "PD-L1 호흡기내과 최종 확정 결과가 필요합니다.",
-  PRESCRIPTION: "치료계획 최종 확정이 필요합니다.",
-};
+export const CASE_WORKFLOW_STAGES: CaseInfoKey[] = ["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"];
 
 export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE", clinicalResults = [], orders = [], aiResults = [] }: { key: CaseInfoKey; currentStage?: string; caseStatus?: string; clinicalResults?: CaseInfoClinicalResult[]; orders?: CaseInfoOrder[]; aiResults?: CaseInfoAiResult[] }) {
-  const itemIndex = WORKFLOW_STAGES.indexOf(key);
+  const itemIndex = CASE_WORKFLOW_STAGES.indexOf(key);
   if (itemIndex < 0) return { state: "OPEN" as const, message: "" };
 
-  const currentIndex = WORKFLOW_STAGES.indexOf(currentStage as CaseInfoKey);
+  const currentIndex = CASE_WORKFLOW_STAGES.indexOf(currentStage as CaseInfoKey);
   const confirmed = clinicalResults.some((result) => result.workflow_stage === key && result.result_status === "CONFIRMED");
-  const confirmedCt = clinicalResults.find((result) => result.workflow_stage === "CT" && result.result_status === "CONFIRMED");
   const pathologyConfirmed = clinicalResults.some((result) => result.workflow_stage === "PATHOLOGY_GENE" && result.result_status === "CONFIRMED");
   const pdl1Confirmed = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED");
   const pdl1DraftReady = clinicalResults.some((result) => result.workflow_stage === "PDL1" && result.result_status === "DRAFT");
@@ -54,17 +45,28 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
   const completedPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "COMPLETED");
   const cancelledPdl1Order = orders.find((order) => order.order_type === "PDL1" && order.status === "CANCELLED");
   const pdl1AiCompleted = aiResults.some((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
-  const ctRequiresFurtherEvaluation = ["NODULE_DETECTED", "INDETERMINATE"].includes(
-    confirmedCt?.result_detail?.ct?.overall_assessment ?? "",
-  );
-
-  if (currentIndex < 0 && caseStatus === "ACTIVE") return { state: "OPEN" as const, message: "" };
+  if (currentIndex < 0 && caseStatus === "ACTIVE") return { state: "LOCKED" as const, message: "현재 Case workflow 단계를 확인할 수 없습니다." };
 
   if (caseStatus !== "ACTIVE") {
-    if (itemIndex > WORKFLOW_STAGES.indexOf("CT")) {
+    if (currentIndex < 0 || itemIndex > currentIndex) {
       return { state: "LOCKED" as const, message: "Case가 종료되어 이후 진료 단계는 사용할 수 없습니다." };
     }
-    return { state: confirmed ? "COMPLETED" as const : "LOCKED" as const, message: "Case가 종료되었습니다." };
+    return confirmed
+      ? { state: "COMPLETED" as const, message: "Case가 종료되었습니다." }
+      : { state: "WAITING" as const, message: "종료된 Case의 이전 단계 결과를 조회할 수 있습니다." };
+  }
+
+  // Case.current_stage is the sole authority for workflow access. Results,
+  // orders, and AI outputs may describe a stage, but must never unlock a
+  // future workspace (including legacy data left ahead of the Case stage).
+  if (itemIndex > currentIndex) {
+    return { state: "LOCKED" as const, message: "현재 workflow 단계 이후에는 접근할 수 없습니다." };
+  }
+
+  if (itemIndex < currentIndex) {
+    return confirmed
+      ? { state: "COMPLETED" as const, message: "" }
+      : { state: "WAITING" as const, message: "이전 단계 결과를 조회할 수 있습니다." };
   }
 
   if (key === "PDL1") {
@@ -85,22 +87,16 @@ export function getCaseInfoAccessState({ key, currentStage, caseStatus = "ACTIVE
       return { state: "ACTIONABLE" as const, message: "PD-L1 오더가 취소되었습니다. 재오더가 필요합니다." };
     }
     if (pathologyConfirmed) return { state: "ACTIONABLE" as const, message: "PD-L1 검사 오더를 요청할 수 있습니다." };
-    if (currentIndex >= WORKFLOW_STAGES.indexOf("PATHOLOGY_GENE")) {
+    if (currentIndex >= CASE_WORKFLOW_STAGES.indexOf("PATHOLOGY_GENE")) {
       return { state: "WAITING" as const, message: "조직·유전자 결과의 호흡기내과 확인이 완료되어야 PD-L1을 진행할 수 있습니다." };
     }
   }
 
-  if (key === "TREATMENT" && pdl1Confirmed && currentIndex <= WORKFLOW_STAGES.indexOf("TREATMENT")) {
+  if (key === "TREATMENT" && pdl1Confirmed) {
     return { state: "ACTIONABLE" as const, message: "PD-L1 확정 결과를 바탕으로 치료 판단을 진행할 수 있습니다." };
   }
 
-  if (confirmed && itemIndex < currentIndex) return { state: "COMPLETED" as const, message: "" };
-  if (itemIndex === currentIndex) return { state: "ACTIONABLE" as const, message: "현재 수행할 수 있는 진료 단계입니다." };
-  if (itemIndex < currentIndex) return { state: "WAITING" as const, message: "이전 단계의 결과 확인이 필요합니다." };
-  if (ctRequiresFurtherEvaluation && itemIndex > WORKFLOW_STAGES.indexOf("CT")) {
-    return { state: "WAITING" as const, message: WAITING_MESSAGES[key] ?? "선행 결과를 기다리고 있습니다." };
-  }
-  return { state: "LOCKED" as const, message: "이전 단계의 확정 및 다음 단계 진행이 필요합니다." };
+  return { state: "ACTIONABLE" as const, message: "현재 수행할 수 있는 진료 단계입니다." };
 }
 
 const STATUS_LABEL: Record<CaseInfoAccessState, string> = {

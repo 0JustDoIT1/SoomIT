@@ -13,7 +13,7 @@ import workspaceStyles from "./workspace.module.css";
 import { CaseChatPanel } from "./case-chat-panel";
 import { PathologyGeneReviewPanel } from "./pathology-gene-imaging-workstation";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
-import { CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
+import { CASE_WORKFLOW_STAGES, CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
 import { CasePatientSidebar } from "./case-patient-sidebar";
 import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
@@ -1085,6 +1085,15 @@ export default function RespiratoryCaseDetailPage() {
 
   const handleInfoMenuSelect = (menu: CaseInfoKey) => {
     const workspaceMenu = menu === "PRESCRIPTION" ? "TREATMENT" : menu;
+    const access = getCaseInfoAccessState({
+      key: workspaceMenu,
+      currentStage: selectedCase?.current_stage,
+      caseStatus: selectedCase?.case_status,
+      clinicalResults: tnmClinicalResults,
+      orders: caseOrders,
+      aiResults: tnmAnalysisResults,
+    });
+    if (access.state === "LOCKED") return;
     setSelectedInfoMenu(workspaceMenu);
     const navigation = getCaseMenuNavigation(workspaceMenu);
     if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
@@ -1100,17 +1109,7 @@ export default function RespiratoryCaseDetailPage() {
     if (!currentCaseStage) return;
 
     const stage = currentCaseStage as CaseInfoKey;
-    const workflowStages = [
-      "XRAY",
-      "CT",
-      "PET_CT_TNM",
-      "PATHOLOGY_GENE",
-      "PDL1",
-      "TREATMENT",
-      "PRESCRIPTION",
-    ] as CaseInfoKey[];
-
-    if (!workflowStages.includes(stage)) return;
+    if (!CASE_WORKFLOW_STAGES.includes(stage)) return;
 
     const caseChanged = previousCaseIdRef.current !== caseId;
     const previousStage = previousCaseStageRef.current;
@@ -1124,19 +1123,28 @@ export default function RespiratoryCaseDetailPage() {
       return;
     }
 
-    // 같은 Case 안에서 실제 workflow stage가 다음 단계로 바뀐 경우에만
-    // 사용자가 직전 단계 화면을 보고 있었다면 새 단계로 자연스럽게 이동한다.
-    // 사용자가 '전체 요약'이나 다른 과거 결과를 열어 보고 있으면 강제로 덮어쓰지 않는다.
-    if (previousStage !== currentCaseStage && selectedInfoMenu === previousStage) {
+    const selectedAccess = getCaseInfoAccessState({
+      key: selectedInfoMenu,
+      currentStage: currentCaseStage,
+      caseStatus: selectedCase?.case_status,
+      clinicalResults: tnmClinicalResults,
+      orders: caseOrders,
+      aiResults: tnmAnalysisResults,
+    });
+    if (selectedAccess.state === "LOCKED") {
       setSelectedInfoMenu(stage);
-
       const navigation = getCaseMenuNavigation(stage);
       if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
       if (navigation.resultMenu) setSelectedResultMenu(navigation.resultMenu);
       if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
       if (stage === "TREATMENT") setSelectedTreatmentMenu("FINAL_PLAN");
+      return;
     }
-  }, [caseId, currentCaseStage, selectedInfoMenu]);
+
+    // Workflow 전환은 접근 가능 범위만 갱신한다. 사용자가 보고 있던 단계가
+    // 새 current_stage의 과거 단계라면 읽기 전용 화면으로 그대로 유지한다.
+    // 미래 workspace가 선택된 비정상 상태만 위의 LOCKED 분기에서 복구한다.
+  }, [caseId, caseOrders, currentCaseStage, selectedCase?.case_status, selectedInfoMenu, tnmAnalysisResults, tnmClinicalResults]);
 
   const latestPdl1Result =
     pdl1Results.length > 0
