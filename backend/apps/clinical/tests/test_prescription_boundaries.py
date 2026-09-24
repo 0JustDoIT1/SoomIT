@@ -7,6 +7,7 @@ from django.test import SimpleTestCase
 from rest_framework.exceptions import ValidationError
 from apps.clinical.serializers import DoctorPrescriptionSerializer, PrescriptionItemUpdateSerializer
 from apps.clinical.views import (DoctorPrescriptionAPIView as Create,
+    DoctorSafetyWarningAcknowledgeAPIView as Acknowledge,
     DoctorPrescriptionItemUpdateAPIView as Update,
     DoctorPrescriptionFinalizeAPIView as Finalize,
     DoctorPrescriptionSafetyCheckAPIView as Safety)
@@ -31,7 +32,10 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.case = NS(patient=object(), current_stage="PRESCRIPTION")
         self.cases.all.return_value.select_for_update.return_value.filter.return_value.first.return_value = self.case
         self.regimen = NS(induction_cycles=4)
-        self.decisions.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = NS(selected_regimen=self.regimen)
+        self.decisions.select_related.return_value.filter.return_value.order_by.return_value.first.return_value = NS(
+            selected_regimen=self.regimen,
+            requires_drug_prescription=True,
+        )
         self.rx.filter.return_value.exists.return_value = False
         self.output.return_value.validated_data = {"cycle_number": 1, "phase": "INDUCTION"}
         self.output.return_value.data = {}
@@ -91,6 +95,16 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.items.create.assert_called_once()
         self.assertIsNone(self.items.create.call_args.kwargs["final_dose"])
 
+    def test_get_preserves_history_for_an_owned_inactive_case(self):
+        inactive_case = NS(case_status="CLOSED")
+        self.cases.filter.return_value.first.return_value = inactive_case
+        self.rx.filter.return_value.select_related.return_value.prefetch_related.return_value.order_by.return_value = []
+
+        response = Create().get(self.request, "case")
+
+        self.assertEqual(response.status_code, 200)
+        self.cases.filter.assert_called_once_with(id="case", primary_doctor=self.request.user)
+
     def test_creation_requires_the_prescription_stage(self):
         self.case.current_stage = "TREATMENT"
 
@@ -99,6 +113,17 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.assertEqual(response.status_code, 400)
         self.output.return_value.save.assert_not_called()
 
+    def test_non_drug_treatment_does_not_create_a_prescription(self):
+        treatment_decision = self.decisions.select_related.return_value.filter.return_value.order_by.return_value.first.return_value
+        treatment_decision.selected_regimen = None
+        treatment_decision.requires_drug_prescription = False
+
+        response = self.create()
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("비약물", response.data["detail"])
+        self.output.assert_not_called()
+
     def test_finalize_requires_the_prescription_stage(self):
         self.prescription.case.current_stage = "TREATMENT"
 
@@ -106,6 +131,17 @@ class PrescriptionBoundaryTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 400)
         self.prescription.save.assert_not_called()
+
+    def test_finalize_rejects_draft_and_repeated_final_requests(self):
+        for prescription_status in ("DRAFT", "FINAL"):
+            with self.subTest(prescription_status=prescription_status):
+                self.prescription.prescription_status = prescription_status
+                self.prescription.save.reset_mock()
+
+                response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
+
+                self.assertEqual(response.status_code, 400)
+                self.prescription.save.assert_not_called()
 
     def test_invalid_final_dose_has_no_writes(self):
         for value in ("NaN", "Infinity", "-Infinity", "-1", "0.0001", "1000000000", "bad", None):
@@ -206,3 +242,29 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         response = Update.patch.__wrapped__(Update(), self.request, "case", "rx", "item")
         self.assertEqual(response.status_code, 400)
         self.items.filter.assert_not_called()
+
+    def test_warning_acknowledgment_requires_a_reason(self):
+        warning_results = self.prescription.safety_check_results.filter.return_value
+        warning_results.exists.return_value = True
+        self.request.data = {"acknowledgment_note": "   "}
+
+        response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
+
+        self.assertEqual(response.status_code, 400)
+        warning_results.update.assert_not_called()
+
+    def test_warning_acknowledgment_excludes_unresolved_recheck_warnings(self):
+        warning_results = self.prescription.safety_check_results.filter.return_value
+        warning_results.exists.return_value = True
+        acknowledgeable_results = warning_results.exclude.return_value
+        acknowledgeable_results.exists.return_value = True
+        self.request.data = {"acknowledgment_note": "  reviewed  "}
+
+        response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
+
+        self.assertEqual(response.status_code, 200)
+        acknowledgeable_results.update.assert_called_once()
+        self.assertEqual(
+            acknowledgeable_results.update.call_args.kwargs["acknowledgment_note"],
+            "reviewed",
+        )

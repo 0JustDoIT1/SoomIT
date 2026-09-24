@@ -184,6 +184,7 @@ class CandidateContractTests(SimpleTestCase):
         self.assertEqual(payload["decision_status"], "CONFIRMED")
         self.assertEqual(payload["current_stage"], "PRESCRIPTION")
         self.assertEqual(payload["case_status"], "ACTIVE")
+        self.assertFalse(payload["requires_prescription"])
 
     def test_queryset_order_and_response_contract(self):
         view = Candidates()

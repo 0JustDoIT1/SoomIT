@@ -642,6 +642,10 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
         source="get_treatment_type_display",
         read_only=True,
     )
+    requires_prescription = serializers.BooleanField(
+        source="requires_drug_prescription",
+        read_only=True,
+    )
 
     class Meta:
         model = TreatmentDecision
@@ -654,6 +658,7 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
             "ai_recommendation_action_label",
             "treatment_type",
             "treatment_type_label",
+            "requires_prescription",
             "selected_regimen",
             "selected_regimen_detail",
             "treatment_plan",

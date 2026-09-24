@@ -214,6 +214,7 @@ type CaseTreatmentDecision = {
   ai_recommendation_action_label: string | null;
   treatment_type: string | null;
   treatment_type_label: string | null;
+  requires_prescription?: boolean;
   selected_regimen: string | null;
   selected_regimen_detail: RegimenCandidateDetail | null;
   treatment_plan: string | null;
@@ -1200,6 +1201,7 @@ export default function RespiratoryCaseDetailPage() {
     && !(selectedInfoMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "PRESCRIPTION_LIST");
   const prescriptionActionable = selectedCase?.case_status === "ACTIVE"
     && selectedCase.current_stage === "PRESCRIPTION";
+  const treatmentRequiresPrescription = caseTreatmentDecision?.requires_prescription ?? true;
   const treatmentDecisionActionable = selectedCase?.case_status === "ACTIVE"
     && selectedCase.current_stage === "TREATMENT";
   const isTreatmentPrescriptionPending = selectedInfoMenu === "TREATMENT"
@@ -1965,7 +1967,7 @@ export default function RespiratoryCaseDetailPage() {
               <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
             {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && !["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(selectedCase.current_stage) && (
-              <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} secondary={selectedCase.current_stage === "TREATMENT" || selectedCase.current_stage === "PRESCRIPTION"} triggerLabel={selectedCase.current_stage === "TREATMENT" ? "단계 처리 메뉴" : undefined} exceptionsOnly={selectedCase.current_stage === "PET_CT_TNM" || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
+              <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} secondary={selectedCase.current_stage === "TREATMENT" || selectedCase.current_stage === "PRESCRIPTION"} triggerLabel={selectedCase.current_stage === "TREATMENT" ? "단계 처리 메뉴" : selectedCase.current_stage === "PRESCRIPTION" && !treatmentRequiresPrescription ? "비약물 치료 종료·의뢰" : undefined} exceptionsOnly={selectedCase.current_stage === "PET_CT_TNM" || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} allowCaseCloseWithoutFinalPrescription={selectedCase.current_stage === "PRESCRIPTION" && !treatmentRequiresPrescription} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
           </div>
         </div>
@@ -2044,6 +2046,7 @@ export default function RespiratoryCaseDetailPage() {
               refreshKey={caseRefreshVersion}
               actionable={prescriptionActionable}
               hasSelectedRegimen={Boolean(caseTreatmentDecision?.selected_regimen)}
+              requiresPrescription={treatmentRequiresPrescription}
               onPrescriptionChanged={() => setCaseRefreshVersion((current) => current + 1)}
             />
             </div>

@@ -1,6 +1,7 @@
 type TreatmentSummary = {
   treatment_type_label: string | null;
   treatment_type?: string | null;
+  requires_prescription?: boolean;
   selected_regimen_detail: { regimen_name: string } | null;
 } | null;
 
@@ -58,6 +59,7 @@ function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: 
 
 function PrescriptionTreatmentSummary({ treatment, prescriptionActionable }: { treatment: TreatmentSummary; prescriptionActionable: boolean }) {
   const hasTreatment = Boolean(treatment);
+  const requiresPrescription = treatment?.requires_prescription ?? Boolean(treatment?.selected_regimen_detail);
   return <section className="mb-2 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
     <header className="sr-only">
       <h2 className="text-sm font-bold text-slate-900">치료결정 요약</h2>
@@ -65,9 +67,9 @@ function PrescriptionTreatmentSummary({ treatment, prescriptionActionable }: { t
     </header>
     {hasTreatment ? <div className="grid grid-cols-1 divide-y divide-slate-200 sm:grid-cols-2 sm:divide-x sm:divide-y-0 xl:grid-cols-4">
       <TreatmentSummaryItem label="선택 치료법" value={treatment?.treatment_type_label || treatment?.treatment_type || "결과 대기"} />
-      <TreatmentSummaryItem label="선택 치료요법" value={treatment?.selected_regimen_detail?.regimen_name || "결과 대기"} />
+      <TreatmentSummaryItem label="선택 치료요법" value={treatment?.selected_regimen_detail?.regimen_name || (requiresPrescription ? "결과 대기" : "비약물 치료")} />
       <TreatmentSummaryItem label="치료계획 상태" value={prescriptionActionable ? "최종 확정" : "확정 대기"} emphasis={prescriptionActionable} />
-      <TreatmentSummaryItem label="처방 작성" value={prescriptionActionable ? "작성 가능" : "치료계획 확정 대기"} emphasis={prescriptionActionable} />
+      <TreatmentSummaryItem label={requiresPrescription ? "처방 작성" : "다음 처리"} value={requiresPrescription ? (prescriptionActionable ? "작성 가능" : "치료계획 확정 대기") : (prescriptionActionable ? "종료·의뢰 가능" : "치료계획 확정 대기")} emphasis={prescriptionActionable} />
     </div> : <p className="px-4 py-3 text-xs text-slate-500">현재 조회된 치료결정 결과가 없습니다.</p>}
   </section>;
 }

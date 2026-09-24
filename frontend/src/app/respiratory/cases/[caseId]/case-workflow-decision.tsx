@@ -21,7 +21,7 @@ export type WorkflowDecisionCompletion = {
   caseStatus?: string;
 };
 
-export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, showCaseCloseOption = false, exceptionsOnly = false, secondary = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; showCaseCloseOption?: boolean; exceptionsOnly?: boolean; secondary?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
+export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, confirmedStageGroup, hasFinalPrescription = false, allowCaseCloseWithoutFinalPrescription = false, showCaseCloseOption = false, exceptionsOnly = false, secondary = false, triggerLabel, authorizedFetch, onCompleted }: { caseId: string; currentStage: string; confirmedResultId?: string; confirmedStageGroup?: string | null; hasFinalPrescription?: boolean; allowCaseCloseWithoutFinalPrescription?: boolean; showCaseCloseOption?: boolean; exceptionsOnly?: boolean; secondary?: boolean; triggerLabel?: string; authorizedFetch: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; onCompleted: (completion: WorkflowDecisionCompletion) => void }) {
   const [action, setAction] = useState<"PROCEED_NEXT_STAGE" | "RETRY" | "REFERRED_OUT" | "CASE_CLOSED" | null>(null);
   const [reason, setReason] = useState("");
   const [retryPurpose, setRetryPurpose] = useState("");
@@ -31,6 +31,7 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
   const next = NEXT_STAGE[currentStage];
   const disabled = !confirmedResultId;
   const canProceed = Boolean(!exceptionsOnly && next && confirmedResultId && (currentStage !== "PET_CT_TNM" || confirmedStageGroup?.trim()));
+  const canCloseCase = hasFinalPrescription || allowCaseCloseWithoutFinalPrescription;
   const proceedLabel = currentStage === "PATHOLOGY_GENE"
     ? "PD-L1 검사 오더 및 진행"
     : currentStage === "PDL1"
@@ -89,7 +90,7 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
         ...(!exceptionsOnly && next ? [{ value: "PROCEED_NEXT_STAGE" as const, label: next.label + " 진행", disabled: !canProceed }] : []),
         ...(currentStage === "PATHOLOGY_GENE" ? [{ value: "RETRY" as const, label: "재생검" }] : []),
         { value: "REFERRED_OUT", label: "의뢰·전원" },
-        ...(hasFinalPrescription || showCaseCloseOption ? [{ value: "CASE_CLOSED" as const, label: hasFinalPrescription ? "Case 종료" : "Case 종료 (FINAL 처방 필요)", disabled: !hasFinalPrescription }] : []),
+        ...(canCloseCase || showCaseCloseOption ? [{ value: "CASE_CLOSED" as const, label: canCloseCase ? "Case 종료" : "Case 종료 (FINAL 처방 필요)", disabled: !canCloseCase }] : []),
       ]} />
       {currentStage === "PET_CT_TNM" && !confirmedStageGroup?.trim() && <p className="text-xs text-amber-700">다음 단계 진행에는 TNM 결과와 Stage Group 최종 확정이 필요합니다.</p>}
       {action === "PROCEED_NEXT_STAGE" ? <p className="text-xs text-slate-600">다음 단계: {next?.label}</p> : <DecisionReasonFields kind={action === "RETRY" ? "retry" : action === "REFERRED_OUT" ? "refer" : "close"} reason={reason} onReasonChange={setReason} retryPurpose={retryPurpose} onRetryPurposeChange={setRetryPurpose} />}
