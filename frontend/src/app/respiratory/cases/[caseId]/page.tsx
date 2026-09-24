@@ -228,6 +228,7 @@ type TreatmentAnalysisResult = {
 };
 
 type CaseTreatmentDecision = {
+  decision_status?: string | null;
   ai_recommendation_action: string | null;
   ai_recommendation_action_label: string | null;
   treatment_type: string | null;
@@ -2019,8 +2020,11 @@ export default function RespiratoryCaseDetailPage() {
             <KnowledgeRagPanel apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} />
             <AiSummaryPanel
               key={caseId}
+              currentStage={selectedCase.current_stage}
               aiResults={tnmAnalysisResults}
               clinicalResults={tnmClinicalResults}
+              treatmentDecision={caseTreatmentDecision}
+              prescriptions={casePrescriptions}
               error={aiResultError}
               retrying={panelRetrying === "AI"}
               onRetry={retryAiResults}

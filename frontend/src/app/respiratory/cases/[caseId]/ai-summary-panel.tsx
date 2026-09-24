@@ -25,26 +25,60 @@ type ClinicalSummaryResult = {
   result_detail?: unknown;
 };
 
+type TreatmentSummaryDecision = {
+  decision_status?: string | null;
+  treatment_type?: string | null;
+  treatment_type_label?: string | null;
+  selected_regimen_detail?: { regimen_name?: string | null; regimen_code?: string | null } | null;
+  treatment_plan?: string | null;
+  targeted_therapy_plan?: string | null;
+  rationale?: string | null;
+};
+
+type PrescriptionSummary = {
+  prescription_status?: string | null;
+  prescription_status_label?: string | null;
+  regimen_detail?: { regimen_name?: string | null; regimen_code?: string | null } | null;
+  cycle_number?: number | null;
+  phase_label?: string | null;
+  items?: unknown[];
+  created_at?: string | null;
+};
+
+const WORKFLOW_STAGES = ["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"] as const;
+
 const ANALYSIS_CONFIG = [
-  { type: "XRAY_ANALYSIS", label: "흉부 X선", clinical: ["XRAY"] },
-  { type: "CT_ANALYSIS", label: "흉부 CT", clinical: ["CT"] },
-  { type: "PET_CT_TNM_ANALYSIS", label: "PET-CT / TNM 병기", clinical: ["PET_CT_TNM"] },
-  { type: "PATHOLOGY_GENE_ANALYSIS", label: "조직·유전자 분석", clinical: ["PATHOLOGY_GENE"] },
-  { type: "PDL1_ANALYSIS", label: "PD-L1", clinical: ["PDL1"] },
-  { type: "TREATMENT_RECOMMENDATION", label: "치료 추천", clinical: [] },
-  { type: "ALL_ANALYSES", label: "AI 종합 분석", clinical: [] },
+  { type: "XRAY_ANALYSIS", label: "흉부 X선", stage: "XRAY", clinical: ["XRAY"] },
+  { type: "CT_ANALYSIS", label: "흉부 CT", stage: "CT", clinical: ["CT"] },
+  { type: "PET_CT_TNM_ANALYSIS", label: "PET-CT / TNM 병기", stage: "PET_CT_TNM", clinical: ["PET_CT_TNM"] },
+  { type: "PATHOLOGY_GENE_ANALYSIS", label: "조직·유전자 분석", stage: "PATHOLOGY_GENE", clinical: ["PATHOLOGY_GENE"] },
+  { type: "PDL1_ANALYSIS", label: "PD-L1", stage: "PDL1", clinical: ["PDL1"] },
+  { type: "TREATMENT_RECOMMENDATION", label: "치료 결정", stage: "TREATMENT", clinical: [] },
+  { type: "PRESCRIPTION_SUMMARY", label: "최종 처방", stage: "PRESCRIPTION", clinical: [] },
 ] as const;
 
-export function AiSummaryPanel({ aiResults, clinicalResults, evidenceByAnalysis, reviewRequest, error, retrying = false, onRetry }: { aiResults: AiSummaryResult[]; clinicalResults: ClinicalSummaryResult[]; evidenceByAnalysis?: Partial<Record<string, ReactNode>>; reviewRequest?: { analysisType: string } | null; error?: string; retrying?: boolean; onRetry?: () => void }) {
-  const rows = useMemo(() => ANALYSIS_CONFIG.map((config) => ({
-    ...config,
-    ai: selectPreferredAiResult(aiResults, config.type),
-    clinical: findClinicalResult(config.type, config.clinical, clinicalResults),
-  })), [aiResults, clinicalResults]);
-  const analysisRows = rows.filter((row) => row.type !== "ALL_ANALYSES");
-  const [selectedType, setSelectedType] = useState<string>(() => reviewRequest?.analysisType ?? analysisRows.find((row) => row.ai || row.clinical)?.type ?? analysisRows[0].type);
+export function AiSummaryPanel({ currentStage, aiResults, clinicalResults, treatmentDecision, prescriptions = [], evidenceByAnalysis, reviewRequest, error, retrying = false, onRetry }: { currentStage: string; aiResults: AiSummaryResult[]; clinicalResults: ClinicalSummaryResult[]; treatmentDecision?: TreatmentSummaryDecision | null; prescriptions?: PrescriptionSummary[]; evidenceByAnalysis?: Partial<Record<string, ReactNode>>; reviewRequest?: { analysisType: string } | null; error?: string; retrying?: boolean; onRetry?: () => void }) {
+  const analysisRows = useMemo(() => {
+    const currentIndex = WORKFLOW_STAGES.indexOf(currentStage as (typeof WORKFLOW_STAGES)[number]);
+    if (currentIndex < 0) return [];
+
+    return ANALYSIS_CONFIG.flatMap((config) => {
+      const stageIndex = WORKFLOW_STAGES.indexOf(config.stage);
+      if (stageIndex > currentIndex) return [];
+
+      const clinical = getCompletedClinicalResult(config.type, config.clinical, clinicalResults, treatmentDecision, prescriptions);
+      if (!clinical) return [];
+
+      return [{
+        ...config,
+        ai: selectPreferredAiResult(aiResults, config.type),
+        clinical,
+      }];
+    });
+  }, [aiResults, clinicalResults, currentStage, prescriptions, treatmentDecision]);
+  const [selectedType, setSelectedType] = useState<string>(() => reviewRequest?.analysisType ?? analysisRows.find((row) => row.ai || row.clinical)?.type ?? analysisRows[0]?.type ?? "");
   const [openEvidenceType, setOpenEvidenceType] = useState<string | null>(() => reviewRequest?.analysisType ?? null);
-  const selected = analysisRows.find((row) => row.type === selectedType) ?? analysisRows[0];
+  const selected = analysisRows.find((row) => row.type === selectedType) ?? analysisRows[0] ?? null;
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
@@ -64,7 +98,7 @@ export function AiSummaryPanel({ aiResults, clinicalResults, evidenceByAnalysis,
         </div>
       )}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 border-t border-slate-200 lg:grid-cols-[minmax(220px,35fr)_minmax(0,65fr)]">
+      {selected ? <div className="grid min-h-0 flex-1 grid-cols-1 border-t border-slate-200 lg:grid-cols-[minmax(220px,35fr)_minmax(0,65fr)]">
         <AnalysisMasterList rows={analysisRows} selectedType={selected.type} onSelect={(analysisType) => { setSelectedType(analysisType); setOpenEvidenceType(null); }} />
         <article className="min-h-0 overflow-y-auto p-3 [scrollbar-gutter:stable]" role="tabpanel" aria-label={`${selected.label} 분석 결과`}>
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
@@ -78,7 +112,7 @@ export function AiSummaryPanel({ aiResults, clinicalResults, evidenceByAnalysis,
           {evidenceByAnalysis?.[selected.type] && <details open={openEvidenceType === selected.type} onToggle={(event) => setOpenEvidenceType(event.currentTarget.open ? selected.type : null)} className="mt-3 overflow-hidden rounded-lg border border-blue-100 bg-blue-50/30"><summary className="cursor-pointer select-none border-b border-blue-100 px-3 py-1.5 text-[11px] font-semibold text-blue-700">영상·검체 근거 확인</summary>{openEvidenceType === selected.type && <EvidenceWorkspace evidence={evidenceByAnalysis[selected.type]} selected={selected} />}</details>}
           <button type="button" onClick={() => setOpenEvidenceType(selected.type)} className="mt-2 rounded-md border border-blue-200 bg-white px-3 py-1.5 text-[10px] font-semibold text-blue-700 hover:bg-blue-50">{selected.label} 상세 근거 보기</button>
         </article>
-      </div>
+      </div> : <div className="flex min-h-0 flex-1 items-center justify-center border-t border-slate-200 px-6 text-center text-xs text-slate-500" role="status">현재 workflow에서 확정 완료된 분석 결과가 없습니다.</div>}
       <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] leading-4 text-slate-500">이 화면에서는 AI 분석을 실행하거나 결과를 확정하지 않습니다. 최종 진단과 치료 결정은 의료진 확정 결과를 기준으로 합니다.</p>
     </section>
   );
@@ -169,8 +203,27 @@ function ComparisonBadge({ comparison }: { comparison: Comparison }) {
   return <div className="border-t border-slate-200 px-3 py-2" aria-label="AI와 의료진 결과 비교"><div className="flex items-center justify-between gap-2"><span className="text-[9px] text-slate-400">결과 비교</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${styles}`}>{comparison.label}</span></div>{comparison.differences.length > 0 && <ul className="mt-2 space-y-1 border-t border-amber-100 pt-2" aria-label="결과 차이 항목">{comparison.differences.map((difference) => <li key={difference.label} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 text-[9px]"><span className="font-semibold text-slate-600">{difference.label}</span><span className="min-w-0 break-words text-right text-amber-700">AI {formatComparable(difference.ai)} / 의료진 {formatComparable(difference.clinical)}</span></li>)}</ul>}</div>;
 }
 
-function findClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[]) {
-  if (type === "PDL1_ANALYSIS") return results.find((item) => item.workflow_stage === "PDL1" && item.result_status === "CONFIRMED");
+function getCompletedClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[], treatmentDecision?: TreatmentSummaryDecision | null, prescriptions: PrescriptionSummary[] = []) {
+  if (type === "TREATMENT_RECOMMENDATION") {
+    if (treatmentDecision?.decision_status !== "CONFIRMED") return undefined;
+    return {
+      workflow_stage: "TREATMENT",
+      result_status: "CONFIRMED",
+      result_status_label: "확정",
+      result_detail: { treatment: treatmentDecision },
+    } satisfies ClinicalSummaryResult;
+  }
+  if (type === "PRESCRIPTION_SUMMARY") {
+    const finalPrescription = prescriptions.find((item) => item.prescription_status === "FINAL");
+    if (!finalPrescription) return undefined;
+    return {
+      workflow_stage: "PRESCRIPTION",
+      result_status: "FINAL",
+      result_status_label: finalPrescription.prescription_status_label ?? "최종확정",
+      result_date: finalPrescription.created_at,
+      result_detail: { prescription: finalPrescription },
+    } satisfies ClinicalSummaryResult;
+  }
   return results.find((item) => examTypes.includes(item.workflow_stage) && item.result_status === "CONFIRMED");
 }
 
@@ -235,6 +288,23 @@ function getClinicalSummary(type: string, result?: ClinicalSummaryResult) {
   if (type === "PDL1_ANALYSIS") {
     const pdl1 = getRecord(result.result_detail, "pdl1");
     return joinDisplayValues([formatPercent(pdl1?.tps_percent, "TPS", false), pdl1?.interpretation]);
+  }
+  if (type === "TREATMENT_RECOMMENDATION") {
+    const treatment = getRecord(result.result_detail, "treatment");
+    return joinDisplayValues([
+      treatment?.treatment_type_label ?? treatment?.treatment_type,
+      getRecord(treatment, "selected_regimen_detail")?.regimen_name,
+      treatment?.treatment_plan,
+    ]);
+  }
+  if (type === "PRESCRIPTION_SUMMARY") {
+    const prescription = getRecord(result.result_detail, "prescription");
+    return joinDisplayValues([
+      getRecord(prescription, "regimen_detail")?.regimen_name,
+      prescription?.cycle_number ? `${String(prescription.cycle_number)} Cycle` : null,
+      prescription?.phase_label,
+      Array.isArray(prescription?.items) ? `약물 ${prescription.items.length}건` : null,
+    ]);
   }
   return result.result_status_label || result.result_status || "확정 결과 없음";
 }
