@@ -1,4 +1,6 @@
 from datetime import date
+from decimal import Decimal
+from unittest.mock import patch
 
 from django.test import TestCase
 from django.urls import reverse
@@ -9,8 +11,10 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, ModelVersion
 from apps.cases.models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
+from apps.cases.services.examination_orders import ExaminationOrderCreationError
 from apps.clinical.models import (
     ClinicalResult,
+    CtResult,
     Prescription,
     Regimen,
     TreatmentDecision,
@@ -45,6 +49,31 @@ class DoctorExaminationOrderAPITests(TestCase):
 
     def post_order(self, order_type):
         return self.client.post(self.url, {"order_type": order_type, "priority": "NORMAL", "purpose": "Next examination", "clinical_note": ""}, format="json")
+
+    def prepare_ct_result(self, result_status=ClinicalResult.ResultStatus.DRAFT):
+        ct_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Chest CT",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=ct_order,
+            workflow_stage=WorkflowStage.CT,
+            result_status=result_status,
+            confirmed_by_user=self.doctor if result_status == ClinicalResult.ResultStatus.CONFIRMED else None,
+            confirmed_at=timezone.now() if result_status == ClinicalResult.ResultStatus.CONFIRMED else None,
+        )
+        CtResult.objects.create(
+            clinical_result=result,
+            overall_assessment="NODULE_DETECTED",
+        )
+        return result
 
     def prepare_prescription_stage(
         self,
@@ -351,16 +380,20 @@ class DoctorExaminationOrderAPITests(TestCase):
         payload = {
             "reviewed_ai_result_id": str(ai_result.id),
             "overall_assessment": "NODULE_DETECTED",
-            "overall_malignancy_risk": "80.00",
             "finding_summary": "Stable finding",
         }
 
         first = self.client.post(url, payload, format="json")
+        existing = ClinicalResult.objects.get(id=first.data["id"])
+        existing.ct_detail.overall_malignancy_risk = Decimal("93.11")
+        existing.ct_detail.save(update_fields=["overall_malignancy_risk"])
         second = self.client.post(url, payload, format="json")
 
         self.assertEqual(first.status_code, 201)
         self.assertEqual(second.status_code, 200)
         self.assertEqual(first.data["id"], second.data["id"])
+        existing.ct_detail.refresh_from_db()
+        self.assertEqual(existing.ct_detail.overall_malignancy_risk, Decimal("93.11"))
         self.assertEqual(ClinicalResult.objects.filter(
             case=self.case,
             examination_order=order,
@@ -715,7 +748,7 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(self.case.case_status, LungCancerCase.CaseStatus.CLOSED)
         self.assertFalse(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())
 
-    def test_ct_result_confirmation_then_pet_ct_order_advances_the_case(self):
+    def test_ct_result_confirmation_creates_pet_ct_order_and_advances_the_case(self):
         self.confirm(WorkflowStage.XRAY)
         ct_order = ExaminationOrder.objects.create(
             case=self.case,
@@ -750,7 +783,6 @@ class DoctorExaminationOrderAPITests(TestCase):
         draft_response = self.client.post(result_url, {
             "reviewed_ai_result_id": str(ai_result.id),
             "overall_assessment": "NODULE_DETECTED",
-            "overall_malignancy_risk": "82.5",
             "finding_summary": "Right upper lobe nodule",
         }, format="json")
 
@@ -759,26 +791,316 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(result.result_status, ClinicalResult.ResultStatus.DRAFT)
         self.assertEqual(result.ct_detail.overall_assessment, "NODULE_DETECTED")
         confirm_url = reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id})
-        self.assertEqual(self.client.post(confirm_url, {}, format="json").status_code, 200)
+        confirm_response = self.client.post(
+            confirm_url,
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(confirm_response.status_code, 200)
         result.refresh_from_db()
         self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
-
-        pet_order = self.post_order("PET_CT_TNM")
-        self.assertEqual(pet_order.status_code, 201)
-        decision_url = reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id})
-        decision_response = self.client.post(decision_url, {
-            "action": "PROCEED_NEXT_STAGE",
-            "source_clinical_result_id": str(result.id),
-            "target_stage": "PET_CT_TNM",
-            "reason": "CT result confirmed",
-        }, format="json")
-
-        self.assertEqual(decision_response.status_code, 200)
         self.case.refresh_from_db()
         self.assertEqual(self.case.current_stage, WorkflowStage.PET_CT_TNM)
+        self.assertEqual(confirm_response.data["current_stage"], WorkflowStage.PET_CT_TNM)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            status=ExaminationOrder.Status.ORDERED,
+        ).count(), 1)
         self.assertTrue(ClinicianDecision.objects.filter(
             case=self.case,
             source_clinical_result=result,
             decision_type=ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE,
             target_stage=WorkflowStage.PET_CT_TNM,
         ).exists())
+
+    def test_ct_result_save_uses_the_order_linked_to_the_selected_ai_result(self):
+        linked_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="CT with AI result",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        model = ModelVersion.objects.create(
+            model_name="ct-order-link-model",
+            version="1.0",
+            analysis_type="CT_ANALYSIS",
+        )
+        analysis = AiAnalysis.objects.create(
+            case=self.case,
+            examination_order=linked_order,
+            analysis_type="CT_ANALYSIS",
+            model_version=model,
+            status=AiAnalysis.Status.SUCCEEDED,
+        )
+        ai_result = AiResult.objects.create(
+            ai_analysis=analysis,
+            schema_version="ct-v1",
+            result_payload={},
+            result_files=[],
+        )
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Newer CT order without this AI result",
+            status=ExaminationOrder.Status.ORDERED,
+        )
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+
+        response = self.client.post(
+            reverse("doctor-ct-result", kwargs={"case_id": self.case.id}),
+            {
+                "reviewed_ai_result_id": str(ai_result.id),
+                "overall_assessment": "NODULE_DETECTED",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        saved = ClinicalResult.objects.get(id=response.data["id"])
+        self.assertEqual(saved.examination_order, linked_order)
+
+    def test_ct_result_confirmation_reuses_an_existing_active_pet_ct_order(self):
+        self.confirm(WorkflowStage.XRAY)
+        ct_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Chest CT",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        existing_pet_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Existing PET-CT/TNM order",
+            status=ExaminationOrder.Status.ORDERED,
+        )
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=ct_order,
+            workflow_stage=WorkflowStage.CT,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        CtResult.objects.create(
+            clinical_result=result,
+            overall_assessment="NODULE_DETECTED",
+        )
+
+        response = self.client.post(
+            reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        result.refresh_from_db()
+        self.case.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(self.case.current_stage, WorkflowStage.PET_CT_TNM)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).count(), 1)
+        self.assertTrue(ExaminationOrder.objects.filter(id=existing_pet_order.id).exists())
+
+    def test_ct_result_confirmation_rolls_back_when_pet_ct_order_creation_fails(self):
+        ct_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.CT,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Chest CT",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+        self.case.current_stage = WorkflowStage.CT
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=ct_order,
+            workflow_stage=WorkflowStage.CT,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        CtResult.objects.create(
+            clinical_result=result,
+            overall_assessment="NODULE_DETECTED",
+        )
+
+        with patch(
+            "apps.cases.services.examination_orders.create_examination_order",
+            side_effect=ExaminationOrderCreationError("Order failed"),
+        ):
+            response = self.client.post(
+                reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+                {"advance_to_next_stage": True},
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 400)
+        result.refresh_from_db()
+        self.case.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(self.case.current_stage, WorkflowStage.CT)
+        self.assertFalse(ClinicianDecision.objects.filter(case=self.case).exists())
+
+    def test_ct_result_confirmation_reuses_a_scheduled_pet_ct_order(self):
+        result = self.prepare_ct_result()
+        scheduled_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Scheduled PET-CT/TNM",
+            status=ExaminationOrder.Status.SCHEDULED,
+        )
+
+        response = self.client.post(
+            reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).count(), 1)
+        self.assertTrue(ExaminationOrder.objects.filter(id=scheduled_order.id).exists())
+
+    def test_ct_result_confirmation_creates_a_new_order_after_completed_history(self):
+        result = self.prepare_ct_result()
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Completed PET-CT/TNM",
+            status=ExaminationOrder.Status.COMPLETED,
+        )
+
+        response = self.client.post(
+            reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).count(), 2)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            status=ExaminationOrder.Status.ORDERED,
+        ).count(), 1)
+
+    def test_ct_result_confirmation_creates_a_new_order_after_cancelled_history(self):
+        result = self.prepare_ct_result()
+        ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Cancelled PET-CT/TNM",
+            status=ExaminationOrder.Status.CANCELLED,
+        )
+
+        response = self.client.post(
+            reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).count(), 2)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            status=ExaminationOrder.Status.ORDERED,
+        ).count(), 1)
+
+    def test_confirmed_ct_result_recovers_the_pet_ct_transition(self):
+        result = self.prepare_ct_result(ClinicalResult.ResultStatus.CONFIRMED)
+        existing_order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            requesting_doctor=self.doctor,
+            priority=ExaminationOrder.Priority.NORMAL,
+            purpose="Existing PET-CT/TNM",
+            status=ExaminationOrder.Status.ORDERED,
+        )
+
+        response = self.client.post(
+            reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.PET_CT_TNM)
+        self.assertEqual(response.data["current_stage"], WorkflowStage.PET_CT_TNM)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).count(), 1)
+        self.assertTrue(ExaminationOrder.objects.filter(id=existing_order.id).exists())
+
+    def test_repeated_ct_transition_request_is_idempotent(self):
+        result = self.prepare_ct_result()
+        url = reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id})
+
+        first = self.client.post(url, {"advance_to_next_stage": True}, format="json")
+        second = self.client.post(url, {"advance_to_next_stage": True}, format="json")
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["current_stage"], WorkflowStage.PET_CT_TNM)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+        ).count(), 1)
+        self.assertEqual(ClinicianDecision.objects.filter(
+            case=self.case,
+            source_stage=WorkflowStage.CT,
+            target_stage=WorkflowStage.PET_CT_TNM,
+        ).count(), 1)
+
+    def test_ct_transition_handles_multiple_historical_pet_ct_orders(self):
+        result = self.prepare_ct_result()
+        for order_status in (ExaminationOrder.Status.COMPLETED, ExaminationOrder.Status.CANCELLED):
+            ExaminationOrder.objects.create(
+                case=self.case,
+                order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+                requesting_doctor=self.doctor,
+                priority=ExaminationOrder.Priority.NORMAL,
+                purpose=f"Historical {order_status} PET-CT/TNM",
+                status=order_status,
+            )
+
+        response = self.client.post(
+            reverse("doctor-ct-result-confirm", kwargs={"case_id": self.case.id, "result_id": result.id}),
+            {"advance_to_next_stage": True},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(ExaminationOrder.objects.filter(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PET_CT_TNM,
+            status__in=[ExaminationOrder.Status.ORDERED, ExaminationOrder.Status.SCHEDULED],
+        ).count(), 1)
