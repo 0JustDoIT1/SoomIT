@@ -1,5 +1,10 @@
 from django.urls import path
 
+from apps.annotations.views import (
+    PathologyWsiAnnotationDetailAPIView,
+    PathologyWsiAnnotationListCreateAPIView,
+)
+
 from .views import (
     CasePathologyAiAnalysisListAPIView,
     CasePathologyGeneAnalysisCancelAPIView,
@@ -155,6 +160,16 @@ urlpatterns = [
         "wsis/<uuid:wsi_id>/pyramid/",
         WholeSlideImagePyramidAPIView.as_view(),
         name="wsi-pyramid",
+    ),
+    path(
+        "wsis/<uuid:wsi_id>/annotations/",
+        PathologyWsiAnnotationListCreateAPIView.as_view(),
+        name="wsi-annotation-list-create",
+    ),
+    path(
+        "wsis/<uuid:wsi_id>/annotations/<uuid:annotation_id>/",
+        PathologyWsiAnnotationDetailAPIView.as_view(),
+        name="wsi-annotation-detail",
     ),
     path(
         "wsis/<uuid:wsi_id>/tiles/<int:level>/<int:x>/<int:y>/",

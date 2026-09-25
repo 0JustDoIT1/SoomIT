@@ -1,4 +1,5 @@
 from datetime import date
+from types import SimpleNamespace
 from uuid import uuid4
 
 from django.test import SimpleTestCase, TestCase
@@ -13,6 +14,7 @@ from apps.annotations.serializers import ImageAnnotationSerializer
 from apps.cases.models import CaseImageAsset, LungCancerCase, WorkflowStage
 from apps.clinical.models import ClinicalResult
 from apps.patients.models import Patient
+from apps.pathology.models import PathologySpecimen, WholeSlideImage
 
 
 def annotation_data(series_uid, *, points=None, text=None, tool_name="LengthTool"):
@@ -144,6 +146,51 @@ class ImageAnnotationPayloadValidationTests(SimpleTestCase):
         )
 
 
+class WsiAnnotationPayloadValidationTests(SimpleTestCase):
+    def setUp(self):
+        self.slide_id = uuid4()
+        self.asset = SimpleNamespace(whole_slide_image=SimpleNamespace(id=self.slide_id))
+
+    def data(self, points, *, text=None):
+        value = {
+            "coordinate_space": "WSI_IMAGE",
+            "slide_id": str(self.slide_id),
+            "image_width": 1000,
+            "image_height": 800,
+            "image_points": points,
+            "tool_name": "WsiTool",
+        }
+        if text is not None:
+            value["text"] = text
+        return value
+
+    def test_accepts_all_supported_wsi_drawing_types(self):
+        shapes = {
+            ImageAnnotation.AnnotationType.POINT: ([[10, 20]], None),
+            ImageAnnotation.AnnotationType.BOUNDING_BOX: ([[10, 20], [30, 20], [30, 40], [10, 40]], None),
+            ImageAnnotation.AnnotationType.POLYGON: ([[10, 20], [30, 20], [20, 40]], None),
+            ImageAnnotation.AnnotationType.FREEHAND: ([[10, 20], [11, 21]], None),
+            ImageAnnotation.AnnotationType.TEXT: ([[10, 20]], "tumor edge"),
+        }
+        for annotation_type, (points, text) in shapes.items():
+            with self.subTest(annotation_type=annotation_type):
+                ImageAnnotationSerializer._validate_wsi_points(
+                    annotation_type, self.data(points, text=text), self.asset
+                )
+
+    def test_rejects_wrong_slide_out_of_bounds_points_and_blank_text(self):
+        invalid = [
+            (ImageAnnotation.AnnotationType.POINT, {**self.data([[10, 20]]), "slide_id": str(uuid4())}),
+            (ImageAnnotation.AnnotationType.POINT, self.data([[1001, 20]])),
+            (ImageAnnotation.AnnotationType.POLYGON, self.data([[1, 1], [2, 2]])),
+            (ImageAnnotation.AnnotationType.TEXT, self.data([[10, 20]], text="  ")),
+        ]
+        for annotation_type, data in invalid:
+            with self.subTest(annotation_type=annotation_type, data=data):
+                with self.assertRaises(serializers.ValidationError):
+                    ImageAnnotationSerializer._validate_wsi_points(annotation_type, data, self.asset)
+
+
 class DoctorImageAnnotationAPITests(TestCase):
     def setUp(self):
         self.hospital = Hospital.objects.create(name="Annotation Hospital", code="ANNOTATION-HOSP")
@@ -173,6 +220,22 @@ class DoctorImageAnnotationAPITests(TestCase):
         self.xray = self.create_asset(self.case, CaseImageAsset.ImageType.XRAY, "1.2.3.xray")
         self.mri = self.create_asset(self.case, CaseImageAsset.ImageType.MRI, "1.2.3.mri")
         self.wsi = self.create_asset(self.case, CaseImageAsset.ImageType.WSI, "1.2.3.wsi")
+        self.specimen = PathologySpecimen.objects.create(
+            case=self.case,
+            specimen_code="ANNOTATION-SPECIMEN",
+            specimen_type=PathologySpecimen.SpecimenType.BIOPSY,
+            status=PathologySpecimen.Status.READY,
+            created_by_user=self.doctor,
+        )
+        self.slide = WholeSlideImage.objects.create(
+            specimen=self.specimen,
+            image_asset=self.wsi,
+            slide_code="ANNOTATION-SLIDE",
+            stain=WholeSlideImage.Stain.HE,
+            original_filename="annotation.svs",
+            sha256="a" * 64,
+            uploaded_by_user=self.doctor,
+        )
         self.other_case_ct = self.create_asset(
             self.other_case, CaseImageAsset.ImageType.CT, self.ct.series_instance_uid
         )
@@ -487,6 +550,65 @@ class DoctorImageAnnotationAPITests(TestCase):
             format="json",
         )
         self.assertEqual(mismatch.status_code, 400)
+
+    def wsi_payload(self, annotation_type=ImageAnnotation.AnnotationType.POINT, points=None, text=None):
+        data = {
+            "coordinate_space": "WSI_IMAGE",
+            "slide_id": str(self.slide.id),
+            "image_width": 1000,
+            "image_height": 800,
+            "image_points": points or [[100, 200]],
+            "tool_name": "WsiPoint",
+        }
+        if text is not None:
+            data["text"] = text
+        return {
+            "image_asset": str(self.wsi.id),
+            "annotation_type": annotation_type,
+            "annotation_data": data,
+        }
+
+    def test_pulmonology_can_restore_wsi_annotations_but_cannot_write(self):
+        annotation = ImageAnnotation.objects.create(
+            image_asset=self.wsi,
+            annotation_type=ImageAnnotation.AnnotationType.POINT,
+            annotation_data=self.wsi_payload()["annotation_data"],
+            created_by_user=self.doctor,
+        )
+        response = self.client.get(self.list_url, {
+            "image_asset_id": self.wsi.id,
+            "slide_id": self.slide.id,
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([row["id"] for row in response.data], [str(annotation.id)])
+        self.assertEqual(self.client.post(self.list_url, self.wsi_payload(), format="json").status_code, 403)
+
+    def test_pathology_doctor_can_create_and_delete_wsi_annotations_and_technologist_is_read_only(self):
+        pathology = Department.objects.create(hospital=self.hospital, code="PATHOLOGY", name="Pathology")
+        doctor_role = DepartmentRole.objects.create(
+            department=pathology, role=DepartmentRole.Role.DOCTOR, display_name="Pathologist"
+        )
+        technologist_role = DepartmentRole.objects.create(
+            department=pathology, role=DepartmentRole.Role.TECHNOLOGIST, display_name="Technologist"
+        )
+        pathologist = self.create_user("annotation-pathologist", doctor_role)
+        technologist = self.create_user("annotation-pathology-tech", technologist_role)
+        list_url = reverse("pathology:wsi-annotation-list-create", kwargs={"wsi_id": self.slide.id})
+
+        self.authenticate(pathologist)
+        created = self.client.post(list_url, self.wsi_payload(), format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        self.assertEqual(self.client.get(list_url)["X-Annotation-Writable"], "true")
+
+        self.authenticate(technologist)
+        read = self.client.get(list_url)
+        self.assertEqual(read.status_code, 200)
+        self.assertEqual(read["X-Annotation-Writable"], "false")
+        self.assertEqual(self.client.post(list_url, self.wsi_payload(), format="json").status_code, 403)
+
+        self.authenticate(pathologist)
+        detail_url = reverse("pathology:wsi-annotation-detail", kwargs={"wsi_id": self.slide.id, "annotation_id": created.data["id"]})
+        self.assertEqual(self.client.delete(detail_url).status_code, 204)
 
     def test_rejects_clinical_result_from_another_case(self):
         other_result = ClinicalResult.objects.create(
