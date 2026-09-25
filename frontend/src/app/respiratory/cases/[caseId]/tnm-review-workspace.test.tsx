@@ -18,7 +18,7 @@ async function enterTnm() {
 }
 
 describe("TnmReviewWorkspace", () => {
-  it("keeps Stage warnings and the single final action outside the scrolling review rail", () => {
+  it("keeps Stage warnings while placing the single final action in the top header", () => {
     render(<TnmReviewWorkspace clinicalTnm={{ evidence: { stage: { warnings: ["검토 필요"] } } }} />);
     const workspace = screen.getByRole("region", { name: "TNM 작업공간" });
     const rail = screen.getByRole("tabpanel");
@@ -28,7 +28,20 @@ describe("TnmReviewWorkspace", () => {
     expect(rail).toHaveClass("overflow-y-auto");
     expect(rail).not.toContainElement(screen.getByRole("alert"));
     expect(rail).not.toContainElement(screen.getByRole("button", { name: finalizeLabel }));
-    expect(screen.getByRole("button", { name: finalizeLabel }).parentElement?.parentElement).toHaveClass("shrink-0");
+    expect(screen.getByLabelText("PET-CT/TNM 상단 작업")).toContainElement(
+      screen.getByRole("button", { name: finalizeLabel }),
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("검토 필요");
+  });
+
+  it("hides only the result-difference notice without leaving its viewer row", () => {
+    render(<TnmReviewWorkspace aiTnm={{ predicted_t: "T1" }} clinicalTnm={{ t_category: "T2", evidence: { stage: { warnings: ["입력 부족"] } } }} />);
+
+    expect(screen.queryByText("결과 차이 확인 필요")).not.toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("입력 부족");
+    const viewerColumn = screen.getByRole("tablist", { name: "TNM 범주" }).parentElement;
+    expect(viewerColumn).toHaveClass("grid-rows-[30px_minmax(0,1fr)]");
+    expect(viewerColumn).not.toHaveClass("grid-rows-[30px_minmax(0,1fr)_28px]");
   });
 
   it("keeps specialist-confirmed values separate from AI candidates", async () => {
@@ -129,5 +142,15 @@ describe("TnmReviewWorkspace", () => {
     expect(button).toBeDisabled();
     await act(async () => resolveSave(response({ id: "saved" })));
     await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(4));
+  });
+
+  it("keeps the top action visible under the shared dark theme", () => {
+    document.documentElement.dataset.theme = "dark";
+    render(<TnmReviewWorkspace {...apiProps} authorizedFetch={vi.fn()} />);
+
+    expect(screen.getByLabelText("PET-CT/TNM 상단 작업")).toContainElement(
+      screen.getByRole("button", { name: finalizeLabel }),
+    );
+    document.documentElement.dataset.theme = "light";
   });
 });

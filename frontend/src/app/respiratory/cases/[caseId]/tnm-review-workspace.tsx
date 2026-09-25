@@ -30,6 +30,8 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
   const dirty = Object.values(drafts).some((item) => item.dirty);
   const aiValue = valueFor(category, aiTnm);
   const clinicalValue = confirmedFor(category, clinicalTnm);
+  const resultComparison = compareTnmValues(aiValue, clinicalValue);
+  const showResultComparison = resultComparison !== "DIFFERENCE";
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
@@ -115,13 +117,52 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
     const offset = event.key === "ArrowRight" ? 1 : -1;
     selectCategory(items[(items.indexOf(category) + offset + items.length) % items.length]);
   };
+  const statusLabel = stageConfirmed
+    ? "Stage Group 확정 완료"
+    : resultConfirmed
+      ? "결과 확정 · Stage 계산 필요"
+      : actionable
+        ? "검토 중"
+        : "조회 전용";
+  const showStatusFooter = dirty || Boolean(error) || Boolean(message) || !actionable;
 
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-1 flex-col rounded-lg border border-slate-200 bg-white" aria-label="TNM 작업공간">
-      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[32px_minmax(0,1fr)]">
-        <header className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-200 px-3"><div className="flex min-w-0 items-center gap-2"><h1 className="whitespace-nowrap text-sm font-bold text-slate-900">PET-CT 기반 TNM 병기 검토</h1><span className="min-w-0 truncate rounded-full bg-amber-50 px-2 py-0.5 text-[9px] font-semibold text-amber-700">T/N/M 분석 → Stage Group 계산 → 호흡기내과 최종 확정</span></div><p className="hidden min-w-0 truncate text-[10px] text-slate-500 2xl:block">PET-CT 근거 · AI 병기 후보 · 호흡기내과 판정 근거 · 호흡기내과 결정을 구분해 검토합니다.</p></header>
+      <div className="grid min-h-0 min-w-0 flex-1 grid-cols-[minmax(0,1fr)] grid-rows-[44px_minmax(0,1fr)]">
+        <header aria-label="PET-CT/TNM 상단 작업" className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-200 px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="min-w-0">
+              <div className="flex min-w-0 items-center gap-2">
+                <h1 className="whitespace-nowrap text-sm font-bold text-slate-900">PET-CT 기반 TNM 병기 검토</h1>
+                <span className="rounded-full bg-blue-50 px-2 py-0.5 text-[9px] font-semibold text-blue-700">{statusLabel}</span>
+              </div>
+              <p className="truncate text-[9px] text-slate-500">T/N/M 분석 → Stage Group 계산 → 호흡기내과 최종 확정</p>
+            </div>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            {dirty && <span className="hidden text-[9px] font-semibold text-amber-700 xl:inline">저장되지 않은 변경사항</span>}
+            {stageConfirmed ? (
+              actionable && caseId && authorizedFetch && activeResultId ? (
+                <CaseWorkflowDecision
+                  caseId={caseId}
+                  currentStage="PET_CT_TNM"
+                  confirmedResultId={activeResultId}
+                  confirmedStageGroup={(stageResult ?? clinicalTnm)?.stage_group}
+                  showCaseCloseOption
+                  triggerLabel="다음 처리 선택"
+                  authorizedFetch={authorizedFetch}
+                  onCompleted={(completion) => { void onStageAdvanced?.(completion); }}
+                />
+              ) : null
+            ) : actionable ? (
+              <div className="[&>div]:mt-0">
+                <DecisionActions busy={busy} disabled={!canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} />
+              </div>
+            ) : null}
+          </div>
+        </header>
         <div className="grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)_340px] 2xl:grid-cols-[minmax(0,3fr)_minmax(340px,2fr)]">
-          <div className="grid min-h-0 min-w-0 grid-rows-[30px_minmax(0,1fr)_28px] border-r border-slate-200">
+          <div className={`grid min-h-0 min-w-0 border-r border-slate-200 ${showResultComparison ? "grid-rows-[30px_minmax(0,1fr)_28px]" : "grid-rows-[30px_minmax(0,1fr)]"}`}>
             <nav role="tablist" aria-label="TNM 범주" className="grid grid-cols-3 border-b border-slate-200">
               {(["T", "N", "M"] as TnmCategory[]).map((item) => <button ref={(node) => { tabRefs.current[item] = node; }} key={item} id={`tnm-tab-${item}`} role="tab" aria-selected={category === item} aria-controls={`tnm-panel-${item}`} tabIndex={category === item ? 0 : -1} type="button" onClick={() => selectCategory(item)} onKeyDown={handleTabKeyDown} className={`whitespace-nowrap border-r border-slate-200 px-2 text-[11px] font-bold ${category === item ? "bg-blue-50 text-blue-700 shadow-[inset_0_-2px_0_#2563eb]" : "text-slate-500"}`}>{META[item]} <span className="font-normal">{confirmedFor(item, clinicalTnm) ? "· 결과 있음" : "· 미확인"}</span>{drafts[item].dirty && <span className="ml-1 text-amber-600" aria-label="저장되지 않은 변경사항">●</span>}</button>)}
             </nav>
@@ -133,7 +174,7 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
                 stage="PET_CT_TNM"
               />
             ) : null}
-            <ResultDifference aiValue={aiValue} clinicalValue={clinicalValue} />
+            {showResultComparison && <ResultDifference comparison={resultComparison} aiValue={aiValue} clinicalValue={clinicalValue} />}
           </div>
           <section id={`tnm-panel-${category}`} role="tabpanel" aria-labelledby={`tnm-tab-${category}`} className="min-h-0 min-w-0 overflow-y-auto p-2 [scrollbar-gutter:stable]">
               <div className="grid grid-cols-2 gap-2 [&>article:last-child]:col-span-2">
@@ -146,27 +187,10 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
         </div>
       </div>
       <div className="mx-2 shrink-0 rounded border border-violet-100 bg-violet-50 px-3 py-1 text-xs text-slate-700">Stage 후보: {format(stage?.stage_group_candidate)} · cTNM: {format(stage?.ctnm_candidate)} · {stageConfirmed ? "최종 확정 완료" : candidateReady ? "확정 가능" : "Stage 계산 대기"}{(stage?.warnings?.length ?? 0) > 0 && <div role="alert" className="mt-1 max-h-16 overflow-y-auto text-amber-700">{stage?.warnings?.join(" / ")}</div>}</div>
-      <div className="shrink-0 border-t border-slate-200 py-2 pl-3 pr-16 [&>div]:mt-1 [&>p]:mt-1">
+      {showStatusFooter && <div className="shrink-0 border-t border-slate-200 px-3 py-1.5 [&>p]:mt-0">
         {dirty && <p className="text-xs text-amber-700">저장되지 않은 변경사항이 있습니다. 확정 시 최신값을 먼저 저장합니다.</p>}
         <DecisionStatus error={error} message={!actionable ? "현재 Case 단계가 아니므로 결과 조회만 가능합니다." : message} />
-        {stageConfirmed ? (
-          <div className="flex items-center justify-between gap-3">
-            <p className="text-xs text-slate-600">Stage Group 확정 완료</p>
-            {actionable && caseId && authorizedFetch && activeResultId && (
-              <CaseWorkflowDecision
-                caseId={caseId}
-                currentStage="PET_CT_TNM"
-                confirmedResultId={activeResultId}
-                confirmedStageGroup={(stageResult ?? clinicalTnm)?.stage_group}
-                showCaseCloseOption
-                triggerLabel="다음 처리 선택"
-                authorizedFetch={authorizedFetch}
-                onCompleted={(completion) => { void onStageAdvanced?.(completion); }}
-              />
-            )}
-          </div>
-        ) : actionable ? <DecisionActions busy={busy} disabled={!canFinalize || !authorizedFetch || !apiBaseUrl || !caseId} label="TNM 확정 및 다음 단계 진행" onSubmit={() => void runNextAction()} /> : null}
-      </div>
+      </div>}
     </section>
   );
 }
@@ -180,10 +204,10 @@ export function compareTnmValues(aiValue: unknown, clinicalValue: unknown): TnmC
   return String(aiValue) === String(clinicalValue) ? "MATCH" : "DIFFERENCE";
 }
 
-function ResultDifference({ aiValue, clinicalValue }: { aiValue: unknown; clinicalValue: unknown }) {
-  const comparison = compareTnmValues(aiValue, clinicalValue);
-  const labels: Record<TnmComparison, string> = { MATCH: "결과 일치", DIFFERENCE: "결과 차이 확인 필요", UNAVAILABLE: "비교 불가", EMPTY: "비교할 결과 없음" };
-  return <div className={`mx-2 flex min-w-0 items-center gap-3 rounded border px-3 text-[10px] ${comparison === "DIFFERENCE" ? "border-rose-200 bg-rose-50 text-rose-700" : "border-slate-200 bg-slate-50 text-slate-500"}`}><strong className="whitespace-nowrap">{labels[comparison]}</strong><span className="truncate">AI 후보 {format(aiValue)} · 호흡기내과 판단 {format(clinicalValue)}</span></div>;
+function ResultDifference({ comparison, aiValue, clinicalValue }: { comparison: TnmComparison; aiValue: unknown; clinicalValue: unknown }) {
+  if (comparison === "DIFFERENCE") return null;
+  const labels: Record<Exclude<TnmComparison, "DIFFERENCE">, string> = { MATCH: "결과 일치", UNAVAILABLE: "비교 불가", EMPTY: "비교할 결과 없음" };
+  return <div className="mx-2 flex min-w-0 items-center gap-3 rounded border border-slate-200 bg-slate-50 px-3 text-[10px] text-slate-500"><strong className="whitespace-nowrap">{labels[comparison]}</strong><span className="truncate">AI 후보 {format(aiValue)} · 호흡기내과 판단 {format(clinicalValue)}</span></div>;
 }
 
 function ReviewSidebar({ category, onSelect, aiTnm, clinicalTnm }: { category: TnmCategory; onSelect: (value: TnmCategory) => void; aiTnm?: AiTnm; clinicalTnm?: ClinicalTnm }) {
