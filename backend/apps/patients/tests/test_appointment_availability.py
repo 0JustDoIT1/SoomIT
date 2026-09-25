@@ -11,7 +11,10 @@ from django.test import (
 from apps.patients.services.appointment_availability import (
     build_available_slots,
     fetch_doctor_availability,
+    is_appointment_slot_available,
 )
+from apps.patients.models import Appointment
+from apps.scheduling.views import FIXED_SLOT_CAPACITY
 
 
 KOREA_TIMEZONE = ZoneInfo("Asia/Seoul")
@@ -20,6 +23,9 @@ KOREA_TIMEZONE = ZoneInfo("Asia/Seoul")
 class AppointmentAvailabilityServiceTests(
     SimpleTestCase
 ):
+    def test_each_doctor_time_slot_accepts_up_to_five_active_appointments(self):
+        self.assertEqual(FIXED_SLOT_CAPACITY, 5)
+
     @override_settings(
         MEDICAL_BACKEND_URL=(
             "http://medical-backend.test"
@@ -180,3 +186,158 @@ class AppointmentAvailabilityServiceTests(
                 {"start_at": "2026-09-21T10:30:00+09:00", "capacity": 5, "booked_count": 1, "remaining_count": 4},
             ],
         )
+
+    @patch(
+        "apps.patients.services.appointment_availability.timezone.localtime"
+    )
+    @patch(
+        "apps.patients.services.appointment_availability.Appointment.objects.filter"
+    )
+    @patch(
+        "apps.patients.services.appointment_availability.fetch_doctor_availability"
+    )
+    def test_full_slot_remains_visible_but_has_no_remaining_capacity(
+        self,
+        mock_fetch,
+        mock_appointment_filter,
+        mock_localtime,
+    ):
+        doctor_id = uuid4()
+        slot = datetime(2026, 9, 21, 9, 0, tzinfo=KOREA_TIMEZONE)
+        mock_fetch.return_value = {
+            "doctor_id": str(doctor_id),
+            "weekly_availability": [
+                {
+                    "weekday": 0,
+                    "start_time": "09:00:00",
+                    "end_time": "09:30:00",
+                    "slot_minutes": 30,
+                    "enabled": True,
+                },
+            ],
+            "slot_capacity": 5,
+            "unavailable": [],
+        }
+        queryset = MagicMock()
+        queryset.values_list.return_value = [slot] * 5
+        mock_appointment_filter.return_value = queryset
+        mock_localtime.side_effect = lambda value=None: (
+            datetime(2026, 9, 21, 8, 0, tzinfo=KOREA_TIMEZONE)
+            if value is None
+            else value.astimezone(KOREA_TIMEZONE)
+        )
+
+        result = build_available_slots(
+            doctor_id=doctor_id,
+            start_date=date(2026, 9, 21),
+            end_date=date(2026, 9, 21),
+        )
+
+        self.assertEqual(
+            result["dates"][0]["slots"],
+            [
+                {
+                    "start_at": "2026-09-21T09:00:00+09:00",
+                    "capacity": 5,
+                    "booked_count": 5,
+                    "remaining_count": 0,
+                },
+            ],
+        )
+
+    @patch(
+        "apps.patients.services.appointment_availability.timezone.localtime"
+    )
+    @patch(
+        "apps.patients.services.appointment_availability.Appointment.objects.filter"
+    )
+    @patch(
+        "apps.patients.services.appointment_availability.fetch_doctor_availability"
+    )
+    def test_remaining_capacity_counts_zero_through_five_active_appointments(
+        self,
+        mock_fetch,
+        mock_appointment_filter,
+        mock_localtime,
+    ):
+        doctor_id = uuid4()
+        slot = datetime(2026, 9, 21, 9, 0, tzinfo=KOREA_TIMEZONE)
+        mock_fetch.return_value = {
+            "doctor_id": str(doctor_id),
+            "weekly_availability": [
+                {
+                    "weekday": 0,
+                    "start_time": "09:00:00",
+                    "end_time": "09:30:00",
+                    "slot_minutes": 30,
+                    "enabled": True,
+                },
+            ],
+            "slot_capacity": 5,
+            "unavailable": [],
+        }
+        queryset = MagicMock()
+        mock_appointment_filter.return_value = queryset
+        mock_localtime.side_effect = lambda value=None: (
+            datetime(2026, 9, 21, 8, 0, tzinfo=KOREA_TIMEZONE)
+            if value is None
+            else value.astimezone(KOREA_TIMEZONE)
+        )
+
+        for occupied_count in range(6):
+            with self.subTest(occupied_count=occupied_count):
+                queryset.values_list.return_value = [slot] * occupied_count
+                result = build_available_slots(
+                    doctor_id=doctor_id,
+                    start_date=date(2026, 9, 21),
+                    end_date=date(2026, 9, 21),
+                )
+                result_slot = result["dates"][0]["slots"][0]
+                self.assertEqual(result_slot["booked_count"], occupied_count)
+                self.assertEqual(result_slot["remaining_count"], 5 - occupied_count)
+
+        appointment_filter = mock_appointment_filter.call_args.kwargs
+        self.assertEqual(
+            appointment_filter["appointment_status__in"],
+            [
+                Appointment.AppointmentStatus.REQUESTED,
+                Appointment.AppointmentStatus.CONFIRMED,
+            ],
+        )
+
+    @patch(
+        "apps.patients.services.appointment_availability.build_available_slots"
+    )
+    @patch(
+        "apps.patients.services.appointment_availability.timezone.localtime"
+    )
+    def test_slot_is_available_for_four_bookings_and_closed_for_five(
+        self,
+        mock_localtime,
+        mock_build,
+    ):
+        doctor_id = uuid4()
+        slot = datetime(2026, 9, 21, 9, 0, tzinfo=KOREA_TIMEZONE)
+        mock_localtime.return_value = slot
+
+        for remaining_count, expected in ((1, True), (0, False)):
+            with self.subTest(remaining_count=remaining_count):
+                mock_build.return_value = {
+                    "dates": [
+                        {
+                            "slots": [
+                                {
+                                    "start_at": slot.isoformat(),
+                                    "remaining_count": remaining_count,
+                                },
+                            ],
+                        },
+                    ],
+                }
+                self.assertEqual(
+                    is_appointment_slot_available(
+                        doctor_id=doctor_id,
+                        scheduled_at=slot,
+                    ),
+                    expected,
+                )

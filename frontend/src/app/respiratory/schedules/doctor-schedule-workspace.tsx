@@ -26,20 +26,37 @@ export function DoctorScheduleWorkspace() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const appointmentPollingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const loadSequenceRef = useRef(0);
+  const appointmentSequenceRef = useRef(0);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      loadSequenceRef.current += 1;
+      appointmentSequenceRef.current += 1;
+    };
+  }, []);
 
   const load = useCallback(async () => {
     if (!isReady) return;
-    setLoading(true);
+    const loadSequence = ++loadSequenceRef.current;
+    const appointmentSequence = ++appointmentSequenceRef.current;
+    if (mountedRef.current) setLoading(true);
     try {
       const [nextAvailability, nextUnavailable, nextAppointments] = await Promise.all([fetchWeeklyAvailability(authorizedFetch), fetchUnavailableSchedules(authorizedFetch), fetchDoctorAppointments(authorizedFetch)]);
+      if (!mountedRef.current || loadSequence !== loadSequenceRef.current) return;
       setAvailability(nextAvailability);
       setUnavailable(nextUnavailable);
-      setAppointments(nextAppointments);
+      if (appointmentSequence === appointmentSequenceRef.current) setAppointments(nextAppointments);
       setMessage(null);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "일정 정보를 불러오지 못했습니다.");
+      if (mountedRef.current && loadSequence === loadSequenceRef.current) {
+        setMessage(error instanceof Error ? error.message : "일정 정보를 불러오지 못했습니다.");
+      }
     } finally {
-      setLoading(false);
+      if (mountedRef.current && loadSequence === loadSequenceRef.current) setLoading(false);
     }
   }, [authorizedFetch, isReady]);
 
@@ -57,9 +74,10 @@ export function DoctorScheduleWorkspace() {
       if (disposed || appointmentPollingRef.current || document.hidden) return;
 
       appointmentPollingRef.current = true;
+      const appointmentSequence = ++appointmentSequenceRef.current;
       try {
         const nextAppointments = await fetchDoctorAppointments(authorizedFetch);
-        if (!disposed) setAppointments(nextAppointments);
+        if (!disposed && mountedRef.current && appointmentSequence === appointmentSequenceRef.current) setAppointments(nextAppointments);
       } catch {
         // Keep the last successful calendar data when a polling request fails.
       } finally {
@@ -171,15 +189,15 @@ export function DoctorScheduleWorkspace() {
   }
 
   return (
-    <div className="flex min-h-full min-w-[1100px] flex-col bg-[#f6f8fb] text-slate-900">
+    <div className="flex h-full min-h-0 min-w-[1100px] flex-col bg-[#f6f8fb] text-slate-900">
       <header className="border-b border-slate-200 bg-white px-8 py-4">
         <p className="text-[11px] font-bold tracking-[0.12em] text-blue-600">의료진 일정 관리</p>
         <h1 className="mt-1 text-[22px] font-bold">기본 진료시간 및 휴진 일정</h1>
         <p className="mt-1 text-sm text-slate-500">환자 예약에 사용할 요일별 기본 진료시간과 특정 날짜의 진료 불가 일정을 관리합니다.</p>
       </header>
-      <main className="grid flex-1 grid-cols-[minmax(0,1fr)_340px] items-start gap-4 p-5">
+      <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_340px] items-start gap-4 overflow-hidden p-5">
         <ScheduleMonthCalendar availability={availability} unavailable={unavailable} appointments={appointments} />
-        <aside className="space-y-4">
+        <aside data-testid="schedule-detail-panel" className="h-full min-h-0 space-y-4 overflow-y-auto [scrollbar-gutter:stable]">
           <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-[11px] font-bold tracking-[0.08em] text-blue-700">예약 운영 기준</p><p className="mt-1 text-sm font-bold text-slate-900">30분 슬롯 · 최대 5명</p><p className="mt-1 text-xs leading-5 text-slate-600">모든 예약 가능시간에 동일하게 적용됩니다. 예약 현황은 환자 예약 화면에서 3 / 5처럼 표시됩니다.</p></section>
           <section className="rounded-xl border border-slate-200 bg-white">
             <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4">

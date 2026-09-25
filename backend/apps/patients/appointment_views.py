@@ -21,6 +21,29 @@ from .appointment_serializers import (
     CoordinatorExaminationOrderSerializer,
 )
 from .models import Appointment, AppointmentRequest
+from .services.appointment_availability import (
+    AppointmentAvailabilityError,
+    is_appointment_slot_available,
+)
+from .services.appointment_order_sync import (
+    mark_linked_order_scheduled,
+    release_linked_order_if_unused,
+)
+
+
+class CoordinatorAppointmentAccessMixin:
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsAdministrationStaff]
+
+    def appointment_queryset(self):
+        return Appointment.objects.filter(
+            patient__hospital_id=get_token_hospital_id(self.request),
+        )
+
+    def appointment_request_queryset(self):
+        return AppointmentRequest.objects.filter(
+            appointment__patient__hospital_id=get_token_hospital_id(self.request),
+        )
 
 
 def cancel_appointment(appointment, user, cancellation_reason):
@@ -38,10 +61,11 @@ def cancel_appointment(appointment, user, cancellation_reason):
             "updated_at",
         ]
     )
+    release_linked_order_if_unused(appointment)
 
 
 # 원무과 - 예약 목록 조회
-class AppointmentListAPIView(ListAPIView):
+class AppointmentListAPIView(CoordinatorAppointmentAccessMixin, ListAPIView):
     queryset = (
         Appointment.objects
         .select_related(
@@ -54,6 +78,11 @@ class AppointmentListAPIView(ListAPIView):
     )
 
     serializer_class = AppointmentSerializer
+
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            patient__hospital_id=get_token_hospital_id(self.request),
+        )
 
 
 class CoordinatorDoctorListAPIView(APIView):
@@ -79,7 +108,7 @@ class CoordinatorDoctorListAPIView(APIView):
 
 
 # 원무과 - 예약 상세 조회
-class AppointmentDetailAPIView(RetrieveAPIView):
+class AppointmentDetailAPIView(CoordinatorAppointmentAccessMixin, RetrieveAPIView):
     queryset = (
         Appointment.objects
         .select_related(
@@ -93,15 +122,20 @@ class AppointmentDetailAPIView(RetrieveAPIView):
     serializer_class = AppointmentSerializer
     lookup_field = "id"
 
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            patient__hospital_id=get_token_hospital_id(self.request),
+        )
+
 
 # 원무과 - 예약 확정
-class AppointmentConfirmAPIView(APIView):
+class AppointmentConfirmAPIView(CoordinatorAppointmentAccessMixin, APIView):
 
     @transaction.atomic
     def post(self, request, id):
         try:
             appointment = (
-                Appointment.objects
+                self.appointment_queryset()
                 .select_for_update()
                 .get(id=id)
             )
@@ -135,6 +169,7 @@ class AppointmentConfirmAPIView(APIView):
                 "updated_at",
             ]
         )
+        mark_linked_order_scheduled(appointment)
 
         return Response(
             AppointmentSerializer(appointment).data,
@@ -143,7 +178,7 @@ class AppointmentConfirmAPIView(APIView):
 
 
 # 원무과 - 예약 취소
-class AppointmentCancelAPIView(APIView):
+class AppointmentCancelAPIView(CoordinatorAppointmentAccessMixin, APIView):
 
     @extend_schema(
         request=AppointmentCancelSerializer,
@@ -153,7 +188,7 @@ class AppointmentCancelAPIView(APIView):
     def post(self, request, id):
         try:
             appointment = (
-                Appointment.objects
+                self.appointment_queryset()
                 .select_for_update()
                 .get(id=id)
             )
@@ -175,6 +210,12 @@ class AppointmentCancelAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if appointment.visit_status != Appointment.VisitStatus.SCHEDULED:
+            return Response(
+                {"detail": "방문 예정 상태의 예약만 취소할 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         serializer = AppointmentCancelSerializer(
             data=request.data
         )
@@ -193,11 +234,11 @@ class AppointmentCancelAPIView(APIView):
         )
 
 
-class AppointmentRequestListAPIView(ListAPIView):
+class AppointmentRequestListAPIView(CoordinatorAppointmentAccessMixin, ListAPIView):
     serializer_class = AppointmentRequestSerializer
 
     def get_queryset(self):
-        queryset = AppointmentRequest.objects.select_related(
+        queryset = self.appointment_request_queryset().select_related(
             "appointment__patient",
             "requested_by_patient_account",
             "processed_by_user",
@@ -229,7 +270,7 @@ class CoordinatorExaminationOrderListAPIView(ListAPIView):
         )
 
 
-class AppointmentRequestDetailAPIView(RetrieveAPIView):
+class AppointmentRequestDetailAPIView(CoordinatorAppointmentAccessMixin, RetrieveAPIView):
     queryset = AppointmentRequest.objects.select_related(
         "appointment__patient",
         "requested_by_patient_account",
@@ -238,12 +279,17 @@ class AppointmentRequestDetailAPIView(RetrieveAPIView):
     serializer_class = AppointmentRequestSerializer
     lookup_field = "id"
 
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            appointment__patient__hospital_id=get_token_hospital_id(self.request),
+        )
 
-class AppointmentRequestApproveAPIView(APIView):
+
+class AppointmentRequestApproveAPIView(CoordinatorAppointmentAccessMixin, APIView):
     @transaction.atomic
     def post(self, request, id):
         try:
-            appointment_request = AppointmentRequest.objects.select_for_update().get(id=id)
+            appointment_request = self.appointment_request_queryset().select_for_update().get(id=id)
         except AppointmentRequest.DoesNotExist:
             return Response({"detail": "예약 요청 정보를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
 
@@ -253,6 +299,11 @@ class AppointmentRequestApproveAPIView(APIView):
         appointment = Appointment.objects.select_for_update().get(id=appointment_request.appointment_id)
         if appointment.appointment_status == Appointment.AppointmentStatus.CANCELLED:
             return Response({"detail": "이미 취소된 예약 요청은 승인할 수 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
+        if appointment.visit_status != Appointment.VisitStatus.SCHEDULED:
+            return Response(
+                {"detail": "방문 예정 상태의 예약 요청만 승인할 수 있습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         processed_by_user = request.user if request.user.is_authenticated else None
         if appointment_request.request_type == AppointmentRequest.RequestType.CHANGE:
@@ -260,16 +311,28 @@ class AppointmentRequestApproveAPIView(APIView):
             if requested_scheduled_at is None:
                 return Response({"detail": "변경 희망 일시가 없습니다."}, status=status.HTTP_400_BAD_REQUEST)
 
+            if appointment.doctor_id is not None:
+                User.objects.select_for_update().get(id=appointment.doctor_id)
+                try:
+                    slot_available = is_appointment_slot_available(
+                        doctor_id=appointment.doctor_id,
+                        scheduled_at=requested_scheduled_at,
+                    )
+                except AppointmentAvailabilityError as error:
+                    return Response(
+                        {"detail": str(error)},
+                        status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
+                if not slot_available:
+                    return Response(
+                        {"detail": "선택한 시간은 예약할 수 없습니다."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
             active_statuses = [
                 Appointment.AppointmentStatus.REQUESTED,
                 Appointment.AppointmentStatus.CONFIRMED,
             ]
-            if appointment.doctor_id and Appointment.objects.filter(
-                doctor_id=appointment.doctor_id,
-                scheduled_at=requested_scheduled_at,
-                appointment_status__in=active_statuses,
-            ).exclude(id=appointment.id).exists():
-                return Response({"detail": "해당 의료진의 같은 시간에 이미 예약이 존재합니다."}, status=status.HTTP_400_BAD_REQUEST)
             if Appointment.objects.filter(
                 patient_id=appointment.patient_id,
                 scheduled_at=requested_scheduled_at,
@@ -291,13 +354,13 @@ class AppointmentRequestApproveAPIView(APIView):
         return Response(AppointmentRequestSerializer(appointment_request).data, status=status.HTTP_200_OK)
 
 
-class AppointmentRequestRejectAPIView(APIView):
+class AppointmentRequestRejectAPIView(CoordinatorAppointmentAccessMixin, APIView):
     @transaction.atomic
     def post(self, request, id):
         serializer = AppointmentRequestRejectSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         try:
-            appointment_request = AppointmentRequest.objects.select_for_update().get(id=id)
+            appointment_request = self.appointment_request_queryset().select_for_update().get(id=id)
         except AppointmentRequest.DoesNotExist:
             return Response({"detail": "예약 요청 정보를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
 

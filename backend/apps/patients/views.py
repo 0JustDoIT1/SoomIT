@@ -88,6 +88,7 @@ from .services.appointment_availability import (
     build_available_slots,
     is_appointment_slot_available,
 )
+from .services.appointment_order_sync import release_linked_order_if_unused
 
 from .patient_authentication import (
     PatientJWTAuthentication,
@@ -497,14 +498,6 @@ class AppointmentListAPIView(ListAPIView):
         )
         patient = patient_account.patient
 
-        # 임시 디버그: 현재 로그인한 환자 계정과 연결 환자 확인
-        print(
-            "[APPOINTMENT DEBUG]",
-            "account_id=", patient_account.id,
-            "patient_id=", patient.id,
-            "patient_code=", patient.patient_code,
-        )
-
         return (
             Appointment.objects
             .filter(patient=patient)
@@ -615,13 +608,24 @@ class PatientAppointmentAvailabilityAPIView(
             raise_exception=True
         )
 
-        get_linked_patient_account(request)
+        patient = get_linked_patient_account(request).patient
 
         doctor_id = (
             serializer.validated_data[
                 "doctor_id"
             ]
         )
+        doctor_exists = User.objects.filter(
+            id=doctor_id,
+            account_status=User.AccountStatus.ACTIVE,
+            department_role__role=DepartmentRole.Role.DOCTOR,
+            department_role__department__hospital=patient.hospital,
+        ).exists()
+        if not doctor_exists:
+            return Response(
+                {"doctor_id": "해당 의료진을 찾을 수 없습니다."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         start_date = (
             serializer.validated_data["start"]
         )
@@ -694,6 +698,12 @@ class PatientAppointmentRequestAPIView(APIView):
                     id=doctor_id,
                     account_status=(
                         User.AccountStatus.ACTIVE
+                    ),
+                    department_role__role=(
+                        DepartmentRole.Role.DOCTOR
+                    ),
+                    department_role__department__hospital=(
+                        patient.hospital
                     ),
                 )
             )
@@ -1949,6 +1959,7 @@ class PatientAppointmentCancelRequestAPIView(APIView):
                 appointment=appointment,
             ).delete()
 
+            release_linked_order_if_unused(appointment)
             appointment.delete()
 
             return Response(
@@ -2203,6 +2214,9 @@ class PatientAppointmentChangeRequestAPIView(APIView):
 
         # 실제 의료진 스케줄상 예약 가능한 시간인지 확인한다.
         if appointment.doctor_id is not None:
+            User.objects.select_for_update().get(
+                id=appointment.doctor_id,
+            )
             try:
                 slot_available = (
                     is_appointment_slot_available(
@@ -2232,30 +2246,6 @@ class PatientAppointmentChangeRequestAPIView(APIView):
             Appointment.AppointmentStatus.REQUESTED,
             Appointment.AppointmentStatus.CONFIRMED,
         ]
-
-        if appointment.doctor_id is not None:
-            doctor_duplicate_exists = (
-                Appointment.objects
-                .filter(
-                    doctor_id=appointment.doctor_id,
-                    scheduled_at=new_scheduled_at,
-                    appointment_status__in=active_statuses,
-                )
-                .exclude(
-                    id=appointment.id,
-                )
-                .exists()
-            )
-
-            if doctor_duplicate_exists:
-                return Response(
-                    {
-                        "detail": (
-                            "해당 의료진의 같은 시간에 이미 예약이 존재합니다."
-                        ),
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
 
         patient_duplicate_exists = (
             Appointment.objects

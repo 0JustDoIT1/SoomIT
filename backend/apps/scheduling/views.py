@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
-from apps.accounts.models import User
+from apps.accounts.models import DepartmentRole, User
 from apps.accounts.permissions import IsActiveStaff, IsDoctor
 from apps.patients.models import Appointment
 
@@ -26,7 +26,7 @@ FIXED_SLOT_CAPACITY = 5
 
 class DoctorOwnedQuerysetMixin:
     authentication_classes = [JWTAuthentication]
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor]
 
     def get_queryset(self):
         return super().get_queryset().filter(doctor=self.request.user)
@@ -107,7 +107,11 @@ class DoctorAppointmentAvailabilityAPIView(
     ]
 
     def get(self, request, doctor_id):
-        doctor = User.objects.filter(id=doctor_id, account_status=User.AccountStatus.ACTIVE).first()
+        doctor = User.objects.filter(
+            id=doctor_id,
+            account_status=User.AccountStatus.ACTIVE,
+            department_role__role=DepartmentRole.Role.DOCTOR,
+        ).first()
         if doctor is None:
             return Response({"detail": "Doctor was not found."}, status=404)
 

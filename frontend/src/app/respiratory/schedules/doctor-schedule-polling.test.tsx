@@ -1,4 +1,4 @@
-import { act, render } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const auth = vi.hoisted(() => ({ authorizedFetch: vi.fn() }));
@@ -39,5 +39,34 @@ describe("DoctorScheduleWorkspace appointment polling", () => {
     });
     expect(auth.authorizedFetch).toHaveBeenCalledTimes(4);
     expect(String(auth.authorizedFetch.mock.calls[3][0])).toContain("doctor/appointments");
+  });
+
+  it("keeps the right-side schedule details independently scrollable", async () => {
+    render(<DoctorScheduleWorkspace />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(screen.getByTestId("schedule-detail-panel")).toHaveClass(
+      "overflow-y-auto",
+      "min-h-0",
+    );
+  });
+
+  it("stops appointment polling after unmount", async () => {
+    const { unmount } = render(<DoctorScheduleWorkspace />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(auth.authorizedFetch).toHaveBeenCalledTimes(3);
+
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30_000);
+    });
+
+    expect(auth.authorizedFetch).toHaveBeenCalledTimes(3);
   });
 });

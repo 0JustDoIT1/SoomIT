@@ -634,6 +634,9 @@ export function buildDashboardAppointments(
   const caseById = new Map(
     cases.map((caseItem) => [caseItem.id, caseItem]),
   );
+  const caseByCode = new Map(
+    cases.map((caseItem) => [caseItem.case_code, caseItem]),
+  );
 
   const appointments: DashboardAppointment[] = [];
 
@@ -673,9 +676,23 @@ export function buildDashboardAppointments(
   });
 
   patientAppointments.forEach((appointment) => {
+    const linkedCase = appointment.case_code
+      ? caseByCode.get(appointment.case_code)
+      : undefined;
+    const duplicatesOrderEvent = linkedCase
+      ? appointments.some(
+          (item) =>
+            item.caseId === linkedCase.id &&
+            item.scheduledAt === appointment.scheduled_at,
+        )
+      : false;
+    if (duplicatesOrderEvent) {
+      return;
+    }
+
     appointments.push({
       id: `patient-${appointment.id}`,
-      caseId: "",
+      caseId: linkedCase?.id ?? "",
       caseCode: appointment.case_code ?? "",
       patientName: appointment.patient_name || appointment.patient_code,
       patientCode: appointment.patient_code,

@@ -68,4 +68,55 @@ describe("dashboard work queues", () => {
       }),
     ]));
   });
+
+  it("links case appointments, avoids matching order duplicates, and leaves case-less rows disabled", () => {
+    const appointments = buildDashboardAppointments(cases, {
+      ...snapshots,
+      "case-ct": {
+        ...snapshots["case-ct"],
+        orders: [{
+          id: "order-ct",
+          order_type: "CT",
+          status: "SCHEDULED",
+          scheduled_at: "2026-09-25T09:00:00+09:00",
+          appointment_status: "CONFIRMED",
+        }],
+      },
+    }, [
+      {
+        id: "linked-duplicate",
+        patient_code: "P2",
+        patient_name: "환자 B",
+        case_code: "CASE-2",
+        scheduled_at: "2026-09-25T09:00:00+09:00",
+        appointment_status: "CONFIRMED",
+        appointment_status_label: "확정",
+        created_by_type: "DOCTOR_ORDER",
+      },
+      {
+        id: "linked-visit",
+        patient_code: "P1",
+        patient_name: "환자 A",
+        case_code: "CASE-1",
+        scheduled_at: "2026-09-25T10:00:00+09:00",
+        appointment_status: "REQUESTED",
+        appointment_status_label: "요청",
+        created_by_type: "PATIENT",
+      },
+      {
+        id: "case-less",
+        patient_code: "P9",
+        patient_name: "예약 환자",
+        case_code: null,
+        scheduled_at: "2026-09-25T11:00:00+09:00",
+        appointment_status: "REQUESTED",
+        appointment_status_label: "요청",
+        created_by_type: "PATIENT",
+      },
+    ]);
+
+    expect(appointments.filter((item) => item.scheduledAt === "2026-09-25T09:00:00+09:00")).toHaveLength(1);
+    expect(appointments.find((item) => item.id === "patient-linked-visit")?.caseId).toBe("case-path");
+    expect(appointments.find((item) => item.id === "patient-case-less")?.caseId).toBe("");
+  });
 });

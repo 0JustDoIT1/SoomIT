@@ -99,7 +99,7 @@ export default function AppointmentsPage() {
     try {
       setError("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/`
       );
 
@@ -125,7 +125,7 @@ export default function AppointmentsPage() {
     try {
       setRequestError("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/requests/?status=PENDING`
       );
 
@@ -166,7 +166,7 @@ export default function AppointmentsPage() {
   const fetchAppointmentDetail = async (
     appointmentId: string
   ) => {
-    const response = await fetch(
+    const response = await staffAuthenticatedFetch(
       `${API_BASE_URL}/api/appointments/${appointmentId}/`
     );
 
@@ -221,7 +221,7 @@ export default function AppointmentsPage() {
       setIsRejectMode(false);
       setRejectionReason("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/requests/${appointmentRequestId}/`
       );
 
@@ -257,7 +257,7 @@ export default function AppointmentsPage() {
       setRequestActionLoading(true);
       setRequestActionError("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/requests/${selectedAppointmentRequest.id}/approve/`,
         { method: "POST" }
       );
@@ -312,7 +312,7 @@ export default function AppointmentsPage() {
       setRequestActionLoading(true);
       setRequestActionError("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/requests/${selectedAppointmentRequest.id}/reject/`,
         {
           method: "POST",
@@ -359,7 +359,7 @@ export default function AppointmentsPage() {
       setActionLoading(true);
       setActionError("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/confirm/`,
         {
           method: "POST",
@@ -424,7 +424,7 @@ export default function AppointmentsPage() {
       setActionLoading(true);
       setActionError("");
 
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/appointments/${selectedAppointment.id}/cancel/`,
         {
           method: "POST",
@@ -595,12 +595,12 @@ export default function AppointmentsPage() {
   /*
    * 특정 의사 + 날짜 + 시간의 예약 찾기
    */
-  const getSlotAppointment = (
+  const getSlotAppointments = (
     doctor: string,
     date: Date,
     time: string
   ) => {
-    return appointments.find((appointment) => {
+    return appointments.filter((appointment) => {
       if (
         appointment.appointment_status ===
         "CANCELLED"
@@ -902,8 +902,8 @@ export default function AppointmentsPage() {
                       </td>
 
                       {doctors.map((doctor) => {
-                        const appointment =
-                          getSlotAppointment(
+                        const slotAppointments =
+                          getSlotAppointments(
                             doctor.name,
                             selectedDate,
                             time
@@ -918,44 +918,47 @@ export default function AppointmentsPage() {
                           return <td key={`${doctor.id}-${time}`} className="border-l border-slate-100 px-1 py-1 sm:px-1.5"><SkeletonBlock className="min-h-[38px] w-full" /></td>;
                         }
 
-                        if (appointment) {
+                        if (slotAppointments.length > 0) {
                           return (
                             <td
                               key={`${doctor.id}-${time}`}
                               className="min-w-0 border-l border-slate-100 px-1 py-1 sm:px-1.5"
                             >
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  openAppointmentDetail(
-                                    appointment.id
-                                  )
-                                }
-                                className={`w-full min-w-0 rounded-md border border-l-2 px-1.5 py-2 text-left transition sm:px-2 ${getScheduleCellClass(
-                                  appointment.appointment_status,
-                                  past
-                                )}`}
-                              >
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className="truncate text-xs font-semibold">
-                                    {
-                                      appointment.patient_name
+                              <div className="space-y-1">
+                                {slotAppointments.map((appointment) => (
+                                  <button
+                                    key={appointment.id}
+                                    type="button"
+                                    onClick={() =>
+                                      openAppointmentDetail(
+                                        appointment.id
+                                      )
                                     }
-                                  </span>
+                                    className={`w-full min-w-0 rounded-md border border-l-2 px-1.5 py-2 text-left transition sm:px-2 ${getScheduleCellClass(
+                                      appointment.appointment_status,
+                                      past
+                                    )}`}
+                                  >
+                                    <div className="flex items-center justify-between gap-2">
+                                      <span className="truncate text-xs font-semibold">
+                                        {appointment.patient_name}
+                                      </span>
 
-                                  <span className="shrink-0 rounded-sm bg-pink-100/70 px-1 py-0.5 text-[10px] text-pink-600">
-                                    {getShortStatusLabel(
-                                      appointment.appointment_status
-                                    )}
-                                  </span>
-                                </div>
+                                      <span className="shrink-0 rounded-sm bg-pink-100/70 px-1 py-0.5 text-[10px] text-pink-600">
+                                        {getShortStatusLabel(
+                                          appointment.appointment_status
+                                        )}
+                                      </span>
+                                    </div>
 
-                                <p className="mt-1 truncate text-[10px] text-slate-500">
-                                  {getAppointmentTypeLabel(
-                                    appointment.created_by_type
-                                  )}
-                                </p>
-                              </button>
+                                    <p className="mt-1 truncate text-[10px] text-slate-500">
+                                      {getAppointmentTypeLabel(
+                                        appointment.created_by_type
+                                      )}
+                                    </p>
+                                  </button>
+                                ))}
+                              </div>
                             </td>
                           );
                         }
@@ -1089,7 +1092,7 @@ export default function AppointmentsPage() {
                 <h2 className="text-sm font-bold text-slate-800">
                   {loading ? <SkeletonLine className="w-28" /> : formatDate(selectedDate)}
                 </h2>
-                <p className="mt-1 text-xs text-slate-400">{loading ? <SkeletonLine className="w-16" /> : `예약 ${selectedDateAppointments.length}건`}</p>
+                <div className="mt-1 text-xs text-slate-400">{loading ? <SkeletonLine className="w-16" /> : `예약 ${selectedDateAppointments.length}건`}</div>
               </div>
 
               {loading ? <div className="divide-y divide-slate-100">{Array.from({ length: 5 }, (_, index) => <div key={index} className="space-y-2 px-4 py-3"><SkeletonLine className="w-40" /><SkeletonLine className="w-24" /><SkeletonLine className="w-32" /></div>)}</div> : selectedDateAppointments.length > 0 ? (
