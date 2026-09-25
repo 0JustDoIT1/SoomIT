@@ -1068,7 +1068,7 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
         if case is None:
             return None, None
 
-        result = ClinicalResult.objects.select_for_update().filter(
+        result = ClinicalResult.objects.select_for_update(of=("self",)).filter(
             id=result_id,
             case=case,
             workflow_stage__in=[WorkflowStage.PATHOLOGY_GENE, WorkflowStage.PDL1],
