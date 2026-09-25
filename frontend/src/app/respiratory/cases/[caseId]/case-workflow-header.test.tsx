@@ -10,6 +10,23 @@ import {
 import { CurrentActionQueue } from "./current-action-queue";
 
 describe("Case workflow first stage", () => {
+  it.each([
+    ["XRAY", "흉부 X선"],
+    ["CT", "흉부 CT"],
+    ["PET_CT_TNM", "PET-CT"],
+    ["PATHOLOGY_GENE", "조직/유전자"],
+    ["PDL1", "PD-L1"],
+    ["TREATMENT", "치료 결정"],
+    ["PRESCRIPTION", "처방"],
+  ])("marks Case.current_stage=%s itself as current", (currentStage, label) => {
+    const { container } = render(<CaseWorkflowBar currentStage={currentStage} />);
+    const current = container.querySelector('[data-stage-state="current"]');
+
+    expect(current).not.toBeNull();
+    expect(current?.parentElement).toHaveTextContent(label);
+    expect(container.querySelectorAll('[data-stage-state="current"]')).toHaveLength(1);
+  });
+
   it("labels the actual Case stage independently from the viewed workspace", () => {
     render(
       <CaseSummaryHeader

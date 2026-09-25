@@ -59,7 +59,10 @@ export function deriveCurrentActions(caseDetail: ActionCase, clinicalResults: Ac
   }
 
   orders
-    .filter((order) => ["ORDERED", "SCHEDULED"].includes(order.status))
+    .filter((order) =>
+      order.order_type === caseDetail.current_stage &&
+      ["ORDERED", "SCHEDULED"].includes(order.status),
+    )
     .forEach((order) => {
       const orderConfig = STAGE_CONFIG[order.order_type];
       if (!orderConfig) return;
@@ -73,14 +76,6 @@ export function deriveCurrentActions(caseDetail: ActionCase, clinicalResults: Ac
         target: orderConfig.target,
       });
     });
-
-  const pdl1Clinical = clinicalResults.find((result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED");
-  const pdl1Ai = aiResults.find((result) => result.analysis_type === "PDL1_ANALYSIS" && result.status === "SUCCEEDED");
-  if (caseDetail.current_stage !== "PDL1" && pdl1Clinical?.result_status) {
-    actions.push({ id: `clinical-pdl1-${pdl1Clinical.id ?? caseDetail.id}`, title: "PD-L1 확정 TPS 확인", source: "SPECIALIST", sourceLabel: "전문과 의료진 결과", status: pdl1Clinical.result_status_label ?? pdl1Clinical.result_status, href: `/respiratory/cases/${caseDetail.id}`, target: "PDL1" });
-  } else if (caseDetail.current_stage !== "PDL1" && pdl1Ai?.status) {
-    actions.push({ id: `ai-pdl1-${pdl1Ai.id ?? caseDetail.id}`, title: "PD-L1 AI 후보 확인", source: "AI", sourceLabel: "AI 분석 후보", status: pdl1Ai.status_label ?? pdl1Ai.status, href: `/respiratory/cases/${caseDetail.id}`, target: "PDL1" });
-  }
 
   if (caseDetail.current_stage === "PRESCRIPTION") {
     prescriptions.forEach((item) => actions.push({ id: `prescription-${item.id}`, title: "처방 상태 확인", source: "PRESCRIPTION", sourceLabel: "실제 처방", status: item.prescription_status_label ?? item.prescription_status, href: `/respiratory/cases/${caseDetail.id}`, target: "PRESCRIPTION" }));

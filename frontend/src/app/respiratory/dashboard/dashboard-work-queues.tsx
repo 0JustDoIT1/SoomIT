@@ -435,7 +435,7 @@ function classifyAction(action: CurrentAction) {
 /* Patient Journey                                                            */
 /* -------------------------------------------------------------------------- */
 
-function buildPatientJourney(
+export function buildPatientJourney(
   selectedCase: DashboardCase | undefined,
   snapshot: DashboardCaseSnapshot | undefined,
 ): JourneyItem[] {
@@ -479,20 +479,15 @@ function buildPatientJourney(
         ["ORDERED", "SCHEDULED"].includes(order.status),
     );
 
-    if (clinical?.result_status === "CONFIRMED") {
-      return {
-        stage,
-        label: STAGE_LABELS[stage],
-        state: "confirmed",
-        description: "확정 완료",
-      };
-    }
-
+    // current_stage is authoritative even when a result was already confirmed
+    // immediately before the Case transition response reached this screen.
     if (selectedCase.current_stage === stage) {
       let description = "진행 중";
 
       if (clinical?.result_status === "DRAFT") {
         description = "확정 대기";
+      } else if (clinical?.result_status === "CONFIRMED") {
+        description = "결과 확정 · 다음 처리 대기";
       } else if (aiSucceeded) {
         description = "AI 분석 완료";
       } else if (activeOrder) {
@@ -504,6 +499,15 @@ function buildPatientJourney(
         label: STAGE_LABELS[stage],
         state: "active",
         description,
+      };
+    }
+
+    if (clinical?.result_status === "CONFIRMED") {
+      return {
+        stage,
+        label: STAGE_LABELS[stage],
+        state: "confirmed",
+        description: "확정 완료",
       };
     }
 
@@ -788,7 +792,7 @@ function formatTimelineDate(value?: string | null) {
   }).format(date);
 }
 
-function buildClinicalTimeline(
+export function buildClinicalTimeline(
   selectedCase: DashboardCase | undefined,
   snapshot: DashboardCaseSnapshot | undefined,
 ): ClinicalTimelineItem[] {
@@ -823,16 +827,15 @@ function buildClinicalTimeline(
     let state: JourneyState = "waiting";
     let status = "대기";
 
-    if (clinical?.result_status === "CONFIRMED") {
-      state = "confirmed";
-      status = "확정";
-    } else if (
-      selectedCase?.current_stage === stage
-    ) {
+    // The viewed/result state describes the stage, but never replaces the
+    // Case.current_stage boundary used for the current marker.
+    if (selectedCase?.current_stage === stage) {
       state = "active";
 
       if (clinical?.result_status === "DRAFT") {
         status = "확정 대기";
+      } else if (clinical?.result_status === "CONFIRMED") {
+        status = "결과 확정 · 다음 처리 대기";
       } else if (order?.status === "SCHEDULED") {
         status = "예약됨";
       } else if (order?.status === "ORDERED") {
@@ -840,6 +843,9 @@ function buildClinicalTimeline(
       } else {
         status = "진행 중";
       }
+    } else if (clinical?.result_status === "CONFIRMED") {
+      state = "confirmed";
+      status = "확정";
     } else if (
       currentIndex >= 0 &&
       stageIndex < currentIndex

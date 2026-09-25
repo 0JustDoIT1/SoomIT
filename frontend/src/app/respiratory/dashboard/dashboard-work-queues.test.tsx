@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDashboardAppointments, buildDashboardReviewQueue, buildDashboardStageSummaries, buildDashboardWorkGroups, type DashboardCase, type DashboardCaseSnapshot } from "./dashboard-work-queues";
+import { buildClinicalTimeline, buildDashboardAppointments, buildDashboardReviewQueue, buildDashboardStageSummaries, buildDashboardWorkGroups, buildPatientJourney, type DashboardCase, type DashboardCaseSnapshot } from "./dashboard-work-queues";
 
 const cases: DashboardCase[] = [
   { id: "case-path", case_code: "CASE-1", patient_name: "환자 A", patient_code: "P1", current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" },
@@ -34,6 +34,46 @@ describe("dashboard work queues", () => {
     const summaries = buildDashboardStageSummaries(cases, snapshots);
     expect(summaries.find((item) => item.stage === "PATHOLOGY_GENE")).toEqual(expect.objectContaining({ total: 1, confirmationWaiting: 1 }));
     expect(summaries.find((item) => item.stage === "PDL1")).toEqual(expect.objectContaining({ total: 1, resultWaiting: 1 }));
+  });
+
+  it.each([
+    ["XRAY", "흉부 X-ray"],
+    ["CT", "흉부 CT"],
+    ["PET_CT_TNM", "PET-CT / TNM"],
+    ["PATHOLOGY_GENE", "조직·유전자"],
+    ["PDL1", "PD-L1"],
+    ["TREATMENT", "치료결정"],
+    ["PRESCRIPTION", "처방"],
+  ])("uses Case.current_stage=%s for the priority row instead of completed legacy data", (currentStage, label) => {
+    const currentCase = { ...cases[0], current_stage: currentStage };
+    const queue = buildDashboardReviewQueue([currentCase], {
+      [currentCase.id]: {
+        clinicalResults: [
+          { workflow_stage: "CT", result_status: "CONFIRMED" },
+          { workflow_stage: currentStage, result_status: "DRAFT" },
+        ],
+        aiResults: [{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED" }],
+        orders: [{ id: "legacy-ct", order_type: "CT", status: "SCHEDULED" }],
+      },
+    }, []);
+
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({ stage: label });
+  });
+
+  it("keeps the current marker on Case.current_stage even when that stage already has a confirmed result", () => {
+    const currentCase = { ...cases[0], current_stage: "PET_CT_TNM" };
+    const snapshot = {
+      clinicalResults: [
+        { workflow_stage: "CT", result_status: "CONFIRMED" },
+        { workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED" },
+      ],
+      aiResults: [],
+      orders: [],
+    };
+
+    expect(buildPatientJourney(currentCase, snapshot).find((item) => item.stage === "PET_CT_TNM")?.state).toBe("active");
+    expect(buildClinicalTimeline(currentCase, snapshot).find((item) => item.stage === "PET_CT_TNM")?.state).toBe("active");
   });
 
   it("merges refreshed patient appointments with existing examination-order events", () => {

@@ -117,6 +117,18 @@ describe("deriveCurrentActions", () => {
     expect(actions[0]).toMatchObject({ source: "ORDER", target: "CT", status: "오더 요청됨" });
   });
 
+  it("does not let legacy active orders or completed PD-L1 data replace the Case current stage", () => {
+    const actions = deriveCurrentActions(
+      { ...activeCase, current_stage: "PET_CT_TNM" },
+      [{ id: "pdl1-old", workflow_stage: "PDL1", result_status: "CONFIRMED" }],
+      [{ id: "pdl1-ai-old", analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }],
+      [],
+      [{ id: "ct-old", order_type: "CT", status: "SCHEDULED" }],
+    );
+
+    expect(actions).toEqual([]);
+  });
+
   it("includes confirmed appointment timing in active order work", () => {
     const actions = deriveCurrentActions(
       { ...activeCase, current_stage: "CT" },
