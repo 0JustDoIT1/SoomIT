@@ -24,6 +24,23 @@ beforeEach(() => {
   toastError.mockClear();
 });
 
+it("prevents the browser menu only on the PET/CT Cornerstone surface", () => {
+  const authorizedFetch = vi.fn(() => new Promise<Response>(() => undefined));
+  render(<CaseDicomEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-context-menu" stage="PET_CT_TNM" />);
+
+  const viewer = screen.getByLabelText("DICOM 원본 영상 뷰어. 좌우 화살표로 슬라이스 이동");
+  const bubbled = vi.fn();
+  viewer.parentElement?.addEventListener("contextmenu", bubbled);
+  const viewerEvent = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+  viewer.dispatchEvent(viewerEvent);
+  expect(viewerEvent.defaultPrevented).toBe(true);
+  expect(bubbled).toHaveBeenCalledOnce();
+
+  const outsideEvent = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+  screen.getByRole("heading", { level: 2 }).dispatchEvent(outsideEvent);
+  expect(outsideEvent.defaultPrevented).toBe(false);
+});
+
 it("loads an empty PET annotation list with the selected asset and Series UID", async () => {
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);

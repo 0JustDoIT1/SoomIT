@@ -3,7 +3,55 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CtDicomViewer } from "./ct-dicom-viewer";
 
+function dispatchContextMenu(element: Element) {
+  const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+  element.dispatchEvent(event);
+  return event;
+}
+
 describe("CtDicomViewer toolbar", () => {
+  it("prevents the browser menu on every interactive viewport without stopping propagation", () => {
+    render(<CtDicomViewer orderId="order-context" assetId="asset-context" loadSeries={() => new Promise(() => undefined)} />);
+
+    for (const name of ["CT Axial viewer", "CT Coronal viewer", "CT Sagittal viewer", "CT 3D Volume viewer"]) {
+      const viewport = screen.getByLabelText(name);
+      const bubbled = vi.fn();
+      viewport.parentElement?.addEventListener("contextmenu", bubbled);
+      expect(dispatchContextMenu(viewport).defaultPrevented).toBe(true);
+      expect(bubbled).toHaveBeenCalledOnce();
+    }
+
+    const axial = screen.getByLabelText("CT Axial viewer");
+    for (const event of [
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 0 }),
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 1 }),
+      new MouseEvent("mousedown", { bubbles: true, cancelable: true, button: 2 }),
+      new WheelEvent("wheel", { bubbles: true, cancelable: true, deltaY: 1 }),
+    ]) {
+      axial.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+
+    expect(dispatchContextMenu(screen.getByRole("toolbar")).defaultPrevented).toBe(false);
+  });
+
+  it("keeps context-menu suppression scoped after viewer unmount and remount", () => {
+    const firstMount = render(<CtDicomViewer orderId="order-lifecycle" assetId="asset-lifecycle" loadSeries={() => new Promise(() => undefined)} />);
+    expect(dispatchContextMenu(screen.getByLabelText("CT Axial viewer")).defaultPrevented).toBe(true);
+    firstMount.unmount();
+
+    const outsideEvent = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    document.body.dispatchEvent(outsideEvent);
+    expect(outsideEvent.defaultPrevented).toBe(false);
+
+    render(<CtDicomViewer orderId="order-lifecycle" assetId="asset-lifecycle" loadSeries={() => new Promise(() => undefined)} />);
+    const viewport = screen.getByLabelText("CT Axial viewer");
+    const bubbled = vi.fn();
+    viewport.parentElement?.addEventListener("contextmenu", bubbled);
+    expect(dispatchContextMenu(viewport).defaultPrevented).toBe(true);
+    expect(bubbled).toHaveBeenCalledOnce();
+  });
+
   it("renders the compact toolbar and toggles the layout controls", () => {
     render(<CtDicomViewer orderId="order-1" assetId="asset-1" loadSeries={() => new Promise(() => undefined)} />);
 

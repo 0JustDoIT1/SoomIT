@@ -52,6 +52,13 @@ describe("EvidenceViewerPanel", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
+  it("keeps the browser context menu available on the X-ray viewer without right-button tools", () => {
+    render(<EvidenceViewerPanel assets={[{ id: "asset-context", image_type: "XRAY", file_format: "PNG", storage_uri: "https://example.test/xray.png" }]} />);
+    const event = new MouseEvent("contextmenu", { bubbles: true, cancelable: true, button: 2 });
+    screen.getByRole("img", { name: "XRAY 원본 영상" }).dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
   it("shows only high-confidence priority lesions until the user requests all lesions", () => {
     render(<EvidenceViewerPanel assets={[{ id: "asset-1", image_type: "XRAY", file_format: "PNG", storage_uri: "https://example.test/xray.png" }]} detectionImageSize={{ width: 100, height: 100 }} detections={[
       { class_name: "low", score: 0.42, bbox_xyxy: [1, 1, 10, 10] },

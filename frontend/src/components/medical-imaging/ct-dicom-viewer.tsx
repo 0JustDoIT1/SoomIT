@@ -7,6 +7,7 @@ import { loadCtDicomWebSeries } from "@/app/radiology/_lib/cornerstone-dicomweb-
 import { fetchRadiologyAnalysisResult } from "@/app/radiology/_lib/radiology-api";
 import { loadCtCornerstoneSegmentation, type CtCornerstoneSegmentation } from "@/app/radiology/_lib/cornerstone-labelmap";
 import { attachCtCornerstoneLabelmapOverlay } from "@/app/radiology/_lib/cornerstone-labelmap-overlay";
+import { preventMedicalImageContextMenu } from "@/components/medical-imaging/medical-image-context-menu";
 
 type CtDicomViewerProps = {
   orderId: string;
@@ -950,6 +951,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               >
                 <div
                   ref={ref}
+                  onContextMenu={preventMedicalImageContextMenu}
                   className="absolute inset-0"
                   aria-label={`CT ${VIEW_LABELS[key]} viewer`}
                 />
