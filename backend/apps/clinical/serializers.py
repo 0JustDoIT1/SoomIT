@@ -4,9 +4,23 @@ from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis, AnalysisType
 
-from .models import ClinicalResult, CtResult, GeneFinding, NoduleObservation, TnmResult
-from .gene_alterations import AI_TO_CLINICAL_ASSESSMENT, canonical_code_gene, canonicalize_alteration_code
-from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
+from .models import (
+    ClinicalResult,
+    CtResult,
+    GeneFinding,
+    NoduleObservation,
+    Prescription,
+    PrescriptionItem,
+    Regimen,
+    SafetyCheckResult,
+    TreatmentDecision,
+    TreatmentRule,
+)
+from .gene_alterations import (
+    AI_TO_CLINICAL_ASSESSMENT,
+    canonical_code_gene,
+    canonicalize_alteration_code,
+)
 from .safety import evaluate_prescription_safety_freshness
 
 
@@ -658,9 +672,6 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
         return detail
 
 
-from .models import Regimen, TreatmentDecision
-
-
 class RegimenSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = Regimen
@@ -749,8 +760,6 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
                 "selected_regimen": "비약물 치료 유형에는 Regimen을 선택할 수 없습니다.",
             })
         return attrs
-
-from .models import Prescription, PrescriptionItem, SafetyCheckResult
 
 
 class PrescriptionItemSerializer(serializers.ModelSerializer):

@@ -1,8 +1,4 @@
-from datetime import (
-    datetime,
-    time,
-    timedelta,
-)
+from datetime import datetime, timedelta
 
 import requests
 from django.conf import settings

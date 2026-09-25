@@ -539,7 +539,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
     def test_workflow_status_uses_only_current_ai_result_review(self):
         asset = self._create_asset(self.order)
         analysis = self._create_analysis(asset, AiAnalysis.Status.SUCCEEDED)
-        ai_result = AiResult.objects.create(
+        AiResult.objects.create(
             ai_analysis=analysis,
             schema_version="1.0",
             result_payload={},
@@ -1100,7 +1100,7 @@ class RadiologyWorklistAPITestCase(APITestCase):
         ct_model = ModelVersion.objects.create(
             model_name="ct-model", version="1.0", analysis_type="CT_ANALYSIS",
         )
-        ct_asset = self._create_asset(
+        self._create_asset(
             self.order,
             image_type=CaseImageAsset.ImageType.CT,
             workflow_stage=WorkflowStage.CT,

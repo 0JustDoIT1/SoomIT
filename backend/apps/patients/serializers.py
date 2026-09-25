@@ -18,7 +18,6 @@ from .models import (
     PatientAccount,
     PatientQuestionnaire,
     PatientHealthProfile,
-    SocialAccount,
     SymptomLog,
 )
 

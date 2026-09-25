@@ -6,7 +6,7 @@ from pathlib import Path
 
 import torch
 
-from .predictor import InvalidFeatureFile, PDL1Predictor
+from .predictor import PDL1Predictor
 from .storage import download_gcs_file, upload_wsi_preview
 from .virchow2 import extract_virchow2_features, load_virchow2
 from .wsi_patch_extraction import create_preview, prepare_wsi, read_patch

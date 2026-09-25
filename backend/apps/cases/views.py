@@ -79,7 +79,6 @@ from .services.pathology_orders import (
     PathologyOrderCreationError,
     create_follow_up_pathology_order,
     has_active_pathology_order,
-    has_confirmed_pathology_gene_result,
     has_pathology_gene_review_completed,
 )
 
