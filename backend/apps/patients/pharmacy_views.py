@@ -1,10 +1,11 @@
 from django.core.exceptions import ImproperlyConfigured
 from drf_spectacular.utils import extend_schema, inline_serializer
 from rest_framework import serializers, status
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .patient_authentication import PatientJWTAuthentication
 from .services.nearby_pharmacy import (
     NearbyPharmacyServiceError,
     find_nearby_pharmacies,
@@ -12,13 +13,23 @@ from .services.nearby_pharmacy import (
 
 
 class NearbyPharmacyQuerySerializer(serializers.Serializer):
-    latitude = serializers.FloatField(min_value=-90, max_value=90)
-    longitude = serializers.FloatField(min_value=-180, max_value=180)
-    limit = serializers.IntegerField(min_value=1, max_value=50, default=50)
+    latitude = serializers.FloatField(
+        min_value=-90,
+        max_value=90,
+    )
+    longitude = serializers.FloatField(
+        min_value=-180,
+        max_value=180,
+    )
+    limit = serializers.IntegerField(
+        min_value=1,
+        max_value=50,
+        default=50,
+    )
 
 
 @extend_schema(
-    tags=["환자 앱 - 공개 기능"],
+    tags=["환자 앱 - 부가기능"],
     summary="현재 위치 주변 약국 조회",
     parameters=[NearbyPharmacyQuerySerializer],
     responses={
@@ -26,18 +37,47 @@ class NearbyPharmacyQuerySerializer(serializers.Serializer):
             name="NearbyPharmacyResponse",
             fields={
                 "count": serializers.IntegerField(),
-                "pharmacies": serializers.ListField(child=serializers.DictField()),
+                "pharmacies": serializers.ListField(
+                    child=serializers.DictField()
+                ),
             },
-        )
+        ),
+        401: inline_serializer(
+            name="NearbyPharmacyUnauthorizedResponse",
+            fields={
+                "detail": serializers.CharField(),
+            },
+        ),
+        502: inline_serializer(
+            name="NearbyPharmacyApiErrorResponse",
+            fields={
+                "code": serializers.CharField(),
+                "detail": serializers.CharField(),
+            },
+        ),
+        503: inline_serializer(
+            name="NearbyPharmacyNotConfiguredResponse",
+            fields={
+                "code": serializers.CharField(),
+                "detail": serializers.CharField(),
+            },
+        ),
     },
 )
 class NearbyPharmacyAPIView(APIView):
-    authentication_classes = []
-    permission_classes = [AllowAny]
+    authentication_classes = [
+        PatientJWTAuthentication,
+    ]
+    permission_classes = [
+        IsAuthenticated,
+    ]
 
     def get(self, request):
-        serializer = NearbyPharmacyQuerySerializer(data=request.query_params)
+        serializer = NearbyPharmacyQuerySerializer(
+            data=request.query_params
+        )
         serializer.is_valid(raise_exception=True)
+
         params = serializer.validated_data
 
         try:
@@ -46,6 +86,7 @@ class NearbyPharmacyAPIView(APIView):
                 longitude=params["longitude"],
                 limit=params["limit"],
             )
+
         except ImproperlyConfigured:
             return Response(
                 {
@@ -54,10 +95,20 @@ class NearbyPharmacyAPIView(APIView):
                 },
                 status=status.HTTP_503_SERVICE_UNAVAILABLE,
             )
+
         except NearbyPharmacyServiceError as exc:
             return Response(
-                {"code": "pharmacy_api_error", "detail": str(exc)},
+                {
+                    "code": "pharmacy_api_error",
+                    "detail": str(exc),
+                },
                 status=status.HTTP_502_BAD_GATEWAY,
             )
 
-        return Response({"count": len(pharmacies), "pharmacies": pharmacies})
+        return Response(
+            {
+                "count": len(pharmacies),
+                "pharmacies": pharmacies,
+            },
+            status=status.HTTP_200_OK,
+        )

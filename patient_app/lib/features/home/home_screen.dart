@@ -13,6 +13,11 @@ import '../medication/medication_screen.dart';
 import '../questionnaire/questionnaire_screen.dart';
 import '../symptom/symptom_screen.dart';
 
+import '../air_quality/air_quality_detail_screen.dart';
+import '../air_quality/widgets/air_quality_card.dart';
+import '../pharmacy/nearby_pharmacy_screen.dart';
+import '../hospital_directions/hospital_directions_screen.dart';
+
 import 'models/patient_profile.dart';
 import 'services/profile_service.dart';
 import 'widgets/appointment_card.dart';
@@ -123,6 +128,14 @@ class _HomeScreenState extends State<HomeScreen> {
               // 다가오는 진료 일정
               // =================================================
               _buildAppointmentSection(),
+
+              const SizedBox(height: 18),
+
+
+              // =================================================
+              // 건강 도우미
+              // =================================================
+              _buildHealthHelperSection(),
 
               const SizedBox(height: 18),
 
@@ -495,6 +508,158 @@ class _HomeScreenState extends State<HomeScreen> {
                   color: _textSecondary,
                   letterSpacing: -0.2,
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // =========================================================
+  // 건강 도우미
+  // =========================================================
+
+  Widget _buildHealthHelperSection() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
+      decoration: _sectionDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              _SectionIcon(
+                icon: Icons.eco_rounded,
+              ),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  '건강 도우미',
+                  style: TextStyle(
+                    color: _textPrimary,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 14),
+
+          AirQualityCard(
+            compact: true,
+            onTap: () {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => const AirQualityDetailScreen(),
+                ),
+              );
+            },
+          ),
+
+          const SizedBox(height: 12),
+
+          Row(
+            children: [
+              Expanded(
+                child: _buildHealthHelperButton(
+                  icon: Icons.local_pharmacy_rounded,
+                  iconBackground: const Color(0xFFE8FAF2),
+                  iconColor: const Color(0xFF20B47A),
+                  title: '주변 약국',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const NearbyPharmacyScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildHealthHelperButton(
+                  icon: Icons.location_on_rounded,
+                  iconBackground: const Color(0xFFFFECEF),
+                  iconColor: const Color(0xFFF05E75),
+                  title: '병원 길찾기',
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => const HospitalDirectionsScreen(),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHealthHelperButton({
+    required IconData icon,
+    required Color iconBackground,
+    required Color iconColor,
+    required String title,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: const Color(0xFFFBFDFF),
+      borderRadius: BorderRadius.circular(16),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          height: 64,
+          padding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 10,
+          ),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: const Color(0xFFEAF1F7),
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(
+                  icon,
+                  color: iconColor,
+                  size: 21,
+                ),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: Color(0xFF91A1B7),
               ),
             ],
           ),

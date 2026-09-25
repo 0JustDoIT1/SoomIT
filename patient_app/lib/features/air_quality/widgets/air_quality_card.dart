@@ -5,7 +5,14 @@ import '../models/air_quality_guidance.dart';
 import '../services/air_quality_service.dart';
 
 class AirQualityCard extends StatefulWidget {
-  const AirQualityCard({super.key});
+  const AirQualityCard({
+    super.key,
+    this.compact = false,
+    this.onTap,
+  });
+
+  final bool compact;
+  final VoidCallback? onTap;
 
   @override
   State<AirQualityCard> createState() => _AirQualityCardState();
@@ -54,16 +61,20 @@ class _AirQualityCardState extends State<AirQualityCard> {
     if (!await Geolocator.isLocationServiceEnabled()) {
       throw const AirQualityException('휴대폰의 위치 서비스를 켜주세요.');
     }
+
     var permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
     }
+
     if (permission == LocationPermission.denied) {
       throw const AirQualityException('대기질 조회를 위해 위치 권한이 필요합니다.');
     }
+
     if (permission == LocationPermission.deniedForever) {
       throw const AirQualityException('설정에서 위치 권한을 허용해주세요.');
     }
+
     return Geolocator.getCurrentPosition(
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
@@ -74,6 +85,175 @@ class _AirQualityCardState extends State<AirQualityCard> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.compact) {
+      return _buildCompact();
+    }
+
+    return _buildFull();
+  }
+
+  Widget _buildCompact() {
+    if (_isLoading) {
+      return const _CompactShell(
+        child: Row(
+          children: [
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2.3),
+            ),
+            SizedBox(width: 11),
+            Expanded(
+              child: Text(
+                '현재 위치의 대기질을 확인하고 있어요.',
+                style: TextStyle(
+                  color: Color(0xFF66758A),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (_errorMessage != null) {
+      return _CompactShell(
+        child: Row(
+          children: [
+            const Icon(
+              Icons.cloud_off_rounded,
+              color: Color(0xFFD95C59),
+              size: 22,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                _errorMessage!,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: Color(0xFF66758A),
+                  fontSize: 12,
+                  height: 1.35,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: '다시 조회',
+              onPressed: _load,
+              icon: const Icon(Icons.refresh_rounded, size: 20),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final guidance = _guidance!;
+    final style = _GradeStyle.fromGrade(guidance.finalGrade);
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(17),
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(13, 12, 10, 12),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(colors: style.colors),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: style.borderColor),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 43,
+                height: 43,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.88),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Icon(
+                  style.icon,
+                  color: style.accentColor,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      '오늘의 공기 상태',
+                      style: TextStyle(
+                        color: Color(0xFF748198),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      guidance.title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF172033),
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      guidance.message,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFF748198),
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 9,
+                  vertical: 5,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.9),
+                  borderRadius: BorderRadius.circular(99),
+                ),
+                child: Text(
+                  style.label,
+                  style: TextStyle(
+                    color: style.accentColor,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (widget.onTap != null) ...[
+                const SizedBox(width: 2),
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: Color(0xFF91A1B7),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFull() {
     if (_isLoading) {
       return const _CardShell(
         colors: [Color(0xFFEAF5FF), Color(0xFFF5FAFF)],
@@ -111,6 +291,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
 
     final guidance = _guidance!;
     final style = _GradeStyle.fromGrade(guidance.finalGrade);
+
     return _CardShell(
       colors: style.colors,
       borderColor: style.borderColor,
@@ -189,6 +370,26 @@ class _AirQualityCardState extends State<AirQualityCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CompactShell extends StatelessWidget {
+  const _CompactShell({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7FBFF),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: const Color(0xFFE5EFF8)),
+      ),
+      child: child,
     );
   }
 }

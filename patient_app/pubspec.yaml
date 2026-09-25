@@ -56,6 +56,7 @@ dependencies:
   geolocator: ^14.0.3
   flutter_naver_map: ^1.4.4
   url_launcher: ^6.3.2
+  geocoding: ^5.0.0
 
 dev_dependencies:
   flutter_test:
