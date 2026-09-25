@@ -1272,7 +1272,7 @@ function WorkArea({
               <div className={`mt-3 grid gap-3 ${isPathologyGene ? "md:grid-cols-2" : "grid-cols-1"}`}>
               <div className="relative flex h-[400px] min-h-[400px] flex-col items-center justify-center rounded-lg border border-[#C7CBE5] bg-slate-950 text-slate-200 shadow-inner">
                 <p className="absolute left-3 top-3 z-10 rounded bg-slate-950/75 px-3 py-2 text-xs font-semibold text-white">원본 H&amp;E</p>
-                {item.latest_wsi.orthanc_series_id ? <OrthancWsiViewer slide={item.latest_wsi} fillHeight /> : <PathologyWsiPreview wsiId={item.latest_wsi.id} alt="원본 H&E 조직영상 미리보기" />}
+                {item.latest_wsi.orthanc_series_id ? <OrthancWsiViewer slide={item.latest_wsi} caseId={item.case_id} fillHeight /> : <PathologyWsiPreview wsiId={item.latest_wsi.id} alt="원본 H&E 조직영상 미리보기" />}
               </div>
               {isPathologyGene ? (
               <section className="flex h-[400px] min-h-[400px] flex-col rounded-lg border border-[#DDE2F7] bg-[#F8F8FF] text-slate-600">

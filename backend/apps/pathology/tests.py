@@ -1,4 +1,6 @@
 from datetime import date, datetime
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -1267,6 +1269,7 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["width"], 2048)
+        self.assertEqual(response.data["sizes"], [[2048, 1024], [1024, 512], [512, 256]])
         self.assertIn("{level}/{x}/{y}", response.data["tile_url_template"])
         mock_pyramid.assert_called_once_with("orthanc-series-1")
 
@@ -1809,6 +1812,53 @@ class PathologyReadAPITestCase(APITestCase):
         self.assertEqual(self.wsi.study_instance_uid, "1.2.3")
         self.assertEqual(self.wsi.series_instance_uid, "1.2.3.4")
         self.assertEqual(self.wsi.sop_instance_uid, "1.2.3.4.5")
+
+    def test_wsi_registration_replaces_a_stale_missing_orthanc_mapping(self):
+        from apps.pathology.services import wsi_orthanc_registration
+
+        self.wsi.orthanc_series_id = "missing-series"
+        self.wsi.orthanc_instance_id = "missing-instance"
+        self.wsi.save(update_fields=[
+            "orthanc_series_id",
+            "orthanc_instance_id",
+            "updated_at",
+        ])
+        missing = wsi_orthanc_registration.WsiOrthancRegistrationError(
+            "missing", upstream_status=404
+        )
+        with TemporaryDirectory() as temporary, patch.object(
+            wsi_orthanc_registration, "STAGING_DIRECTORY", Path(temporary)
+        ), patch.object(
+            wsi_orthanc_registration, "_download_gcs_wsi"
+        ), patch.object(
+            wsi_orthanc_registration, "_wait_for_converter"
+        ), patch.object(
+            wsi_orthanc_registration,
+            "_orthanc_request",
+            side_effect=[
+                missing,
+                ["older-series"],
+                ["older-series", "new-series"],
+                {
+                    "Instances": ["new-instance"],
+                    "MainDicomTags": {"SeriesInstanceUID": "1.2.3.4"},
+                },
+                {
+                    "MainDicomTags": {
+                        "StudyInstanceUID": "1.2.3",
+                        "SOPInstanceUID": "1.2.3.4.5",
+                    }
+                },
+            ],
+        ):
+            outcome = wsi_orthanc_registration.register_wsi_with_orthanc(
+                str(self.wsi.id)
+            )
+
+        self.assertEqual(outcome, "registered")
+        self.wsi.refresh_from_db()
+        self.assertEqual(self.wsi.orthanc_series_id, "new-series")
+        self.assertEqual(self.wsi.orthanc_instance_id, "new-instance")
 
     @patch("apps.pathology.views.upload_pdl1_input", side_effect=PDL1StorageError("GCS unavailable"))
     def test_pdl1_input_upload_failure_creates_no_ready_asset(self, upload):

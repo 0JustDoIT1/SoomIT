@@ -42,6 +42,22 @@ const baseCase = (stage: string) => ({ id: "case-1", case_code: "CASE-1", patien
 
 beforeEach(() => vi.clearAllMocks());
 
+it("treats effect cleanup aborts as normal cancellation without errors or toasts", async () => {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+  mocks.authorizedFetch.mockImplementation((_input: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    init?.signal?.addEventListener("abort", () => reject(new DOMException("signal is aborted without reason", "AbortError")), { once: true });
+  }));
+
+  const view = render(<Page />);
+  await waitFor(() => expect(mocks.authorizedFetch).toHaveBeenCalledTimes(2));
+  view.unmount();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  expect(consoleError).not.toHaveBeenCalled();
+  expect(mocks.showToast.error).not.toHaveBeenCalled();
+  consoleError.mockRestore();
+});
+
 function installCaseResponses({ stage, clinicalResults = [], orders = [], aiResults = [] }: { stage: string; clinicalResults?: unknown[]; orders?: unknown[]; aiResults?: unknown[] }) {
   const caseData = baseCase(stage);
   mocks.authorizedFetch.mockImplementation(async (input: string) => {

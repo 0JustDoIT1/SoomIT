@@ -18,7 +18,12 @@ from apps.accounts.models import User
 from apps.notifications.services import create_in_app_staff_notifications
 from apps.pathology.models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
 from apps.patients.models import Appointment
-from apps.pathology.services.orthanc import OrthancError, get_wsi_pyramid, get_wsi_tile
+from apps.pathology.services.orthanc import (
+    OrthancError,
+    get_wsi_pyramid,
+    get_wsi_tile,
+    get_wsi_tile_grid,
+)
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
 from apps.clinical.models import ClinicalResult, Prescription, TreatmentDecision, XrayResult
@@ -264,6 +269,16 @@ class DoctorSpecimenSlideListAPIView(APIView):
         return Response([_doctor_slide_summary(slide) for slide in slides])
 
 
+def _orthanc_error_response(exc):
+    if exc.upstream_status == 404:
+        response_status = status.HTTP_404_NOT_FOUND
+    elif exc.upstream_status == 409:
+        response_status = status.HTTP_409_CONFLICT
+    else:
+        response_status = status.HTTP_502_BAD_GATEWAY
+    return Response({"detail": str(exc)}, status=response_status)
+
+
 class DoctorSlideViewerAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
@@ -275,7 +290,7 @@ class DoctorSlideViewerAPIView(APIView):
         try:
             pyramid = get_wsi_pyramid(slide.orthanc_series_id)
         except OrthancError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+            return _orthanc_error_response(exc)
         base = f"/api/doctor/slides/{slide.id}"
         return Response({
             "slide_id": slide.id,
@@ -286,6 +301,12 @@ class DoctorSlideViewerAPIView(APIView):
             "tile_width": pyramid["TileWidth"],
             "tile_height": pyramid["TileHeight"],
             "max_level": max(len(pyramid["Resolutions"]) - 1, 0),
+            "resolutions": pyramid["Resolutions"],
+            "sizes": pyramid["Sizes"],
+            "tile_counts": [
+                get_wsi_tile_grid(pyramid, level)
+                for level in range(len(pyramid["Sizes"]))
+            ],
             "mpp": slide.mpp,
             "thumbnail_url": f"{base}/thumbnail/",
             "tile_url_template": f"{base}/tiles/{{level}}/{{x}}/{{y}}.jpg",
@@ -304,7 +325,7 @@ class DoctorSlideThumbnailAPIView(APIView):
             pyramid = get_wsi_pyramid(slide.orthanc_series_id)
             tile = get_wsi_tile(slide.orthanc_series_id, max(len(pyramid["Resolutions"]) - 1, 0), 0, 0)
         except OrthancError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+            return _orthanc_error_response(exc)
         response = HttpResponse(tile.content, content_type=tile.content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response
@@ -319,9 +340,17 @@ class DoctorSlideTileAPIView(APIView):
         if not slide.orthanc_series_id:
             return Response({"detail": "WSI viewer is not ready for this slide."}, status=status.HTTP_409_CONFLICT)
         try:
+            pyramid = get_wsi_pyramid(slide.orthanc_series_id)
+            grid = get_wsi_tile_grid(pyramid, level)
+            if x < 0 or y < 0 or x >= grid["columns"] or y >= grid["rows"]:
+                raise OrthancError(
+                    "요청한 WSI tile 좌표가 범위를 벗어났습니다.",
+                    upstream_status=404,
+                    reason="invalid_tile",
+                )
             tile = get_wsi_tile(slide.orthanc_series_id, level, x, y)
         except OrthancError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+            return _orthanc_error_response(exc)
         response = HttpResponse(tile.content, content_type=tile.content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response

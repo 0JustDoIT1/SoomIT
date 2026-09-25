@@ -24,16 +24,29 @@ function response(body: unknown, status = 200, headers?: HeadersInit) {
 
 function viewer() {
   return {
+    element: document.createElement("div"),
     addHandler: vi.fn(),
     removeHandler: vi.fn(),
     setMouseNavEnabled: vi.fn(),
     viewport: {
-      pointFromPixel: vi.fn((point: { x: number; y: number }) => point),
+      pointFromPixel: vi.fn((point: { x: number; y: number; minus?: unknown }) => {
+        if (typeof point.minus !== "function") throw new TypeError("pixel.minus is not a function");
+        return point;
+      }),
       viewportToImageCoordinates: vi.fn((point: { x: number; y: number }) => point),
       imageToViewerElementCoordinates: vi.fn((point: { x: number; y: number }) => point),
     },
   } as unknown as OpenSeadragonType.Viewer;
 }
+
+class ViewerPoint {
+  constructor(public x: number, public y: number) {}
+  minus(other: { x: number; y: number }) {
+    return new ViewerPoint(this.x - other.x, this.y - other.y);
+  }
+}
+
+const createViewerPoint = (x: number, y: number) => new ViewerPoint(x, y) as unknown as OpenSeadragonType.Point;
 
 function setup(authorizedFetch = vi.fn().mockResolvedValue(response([])), writable = true) {
   const toolbar = document.createElement("div");
@@ -47,6 +60,7 @@ function setup(authorizedFetch = vi.fn().mockResolvedValue(response([])), writab
       slideId="slide-1"
       imageWidth={1000}
       imageHeight={800}
+      createViewerPoint={createViewerPoint}
       authorizedFetch={authorizedFetch}
       writable={writable}
     />
@@ -107,6 +121,122 @@ describe("WsiAnnotationLayer", () => {
     expect(payloads.every((payload) => payload.annotation_data.coordinate_space === "WSI_IMAGE")).toBe(true);
   });
 
+  it("renders a Point immediately and replaces its temporary ID after POST succeeds", async () => {
+    let resolvePost!: (value: Response) => void;
+    const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([]))
+      .mockReturnValueOnce(post);
+    setup(authorizedFetch);
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    expect(document.querySelectorAll("circle")).toHaveLength(1);
+
+    resolvePost(response({ ...baseAnnotation, id: "server-point", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[25, 30]] } }));
+    await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "선택 삭제" }));
+    await waitFor(() => expect(String(authorizedFetch.mock.calls[2][0])).toContain("server-point"));
+  });
+
+  it("keeps an optimistic Point when the initial annotation GET resolves late", async () => {
+    let resolveGet!: (value: Response) => void;
+    let resolvePost!: (value: Response) => void;
+    const initialGet = new Promise<Response>((resolve) => { resolveGet = resolve; });
+    const post = new Promise<Response>((resolve) => { resolvePost = resolve; });
+    const authorizedFetch = vi.fn().mockReturnValueOnce(initialGet).mockReturnValueOnce(post);
+    setup(authorizedFetch);
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    expect(document.querySelectorAll("circle")).toHaveLength(1);
+
+    resolveGet(response([baseAnnotation]));
+    await waitFor(() => expect(document.querySelectorAll("circle")).toHaveLength(2));
+    resolvePost(response({ ...baseAnnotation, id: "server-point", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[25, 30]] } }));
+    await waitFor(() => expect(screen.getByText("2개")).toBeInTheDocument());
+  });
+
+  it("removes only the failed optimistic annotation without clearing existing annotations", async () => {
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([baseAnnotation]))
+      .mockResolvedValueOnce(response({ detail: "save failed" }, 500));
+    setup(authorizedFetch);
+    await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    expect(document.querySelectorAll("circle")).toHaveLength(2);
+    await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
+    expect(document.querySelectorAll("circle")).toHaveLength(1);
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장하지 못했습니다");
+  });
+
+  it("keeps concurrent optimistic Points when POST responses arrive out of order", async () => {
+    let resolveFirst!: (value: Response) => void;
+    let resolveSecond!: (value: Response) => void;
+    const first = new Promise<Response>((resolve) => { resolveFirst = resolve; });
+    const second = new Promise<Response>((resolve) => { resolveSecond = resolve; });
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([]))
+      .mockReturnValueOnce(first)
+      .mockReturnValueOnce(second);
+    setup(authorizedFetch);
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    const layer = screen.getByLabelText("WSI Annotation layer");
+    fireEvent.pointerDown(layer, { clientX: 10, clientY: 20, pointerId: 1 });
+    fireEvent.pointerDown(layer, { clientX: 30, clientY: 40, pointerId: 2 });
+    expect(document.querySelectorAll("circle")).toHaveLength(2);
+
+    resolveSecond(response({ ...baseAnnotation, id: "server-second", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[30, 40]] } }));
+    resolveFirst(response({ ...baseAnnotation, id: "server-first", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[10, 20]] } }));
+    await waitFor(() => expect(screen.getByText("2개")).toBeInTheDocument());
+    expect(document.querySelectorAll("circle")).toHaveLength(2);
+  });
+
+  it("uses real OpenSeadragon points from viewer-element pixels for every drawing tool", async () => {
+    const mockViewer = viewer() as unknown as {
+      element: HTMLElement;
+      viewport: {
+        pointFromPixel: ReturnType<typeof vi.fn>;
+        viewportToImageCoordinates: ReturnType<typeof vi.fn>;
+        imageToViewerElementCoordinates: ReturnType<typeof vi.fn>;
+      };
+    };
+    mockViewer.element.getBoundingClientRect = () => ({ left: 100, top: 200 } as DOMRect);
+    mockViewer.viewport.pointFromPixel.mockImplementation((point: ViewerPoint) => {
+      expect(point).toBeInstanceOf(ViewerPoint);
+      expect(point.minus(new ViewerPoint(1, 1))).toEqual(new ViewerPoint(point.x - 1, point.y - 1));
+      return point;
+    });
+    const toolbar = document.createElement("div");
+    document.body.appendChild(toolbar);
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([]))
+      .mockImplementation(async (_url: string, init?: RequestInit) => {
+        const payload = JSON.parse(String(init?.body));
+        return response({ id: `saved-${payload.annotation_type}`, ...payload });
+      });
+    render(<WsiAnnotationLayer viewer={mockViewer as unknown as OpenSeadragonType.Viewer} toolbarElement={toolbar} endpoint="/api/doctor/cases/case-1/image-annotations/?image_asset_id=asset-1&slide_id=slide-1" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} createViewerPoint={createViewerPoint} authorizedFetch={authorizedFetch} writable />);
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(1));
+    const layer = screen.getByLabelText("WSI Annotation layer");
+
+    for (const [tool, pointerId] of [["Point", 1], ["ROI", 2], ["Freehand", 3], ["Text", 4]] as const) {
+      fireEvent.click(screen.getByRole("button", { name: tool }));
+      if (tool === "Text") fireEvent.change(screen.getByLabelText("Annotation text"), { target: { value: "note" } });
+      fireEvent.pointerDown(layer, { clientX: 140, clientY: 260, pointerId });
+      if (tool === "ROI" || tool === "Freehand") {
+        fireEvent.pointerMove(layer, { clientX: 180, clientY: 300, pointerId });
+        fireEvent.pointerUp(layer, { pointerId });
+      }
+    }
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(5));
+    expect(mockViewer.viewport.pointFromPixel).toHaveBeenCalled();
+    expect(mockViewer.viewport.pointFromPixel.mock.calls[0][0]).toMatchObject({ x: 40, y: 60 });
+    expect(mockViewer.viewport.imageToViewerElementCoordinates.mock.calls[0][0]).toBeInstanceOf(ViewerPoint);
+  });
+
   it("builds a polygon across clicks and preserves earlier annotations", async () => {
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response([baseAnnotation]))
@@ -147,7 +277,7 @@ describe("WsiAnnotationLayer", () => {
     fireEvent.pointerDown(circles[0]);
     fireEvent.click(screen.getByRole("button", { name: "선택 삭제" }));
     await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
-    expect(String(authorizedFetch.mock.calls[1][0])).toContain("annotation-1");
+    expect(String(authorizedFetch.mock.calls[1][0])).toBe("/api/pathology/wsis/slide-1/annotations/annotation-1/");
   });
 
   it("keeps pan available in read-only mode and reports annotation failure without replacing the viewer", async () => {
@@ -155,7 +285,7 @@ describe("WsiAnnotationLayer", () => {
     expect(screen.getByRole("button", { name: "이동" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Point" })).toBeDisabled();
     expect(await screen.findByRole("alert")).toHaveTextContent("WSI는 계속 사용할 수 있습니다.");
-    expect(screen.getByLabelText("WSI Annotation layer")).toBeInTheDocument();
+    expect(screen.getByLabelText("WSI Annotation layer")).toHaveClass("absolute", "inset-0");
   });
 
   it("uses the server permission flag and remains readable in dark mode", async () => {
@@ -175,7 +305,7 @@ describe("WsiAnnotationLayer", () => {
     mockViewer.viewport.imageToViewerElementCoordinates.mockImplementation((point: { x: number; y: number }) => ({ x: point.x * scale, y: point.y * scale }));
     const toolbar = document.createElement("div");
     document.body.appendChild(toolbar);
-    render(<div className="relative h-96"><WsiAnnotationLayer viewer={mockViewer as unknown as OpenSeadragonType.Viewer} toolbarElement={toolbar} endpoint="/annotations/" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} authorizedFetch={vi.fn().mockResolvedValue(response([baseAnnotation]))} writable /></div>);
+    render(<div className="relative h-96"><WsiAnnotationLayer viewer={mockViewer as unknown as OpenSeadragonType.Viewer} toolbarElement={toolbar} endpoint="/annotations/" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} createViewerPoint={createViewerPoint} authorizedFetch={vi.fn().mockResolvedValue(response([baseAnnotation]))} writable /></div>);
     await waitFor(() => expect(document.querySelector("circle")).toHaveAttribute("cx", "100"));
 
     scale = 2;
@@ -195,13 +325,47 @@ describe("WsiAnnotationLayer", () => {
     const toolbar = document.createElement("div");
     document.body.appendChild(toolbar);
     const mockViewer = viewer();
-    const { rerender } = render(<div className="relative h-96"><WsiAnnotationLayer viewer={mockViewer} toolbarElement={toolbar} endpoint="/slides/slide-1/annotations/" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} authorizedFetch={authorizedFetch} writable /></div>);
-    rerender(<div className="relative h-96"><WsiAnnotationLayer viewer={mockViewer} toolbarElement={toolbar} endpoint="/slides/slide-2/annotations/" imageAssetId="asset-2" slideId="slide-2" imageWidth={1000} imageHeight={800} authorizedFetch={authorizedFetch} writable /></div>);
+    const { rerender } = render(<div className="relative h-96"><WsiAnnotationLayer viewer={mockViewer} toolbarElement={toolbar} endpoint="/slides/slide-1/annotations/" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} createViewerPoint={createViewerPoint} authorizedFetch={authorizedFetch} writable /></div>);
+    rerender(<div className="relative h-96"><WsiAnnotationLayer viewer={mockViewer} toolbarElement={toolbar} endpoint="/slides/slide-2/annotations/" imageAssetId="asset-2" slideId="slide-2" imageWidth={1000} imageHeight={800} createViewerPoint={createViewerPoint} authorizedFetch={authorizedFetch} writable /></div>);
 
     resolveSecond(response([{ ...baseAnnotation, id: "slide-2-annotation", image_asset: "asset-2", annotation_data: { ...baseAnnotation.annotation_data, slide_id: "slide-2", image_points: [[300, 400]] } }]));
     await waitFor(() => expect(document.querySelector("circle")).toHaveAttribute("cx", "300"));
     resolveFirst(response([baseAnnotation]));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(document.querySelector("circle")).toHaveAttribute("cx", "300");
+  });
+
+  it("does not access mouse navigation after the owning viewer was destroyed", async () => {
+    const mockViewer = viewer();
+    let destroyed = false;
+    const setMouseNavEnabled = mockViewer.setMouseNavEnabled as ReturnType<typeof vi.fn>;
+    setMouseNavEnabled.mockImplementation(() => {
+      if (destroyed) throw new TypeError("Cannot read properties of undefined (reading 'tracking')");
+      return mockViewer;
+    });
+    const toolbar = document.createElement("div");
+    document.body.appendChild(toolbar);
+    const result = render(<WsiAnnotationLayer viewer={mockViewer} toolbarElement={toolbar} endpoint="/annotations/" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} createViewerPoint={createViewerPoint} authorizedFetch={vi.fn().mockResolvedValue(response([]))} writable />);
+    await waitFor(() => expect(setMouseNavEnabled).toHaveBeenCalledTimes(1));
+
+    destroyed = true;
+    expect(() => result.unmount()).not.toThrow();
+    expect(setMouseNavEnabled).toHaveBeenCalledTimes(1);
+  });
+
+  it("disables navigation for drawing and immediately enables it when returning to PAN", async () => {
+    const mockViewer = viewer();
+    const toolbar = document.createElement("div");
+    document.body.appendChild(toolbar);
+    render(<WsiAnnotationLayer viewer={mockViewer} toolbarElement={toolbar} endpoint="/annotations/" imageAssetId="asset-1" slideId="slide-1" imageWidth={1000} imageHeight={800} createViewerPoint={createViewerPoint} authorizedFetch={vi.fn().mockResolvedValue(response([]))} writable />);
+    const setMouseNavEnabled = mockViewer.setMouseNavEnabled as ReturnType<typeof vi.fn>;
+    await waitFor(() => expect(setMouseNavEnabled).toHaveBeenLastCalledWith(true));
+
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    await waitFor(() => expect(setMouseNavEnabled).toHaveBeenLastCalledWith(false));
+    fireEvent.click(screen.getByRole("button", { name: "이동" }));
+    await waitFor(() => expect(setMouseNavEnabled).toHaveBeenLastCalledWith(true));
+
+    expect(setMouseNavEnabled.mock.calls.map(([enabled]) => enabled)).toEqual([true, false, true]);
   });
 });

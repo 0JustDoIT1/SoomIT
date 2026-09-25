@@ -1,3 +1,4 @@
+from django.db.models import F
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -36,7 +37,12 @@ class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
         if slide_id:
             slide = get_object_or_404(
                 WholeSlideImage.objects.select_related("image_asset"),
-                id=slide_id, image_asset_id=asset_id, specimen__case=case, is_current=True,
+                id=slide_id,
+                image_asset_id=asset_id,
+                image_asset__case=case,
+                image_asset__image_type=CaseImageAsset.ImageType.WSI,
+                specimen__case=case,
+                is_current=True,
             )
             asset = slide.image_asset
         else:
@@ -50,20 +56,26 @@ class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
                 image_type__in=[CaseImageAsset.ImageType.CT, CaseImageAsset.ImageType.PET],
             )
         annotations = ImageAnnotation.objects.filter(image_asset=asset).select_related("created_by_user", "clinical_result").order_by("created_at")
-        return Response(ImageAnnotationSerializer(annotations, many=True).data)
+        response = Response(ImageAnnotationSerializer(annotations, many=True).data)
+        response["X-Annotation-Writable"] = "true"
+        return response
 
     def post(self, request, case_id):
         case = self.get_case(request, case_id)
         serializer = ImageAnnotationSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         asset = serializer.validated_data["image_asset"]
-        if asset.image_type == CaseImageAsset.ImageType.WSI:
-            return Response(
-                {"detail": "Pulmonology staff have read-only access to WSI annotations."},
-                status=status.HTTP_403_FORBIDDEN,
-            )
         if asset.case_id != case.id:
             return Response({"detail": "Image asset does not belong to this Case."}, status=status.HTTP_400_BAD_REQUEST)
+        if asset.image_type == CaseImageAsset.ImageType.WSI:
+            slide_id = serializer.validated_data["annotation_data"].get("slide_id")
+            get_object_or_404(
+                WholeSlideImage,
+                id=slide_id,
+                image_asset=asset,
+                specimen__case=case,
+                is_current=True,
+            )
         clinical_result = serializer.validated_data.get("clinical_result")
         if clinical_result and clinical_result.case_id != case.id:
             return Response({"detail": "Clinical result does not belong to this Case."}, status=status.HTTP_400_BAD_REQUEST)
@@ -74,15 +86,24 @@ class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
 class DoctorCaseImageAnnotationDetailAPIView(_DoctorImageAnnotationBase):
     def get_object(self, request, case_id, annotation_id):
         case = self.get_case(request, case_id)
-        return get_object_or_404(
+        annotation = get_object_or_404(
             ImageAnnotation,
             id=annotation_id,
             image_asset__case=case,
             image_asset__image_type__in=[
                 CaseImageAsset.ImageType.CT,
                 CaseImageAsset.ImageType.PET,
+                CaseImageAsset.ImageType.WSI,
             ],
         )
+        if annotation.image_asset.image_type == CaseImageAsset.ImageType.WSI:
+            get_object_or_404(
+                WholeSlideImage,
+                image_asset=annotation.image_asset,
+                specimen__case=case,
+                is_current=True,
+            )
+        return annotation
 
     def patch(self, request, case_id, annotation_id):
         case = self.get_case(request, case_id)
@@ -112,14 +133,6 @@ class _PathologyWsiAnnotationBase(APIView):
             and role.role in {DepartmentRole.Role.DOCTOR, DepartmentRole.Role.TECHNOLOGIST}
         )
 
-    def _is_pathology_doctor(self, request):
-        role = getattr(request.user, "department_role", None)
-        return bool(
-            role
-            and role.department.code == PATHOLOGY_DEPARTMENT_CODE
-            and role.role == DepartmentRole.Role.DOCTOR
-        )
-
     def get_slide(self, request, wsi_id):
         if not self._is_pathology_reader(request):
             self.permission_denied(request)
@@ -128,6 +141,8 @@ class _PathologyWsiAnnotationBase(APIView):
             WholeSlideImage.objects.select_related("image_asset", "specimen__case__patient"),
             id=wsi_id,
             is_current=True,
+            image_asset__case_id=F("specimen__case_id"),
+            image_asset__image_type=CaseImageAsset.ImageType.WSI,
             specimen__case__patient__hospital_id=hospital_id,
         )
 
@@ -137,37 +152,19 @@ class PathologyWsiAnnotationListCreateAPIView(_PathologyWsiAnnotationBase):
         slide = self.get_slide(request, wsi_id)
         annotations = ImageAnnotation.objects.filter(image_asset=slide.image_asset).select_related("created_by_user").order_by("created_at")
         response = Response(ImageAnnotationSerializer(annotations, many=True).data)
-        response["X-Annotation-Writable"] = "true" if self._is_pathology_doctor(request) else "false"
+        response["X-Annotation-Writable"] = "false"
         return response
 
     def post(self, request, wsi_id):
-        slide = self.get_slide(request, wsi_id)
-        if not self._is_pathology_doctor(request):
-            self.permission_denied(request)
-        serializer = ImageAnnotationSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        if serializer.validated_data["image_asset"].id != slide.image_asset_id:
-            return Response({"detail": "Image asset does not belong to this WSI."}, status=status.HTTP_400_BAD_REQUEST)
-        annotation = serializer.save(created_by_user=request.user)
-        return Response(ImageAnnotationSerializer(annotation).data, status=status.HTTP_201_CREATED)
+        self.get_slide(request, wsi_id)
+        self.permission_denied(request)
 
 
 class PathologyWsiAnnotationDetailAPIView(_PathologyWsiAnnotationBase):
-    def get_object(self, request, wsi_id, annotation_id):
-        slide = self.get_slide(request, wsi_id)
-        return get_object_or_404(ImageAnnotation, id=annotation_id, image_asset=slide.image_asset)
-
     def patch(self, request, wsi_id, annotation_id):
-        if not self._is_pathology_doctor(request):
-            self.permission_denied(request)
-        annotation = self.get_object(request, wsi_id, annotation_id)
-        serializer = ImageAnnotationSerializer(annotation, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        return Response(ImageAnnotationSerializer(serializer.save()).data)
+        self.get_slide(request, wsi_id)
+        self.permission_denied(request)
 
     def delete(self, request, wsi_id, annotation_id):
-        if not self._is_pathology_doctor(request):
-            self.permission_denied(request)
-        annotation = self.get_object(request, wsi_id, annotation_id)
-        annotation.delete()
-        return Response(status=status.HTTP_204_NO_CONTENT)
+        self.get_slide(request, wsi_id)
+        self.permission_denied(request)

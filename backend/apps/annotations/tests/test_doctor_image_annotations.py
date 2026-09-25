@@ -190,6 +190,18 @@ class WsiAnnotationPayloadValidationTests(SimpleTestCase):
                 with self.assertRaises(serializers.ValidationError):
                     ImageAnnotationSerializer._validate_wsi_points(annotation_type, data, self.asset)
 
+    def test_wsi_annotation_routes_resolve_to_the_current_views(self):
+        case_id = uuid4()
+        slide_id = uuid4()
+        doctor_match = resolve(
+            f"/api/doctor/cases/{case_id}/image-annotations/"
+        )
+        pathology_match = resolve(
+            f"/api/pathology/wsis/{slide_id}/annotations/"
+        )
+        self.assertEqual(doctor_match.url_name, "doctor-case-image-annotation-list-create")
+        self.assertEqual(pathology_match.url_name, "wsi-annotation-list-create")
+
 
 class DoctorImageAnnotationAPITests(TestCase):
     def setUp(self):
@@ -568,22 +580,66 @@ class DoctorImageAnnotationAPITests(TestCase):
             "annotation_data": data,
         }
 
-    def test_pulmonology_can_restore_wsi_annotations_but_cannot_write(self):
-        annotation = ImageAnnotation.objects.create(
-            image_asset=self.wsi,
-            annotation_type=ImageAnnotation.AnnotationType.POINT,
-            annotation_data=self.wsi_payload()["annotation_data"],
-            created_by_user=self.doctor,
-        )
-        response = self.client.get(self.list_url, {
+    def test_assigned_pulmonology_doctor_can_crud_wsi_annotations(self):
+        empty = self.client.get(self.list_url, {
             "image_asset_id": self.wsi.id,
             "slide_id": self.slide.id,
         })
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual([row["id"] for row in response.data], [str(annotation.id)])
-        self.assertEqual(self.client.post(self.list_url, self.wsi_payload(), format="json").status_code, 403)
+        self.assertEqual(empty.status_code, 200)
+        self.assertEqual(empty.data, [])
+        self.assertEqual(empty["X-Annotation-Writable"], "true")
 
-    def test_pathology_doctor_can_create_and_delete_wsi_annotations_and_technologist_is_read_only(self):
+        created = self.client.post(self.list_url, self.wsi_payload(), format="json")
+        self.assertEqual(created.status_code, 201, created.data)
+        annotation = ImageAnnotation.objects.get(id=created.data["id"])
+        self.assertEqual(annotation.created_by_user, self.doctor)
+        self.assertEqual(created.data["created_by_user_name"], self.doctor.name)
+
+        listed = self.client.get(self.list_url, {
+            "image_asset_id": self.wsi.id,
+            "slide_id": self.slide.id,
+        })
+        self.assertEqual([row["id"] for row in listed.data], [str(annotation.id)])
+
+        updated_data = self.wsi_payload(points=[[250, 350]])["annotation_data"]
+        detail_url = self.detail_url(annotation)
+        updated = self.client.patch(
+            detail_url,
+            {"annotation_data": updated_data, "note": "updated WSI annotation"},
+            format="json",
+        )
+        self.assertEqual(updated.status_code, 200, updated.data)
+        annotation.refresh_from_db()
+        self.assertEqual(annotation.annotation_data["image_points"], [[250, 350]])
+        self.assertEqual(annotation.created_by_user, self.doctor)
+
+        self.assertEqual(self.client.delete(detail_url).status_code, 204)
+        self.assertFalse(ImageAnnotation.objects.filter(id=annotation.id).exists())
+
+    def test_wsi_read_rejects_asset_and_slide_with_different_cases(self):
+        foreign_wsi = self.create_asset(
+            self.other_case, CaseImageAsset.ImageType.WSI, "1.2.3.foreign-wsi"
+        )
+        self.slide.image_asset = foreign_wsi
+        self.slide.save(update_fields=["image_asset", "updated_at"])
+
+        response = self.client.get(self.list_url, {
+            "image_asset_id": foreign_wsi.id,
+            "slide_id": self.slide.id,
+        })
+
+        self.assertEqual(response.status_code, 404)
+
+    def test_other_doctor_cannot_read_or_write_wsi_annotations(self):
+        self.authenticate(self.other_doctor)
+        query = {"image_asset_id": self.wsi.id, "slide_id": self.slide.id}
+        self.assertEqual(self.client.get(self.list_url, query).status_code, 404)
+        self.assertEqual(
+            self.client.post(self.list_url, self.wsi_payload(), format="json").status_code,
+            404,
+        )
+
+    def test_pathology_doctor_and_technologist_have_read_only_wsi_access(self):
         pathology = Department.objects.create(hospital=self.hospital, code="PATHOLOGY", name="Pathology")
         doctor_role = DepartmentRole.objects.create(
             department=pathology, role=DepartmentRole.Role.DOCTOR, display_name="Pathologist"
@@ -595,20 +651,27 @@ class DoctorImageAnnotationAPITests(TestCase):
         technologist = self.create_user("annotation-pathology-tech", technologist_role)
         list_url = reverse("pathology:wsi-annotation-list-create", kwargs={"wsi_id": self.slide.id})
 
-        self.authenticate(pathologist)
-        created = self.client.post(list_url, self.wsi_payload(), format="json")
+        created = self.client.post(self.list_url, self.wsi_payload(), format="json")
         self.assertEqual(created.status_code, 201, created.data)
-        self.assertEqual(self.client.get(list_url)["X-Annotation-Writable"], "true")
+        detail_url = reverse(
+            "pathology:wsi-annotation-detail",
+            kwargs={"wsi_id": self.slide.id, "annotation_id": created.data["id"]},
+        )
+
+        self.authenticate(pathologist)
+        read = self.client.get(list_url)
+        self.assertEqual(read.status_code, 200)
+        self.assertEqual(read["X-Annotation-Writable"], "false")
+        self.assertEqual(self.client.post(list_url, self.wsi_payload(), format="json").status_code, 403)
+        self.assertEqual(self.client.patch(detail_url, {"note": "blocked"}, format="json").status_code, 403)
+        self.assertEqual(self.client.delete(detail_url).status_code, 403)
 
         self.authenticate(technologist)
         read = self.client.get(list_url)
         self.assertEqual(read.status_code, 200)
         self.assertEqual(read["X-Annotation-Writable"], "false")
         self.assertEqual(self.client.post(list_url, self.wsi_payload(), format="json").status_code, 403)
-
-        self.authenticate(pathologist)
-        detail_url = reverse("pathology:wsi-annotation-detail", kwargs={"wsi_id": self.slide.id, "annotation_id": created.data["id"]})
-        self.assertEqual(self.client.delete(detail_url).status_code, 204)
+        self.assertTrue(ImageAnnotation.objects.filter(id=created.data["id"]).exists())
 
     def test_rejects_clinical_result_from_another_case(self):
         other_result = ClinicalResult.objects.create(

@@ -212,6 +212,10 @@ export function wsiPyramidApiUrl(wsiId: string) {
   return `${API_BASE_URL}/api/pathology/wsis/${encodeURIComponent(wsiId)}/pyramid/`;
 }
 
+export function wsiAnnotationsApiUrl(wsiId: string) {
+  return `${API_BASE_URL}/api/pathology/wsis/${encodeURIComponent(wsiId)}/annotations/`;
+}
+
 export function casePathologyAiResultsApiUrl(caseId: string) {
   return `${API_BASE_URL}/api/pathology/cases/${encodeURIComponent(caseId)}/ai-results/`;
 }

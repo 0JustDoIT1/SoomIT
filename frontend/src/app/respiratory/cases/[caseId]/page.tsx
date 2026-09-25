@@ -749,6 +749,11 @@ export default function RespiratoryCaseDetailPage() {
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`, { signal: controller.signal }),
           ]);
 
+        // Effect cleanup intentionally aborts every in-flight request. Do not
+        // turn that lifecycle cancellation into panel errors, toasts, or noisy
+        // AbortError console reports.
+        if (controller.signal.aborted) return;
+
         if (tnmAnalysisRequest.status === "fulfilled" && tnmAnalysisRequest.value.ok) {
           const tnmAnalysisResponse = tnmAnalysisRequest.value;
           const aiAnalysisPayload: unknown = await tnmAnalysisResponse.json();
@@ -860,6 +865,7 @@ export default function RespiratoryCaseDetailPage() {
           applyCurrentResponse(() => showToast.error("검사 오더를 불러오지 못했습니다.", { id: `case-load-orders-${caseId}` }));
         }
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error(err);
         applyCurrentResponse(() => showToast.error("Case 정보를 불러오지 못했습니다.", { id: `case-load-${caseId}` }));
         applyCurrentResponse(() => setError(

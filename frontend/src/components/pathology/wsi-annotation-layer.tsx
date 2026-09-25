@@ -1,12 +1,13 @@
 "use client";
 
 import type OpenSeadragonType from "openseadragon";
-import { type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
+import { memo, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export type WsiAnnotationType = "POINT" | "BOUNDING_BOX" | "POLYGON" | "FREEHAND" | "TEXT";
 type ImagePoint = [number, number];
+type CreateViewerPoint = (x: number, y: number) => OpenSeadragonType.Point;
 export type WsiAnnotation = {
   id: string;
   image_asset: string;
@@ -41,6 +42,14 @@ function pointsForRectangle(start: ImagePoint, end: ImagePoint): ImagePoint[] {
   return [[start[0], start[1]], [end[0], start[1]], [end[0], end[1]], [start[0], end[1]]];
 }
 
+function annotationDetailUrl(listEndpoint: string, annotationId: string) {
+  return `${listEndpoint.split("?", 1)[0].replace(/\/$/, "")}/${annotationId}/`;
+}
+
+function isTemporaryAnnotation(annotation: WsiAnnotation) {
+  return annotation.id.startsWith("temp-");
+}
+
 export function WsiAnnotationLayer({
   viewer,
   toolbarElement,
@@ -49,6 +58,7 @@ export function WsiAnnotationLayer({
   slideId,
   imageWidth,
   imageHeight,
+  createViewerPoint,
   authorizedFetch,
   writable,
 }: {
@@ -59,6 +69,8 @@ export function WsiAnnotationLayer({
   slideId: string;
   imageWidth: number;
   imageHeight: number;
+  /** Supplied by the component that owns this OpenSeadragon instance. */
+  createViewerPoint: CreateViewerPoint;
   authorizedFetch: AuthorizedFetch;
   writable: boolean;
 }) {
@@ -68,11 +80,13 @@ export function WsiAnnotationLayer({
   const [draftPoints, setDraftPoints] = useState<ImagePoint[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<{ identity: string; message: string }>({ identity: "", message: "" });
-  const [saving, setSaving] = useState(false);
+  const [pendingSaveCount, setPendingSaveCount] = useState(0);
   const [serverWritable, setServerWritable] = useState(true);
   const [viewRevision, setViewRevision] = useState(0);
   const activeIdentity = useRef("");
   const drawing = useRef(false);
+  const nextTemporaryId = useRef(0);
+  const projectionFrame = useRef<number | null>(null);
   const identity = `${slideId}:${imageAssetId}`;
 
   useEffect(() => {
@@ -85,7 +99,16 @@ export function WsiAnnotationLayer({
         setServerWritable(response.headers.get("X-Annotation-Writable") !== "false");
         if (!Array.isArray(body)) throw new Error("Annotation 응답 형식이 올바르지 않습니다.");
         if (!controller.signal.aborted && activeIdentity.current === identity) {
-          setLoaded({ identity, annotations: body as WsiAnnotation[] });
+          const serverAnnotations = body as WsiAnnotation[];
+          setLoaded((current) => ({
+            identity,
+            annotations: [
+              ...serverAnnotations,
+              ...(current.identity === identity
+                ? current.annotations.filter(isTemporaryAnnotation)
+                : []),
+            ],
+          }));
           setError({ identity, message: "" });
         }
       })
@@ -101,7 +124,13 @@ export function WsiAnnotationLayer({
 
   useEffect(() => {
     if (!viewer) return;
-    const redraw = () => setViewRevision((value) => value + 1);
+    const redraw = () => {
+      if (projectionFrame.current !== null) return;
+      projectionFrame.current = window.requestAnimationFrame(() => {
+        projectionFrame.current = null;
+        setViewRevision((value) => value + 1);
+      });
+    };
     viewer.addHandler("animation", redraw);
     viewer.addHandler("resize", redraw);
     viewer.addHandler("open", redraw);
@@ -109,6 +138,8 @@ export function WsiAnnotationLayer({
       viewer.removeHandler("animation", redraw);
       viewer.removeHandler("resize", redraw);
       viewer.removeHandler("open", redraw);
+      if (projectionFrame.current !== null) window.cancelAnimationFrame(projectionFrame.current);
+      projectionFrame.current = null;
     };
   }, [viewer]);
 
@@ -116,22 +147,27 @@ export function WsiAnnotationLayer({
     if (!viewer) return;
     const drawingMode = canWrite && activeTool !== "PAN";
     viewer.setMouseNavEnabled(!drawingMode);
-    return () => { viewer.setMouseNavEnabled(true); };
   }, [activeTool, canWrite, viewer]);
 
   const imagePoint = useCallback((event: ReactPointerEvent<SVGSVGElement>): ImagePoint | null => {
     if (!viewer) return null;
-    const rect = event.currentTarget.getBoundingClientRect();
-    const viewportPoint = viewer.viewport.pointFromPixel({ x: event.clientX - rect.left, y: event.clientY - rect.top } as OpenSeadragonType.Point);
+    // pointFromPixel expects a real OpenSeadragon.Point: internally it calls
+    // Point#minus, so a structural { x, y } cast is not sufficient.
+    const viewerRect = viewer.element.getBoundingClientRect();
+    const viewerPixel = createViewerPoint(
+      event.clientX - viewerRect.left,
+      event.clientY - viewerRect.top,
+    );
+    const viewportPoint = viewer.viewport.pointFromPixel(viewerPixel);
     const point = viewer.viewport.viewportToImageCoordinates(viewportPoint);
     return [Math.max(0, Math.min(imageWidth, point.x)), Math.max(0, Math.min(imageHeight, point.y))];
-  }, [imageHeight, imageWidth, viewer]);
+  }, [createViewerPoint, imageHeight, imageWidth, viewer]);
 
-  const screenPoint = (point: ImagePoint) => {
+  const screenPoint = useCallback((point: ImagePoint) => {
     if (!viewer) return [0, 0] as ImagePoint;
-    const result = viewer.viewport.imageToViewerElementCoordinates({ x: point[0], y: point[1] } as OpenSeadragonType.Point);
+    const result = viewer.viewport.imageToViewerElementCoordinates(createViewerPoint(point[0], point[1]));
     return [result.x, result.y] as ImagePoint;
-  };
+  }, [createViewerPoint, viewer]);
 
   const save = useCallback(async (type: WsiAnnotationType, points: ImagePoint[], annotationText?: string) => {
     const trimmed = annotationText?.trim();
@@ -139,7 +175,29 @@ export function WsiAnnotationLayer({
       setError({ identity, message: "Text annotation은 공백으로 저장할 수 없습니다." });
       return;
     }
-    setSaving(true);
+    const temporaryId = `temp-${Date.now()}-${++nextTemporaryId.current}`;
+    const optimistic: WsiAnnotation = {
+      id: temporaryId,
+      image_asset: imageAssetId,
+      annotation_type: type,
+      annotation_data: {
+        coordinate_space: "WSI_IMAGE",
+        slide_id: slideId,
+        image_width: imageWidth,
+        image_height: imageHeight,
+        image_points: points,
+        tool_name: toolName(type),
+        ...(trimmed ? { text: trimmed } : {}),
+      },
+    };
+    setLoaded((current) => ({
+      identity,
+      annotations: [...(current.identity === identity ? current.annotations : []), optimistic],
+    }));
+    setSelectedId(temporaryId);
+    setDraftPoints([]);
+    setText("");
+    setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
       const response = await authorizedFetch(endpoint, {
@@ -162,24 +220,33 @@ export function WsiAnnotationLayer({
       const body: unknown = await response.json().catch(() => null);
       if (!response.ok) throw new Error("Annotation을 저장하지 못했습니다.");
       if (activeIdentity.current === identity) {
-        setLoaded((current) => ({ identity, annotations: [...(current.identity === identity ? current.annotations : []), body as WsiAnnotation] }));
-        setSelectedId((body as WsiAnnotation).id);
-        setDraftPoints([]);
-        setText("");
+        const saved = body as WsiAnnotation;
+        setLoaded((current) => current.identity !== identity ? current : {
+          identity,
+          annotations: current.annotations.map((annotation) => annotation.id === temporaryId ? saved : annotation),
+        });
+        setSelectedId((current) => current === temporaryId ? saved.id : current);
       }
     } catch (cause) {
+      if (activeIdentity.current === identity) {
+        setLoaded((current) => current.identity !== identity ? current : {
+          identity,
+          annotations: current.annotations.filter((annotation) => annotation.id !== temporaryId),
+        });
+        setSelectedId((current) => current === temporaryId ? "" : current);
+      }
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 저장하지 못했습니다." });
     } finally {
-      if (activeIdentity.current === identity) setSaving(false);
+      setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [authorizedFetch, endpoint, identity, imageAssetId, imageHeight, imageWidth, slideId]);
 
   const deleteSelected = useCallback(async () => {
     if (!selectedId || loaded.identity !== identity) return;
-    setSaving(true);
+    setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
-      const response = await authorizedFetch(`${endpoint}${selectedId}/`, { method: "DELETE" });
+      const response = await authorizedFetch(annotationDetailUrl(endpoint, selectedId), { method: "DELETE" });
       if (!response.ok) throw new Error("Annotation을 삭제하지 못했습니다.");
       if (activeIdentity.current === identity) {
         setLoaded((current) => ({ identity, annotations: current.identity === identity ? current.annotations.filter((annotation) => annotation.id !== selectedId) : [] }));
@@ -188,7 +255,7 @@ export function WsiAnnotationLayer({
     } catch (cause) {
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 삭제하지 못했습니다." });
     } finally {
-      if (activeIdentity.current === identity) setSaving(false);
+      setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [authorizedFetch, endpoint, identity, loaded.identity, selectedId]);
 
@@ -196,6 +263,7 @@ export function WsiAnnotationLayer({
     if (draftPoints.length >= 3) void save("POLYGON", draftPoints);
   };
   void viewRevision;
+  const saving = pendingSaveCount > 0;
   const annotations = loaded.identity === identity ? loaded.annotations : [];
   const rendered = annotations.map((annotation) => ({
     ...annotation,
@@ -250,11 +318,11 @@ export function WsiAnnotationLayer({
   </>;
 }
 
-function AnnotationShape({ annotation, selected, onSelect }: { annotation: WsiAnnotation & { screenPoints: ImagePoint[] }; selected: boolean; onSelect: () => void }) {
+const AnnotationShape = memo(function AnnotationShape({ annotation, selected, onSelect }: { annotation: WsiAnnotation & { screenPoints: ImagePoint[] }; selected: boolean; onSelect: () => void }) {
   const points = annotation.screenPoints.map((point) => point.join(",")).join(" ");
   const stroke = selected ? "#fbbf24" : "#38bdf8";
   const common = { stroke, strokeWidth: selected ? 3 : 2, onPointerDown: (event: ReactPointerEvent) => { event.stopPropagation(); onSelect(); }, className: "pointer-events-auto cursor-pointer" };
   if (annotation.annotation_type === "POINT") return <circle cx={annotation.screenPoints[0]?.[0]} cy={annotation.screenPoints[0]?.[1]} r="5" fill={stroke} {...common} />;
   if (annotation.annotation_type === "TEXT") return <g onPointerDown={common.onPointerDown} className={common.className}><circle cx={annotation.screenPoints[0]?.[0]} cy={annotation.screenPoints[0]?.[1]} r="4" fill={stroke} /><text x={(annotation.screenPoints[0]?.[0] ?? 0) + 8} y={(annotation.screenPoints[0]?.[1] ?? 0) - 8} fill={stroke} fontSize="12" stroke="rgba(2,6,23,.9)" strokeWidth="3" paintOrder="stroke">{annotation.annotation_data.text}</text></g>;
   return annotation.annotation_type === "FREEHAND" ? <polyline points={points} fill="none" {...common} /> : <polygon points={points} fill="rgba(56,189,248,.12)" {...common} />;
-}
+});

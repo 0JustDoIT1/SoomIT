@@ -13,6 +13,7 @@ import logging
 import time
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.error import HTTPError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
@@ -31,7 +32,9 @@ TIMEOUT_SECONDS = 30 * 60
 
 
 class WsiOrthancRegistrationError(RuntimeError):
-    pass
+    def __init__(self, message, *, upstream_status=None):
+        super().__init__(message)
+        self.upstream_status = upstream_status
 
 
 def _orthanc_request(path: str):
@@ -45,6 +48,11 @@ def _orthanc_request(path: str):
     try:
         with urlopen(request, timeout=settings.ORTHANC_TIMEOUT_SECONDS) as response:
             return json.loads(response.read().decode("utf-8"))
+    except HTTPError as exc:
+        raise WsiOrthancRegistrationError(
+            f"Orthanc request failed for {path}.",
+            upstream_status=exc.code,
+        ) from exc
     except Exception as exc:
         raise WsiOrthancRegistrationError(f"Orthanc request failed for {path}.") from exc
 
@@ -139,9 +147,25 @@ def register_wsi_with_orthanc(wsi_id: str) -> str:
     with _registration_lock():
         wsi = WholeSlideImage.objects.select_related("image_asset").get(id=wsi_id)
         if wsi.orthanc_series_id:
-            # Do not re-register or overwrite a previously established mapping.
-            _orthanc_request(f"/series/{wsi.orthanc_series_id}")
-            return "already_registered"
+            stale_series_id = wsi.orthanc_series_id
+            try:
+                _orthanc_request(f"/series/{stale_series_id}")
+            except WsiOrthancRegistrationError as exc:
+                if exc.upstream_status != 404:
+                    raise
+                with transaction.atomic():
+                    locked = WholeSlideImage.objects.select_for_update().get(id=wsi_id)
+                    if locked.orthanc_series_id == stale_series_id:
+                        locked.orthanc_series_id = None
+                        locked.orthanc_instance_id = None
+                        locked.save(update_fields=[
+                            "orthanc_series_id",
+                            "orthanc_instance_id",
+                            "updated_at",
+                        ])
+                wsi.refresh_from_db()
+            else:
+                return "already_registered"
         source_path = STAGING_DIRECTORY / f"{wsi.id}.svs"
         try:
             _download_gcs_wsi(wsi.image_asset.storage_uri, source_path)
