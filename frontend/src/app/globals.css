@@ -23,11 +23,10 @@
   --text-ui-title--line-height: 1.35;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html[data-theme="dark"] {
+  --background: #0b1120;
+  --foreground: #e5e7eb;
+  color-scheme: dark;
 }
 
 body {
@@ -88,43 +87,173 @@ data {
   line-height: 1.4;
 }
 
-html[data-respiratory-theme="dark"] {
-  color-scheme: dark;
-}
-
-html[data-respiratory-theme="dark"] .respiratory-app {
+html[data-theme="dark"] .clinical-app {
   background: #0f172a;
   color: #e2e8f0;
 }
 
-html[data-respiratory-theme="dark"] .respiratory-app .bg-white,
-html[data-respiratory-theme="dark"] .respiratory-app .bg-slate-50,
-html[data-respiratory-theme="dark"] .respiratory-app .bg-slate-50\/50,
-html[data-respiratory-theme="dark"] .respiratory-app .bg-\[\#f6f8fb\] {
+html[data-theme="dark"] .clinical-app .bg-white,
+html[data-theme="dark"] .clinical-app .bg-slate-50,
+html[data-theme="dark"] .clinical-app .bg-slate-50\/50,
+html[data-theme="dark"] .clinical-app .bg-\[\#f6f8fb\] {
   background-color: #111827 !important;
 }
 
-html[data-respiratory-theme="dark"] .respiratory-app .bg-blue-50,
-html[data-respiratory-theme="dark"] .respiratory-app .bg-blue-50\/70,
-html[data-respiratory-theme="dark"] .respiratory-app .bg-blue-50\/50 {
+html[data-theme="dark"] .clinical-app .bg-blue-50,
+html[data-theme="dark"] .clinical-app .bg-blue-50\/70,
+html[data-theme="dark"] .clinical-app .bg-blue-50\/50 {
   background-color: #172554 !important;
 }
 
-html[data-respiratory-theme="dark"] .respiratory-app .border-slate-100,
-html[data-respiratory-theme="dark"] .respiratory-app .border-slate-200 {
+html[data-theme="dark"] .clinical-app .border-slate-100,
+html[data-theme="dark"] .clinical-app .border-slate-200 {
   border-color: #334155 !important;
 }
 
-html[data-respiratory-theme="dark"] .respiratory-app .text-slate-900,
-html[data-respiratory-theme="dark"] .respiratory-app .text-slate-800,
-html[data-respiratory-theme="dark"] .respiratory-app .text-slate-700,
-html[data-respiratory-theme="dark"] .respiratory-app .text-slate-600 {
+html[data-theme="dark"] .clinical-app .text-slate-950,
+html[data-theme="dark"] .clinical-app .text-slate-900,
+html[data-theme="dark"] .clinical-app .text-slate-800,
+html[data-theme="dark"] .clinical-app .text-slate-700,
+html[data-theme="dark"] .clinical-app .text-slate-600 {
   color: #e2e8f0 !important;
 }
 
-html[data-respiratory-theme="dark"] .respiratory-app .text-slate-500,
-html[data-respiratory-theme="dark"] .respiratory-app .text-slate-400 {
+html[data-theme="dark"] .clinical-app .text-slate-500,
+html[data-theme="dark"] .clinical-app .text-slate-400 {
   color: #94a3b8 !important;
+}
+
+/* Clinician workstations share a compact neutral surface system. Semantic
+   hues stay recognizable while white/light utility surfaces move to slate. */
+html[data-theme="dark"] .clinical-app :is(
+  [class~="bg-white/70"],
+  [class~="bg-white/80"],
+  [class~="bg-white/90"],
+  [class~="bg-white/95"],
+  [class~="bg-slate-100"],
+  [class~="bg-[#f3f7fd]"],
+  [class~="bg-[#f8fafc]"],
+  [class~="bg-[#f8fbff]"],
+  [class~="bg-[#F7F8FC]"],
+  [class~="bg-[#F8FAFC]"],
+  [class~="bg-[#F8F9FC]"],
+  [class~="bg-[#F8F8FF]"],
+  [class~="bg-[#FBFBFF]"],
+  [class~="bg-[#F5F6FF]"],
+  [class~="bg-[#F7F8FF]"],
+  [class~="bg-[#F5F7FA]"],
+  [class~="bg-[#F2F3F5]"],
+  [class~="bg-[#EEF1F7]"],
+  [class~="bg-[#E7EBF2]"],
+  [class~="bg-[#E8EDF2]"]
+) {
+  background-color: #111827 !important;
+}
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="bg-blue-100"], [class~="bg-indigo-50"], [class~="bg-indigo-100"],
+  [class~="bg-violet-50"], [class~="bg-violet-100"], [class~="bg-purple-50"],
+  [class~="bg-[#EEF2FF]"], [class~="bg-[#F1EEFF]"], [class~="bg-[#F1EFFB]"],
+  [class~="bg-[#F1F3FF]"], [class~="bg-[#F4F8FF]"], [class~="bg-[#F8F6FF]"],
+  [class~="bg-[#DCD5F5]"], [class~="bg-[#DDD7FA]"]
+) { background-color: #1e1b4b !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="bg-emerald-50"], [class~="bg-emerald-100"], [class~="bg-teal-50"],
+  [class~="bg-cyan-50"], [class~="bg-[#F3FAF8]"]
+) { background-color: #052e2b !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="bg-amber-50"], [class~="bg-amber-100"], [class~="bg-yellow-50"],
+  [class~="bg-orange-50"]
+) { background-color: #422006 !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="bg-rose-50"], [class~="bg-rose-100"], [class~="bg-red-50"],
+  [class~="bg-red-100"], [class~="bg-[#F5E6E9]"], [class~="bg-[#FCF6F7]"],
+  [class~="bg-[#FDF1F5]"], [class~="bg-[#FFF8FB]"]
+) { background-color: #4c0519 !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class*="border-slate-"], [class*="border-blue-1"], [class*="border-violet-1"],
+  [class*="border-[#D"], [class*="border-[#E"], [class*="border-[#F"]
+) { border-color: #334155 !important; }
+
+html[data-theme="dark"] .clinical-app :is(input, textarea, select) {
+  border-color: #475569 !important;
+  background-color: #0f172a !important;
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] .clinical-app :is(input, textarea)::placeholder {
+  color: #94a3b8 !important;
+  opacity: 1;
+}
+
+html[data-theme="dark"] .clinical-app :is(input, textarea, select):disabled,
+html[data-theme="dark"] .clinical-app :is(input, textarea)[readonly] {
+  background-color: #1e293b !important;
+  color: #94a3b8 !important;
+}
+
+html[data-theme="dark"] .clinical-app :is(table, thead, tbody, tr, th, td) {
+  border-color: #334155;
+}
+
+html[data-theme="dark"] .clinical-app tbody tr:hover {
+  background-color: #1e293b;
+}
+
+html[data-theme="dark"] .clinical-app .clinical-department-banner {
+  border-color: #334155 !important;
+  background-color: #111827 !important;
+  background-image: linear-gradient(105deg, #111827, #172033, #0f172a) !important;
+}
+
+html[data-theme="dark"] .clinical-app .clinical-department-banner::before {
+  opacity: 0.16 !important;
+}
+
+html[data-theme="dark"] .clinical-app :is(.text-blue-700, .text-blue-800) { color: #93c5fd !important; }
+html[data-theme="dark"] .clinical-app :is(.text-violet-600, .text-violet-700, .text-violet-800) { color: #c4b5fd !important; }
+html[data-theme="dark"] .clinical-app :is(.text-emerald-700, .text-emerald-800) { color: #6ee7b7 !important; }
+html[data-theme="dark"] .clinical-app :is(.text-amber-700, .text-amber-800) { color: #fcd34d !important; }
+html[data-theme="dark"] .clinical-app :is(.text-rose-600, .text-rose-700, .text-rose-800) { color: #fda4af !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="text-[#24364B]"], [class~="text-[#243653]"], [class~="text-[#25324B]"],
+  [class~="text-[#596579]"], [class~="text-[#59627F]"], [class~="text-[#536784]"],
+  [class~="text-[#6B7280]"], [class~="text-[#7A8595]"]
+) { color: #e2e8f0 !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="text-[#29366F]"], [class~="text-[#3446B8]"], [class~="text-[#43358A]"],
+  [class~="text-[#5364C7]"], [class~="text-[#6252A6]"], [class~="text-[#6670B8]"],
+  [class~="text-[#6674B8]"], [class~="text-[#312E81]"], [class~="text-[#4338CA]"],
+  [class~="text-[#5B21B6]"]
+) { color: #c4b5fd !important; }
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="text-[#783A4B]"], [class~="text-[#874557]"], [class~="text-[#A13F57]"],
+  [class~="text-[#D96B91]"]
+) { color: #fda4af !important; }
+
+html[data-theme="dark"] [data-sonner-toaster] [data-sonner-toast] {
+  border-color: #475569 !important;
+  background: #111827 !important;
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] [data-sonner-toaster] [data-description] {
+  color: #cbd5e1 !important;
+}
+
+html[data-theme="dark"] [data-sonner-toaster] [data-title] {
+  color: #f1f5f9 !important;
+}
+
+html[data-theme="dark"] .clinical-app {
+  scrollbar-color: #475569 #0f172a;
 }
 
 .coordinator-cursor :is(button:not(:disabled), a[href], summary, [role="button"], .cursor-pointer):not([aria-disabled="true"]):not(.cursor-not-allowed),

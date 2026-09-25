@@ -3,6 +3,7 @@
 import { useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { showToast } from "@/components/ui/toast/toast";
+import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
 
 function subscribeToSessionStorage() {
   return () => undefined;
@@ -37,14 +38,15 @@ export function RadiologyShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="radiology-cursor flex min-h-screen min-w-0 flex-col bg-slate-50 text-slate-900">
-      <header className="relative isolate shrink-0 border-b border-violet-100 bg-gradient-to-r from-violet-100/80 via-blue-50 to-emerald-50/50 before:pointer-events-none before:absolute before:inset-y-0 before:right-[4%] before:z-[-1] before:w-[52%] before:bg-[url('/images/radiology-ct-header.png')] before:bg-cover before:bg-[center_right] before:bg-no-repeat before:opacity-50 before:content-['']">
+    <div className="clinical-app clinical-app-radiology radiology-cursor flex min-h-screen min-w-0 flex-col bg-slate-50 text-slate-900">
+      <header className="clinical-department-banner relative isolate shrink-0 border-b border-violet-100 bg-gradient-to-r from-violet-100/80 via-blue-50 to-emerald-50/50 before:pointer-events-none before:absolute before:inset-y-0 before:right-[4%] before:z-[-1] before:w-[52%] before:bg-[url('/images/radiology-ct-header.png')] before:bg-cover before:bg-[center_right] before:bg-no-repeat before:opacity-50 before:content-['']">
         <div className="mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
           <div>
             <p className="text-xs font-bold tracking-[0.16em] text-violet-600">영상의학과</p>
             <p className="mt-1 text-2xl font-bold tracking-tight text-slate-900">Radiology Workstation</p>
           </div>
           <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <ClinicianThemeToggle />
             <span className="hidden rounded-full border border-violet-200 bg-white/70 px-3 py-1.5 text-xs font-semibold text-violet-700 shadow-sm sm:inline-flex">
               영상검사 업무
             </span>

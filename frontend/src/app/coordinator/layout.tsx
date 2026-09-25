@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore, type ReactNode } from "react";
 import { showToast } from "@/components/ui/toast/toast";
+import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
 
 const tabs = [
   {
@@ -68,11 +69,11 @@ export default function CoordinatorLayout({
   };
 
   return (
-    <div className="coordinator-cursor min-h-screen bg-slate-50">
+    <div className="clinical-app clinical-app-coordinator coordinator-cursor min-h-screen bg-slate-50">
       {/* 상단 고정 영역 */}
       <header className="sticky top-0 z-50 bg-white">
         {/* 1. Header */}
-        <div className="relative isolate overflow-hidden border-b border-[#F1E5EA] bg-[linear-gradient(105deg,#FFF9FB_0%,#FDEEF3_52%,#F8DFE8_100%)]">
+        <div className="clinical-department-banner relative isolate overflow-hidden border-b border-[#F1E5EA] bg-[linear-gradient(105deg,#FFF9FB_0%,#FDEEF3_52%,#F8DFE8_100%)]">
           <div aria-hidden="true" className="pointer-events-none absolute inset-y-0 right-[2%] z-0 hidden w-[32%] max-w-[560px] opacity-[0.12] lg:block">
             <svg viewBox="0 0 450 100" className="h-full w-full" fill="none" xmlns="http://www.w3.org/2000/svg">
               <g stroke="#D96B91" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round">
@@ -106,6 +107,7 @@ export default function CoordinatorLayout({
 
             {/* 우측 */}
             <div className="ml-auto flex items-center gap-3 sm:gap-4">
+              <ClinicianThemeToggle />
               <span className="text-xs text-slate-400">{getTodayLabel()}</span>
 
               <div className="text-right">

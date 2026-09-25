@@ -4,6 +4,7 @@ import { useSyncExternalStore, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { showToast } from "@/components/ui/toast/toast";
+import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
 
 function subscribeToSessionStorage() {
   return () => undefined;
@@ -38,8 +39,8 @@ export function PathologyShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="pathology-cursor flex min-h-screen min-w-0 flex-col bg-[#F7F8FC] text-slate-950">
-      <header className="relative shrink-0 overflow-hidden border-b border-[#CDD3EE] bg-gradient-to-r from-[#F8F7FF] via-[#F1F3FF] to-white">
+    <div className="clinical-app clinical-app-pathology pathology-cursor flex min-h-screen min-w-0 flex-col bg-[#F7F8FC] text-slate-950">
+      <header className="clinical-department-banner relative shrink-0 overflow-hidden border-b border-[#CDD3EE] bg-gradient-to-r from-[#F8F7FF] via-[#F1F3FF] to-white">
         <Image src="/pathology/pathology-tissue-decor.png" alt="" aria-hidden="true" fill sizes="42vw" className="pointer-events-none !left-auto right-0 top-0 !w-[42%] object-cover opacity-[0.3]" />
         <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
           <div>
@@ -52,6 +53,7 @@ export function PathologyShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="ml-auto flex items-center gap-3 sm:gap-4">
+            <ClinicianThemeToggle />
             <span className="hidden rounded-full border border-[#CDD3EE] bg-white/70 px-3 py-1.5 text-xs font-semibold text-[#3446B8] shadow-sm sm:inline-flex">
               병리검사 업무
             </span>

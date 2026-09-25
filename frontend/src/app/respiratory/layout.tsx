@@ -6,6 +6,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { RespiratoryAuthProvider, useRespiratoryAuth } from "./_components/respiratory-auth-provider";
 import { API_BASE_URL } from "@/lib/api";
 import { requestCaseNavigation } from "./_lib/case-navigation-guard";
+import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
 
 type StaffNotification = { id: string; notification_type: string; title: string; message: string; payload: Record<string, unknown> | null; case_id: string | null; case_code: string | null; created_at: string; read_at: string | null };
 type NotificationResponse = { unread_count: number; results: StaffNotification[] };
@@ -215,7 +216,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   if (!isReady || !isAuthenticated) return null;
 
   return (
-    <div className="respiratory-app flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
+    <div className="clinical-app clinical-app-respiratory respiratory-app flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
       <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] px-1 py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm lg:h-11 lg:w-11" title="SoomIT">
           <Image src="/images/logo_small.png" alt="SoomIT" width={34} height={34} priority className="h-8 w-8 object-contain lg:h-9 lg:w-9" />
@@ -292,7 +293,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
               호흡기내과
             </span>
           </button>
-          <button type="button" onClick={toggleTheme} aria-label={isDark ? "라이트 모드로 전환" : "다크 모드로 전환"} className="rounded-lg px-2 py-2 text-sm text-slate-500 hover:bg-blue-50">{isDark ? "☀" : "◐"}</button>
+          <ClinicianThemeToggle />
 
           <button
             type="button"
