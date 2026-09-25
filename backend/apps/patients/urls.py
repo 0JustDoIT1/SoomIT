@@ -1,6 +1,7 @@
 # 원무과
 from django.urls import path
 
+from .air_quality_views import AirQualityAPIView
 from .auth_views import (
     PatientGoogleLoginAPIView,
     PatientLinkAPIView,
@@ -44,6 +45,11 @@ from .views import (
 
 
 urlpatterns = [
+    path(
+        "public/air-quality/",
+        AirQualityAPIView.as_view(),
+        name="air-quality",
+    ),
     path(
         "public/nearby-pharmacies/",
         NearbyPharmacyAPIView.as_view(),

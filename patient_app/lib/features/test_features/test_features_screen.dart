@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../air_quality/widgets/air_quality_card.dart';
 import '../hospital_directions/hospital_directions_screen.dart';
 import '../pharmacy/nearby_pharmacy_screen.dart';
 
@@ -27,6 +28,8 @@ class TestFeaturesScreen extends StatelessWidget {
             style: TextStyle(color: Color(0xFF748198), height: 1.5),
           ),
           const SizedBox(height: 24),
+          const AirQualityCard(),
+          const SizedBox(height: 20),
           Card(
             elevation: 0,
             color: const Color(0xFFF1F8FF),
