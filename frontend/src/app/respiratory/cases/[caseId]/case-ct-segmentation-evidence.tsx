@@ -94,6 +94,8 @@ export function CaseCtSegmentationEvidence({
   caseId,
   analysisId,
   nodules = [],
+  selectedNoduleId,
+  onSelectedNoduleChange,
   onEvidenceInfoChange,
 }: {
   apiBaseUrl: string;
@@ -101,6 +103,8 @@ export function CaseCtSegmentationEvidence({
   caseId: string;
   analysisId?: string;
   nodules?: unknown[];
+  selectedNoduleId?: string | null;
+  onSelectedNoduleChange?: (noduleId: string) => void;
   onEvidenceInfoChange?: (info: CtEvidenceInfo) => void;
 }) {
   const [asset, setAsset] = useState<Asset | null>(null);
@@ -609,6 +613,8 @@ export function CaseCtSegmentationEvidence({
             analysisId={analysisId}
             cacheKey={`${caseId}:${asset.id}:${asset.series_instance_uid ?? ""}:${analysisId ?? ""}`}
             nodules={nodules}
+            focusedNoduleId={selectedNoduleId}
+            onFocusedNoduleChange={onSelectedNoduleChange}
             loadSeries={loadSeries}
             loadSegmentation={loadSegmentation}
             seriesInstanceUid={asset.series_instance_uid}

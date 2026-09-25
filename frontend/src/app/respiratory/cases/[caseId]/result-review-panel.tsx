@@ -19,6 +19,7 @@ const STAGE_CONFIG: Record<string, { title: string; description: string; departm
 
 export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalError, aiError, clinicalRetrying = false, aiRetrying = false, onRetryClinical, onRetryAi, showEvidence = true, showWorkspaceHeader = true, compactRail = false, lastSyncedAt, syncingResults = false, onRefreshResults, syncNotice = "", caseId, apiBaseUrl, authorizedFetch, specialistAction }: { stage: string; clinicalResult?: ClinicalResult; aiResult?: AiResult; clinicalError?: string; aiError?: string; clinicalRetrying?: boolean; aiRetrying?: boolean; onRetryClinical?: () => void; onRetryAi?: () => void; showEvidence?: boolean; showWorkspaceHeader?: boolean; compactRail?: boolean; lastSyncedAt?: Date | null; syncingResults?: boolean; onRefreshResults?: () => void; syncNotice?: string; caseId?: string; apiBaseUrl?: string; authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>; specialistAction?: ReactNode }) {
   const [ctEvidenceInfo, setCtEvidenceInfo] = useState<CtEvidenceInfo>({});
+  const [selectedCtNoduleId, setSelectedCtNoduleId] = useState<string | null>(null);
   const onCtEvidenceInfoChange = useCallback((info: CtEvidenceInfo) => setCtEvidenceInfo((current) => ({ ...current, ...info })), []);
   const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
@@ -51,7 +52,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
             <p className="whitespace-nowrap text-[10px] text-slate-400">영상 조작은 뷰어 안에서 바로 수행합니다.</p>
           </div>
         )}
-        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} nodules={ctNodules} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
+        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} nodules={ctNodules} selectedNoduleId={selectedCtNoduleId} onSelectedNoduleChange={setSelectedCtNoduleId} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
       <aside data-clinical-rail className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
@@ -61,7 +62,7 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </SourcePanel>
 
         <SourcePanel compact={isImageWorkspace || compactRail} eyebrow="AI 분석" title="AI 분석 후보" meta={isImageWorkspace ? formatDateTime(aiResult?.completed_at) : [aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
-          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
+          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} selectedNoduleId={selectedCtNoduleId} onSelectNodule={setSelectedCtNoduleId} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
         </SourcePanel>
 
         {isImageWorkspace ? (
@@ -101,19 +102,30 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   );
 }
 
-function CtAiSummary({ detail }: { detail: unknown }) {
+function CtAiSummary({ detail, selectedNoduleId, onSelectNodule }: { detail: unknown; selectedNoduleId: string | null; onSelectNodule: (noduleId: string) => void }) {
   const root = asRecord(detail);
   const ct = asRecord(root?.ct);
   if (!ct) return null;
   const risk = ct?.overall_malignancy_risk;
   const nodules = Array.isArray(ct?.nodules) ? ct.nodules : [];
+  const selectedIndex = Math.max(0, nodules.findIndex((value, index) => noduleId(value, index) === selectedNoduleId));
+  const selectedNodule = nodules[selectedIndex];
   return <div className="mx-3 my-3 rounded-lg border border-blue-100 bg-blue-50/60 p-3">
     <p className="text-[11px] font-semibold text-blue-800">CT AI 분석 결과</p>
     <div className="mt-2 grid grid-cols-2 gap-2">
-      <CtSummaryValue label="악성 위험도" value={formatPercent(risk)} emphasis />
+      <CtSummaryValue label="AI 전체 악성 위험도" value={formatPercent(risk)} emphasis />
       <CtSummaryValue label="결절 수" value={`${nodules.length}개`} />
     </div>
-    {nodules.length > 0 ? <div className="mt-2 space-y-2">{nodules.map((value, index) => <CtNoduleDetail key={`${asRecord(value)?.nodule_no ?? index}-${index}`} value={value} index={index} />)}</div> : <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-white/70 px-3 py-3 text-center text-[10px] text-slate-500">검출된 결절이 없습니다.</div>}
+    {nodules.length > 0 ? <div className="mt-2">
+      <div className="flex gap-1 overflow-x-auto pb-1" role="tablist" aria-label="AI 검출 결절">
+        {nodules.map((value, index) => {
+          const id = noduleId(value, index);
+          const selected = index === selectedIndex;
+          return <button key={`${id}-${index}`} type="button" role="tab" aria-selected={selected} onClick={() => onSelectNodule(id)} className={`shrink-0 rounded-md border px-2 py-1 text-[9px] font-semibold transition ${selected ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"}`}>결절 #{id}</button>;
+        })}
+      </div>
+      <CtNoduleDetail value={selectedNodule} index={selectedIndex} />
+    </div> : <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-white/70 px-3 py-3 text-center text-[10px] text-slate-500">검출된 결절이 없습니다.</div>}
     <p className="mt-3 text-[10px] leading-4 text-blue-800">AI 결과는 의료진 확정 판독과 함께 검토해야 합니다.</p>
   </div>;
 }
@@ -134,26 +146,42 @@ function CtNoduleDetail({ value, index }: { value: unknown; index: number }) {
   const texturePrediction = asRecord(texture?.prediction);
   const number = nodule?.nodule_no ?? index + 1;
   const diameter = quantification?.maximum_3d_diameter_mm ?? quantification?.equivalent_diameter_mm;
+  const equivalentDiameter = quantification?.maximum_3d_diameter_mm !== undefined ? quantification?.equivalent_diameter_mm : null;
   const malignancyRisk = nodule?.malignancy_risk ?? malignancyPrediction?.malignancy_score ?? probabilityToPercent(malignancyPrediction?.probability);
   const textureValue = texture?.prediction_label ?? texturePrediction?.pattern ?? (typeof texture?.prediction === "string" ? texture.prediction : null);
   const spiculation = asRecord(morphology?.spiculation)?.prediction ?? morphologyPrediction?.spiculation;
   const lobulation = asRecord(morphology?.lobulation)?.prediction ?? morphologyPrediction?.lobulation;
   const malignancyLabel = formatMalignancyPrediction(malignancyPrediction?.prediction);
 
-  return <section data-testid={`ct-nodule-${number}`} className="rounded-md border border-slate-200 bg-white p-2.5">
+  return <section data-testid={`ct-nodule-${number}`} className="mt-1.5 rounded-md border border-slate-200 bg-white p-3">
     <div className="flex items-center justify-between gap-2">
       <h3 className="text-[11px] font-bold text-slate-800">결절 #{String(number)}</h3>
-      {malignancyLabel && <span className={`rounded-full px-2 py-0.5 text-[8px] font-semibold ${malignancyLabel === "악성 의심" ? "bg-rose-50 text-rose-700" : "bg-emerald-50 text-emerald-700"}`}>{malignancyLabel}</span>}
+      {malignancyLabel && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[8px] font-semibold text-slate-600">AI 분류 · {malignancyLabel}</span>}
     </div>
-    <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-2">
-      <CtNoduleField label="직경" value={formatMeasurement(diameter, "mm")} />
-      <CtNoduleField label="부피" value={formatMeasurement(quantification?.volume_mm3, "mm³")} />
-      <CtNoduleField label="악성도" value={formatPercent(malignancyRisk)} />
-      <CtNoduleField label="질감(Texture)" value={formatTexture(textureValue)} />
-      <CtNoduleField label="Spiculation" value={formatPresence(spiculation)} />
-      <CtNoduleField label="Lobulation" value={formatPresence(lobulation)} />
+    <div className="mt-2 rounded-md border border-blue-100 bg-blue-50/70 px-3 py-2">
+      <p className="text-[9px] font-medium text-blue-700">AI 악성 위험도</p>
+      <p className="mt-0.5 text-xl font-bold tracking-tight text-blue-900">{formatPercent(malignancyRisk)}</p>
+    </div>
+    <dl className="mt-2 grid grid-cols-2 gap-2">
+      <CtNoduleMetric label="최대 직경" value={formatMeasurement(diameter, "mm")} />
+      <CtNoduleMetric label="부피" value={formatMeasurement(quantification?.volume_mm3, "mm³")} />
+    </dl>
+    <dl className="mt-2 grid grid-cols-3 gap-x-2 gap-y-2 border-t border-slate-100 pt-2">
+      <CtNoduleField label="내부 성상" value={formatTexture(textureValue)} />
+      <CtNoduleField label="침상형 경계" value={formatPresence(spiculation)} />
+      <CtNoduleField label="분엽" value={formatPresence(lobulation)} />
+      {equivalentDiameter !== null && equivalentDiameter !== undefined && <CtNoduleField label="등가 직경" value={formatMeasurement(equivalentDiameter, "mm")} />}
     </dl>
   </section>;
+}
+
+function noduleId(value: unknown, index: number) {
+  const raw = asRecord(value)?.nodule_no;
+  return String(raw ?? index + 1);
+}
+
+function CtNoduleMetric({ label, value }: { label: string; value: string }) {
+  return <div className="min-w-0 rounded-md bg-slate-50 px-2.5 py-2"><dt className="text-[8px] font-medium text-slate-400">{label}</dt><dd className="mt-0.5 break-words text-[11px] font-bold text-slate-800">{value}</dd></div>;
 }
 
 function CtNoduleField({ label, value }: { label: string; value: string }) {
@@ -174,7 +202,7 @@ function formatPercent(value: unknown) {
     const text = String(value).trim();
     return ["NAN", "UNDEFINED", "NULL", "INFINITY", "-INFINITY"].includes(text.toUpperCase()) ? "-" : text;
   }
-  return `${number.toFixed(2)}%`;
+  return `${number.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}%`;
 }
 
 function probabilityToPercent(value: unknown) {

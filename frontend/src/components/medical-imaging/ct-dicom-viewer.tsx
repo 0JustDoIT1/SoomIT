@@ -14,6 +14,8 @@ type CtDicomViewerProps = {
   analysisId?: string;
   cacheKey?: string;
   nodules?: unknown[];
+  focusedNoduleId?: string | null;
+  onFocusedNoduleChange?: (noduleId: string) => void;
   loadSeries?: (orderId: string, assetId: string) => Promise<{ imageIds: string[]; sopInstanceUids?: string[] }>;
   loadSegmentation?: (analysisId: string) => Promise<CtCornerstoneSegmentation>;
   seriesInstanceUid?: string | null;
@@ -122,7 +124,7 @@ async function runWithConcurrency<T>(items: T[], limit: number, task: (item: T) 
   await Promise.all(workers);
 }
 
-export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules = [], loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted }: CtDicomViewerProps) {
+export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules = [], focusedNoduleId, onFocusedNoduleChange, loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted }: CtDicomViewerProps) {
   const resolvedCacheKey = cacheKey ?? `${orderId}:${assetId}:${seriesInstanceUid ?? ""}:${analysisId ?? ""}`;
   const restoredSession = viewerSessionCache.get(resolvedCacheKey);
   const currentNoduleFoci = useMemo(
@@ -166,6 +168,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
   const onAnnotationCreatedRef = useRef(onAnnotationCreated);
   const onAnnotationUpdatedRef = useRef(onAnnotationUpdated);
   const annotationTextRef = useRef("");
+  const onFocusedNoduleChangeRef = useRef(onFocusedNoduleChange);
   const noduleFociRef = useRef<NoduleFocus[]>(currentNoduleFoci);
   const selectedNoduleIdRef = useRef<string | null>(selectedNoduleId);
   const sessionRef = useRef<ViewerSession>({
@@ -200,6 +203,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
   }, [annotationText]);
 
   useEffect(() => {
+    onFocusedNoduleChangeRef.current = onFocusedNoduleChange;
+  }, [onFocusedNoduleChange]);
+
+  useEffect(() => {
     noduleFociRef.current = currentNoduleFoci;
   }, [currentNoduleFoci]);
 
@@ -218,6 +225,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
 
   const focusNodule = useCallback((noduleId: string) => {
     setSelectedNoduleId(noduleId);
+    onFocusedNoduleChangeRef.current?.(noduleId);
     const focus = noduleFociRef.current.find((nodule) => nodule.id === noduleId);
     const renderingEngine = renderingEngineRef.current;
     if (!focus || !renderingEngine) return;
@@ -227,6 +235,12 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     });
     renderingEngine.render();
   }, []);
+
+  useEffect(() => {
+    if (focusedNoduleId && focusedNoduleId !== selectedNoduleIdRef.current) {
+      focusNodule(focusedNoduleId);
+    }
+  }, [focusNodule, focusedNoduleId]);
 
   const selectAnnotation = (annotation: ClinicianImageAnnotation) => {
     setSelectedAnnotationId(annotation.id);

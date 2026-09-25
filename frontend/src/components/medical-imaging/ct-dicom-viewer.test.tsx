@@ -20,6 +20,7 @@ describe("CtDicomViewer toolbar", () => {
   });
 
   it("selects the first real nodule and allows switching the requested focus", () => {
+    const onFocusedNoduleChange = vi.fn();
     render(
       <CtDicomViewer
         orderId="order-nodules"
@@ -29,11 +30,29 @@ describe("CtDicomViewer toolbar", () => {
           { nodule_no: 1, finding_payload: { quantification: { centroid_world_xyz_mm: [10, 20, 30] } } },
           { nodule_no: 2, finding_payload: { quantification: { centroid_world_xyz_mm: [40, 50, 60] } } },
         ]}
+        onFocusedNoduleChange={onFocusedNoduleChange}
       />,
     );
 
     expect(screen.getByRole("button", { name: "결절 #1" })).toHaveAttribute("aria-pressed", "true");
     fireEvent.click(screen.getByRole("button", { name: "결절 #2" }));
+    expect(screen.getByRole("button", { name: "결절 #2" })).toHaveAttribute("aria-pressed", "true");
+    expect(onFocusedNoduleChange).toHaveBeenCalledWith("2");
+  });
+
+  it("accepts an external nodule selection from the clinical detail rail", () => {
+    const props = {
+      orderId: "order-controlled",
+      assetId: "asset-controlled",
+      loadSeries: () => new Promise<never>(() => undefined),
+      nodules: [
+        { nodule_no: 1, finding_payload: { quantification: { centroid_world_xyz_mm: [10, 20, 30] } } },
+        { nodule_no: 2, finding_payload: { quantification: { centroid_world_xyz_mm: [40, 50, 60] } } },
+      ],
+    };
+    const { rerender } = render(<CtDicomViewer {...props} focusedNoduleId="1" />);
+
+    rerender(<CtDicomViewer {...props} focusedNoduleId="2" />);
     expect(screen.getByRole("button", { name: "결절 #2" })).toHaveAttribute("aria-pressed", "true");
   });
 

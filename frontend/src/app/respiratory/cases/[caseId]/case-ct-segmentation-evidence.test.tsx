@@ -17,16 +17,20 @@ vi.mock("@/app/radiology/_lib/cornerstone-init", () => ({
 }));
 
 vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
-  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [] }: {
+  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange }: {
     orderId: string;
     assetId: string;
     loadSeries: (orderId: string, assetId: string) => Promise<unknown>;
     loadSegmentation: (analysisId: string) => Promise<unknown>;
     annotations?: Array<{ id: string }>;
+    focusedNoduleId?: string | null;
+    onFocusedNoduleChange?: (noduleId: string) => void;
   }) => <div data-testid="ct-viewer">
     <button type="button" onClick={() => void loadSeries(orderId, assetId)}>load-series</button>
     <button type="button" onClick={() => void loadSegmentation("analysis-cache")}>load-segmentation</button>
     <span data-testid="annotation-ids">{annotations.map(({ id }) => id).join(",")}</span>
+    <span data-testid="focused-nodule">{focusedNoduleId}</span>
+    <button type="button" onClick={() => onFocusedNoduleChange?.("2")}>focus-nodule-2</button>
   </div>,
 }));
 
@@ -95,6 +99,16 @@ it("keeps the original CT viewer mounted while visiting the 3D view", async () =
   fireEvent.click(screen.getByRole("button", { name: "분할 / 3D" }));
   expect(screen.getByTestId("ct-viewer")).toBeInTheDocument();
   expect(screen.getByText("3D visualization")).toBeInTheDocument();
+});
+
+it("keeps the result rail and CT viewer nodule selection connected", async () => {
+  const authorizedFetch = createFetch();
+  const onSelectedNoduleChange = vi.fn();
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-selection" analysisId="analysis-selection" selectedNoduleId="1" onSelectedNoduleChange={onSelectedNoduleChange} />);
+
+  expect(await screen.findByTestId("focused-nodule")).toHaveTextContent("1");
+  fireEvent.click(screen.getByRole("button", { name: "focus-nodule-2" }));
+  expect(onSelectedNoduleChange).toHaveBeenCalledWith("2");
 });
 
 it("does not request annotations before the Series UID is ready", async () => {

@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ResultReviewPanel } from "./result-review-panel";
 
@@ -78,7 +78,7 @@ describe("ResultReviewPanel", () => {
     expect(onRetryClinical).toHaveBeenCalledOnce();
   });
 
-  it("shows every CT AI nodule with the detailed payload fields", () => {
+  it("prioritizes one selected CT AI nodule and switches its clinical details", () => {
     render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{
       analysis_type: "CT_ANALYSIS",
       status: "SUCCEEDED",
@@ -108,19 +108,36 @@ describe("ResultReviewPanel", () => {
 
     expect(screen.getByText("CT AI 분석 결과")).toBeTruthy();
     expect(screen.getByText("2개")).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "결절 #1" })).toHaveAttribute("aria-selected", "true");
     const first = within(screen.getByTestId("ct-nodule-1"));
     expect(first.getByText("28.8 mm")).toBeTruthy();
     expect(first.getByText("6,834 mm³")).toBeTruthy();
-    expect(first.getByText("93.11%")).toBeTruthy();
+    expect(first.getByText("93.1%")).toBeTruthy();
     expect(first.getByText("고형(Solid)")).toBeTruthy();
     expect(first.getByText("없음")).toBeTruthy();
     expect(first.getByText("있음")).toBeTruthy();
-    expect(first.getByText("악성 의심")).toBeTruthy();
+    expect(first.getByText("AI 분류 · 악성 의심")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "결절 #2" }));
+    expect(screen.queryByTestId("ct-nodule-1")).toBeNull();
+    expect(screen.getByRole("tab", { name: "결절 #2" })).toHaveAttribute("aria-selected", "true");
     const second = within(screen.getByTestId("ct-nodule-2"));
     expect(second.getByText("4.25 mm")).toBeTruthy();
     expect(second.getByText("간유리(GGO)")).toBeTruthy();
     expect(second.getByText("-")).toBeTruthy();
-    expect(second.getByText("양성 의심")).toBeTruthy();
+    expect(second.getByText("AI 분류 · 양성 의심")).toBeTruthy();
+  });
+
+  it("converts a probability to a readable percent and preserves meaningful zero values", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: 0, nodules: [
+      { nodule_no: 1, finding_payload: { quantification: { maximum_3d_diameter_mm: 0, volume_mm3: 0 }, malignancy: { prediction: { probability: 0.724 } } } },
+    ] } } }} />);
+
+    expect(screen.getByText("0%")).toBeTruthy();
+    const nodule = within(screen.getByTestId("ct-nodule-1"));
+    expect(nodule.getByText("72.4%")).toBeTruthy();
+    expect(nodule.getByText("0 mm")).toBeTruthy();
+    expect(nodule.getByText("0 mm³")).toBeTruthy();
   });
 
   it("distinguishes a successful zero-nodule CT result from an AI loading error", () => {
