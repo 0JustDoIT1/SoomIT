@@ -32,13 +32,13 @@ class ConnectionManager:
         self.listeners: Dict[str, asyncio.Task] = {}
         self.listener_ready: Dict[str, asyncio.Event] = {}
 
-    async def connect(self, room_id: str, websocket: WebSocket, user_id: str):
+    async def connect(self, room_id: str, websocket: WebSocket, user_id: str, subprotocol: str | None = None):
         if room_id not in self.listeners:
             ready = asyncio.Event()
             self.listener_ready[room_id] = ready
             self.listeners[room_id] = asyncio.create_task(self._subscribe(room_id, ready))
         await asyncio.wait_for(self.listener_ready[room_id].wait(), timeout=5)
-        await websocket.accept()
+        await websocket.accept(subprotocol=subprotocol)
         self.rooms.setdefault(room_id, {})[websocket] = user_id
 
     def disconnect(self, room_id: str, websocket: WebSocket):
@@ -208,7 +208,20 @@ async def health():
 @app.websocket("/ws/chat/{case_id}")
 async def chat_endpoint(websocket: WebSocket, case_id: str):
     canonical_case_id = _canonical_uuid(case_id)
-    access_token = websocket.query_params.get("token", "").strip()
+    requested_protocols = [
+        protocol.strip()
+        for protocol in websocket.headers.get("sec-websocket-protocol", "").split(",")
+        if protocol.strip()
+    ]
+    selected_protocol = "soomit-chat" if "soomit-chat" in requested_protocols else None
+    protocol_token = (
+        next((protocol for protocol in requested_protocols if protocol != "soomit-chat"), "")
+        if selected_protocol
+        else ""
+    )
+    # Query-token support is retained for already-deployed older clients only.
+    # New clients use Sec-WebSocket-Protocol so credentials are not placed in URLs/access logs.
+    access_token = (protocol_token or websocket.query_params.get("token", "")).strip()
     origin = websocket.headers.get("origin")
     if not access_token:
         await _reject_websocket(websocket, 4401)
@@ -222,7 +235,7 @@ async def chat_endpoint(websocket: WebSocket, case_id: str):
         await _reject_websocket(websocket, close_code)
         return
     try:
-        await manager.connect(canonical_case_id, websocket, user_id)
+        await manager.connect(canonical_case_id, websocket, user_id, selected_protocol)
     except Exception:
         logger.exception("WebSocket room initialization failed")
         await _reject_websocket(websocket, 1011)

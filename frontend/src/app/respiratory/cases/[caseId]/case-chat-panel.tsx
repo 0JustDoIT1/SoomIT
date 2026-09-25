@@ -11,7 +11,7 @@ import {
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Sender = { id: string; name: string; department: string; role: string };
-type ChatMessage = { id: string; case_id: string; sender: Sender; body: string; is_private?: boolean; recipient_ids?: string[]; read_by?: Array<{ id: string; name: string; read_at: string }>; created_at: string };
+type ChatMessage = { id: string; case_id: string; client_message_id?: string; sender: Sender; body: string; is_private?: boolean; recipient_ids?: string[]; read_by?: Array<{ id: string; name: string; read_at: string }>; created_at: string };
 type History = { results?: ChatMessage[]; next_cursor?: string | null };
 type Recipient = { id: string; name: string; department: string; role: string };
 
@@ -37,6 +37,13 @@ type ChatDragState = {
   startX: number;
   startY: number;
   moved: boolean;
+};
+
+type PendingMessage = {
+  clientMessageId: string;
+  body: string;
+  isPrivate: boolean;
+  recipientIds: string[];
 };
 
 const realtimeBaseUrl = (process.env.NEXT_PUBLIC_REALTIME_WS_URL?.trim() || "ws://127.0.0.1:8001").replace(/\/+$/, "");
@@ -65,6 +72,17 @@ function dateLabel(value: string) {
   return Number.isNaN(date.getTime()) ? "" : date.toLocaleTimeString("ko-KR", { hour: "2-digit", minute: "2-digit" });
 }
 
+function compareMessages(left: ChatMessage, right: ChatMessage) {
+  const timestampDifference = new Date(left.created_at).getTime() - new Date(right.created_at).getTime();
+  return timestampDifference || left.id.localeCompare(right.id);
+}
+
+export function mergeChatMessages(current: ChatMessage[], incoming: ChatMessage[]) {
+  const messagesById = new Map(current.map((message) => [message.id, message]));
+  incoming.forEach((message) => messagesById.set(message.id, message));
+  return Array.from(messagesById.values()).sort(compareMessages);
+}
+
 export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, focusMessageId }: { caseId: string; authorizedFetch: AuthorizedFetch; initiallyOpen?: boolean; focusMessageId?: string | null }) {
   const [open, setOpen] = useState(initiallyOpen);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -85,6 +103,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
 
   const isPrivate = composerMode === "PRIVATE";
   const [status, setStatus] = useState<"connecting" | "connected" | "offline">("offline");
+  const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
   // 숨챗은 워크스테이션 고정 레이아웃의 예외로 이동 가능하게 둔다.
@@ -93,7 +112,13 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
 
   const socketRef = useRef<WebSocket | null>(null);
   const reconnectTimerRef = useRef<number | null>(null);
+  const reconnectAttemptRef = useRef(0);
+  const pendingMessageRef = useRef<PendingMessage | null>(null);
+  const historyInitializedRef = useRef(false);
   const chatContainerRef = useRef<HTMLDivElement | null>(null);
+  const timelineRef = useRef<HTMLDivElement | null>(null);
+  const stickToBottomRef = useRef(true);
+  const activeCaseIdRef = useRef(caseId);
   const chatPositionRef = useRef<ChatPosition>({ x: 0, y: 0 });
   const suppressNextToggleRef = useRef(false);
   const dragStateRef = useRef<ChatDragState>({
@@ -105,8 +130,12 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
   });
 
   const mergeMessage = useCallback((message: ChatMessage) => {
-    setMessages((current) => current.some((item) => item.id === message.id) ? current : [...current, message]);
+    setMessages((current) => mergeChatMessages(current, [message]));
   }, []);
+
+  useEffect(() => {
+    activeCaseIdRef.current = caseId;
+  }, [caseId]);
 
 
   const clampChatPosition = useCallback((position: ChatPosition): ChatPosition => {
@@ -287,28 +316,70 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
   }, [authorizedFetch, caseId]);
 
   const loadHistory = useCallback(async (cursor?: string | null) => {
+    const requestedCaseId = caseId;
+    const timeline = timelineRef.current;
+    const previousScrollHeight = cursor ? timeline?.scrollHeight ?? 0 : 0;
     const suffix = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
     const response = await authorizedFetch(`${apiBaseUrl}/api/chat/cases/${caseId}/messages/${suffix}`);
     const payload: unknown = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(errorDetail(payload, "채팅 기록을 불러오지 못했습니다."));
+    if (activeCaseIdRef.current !== requestedCaseId) return;
     const history = payload as History;
     const incoming = Array.isArray(history.results) ? history.results : [];
-    setMessages((current) => cursor ? [...incoming.reverse(), ...current] : incoming.reverse());
-    setNextCursor(typeof history.next_cursor === "string" ? history.next_cursor : null);
+    setMessages((current) => mergeChatMessages(current, incoming));
+    if (cursor || !historyInitializedRef.current) {
+      setNextCursor(typeof history.next_cursor === "string" ? history.next_cursor : null);
+      historyInitializedRef.current = true;
+    }
+    if (cursor && timeline) {
+      window.requestAnimationFrame(() => {
+        timeline.scrollTop += timeline.scrollHeight - previousScrollHeight;
+      });
+    }
     if (incoming.length) {
       void authorizedFetch(`${apiBaseUrl}/api/chat/cases/${caseId}/messages/read/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message_ids: incoming.map((message) => message.id) }),
-      }).then(() => void refreshUnreadCount());
+      }).then(() => void refreshUnreadCount()).catch(() => undefined);
     }
   }, [authorizedFetch, caseId, refreshUnreadCount]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- asynchronous unread-count synchronization.
-    void refreshUnreadCount();
-    const timer = window.setInterval(() => void refreshUnreadCount(), 30000);
-    return () => window.clearInterval(timer);
+    if (!open || !stickToBottomRef.current) return;
+    const timeline = timelineRef.current;
+    if (!timeline) return;
+    const frame = window.requestAnimationFrame(() => {
+      timeline.scrollTop = timeline.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [messages, consultations, open]);
+
+  useEffect(() => {
+    let disposed = false;
+    let inFlight = false;
+    const refresh = async () => {
+      if (disposed || inFlight || document.visibilityState === "hidden") return;
+      inFlight = true;
+      try {
+        await refreshUnreadCount();
+      } catch {
+        // 연결 상태는 WebSocket 배지와 history 오류로 안내하며 polling 오류는 반복 노출하지 않는다.
+      } finally {
+        inFlight = false;
+      }
+    };
+    void refresh();
+    const timer = window.setInterval(() => void refresh(), 30000);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void refresh();
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [refreshUnreadCount]);
 
   useEffect(() => {
@@ -348,7 +419,6 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
   useEffect(() => {
     if (!open) return;
     let cancelled = false;
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- this is an asynchronous REST failure callback.
     void loadHistory().catch((cause) => !cancelled && setError(cause instanceof Error ? cause.message : "채팅 기록을 불러오지 못했습니다."));
     return () => { cancelled = true; };
   }, [loadHistory, open]);
@@ -408,15 +478,42 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
     const connect = () => {
       if (disposed) return;
       setStatus("connecting");
-      const socket = new WebSocket(`${realtimeBaseUrl}/ws/chat/${encodeURIComponent(caseId)}?token=${encodeURIComponent(token)}`);
+      const socket = new WebSocket(
+        `${realtimeBaseUrl}/ws/chat/${encodeURIComponent(caseId)}`,
+        ["soomit-chat", token],
+      );
       socketRef.current = socket;
-      socket.onopen = () => !disposed && setStatus("connected");
+      socket.onopen = () => {
+        if (disposed || socketRef.current !== socket) return;
+        reconnectAttemptRef.current = 0;
+        setStatus("connected");
+        setError("");
+        void loadHistory().catch((cause) => {
+          if (!disposed) setError(cause instanceof Error ? cause.message : "채팅 기록을 불러오지 못했습니다.");
+        });
+        const pending = pendingMessageRef.current;
+        if (pending) {
+          socket.send(JSON.stringify({
+            type: "chat.message.create",
+            client_message_id: pending.clientMessageId,
+            body: pending.body,
+            is_private: pending.isPrivate,
+            recipient_ids: pending.recipientIds,
+          }));
+        }
+      };
       socket.onmessage = (event) => {
         try {
           const payload = JSON.parse(event.data) as { type?: string; message?: ChatMessage; read?: { message_id: string; reader: { id: string; name: string; read_at: string } }; detail?: string };
           if (payload.type === "chat.message.created" && payload.message) {
             mergeMessage(payload.message);
             socket.send(JSON.stringify({ type: "chat.message.read", message_id: payload.message.id }));
+            if (payload.message.client_message_id === pendingMessageRef.current?.clientMessageId) {
+              pendingMessageRef.current = null;
+              setSending(false);
+              setBody("");
+              setRecipientIds([]);
+            }
           }
           if (payload.type === "chat.message.read" && payload.read) {
             setMessages((current) => current.map((message) => message.id !== payload.read?.message_id ? message : {
@@ -426,15 +523,27 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
                 : [...(message.read_by || []), payload.read.reader],
             }));
           }
-          if (payload.type === "chat.error") setError(payload.detail || "메시지를 전송하지 못했습니다.");
+          if (payload.type === "chat.error") {
+            pendingMessageRef.current = null;
+            setSending(false);
+            setError(payload.detail || "메시지를 전송하지 못했습니다.");
+          }
         } catch { setError("채팅 이벤트를 해석하지 못했습니다."); }
       };
       socket.onclose = (event) => {
         if (disposed) return;
         setStatus("offline");
-        if (event.code === 4401) setError("로그인이 만료되었습니다.");
-        else if (event.code === 4403) setError("이 Case 채팅 권한이 없습니다.");
-        else reconnectTimerRef.current = window.setTimeout(connect, 3000);
+        if (event.code === 4401 || event.code === 4403) {
+          pendingMessageRef.current = null;
+          setSending(false);
+          setError(event.code === 4401 ? "로그인이 만료되었습니다." : "이 Case 채팅 권한이 없습니다.");
+        }
+        else {
+          const delay = Math.min(1000 * 2 ** reconnectAttemptRef.current, 30000);
+          reconnectAttemptRef.current += 1;
+          if (reconnectTimerRef.current) window.clearTimeout(reconnectTimerRef.current);
+          reconnectTimerRef.current = window.setTimeout(connect, delay);
+        }
       };
       socket.onerror = () => setStatus("offline");
     };
@@ -445,7 +554,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
       socketRef.current?.close();
       socketRef.current = null;
     };
-  }, [caseId, mergeMessage, open]);
+  }, [caseId, loadHistory, mergeMessage, open]);
 
   const submitConsultation = async () => {
     const trimmed = consultationQuestion.trim();
@@ -498,11 +607,18 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
   const send = (event: FormEvent) => {
     event.preventDefault();
     const trimmed = body.trim();
-    if (!trimmed || trimmed.length > 2000 || isPrivate && recipientIds.length === 0) return;
+    if (!trimmed || trimmed.length > 2000 || sending || pendingMessageRef.current || isPrivate && recipientIds.length === 0) return;
     if (socketRef.current?.readyState !== WebSocket.OPEN) { setError("실시간 채팅 서버에 연결되지 않았습니다."); return; }
-    socketRef.current.send(JSON.stringify({ type: "chat.message.create", client_message_id: crypto.randomUUID(), body: trimmed, is_private: isPrivate, recipient_ids: isPrivate ? recipientIds : [] }));
-    setBody("");
-    if (isPrivate) setRecipientIds([]);
+    const pending = {
+      clientMessageId: crypto.randomUUID(),
+      body: trimmed,
+      isPrivate,
+      recipientIds: isPrivate ? recipientIds : [],
+    };
+    pendingMessageRef.current = pending;
+    setSending(true);
+    setError("");
+    socketRef.current.send(JSON.stringify({ type: "chat.message.create", client_message_id: pending.clientMessageId, body: pending.body, is_private: pending.isPrivate, recipient_ids: pending.recipientIds }));
   };
 
   const timeline = [
@@ -661,7 +777,14 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
           </header>
 
           {/* Timeline */}
-          <div className="min-h-0 flex-1 overflow-y-auto bg-[#F8FAFC] px-3.5 py-3">
+          <div
+            ref={timelineRef}
+            onScroll={(event) => {
+              const element = event.currentTarget;
+              stickToBottomRef.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80;
+            }}
+            className="min-h-0 flex-1 overflow-y-auto bg-[#F8FAFC] px-3.5 py-3"
+          >
             {nextCursor && (
               <div className="mb-3 flex justify-center">
                 <button
@@ -1094,6 +1217,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
                     <textarea
                       value={body}
                       onChange={(event) => setBody(event.target.value)}
+                      disabled={sending}
                       maxLength={2000}
                       rows={2}
                       placeholder={
@@ -1113,6 +1237,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
                       }`}
                       disabled={
                         !body.trim() ||
+                        sending ||
                         status !== "connected" ||
                         (composerMode === "PRIVATE" &&
                           recipientIds.length === 0)
@@ -1120,7 +1245,9 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
                       title="메시지 전송"
                       aria-label="메시지 전송"
                     >
-                      <svg
+                      {sending ? (
+                        <span className="text-[9px] font-bold">전송 중</span>
+                      ) : <svg
                         width="17"
                         height="17"
                         viewBox="0 0 24 24"
@@ -1140,7 +1267,7 @@ export function CaseChatPanel({ caseId, authorizedFetch, initiallyOpen = false, 
                           strokeWidth="1.8"
                           strokeLinecap="round"
                         />
-                      </svg>
+                      </svg>}
                     </button>
                   </div>
 

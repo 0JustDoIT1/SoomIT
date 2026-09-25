@@ -191,6 +191,7 @@ class CaseChatMessageModelTestCase(TestCase):
         self.assertIsNotNone(response.data["next_cursor"])
         first = response.data["results"][0]
         self.assertEqual(first["case_id"], self.case.id)
+        self.assertEqual(first["client_message_id"], str(CaseChatMessage.objects.order_by("-created_at", "-id").first().client_message_id))
         self.assertEqual(first["sender"]["department"], "PULMONOLOGY")
         self.assertEqual(first["sender"]["role"], "DOCTOR")
 

@@ -10,17 +10,21 @@ from app import main
 
 
 class FakeWebSocket:
-    def __init__(self, *, token="token", origin="http://localhost:3000", incoming=None):
+    def __init__(self, *, token="token", origin="http://localhost:3000", incoming=None, protocols=None):
         self.query_params = {"token": token} if token is not None else {}
         self.headers = {"origin": origin} if origin is not None else {}
+        if protocols:
+            self.headers["sec-websocket-protocol"] = ", ".join(protocols)
         self.incoming = list(incoming or [])
         self.accepted = False
         self.close_code = None
         self.sent_json = []
         self.sent_text = []
+        self.accepted_subprotocol = None
 
-    async def accept(self):
+    async def accept(self, subprotocol=None):
         self.accepted = True
+        self.accepted_subprotocol = subprotocol
 
     async def close(self, code):
         self.close_code = code
@@ -109,6 +113,24 @@ def test_missing_token_closes_with_4401():
 
     assert websocket.accepted is True
     assert websocket.close_code == 4401
+
+
+def test_token_can_be_supplied_without_query_string_via_websocket_protocol():
+    case_id = str(uuid4())
+    websocket = FakeWebSocket(token=None, protocols=["soomit-chat", "header-token"])
+    connect = AsyncMock()
+
+    with (
+        patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
+        patch.object(main, "_authorize_case", AsyncMock(return_value=(0, str(uuid4())))) as authorize,
+        patch.object(main.manager, "connect", connect),
+        patch.object(main.manager, "disconnect", Mock()),
+    ):
+        asyncio.run(main.chat_endpoint(websocket, case_id))
+
+    authorize.assert_awaited_once_with(case_id, "header-token")
+    connect.assert_awaited_once()
+    assert connect.await_args.args[3] == "soomit-chat"
 
 
 def test_disallowed_origin_closes_with_4403():

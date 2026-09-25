@@ -11,7 +11,17 @@ class CaseChatMessageSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = CaseChatMessage
-        fields = ("id", "case_id", "sender", "body", "is_private", "recipient_ids", "read_by", "created_at")
+        fields = (
+            "id",
+            "case_id",
+            "client_message_id",
+            "sender",
+            "body",
+            "is_private",
+            "recipient_ids",
+            "read_by",
+            "created_at",
+        )
 
     def get_sender(self, obj):
         department_role = obj.sender.department_role
