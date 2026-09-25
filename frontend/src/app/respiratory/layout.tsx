@@ -1,15 +1,23 @@
 "use client";
 
-import { FormEvent, ReactNode, useCallback, useEffect, useState } from "react";
+import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { RespiratoryAuthProvider, useRespiratoryAuth } from "./_components/respiratory-auth-provider";
 import { API_BASE_URL } from "@/lib/api";
 import { requestCaseNavigation } from "./_lib/case-navigation-guard";
 import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
+import {
+  markNotificationRead,
+  mergeNotificationSnapshot,
+  publishNotificationRead,
+  publishNotificationSnapshot,
+  readNotificationPayload,
+  subscribeNotificationRead,
+  type NotificationState,
+  type StaffNotification,
+} from "./_lib/notification-state";
 
-type StaffNotification = { id: string; notification_type: string; title: string; message: string; payload: Record<string, unknown> | null; case_id: string | null; case_code: string | null; created_at: string; read_at: string | null };
-type NotificationResponse = { unread_count: number; results: StaffNotification[] };
 type SearchCase = { id: string; patient_name: string; patient_code: string; case_code: string };
 type ConsultationSummary = { id: string; status: string };
 
@@ -31,9 +39,9 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, authorizedFetch, isAuthenticated, isReady, logout } = useRespiratoryAuth();
-  const [isDark, setIsDark] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationResponse>({ unread_count: 0, results: [] });
+  const [notifications, setNotifications] = useState<NotificationState>({ unread_count: 0, results: [] });
+  const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [consultationWaitingCount, setConsultationWaitingCount] = useState(0);
   const [notificationError, setNotificationError] = useState("");
   const [search, setSearch] = useState("");
@@ -42,17 +50,22 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   const [searchError, setSearchError] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const [clock, setClock] = useState("");
+  const pendingNotificationReadsRef = useRef(new Set<string>());
 
   const loadNotifications = useCallback(async (silent = false) => {
     try {
-      const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/?limit=20`);
+      const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/?limit=100`);
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : "알림을 불러오지 못했습니다.");
-      setNotifications({ unread_count: Number(data.unread_count) || 0, results: Array.isArray(data.results) ? data.results : [] });
+      const incoming = readNotificationPayload(data);
+      setNotifications((current) => mergeNotificationSnapshot(current, incoming));
+      publishNotificationSnapshot(incoming);
       setNotificationError("");
     } catch (error) {
       // Preserve the last known notification state on a transient background failure.
       if (!silent) setNotificationError(error instanceof Error ? error.message : "알림을 불러오지 못했습니다.");
+    } finally {
+      if (!silent) setNotificationsLoading(false);
     }
   }, [authorizedFetch]);
 
@@ -68,30 +81,34 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   }, [authorizedFetch]);
 
   async function openNotification(notification: StaffNotification) {
-    if (notification.case_id && !requestCaseNavigation(notification.case_id)) return;
     if (!notification.read_at) {
+      if (pendingNotificationReadsRef.current.has(notification.id)) return;
+      pendingNotificationReadsRef.current.add(notification.id);
       try {
         const response = await authorizedFetch(`${API_BASE_URL}/api/notifications/me/${notification.id}/read/`, { method: "PATCH" });
-        if (response.ok) setNotifications((current) => ({
-          unread_count: Math.max(current.unread_count - 1, 0),
-          results: current.results.map((item) => item.id === notification.id ? { ...item, read_at: new Date().toISOString() } : item),
-        }));
-      } catch {
-        // Reading a notification must not prevent the clinician opening its Case.
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(typeof payload.detail === "string" ? payload.detail : "알림을 읽음 처리하지 못했습니다.");
+        const readAt = typeof payload.read_at === "string" ? payload.read_at : new Date().toISOString();
+        setNotifications((current) => markNotificationRead(current, notification.id, readAt));
+        publishNotificationRead(notification.id, readAt);
+        setNotificationError("");
+      } catch (error) {
+        setNotificationError(error instanceof Error ? error.message : "알림을 읽음 처리하지 못했습니다.");
+        return;
+      } finally {
+        pendingNotificationReadsRef.current.delete(notification.id);
       }
     }
+    if (notification.case_id && !requestCaseNavigation(notification.case_id)) return;
     setShowNotifications(false);
     const chatMessageId = notification.notification_type === "CASE_CHAT" && typeof notification.payload?.chat_message_id === "string" ? notification.payload.chat_message_id : "";
     if (notification.case_id) router.push(`/respiratory/cases/${notification.case_id}${notification.notification_type === "CASE_CHAT" ? `?openChat=1${chatMessageId ? `&chatMessage=${encodeURIComponent(chatMessageId)}` : ""}` : ""}`);
   }
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      const enabled = window.localStorage.getItem("respiratory-dark-mode") === "true";
-      setIsDark(enabled);
-      document.documentElement.dataset.respiratoryTheme = enabled ? "dark" : "light";
-    }, 0);
-    return () => window.clearTimeout(timer);
+    return subscribeNotificationRead((id, readAt) => {
+      setNotifications((current) => markNotificationRead(current, id, readAt));
+    });
   }, []);
 
   useEffect(() => {
@@ -204,15 +221,6 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
     }
   }
 
-  function toggleTheme() {
-    setIsDark((current) => {
-      const next = !current;
-      window.localStorage.setItem("respiratory-dark-mode", String(next));
-      document.documentElement.dataset.respiratoryTheme = next ? "dark" : "light";
-      return next;
-    });
-  }
-
   if (!isReady || !isAuthenticated) return null;
 
   return (
@@ -276,7 +284,8 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
             </button>
             {showNotifications && <section className="absolute right-0 top-11 z-50 w-80 rounded-xl border border-slate-200 bg-white p-4 shadow-xl">
               <div className="flex items-center justify-between"><h2 className="text-sm font-bold text-slate-800">알림</h2><button type="button" onClick={() => setShowNotifications(false)} aria-label="알림 닫기" className="text-slate-400">×</button></div>
-              {notificationError ? <p className="mt-3 rounded-lg bg-rose-50 p-3 text-xs leading-5 text-rose-700">{notificationError}</p> : notifications.results.length === 0 ? <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-500">새 알림이 없습니다.</p> : <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">{notifications.results.map((notification) => <button type="button" key={notification.id} onClick={() => void openNotification(notification)} className={`w-full rounded-lg border p-3 text-left text-xs transition hover:border-blue-300 ${notification.read_at ? "border-slate-100 bg-slate-50 text-slate-500" : "border-blue-100 bg-blue-50 text-slate-700"}`}><p className="font-bold">{notification.title}</p><p className="mt-1 leading-5">{notification.message}</p><p className="mt-1 text-[10px] text-slate-400">{notification.case_code || "Case"} · {new Date(notification.created_at).toLocaleString("ko-KR")}</p></button>)}</div>}
+              {notificationError && <p role="alert" className="mt-3 rounded-lg bg-rose-50 p-3 text-xs leading-5 text-rose-700">{notificationError}</p>}
+              {notificationsLoading ? <p role="status" className="mt-3 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-500">알림을 불러오는 중입니다.</p> : notifications.results.length === 0 ? <p className="mt-3 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-500">새 알림이 없습니다.</p> : <div className="mt-3 max-h-80 space-y-2 overflow-y-auto">{notifications.results.slice(0, 20).map((notification) => <button type="button" key={notification.id} onClick={() => void openNotification(notification)} disabled={pendingNotificationReadsRef.current.has(notification.id)} className={`w-full rounded-lg border p-3 text-left text-xs transition hover:border-blue-300 disabled:cursor-wait ${notification.read_at ? "border-slate-100 bg-slate-50 text-slate-500" : "border-blue-100 bg-blue-50 text-slate-700"}`}><p className={notification.read_at ? "font-semibold" : "font-bold"}>{notification.title}{!notification.read_at && <span className="ml-2 rounded-full bg-blue-600 px-1.5 py-0.5 text-[9px] font-bold text-white">읽지 않음</span>}</p><p className="mt-1 leading-5">{notification.message}</p><p className="mt-1 text-[10px] text-slate-400">{notification.case_code || "Case"} · {new Date(notification.created_at).toLocaleString("ko-KR")}</p></button>)}</div>}
             </section>}
           </div>
 

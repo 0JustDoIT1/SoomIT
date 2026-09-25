@@ -39,8 +39,11 @@ class StaffNotificationReadAPIView(StaffNotificationAPIView):
         if notification is None:
             return Response({"detail": "알림을 찾을 수 없습니다."}, status=404)
         if notification.read_at is None:
-            notification.read_at = timezone.now()
-            notification.save(update_fields=["read_at"])
+            NotificationLog.objects.filter(
+                id=notification.id,
+                read_at__isnull=True,
+            ).update(read_at=timezone.now())
+            notification.refresh_from_db(fields=["read_at"])
         return Response(StaffNotificationSerializer(notification).data)
 
 

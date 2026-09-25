@@ -4,6 +4,7 @@ import {
   deriveCurrentActions,
   type CurrentAction,
 } from "../_lib/derive-current-actions";
+import type { StaffNotification } from "../_lib/notification-state";
 
 const STAGES = [
   "XRAY",
@@ -81,15 +82,7 @@ export type DashboardConsultation = {
   question: string;
 };
 
-export type DashboardNotification = {
-  id: string;
-  title: string;
-  message: string;
-  case_id: string | null;
-  case_code: string | null;
-  created_at: string;
-  read_at: string | null;
-};
+export type DashboardNotification = StaffNotification;
 
 export type DashboardPatientAppointment = {
   id: string;

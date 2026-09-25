@@ -62,6 +62,45 @@ class StaffNotificationAPITests(TestCase):
         self.notification.refresh_from_db()
         self.assertIsNotNone(self.notification.read_at)
 
+    def test_mark_read_is_idempotent_and_persists_after_reload(self):
+        url = reverse(
+            "staff-notification-read",
+            kwargs={"notification_id": self.notification.id},
+        )
+
+        first = self.client.patch(url)
+        second = self.client.patch(url)
+        listed = self.client.get(reverse("staff-notification-list"))
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(second.data["read_at"], first.data["read_at"])
+        self.assertEqual(listed.data["unread_count"], 0)
+        self.assertEqual(listed.data["results"][0]["read_at"], first.data["read_at"])
+
+    def test_list_excludes_non_in_app_channels(self):
+        NotificationLog.objects.create(
+            recipient_user=self.recipient,
+            notification_type="EXAMINATION_ORDER",
+            channel=NotificationLog.Channel.PUSH,
+            title="Push only",
+            message="This must not appear in the in-app list.",
+            delivery_status=NotificationLog.DeliveryStatus.SENT,
+        )
+
+        response = self.client.get(reverse("staff-notification-list"))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["unread_count"], 1)
+        self.assertEqual(len(response.data["results"]), 1)
+
+    def test_unauthenticated_user_cannot_list_notifications(self):
+        self.client.credentials()
+
+        response = self.client.get(reverse("staff-notification-list"))
+
+        self.assertEqual(response.status_code, 401)
+
     def test_staff_cannot_read_another_users_notification(self):
         other_notification = NotificationLog.objects.get(recipient_user=self.other_user)
         response = self.client.patch(

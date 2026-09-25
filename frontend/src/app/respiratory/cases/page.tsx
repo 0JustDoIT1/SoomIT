@@ -6,6 +6,16 @@ import { usePathname, useRouter } from "next/navigation";
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../_lib/respiratory-api";
 import {
+  markNotificationRead,
+  mergeNotificationSnapshot,
+  publishNotificationRead,
+  subscribeNotificationRead,
+  subscribeNotificationSnapshot,
+  type NotificationState,
+  type StaffNotification,
+} from "../_lib/notification-state";
+import { showToast } from "@/components/ui/toast/toast";
+import {
   DashboardWorkQueues,
   type DashboardPatientAppointment,
   type DashboardCaseSnapshot,
@@ -24,21 +34,6 @@ type CaseItem = {
   current_stage: string;
   case_status: string;
   updated_at: string;
-};
-
-type StaffNotification = {
-  id: string;
-  title: string;
-  message: string;
-  case_id: string | null;
-  case_code: string | null;
-  created_at: string;
-  read_at: string | null;
-};
-
-type NotificationResponse = {
-  unread_count: number;
-  results: StaffNotification[];
 };
 
 function readCaseList(payload: unknown): CaseItem[] {
@@ -71,7 +66,7 @@ export default function RespiratoryCasesPage() {
   const [error, setError] = useState("");
 
   const [notifications, setNotifications] =
-    useState<NotificationResponse>({
+    useState<NotificationState>({
       unread_count: 0,
       results: [],
     });
@@ -107,6 +102,7 @@ export default function RespiratoryCasesPage() {
 
   const snapshotVersionsRef =
     useRef<Record<string, string>>({});
+  const pendingNotificationReadsRef = useRef(new Set<string>());
 
   /* ---------------------------------------------------------------------- */
   /* Case navigation                                                        */
@@ -128,38 +124,24 @@ export default function RespiratoryCasesPage() {
   /* Notifications                                                          */
   /* ---------------------------------------------------------------------- */
 
-  const fetchNotifications = useCallback(
-    async (signal?: AbortSignal) => {
-      try {
-        const response = await authorizedFetch(
-          `${API_BASE_URL}/api/notifications/me/?limit=100`,
-          { signal },
+  useEffect(
+    () =>
+      subscribeNotificationRead((id, readAt) => {
+        setNotifications((current) =>
+          markNotificationRead(current, id, readAt),
         );
+      }),
+    [],
+  );
 
-        const data = await response
-          .json()
-          .catch(() => ({}));
-
-        if (!response.ok) {
-          return;
-        }
-
-        setNotifications({
-          unread_count:
-            Number(data.unread_count) || 0,
-
-          results: Array.isArray(data.results)
-            ? data.results
-            : [],
-        });
-      } catch {
-        /*
-         * 공통 Notification Center가 별도의 오류 상태를
-         * 제공하므로 Dashboard 자체는 계속 사용한다.
-         */
-      }
-    },
-    [authorizedFetch],
+  useEffect(
+    () =>
+      subscribeNotificationSnapshot((incoming) => {
+        setNotifications((current) =>
+          mergeNotificationSnapshot(current, incoming),
+        );
+      }),
+    [],
   );
 
   const fetchPatientAppointments = useCallback(async (signal?: AbortSignal) => {
@@ -491,86 +473,6 @@ export default function RespiratoryCasesPage() {
   ]);
 
   /* ---------------------------------------------------------------------- */
-  /* Notification polling                                                   */
-  /* ---------------------------------------------------------------------- */
-
-  useEffect(() => {
-    const controller =
-      new AbortController();
-
-    const requestTimer =
-      window.setTimeout(
-        () => {
-          void fetchNotifications(
-            controller.signal,
-          );
-        },
-        0,
-      );
-
-    let disposed = false;
-    let polling = false;
-
-    const pollNotifications =
-      async () => {
-        if (
-          disposed ||
-          polling ||
-          document.hidden
-        ) {
-          return;
-        }
-
-        polling = true;
-
-        try {
-          await fetchNotifications();
-        } finally {
-          polling = false;
-        }
-      };
-
-    const interval =
-      window.setInterval(
-        () => {
-          void pollNotifications();
-        },
-        30_000,
-      );
-
-    const refreshWhenVisible =
-      () => {
-        if (!document.hidden) {
-          void pollNotifications();
-        }
-      };
-
-    document.addEventListener(
-      "visibilitychange",
-      refreshWhenVisible,
-    );
-
-    return () => {
-      disposed = true;
-
-      window.clearTimeout(
-        requestTimer,
-      );
-
-      window.clearInterval(
-        interval,
-      );
-
-      document.removeEventListener(
-        "visibilitychange",
-        refreshWhenVisible,
-      );
-
-      controller.abort();
-    };
-  }, [fetchNotifications]);
-
-  /* ---------------------------------------------------------------------- */
   /* Consultations                                                          */
   /* ---------------------------------------------------------------------- */
 
@@ -796,6 +698,10 @@ export default function RespiratoryCasesPage() {
         if (
           !notification.read_at
         ) {
+          if (pendingNotificationReadsRef.current.has(notification.id)) {
+            return;
+          }
+          pendingNotificationReadsRef.current.add(notification.id);
           try {
             const response =
               await authorizedFetch(
@@ -805,43 +711,50 @@ export default function RespiratoryCasesPage() {
                 },
               );
 
-            if (response.ok) {
-              setNotifications(
-                (current) => ({
-                  unread_count:
-                    Math.max(
-                      current.unread_count -
-                        1,
-                      0,
-                    ),
-
-                  results:
-                    current.results.map(
-                      (item) =>
-                        item.id ===
-                        notification.id
-                          ? {
-                              ...item,
-
-                              read_at:
-                                new Date().toISOString(),
-                            }
-                          : item,
-                    ),
-                }),
-              );
+            const payload = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              throw new Error("알림을 읽음 처리하지 못했습니다.");
             }
+
+            const readAt =
+              typeof payload.read_at === "string"
+                ? payload.read_at
+                : new Date().toISOString();
+            setNotifications((current) =>
+              markNotificationRead(current, notification.id, readAt),
+            );
+            publishNotificationRead(notification.id, readAt);
           } catch {
-            /*
-             * 읽음 처리 실패가 관련 Case 이동을
-             * 차단하지 않도록 한다.
-             */
+            showToast.error(
+              "알림을 읽음 처리하지 못했습니다. 다시 시도해주세요.",
+            );
+            return;
+          } finally {
+            pendingNotificationReadsRef.current.delete(notification.id);
           }
         }
 
         if (
           notification.case_id
         ) {
+          if (notification.notification_type === "CASE_CHAT") {
+            window.localStorage.setItem(
+              "respiratory-last-case-id",
+              notification.case_id,
+            );
+            const chatMessageId =
+              typeof notification.payload?.chat_message_id === "string"
+                ? notification.payload.chat_message_id
+                : "";
+            router.push(
+              `/respiratory/cases/${notification.case_id}?openChat=1${
+                chatMessageId
+                  ? `&chatMessage=${encodeURIComponent(chatMessageId)}`
+                  : ""
+              }`,
+            );
+            return;
+          }
           openCase(
             notification.case_id,
           );
