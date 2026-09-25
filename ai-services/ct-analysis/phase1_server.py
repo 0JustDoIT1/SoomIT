@@ -20,7 +20,7 @@ from artifact import ensure_artifact
 from cornerstone_labelmap import generate_cornerstone_segmentation
 from input_io import InvalidCtInput, dicom_directory_to_nifti, extract_dicom_zip
 from model_artifacts import phase1_artifacts
-from phase1_models import ResidentNoduleModels
+from phase1_models import ResidentNoduleModels, ResidentSegmentationModel
 from orthanc_client import OrthancDownloadError, download_orthanc_series
 from storage_io import download_file, upload_tree
 from visualization import ANATOMY_LAYERS, LOBE_LAYERS
@@ -45,6 +45,7 @@ CASE_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 model_hashes: dict[str, str] = {}
 nodule_models: ResidentNoduleModels | None = None
+segmentation_model: ResidentSegmentationModel | None = None
 inference_lock = threading.Lock()
 logger = logging.getLogger("uvicorn.error")
 
@@ -110,6 +111,7 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
             python_executable=sys.executable,
             totalseg_env=os.environ.get("TOTALSEG_ENV", "totalseg"),
             nodule_models=nodule_models,
+            segmentation_model=segmentation_model,
         )
     log_latency("pipeline", stage_started)
     result = finalize_target_selection_metadata(result, phase1_dir, destination)
@@ -156,14 +158,24 @@ def run_phase1(ct_path: Path, case_id: str, work_root: Path, destination: str) -
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    global nodule_models
+    global nodule_models, segmentation_model
     started = time.perf_counter()
     for artifact in phase1_artifacts():
         model_hashes[artifact.name] = ensure_artifact(artifact)
+    try:
+        segmentation_model = ResidentSegmentationModel()
+    except Exception:
+        # Preserve the original subprocess path if resident initialization is
+        # unavailable in a particular runtime or model build.
+        logger.exception(
+            "resident VISTA3D initialization failed; using subprocess fallback"
+        )
+        segmentation_model = None
     nodule_models = ResidentNoduleModels()
     log_latency("model_initialization", started)
     yield
     nodule_models = None
+    segmentation_model = None
     model_hashes.clear()
 
 

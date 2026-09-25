@@ -33,6 +33,7 @@ def run_inference(
     image_file,
     output_mask,
     output_metadata=None,
+    model=None,
 ):
     image_file = Path(image_file)
     output_mask = Path(output_mask)
@@ -43,8 +44,9 @@ def run_inference(
     print(" shape   :", original["shape_xyz"])
     print(" spacing :", original["spacing_xyz_mm"])
 
-    print("[2/5] Loading VISTA3D")
-    model = Vista3DModel()
+    print("[2/5] Preparing VISTA3D")
+    if model is None:
+        model = Vista3DModel()
 
     print("[3/5] Running inference")
     raw_pred = model.predict(image_file)

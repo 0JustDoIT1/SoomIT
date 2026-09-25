@@ -73,3 +73,10 @@ Run from this directory:
     gcloud builds submit --config cloudbuild-phase2.yaml .
 
 The Phase 1 container uses one CUDA runtime for VISTA3D and the three nodule models, plus an isolated Python virtual environment for TotalSegmentator. The public `total` and `lung_vessels` TotalSegmentator weights are cached in the image at build time so a cold instance does not download them during the first inference. Phase 2 is CPU-only.
+
+VISTA3D is initialized once during Phase 1 server startup. Each request clears
+VISTA3D's interactive-inference cache before and after use, then moves the
+network back to CPU before the later GPU stages. This preserves the former GPU
+memory profile while removing repeated checkpoint and Python-process startup.
+Set `CT_ANALYSIS_KEEP_VISTA_ON_GPU=true` only after deployment memory profiling
+shows VISTA3D can coexist with TotalSegmentator and the nodule models.

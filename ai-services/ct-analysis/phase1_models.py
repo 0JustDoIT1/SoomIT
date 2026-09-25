@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -41,6 +42,81 @@ def _load_module(name: str, path: Path, search_path: Path | None = None, aliases
 def _write_json(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+class ResidentSegmentationModel:
+    """Reuse VISTA3D initialization without retaining request-specific state.
+
+    VISTA3D's ``InferClass`` caches the transformed input and previous mask for
+    interactive prompting. Those values must be cleared between patient
+    requests. By default, the network is also moved back to CPU after each
+    segmentation so the later TotalSegmentator and nodule-model stages keep
+    the same available GPU memory as the former subprocess implementation.
+    """
+
+    def __init__(self) -> None:
+        segmentation_root = PACKAGES / "final_segmentation_deploy_ready"
+        code_root = segmentation_root / "code"
+        postprocess_root = code_root / "postprocess"
+
+        model_module = _load_module(
+            "ct_phase1_segmentation_model", code_root / "model.py", code_root
+        )
+        preprocessing_module = _load_module(
+            "ct_phase1_segmentation_preprocessing",
+            code_root / "preprocessing.py",
+            code_root,
+        )
+        postprocessing_module = _load_module(
+            "ct_phase1_segmentation_postprocessing",
+            code_root / "postprocessing.py",
+            code_root,
+        )
+        nodule_patch_module = _load_module(
+            "ct_phase1_segmentation_nodule_patch",
+            postprocess_root / "nodule_patch.py",
+            postprocess_root,
+        )
+        self.inference = _load_module(
+            "ct_phase1_segmentation_inference",
+            code_root / "inference.py",
+            code_root,
+            aliases={
+                "model": model_module,
+                "preprocessing": preprocessing_module,
+                "postprocessing": postprocessing_module,
+                "nodule_patch": nodule_patch_module,
+            },
+        )
+        self.model = model_module.Vista3DModel()
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.keep_on_gpu = (
+            os.environ.get("CT_ANALYSIS_KEEP_VISTA_ON_GPU", "false").strip().lower()
+            in {"1", "true", "yes", "on"}
+        )
+        if self.device.type == "cuda" and not self.keep_on_gpu:
+            self.model.inferer.model.to("cpu")
+            torch.cuda.empty_cache()
+
+    def _clear_request_cache(self) -> None:
+        self.model.inferer.clear_cache()
+
+    def run(self, image_file: Path, output_mask: Path, output_metadata: Path) -> dict:
+        self._clear_request_cache()
+        if self.device.type == "cuda" and not self.keep_on_gpu:
+            self.model.inferer.model.to(self.device)
+        try:
+            return self.inference.run_inference(
+                image_file=image_file,
+                output_mask=output_mask,
+                output_metadata=output_metadata,
+                model=self.model,
+            )
+        finally:
+            self._clear_request_cache()
+            if self.device.type == "cuda" and not self.keep_on_gpu:
+                self.model.inferer.model.to("cpu")
+                torch.cuda.empty_cache()
 
 
 class ResidentNoduleModels:

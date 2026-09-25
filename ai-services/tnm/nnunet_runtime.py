@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import logging
+import time
 from pathlib import Path
 
 import torch
 from nnunetv2.inference.predict_from_raw_data import nnUNetPredictor
+
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class ResidentNnUNetPredictor:
@@ -29,23 +34,31 @@ class ResidentNnUNetPredictor:
         )
 
     def _move_to(self, device: torch.device) -> None:
+        started = time.perf_counter()
         self.predictor.network.to(device)
         self.predictor.device = device
+        logger.info(
+            "latency service=tnm_m stage=model_to_%s elapsed_seconds=%.3f",
+            device.type,
+            time.perf_counter() - started,
+        )
 
     def predict(self, input_dir: Path, output_dir: Path) -> None:
         if self.predictor.device.type != "cuda":
             self._move_to(self.cuda_device)
-        self.predictor.predict_from_files(
-            str(input_dir),
-            str(output_dir),
-            save_probabilities=False,
-            overwrite=True,
-            num_processes_preprocessing=1,
-            num_processes_segmentation_export=1,
-            folder_with_segs_from_prev_stage=None,
-            num_parts=1,
-            part_id=0,
-        )
-        if self.offload_after_predict:
-            self._move_to(torch.device("cpu"))
-            torch.cuda.empty_cache()
+        try:
+            self.predictor.predict_from_files(
+                str(input_dir),
+                str(output_dir),
+                save_probabilities=False,
+                overwrite=True,
+                num_processes_preprocessing=1,
+                num_processes_segmentation_export=1,
+                folder_with_segs_from_prev_stage=None,
+                num_parts=1,
+                part_id=0,
+            )
+        finally:
+            if self.offload_after_predict:
+                self._move_to(torch.device("cpu"))
+                torch.cuda.empty_cache()

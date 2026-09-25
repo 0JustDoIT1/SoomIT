@@ -82,6 +82,35 @@ def run(cmd, env=None):
     )
 
 
+def run_segmentation(
+    *,
+    python_executable,
+    ct_path,
+    seg_mask,
+    seg_metadata,
+    segmentation_model=None,
+):
+    """Run the unchanged segmentation contract through a resident model when available."""
+    if segmentation_model is not None:
+        return segmentation_model.run(
+            image_file=ct_path,
+            output_mask=seg_mask,
+            output_metadata=seg_metadata,
+        )
+
+    run([
+        python_executable,
+        SEG_ROOT / "code/inference.py",
+        "--input",
+        ct_path,
+        "--output",
+        seg_mask,
+        "--metadata",
+        seg_metadata,
+    ])
+    return None
+
+
 def anatomy_python():
     """Return the isolated TotalSegmentator interpreter when configured."""
     return os.environ.get("TOTALSEG_PYTHON")
@@ -225,6 +254,7 @@ def phase1(
     python_executable,
     totalseg_env,
     nodule_models=None,
+    segmentation_model=None,
 ):
     total_started = time.perf_counter()
     ct_path = Path(ct_path).resolve()
@@ -361,16 +391,13 @@ def phase1(
     )
 
     stage_started = time.perf_counter()
-    run([
-        python_executable,
-        SEG_ROOT / "code/inference.py",
-        "--input",
-        ct_path,
-        "--output",
-        seg_mask,
-        "--metadata",
-        seg_metadata,
-    ])
+    run_segmentation(
+        python_executable=python_executable,
+        ct_path=ct_path,
+        seg_mask=seg_mask,
+        seg_metadata=seg_metadata,
+        segmentation_model=segmentation_model,
+    )
     log_latency("segmentation", stage_started)
 
     segmentation = load_json(
