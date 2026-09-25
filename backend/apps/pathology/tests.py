@@ -1493,6 +1493,10 @@ class PathologyReadAPITestCase(APITestCase):
 
     @patch("apps.pathology.tasks.request_pathology_prediction")
     def test_pathology_gene_task_preserves_existing_draft(self, prediction):
+        # The shared fixture includes an existing diagnostic-review work item.
+        # Remove it so this test can verify that the analysis task does not
+        # create a new review item while preserving an existing draft.
+        self.work_item.delete()
         self.clinical_result.result_status = ClinicalResult.ResultStatus.DRAFT
         self.clinical_result.save(update_fields=["result_status", "updated_at"])
         original_ai_result_id = self.clinical_result.reviewed_ai_result_id

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/app_shell.dart';
+import '../test_features/test_features_screen.dart';
 import 'services/patient_auth_service.dart';
 import 'terms_agreement_screen.dart';
 
@@ -19,6 +20,12 @@ class _LoginScreenState extends State<LoginScreen> {
   static const Color _divider = Color(0xFFE6EBF1);
 
   bool _isGoogleSigningIn = false;
+
+  void _openTestFeatures() {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute<void>(builder: (_) => const TestFeaturesScreen()));
+  }
 
   Future<void> _loginWithGoogle() async {
     if (_isGoogleSigningIn) return;
@@ -47,9 +54,7 @@ class _LoginScreenState extends State<LoginScreen> {
       }
 
       await Navigator.of(context).pushAndRemoveUntil(
-        MaterialPageRoute<void>(
-          builder: (context) => const AppShell(),
-        ),
+        MaterialPageRoute<void>(builder: (context) => const AppShell()),
         (route) => false,
       );
     } catch (error) {
@@ -71,11 +76,9 @@ class _LoginScreenState extends State<LoginScreen> {
 
       final message = errorText.replaceFirst('Exception: ', '');
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(message),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } finally {
       if (mounted) {
         setState(() {
@@ -86,11 +89,9 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   void _showPreparingMessage(String provider) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('$provider 로그인은 준비 중입니다.'),
-      ),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$provider 로그인은 준비 중입니다.')));
   }
 
   @override
@@ -101,16 +102,8 @@ class _LoginScreenState extends State<LoginScreen> {
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFF1FBF8),
-              Color(0xFFF3F9FC),
-              Color(0xFFEAF2F8),
-            ],
-            stops: [
-              0.0,
-              0.52,
-              1.0,
-            ],
+            colors: [Color(0xFFF1FBF8), Color(0xFFF3F9FC), Color(0xFFEAF2F8)],
+            stops: [0.0, 0.52, 1.0],
           ),
         ),
         child: Stack(
@@ -128,12 +121,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         Color(0x1F53A8F5),
                         Colors.transparent,
                       ],
-                      stops: [
-                        0.0,
-                        0.28,
-                        0.52,
-                        0.82,
-                      ],
+                      stops: [0.0, 0.28, 0.52, 0.82],
                     ),
                   ),
                 ),
@@ -147,14 +135,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     gradient: RadialGradient(
                       center: Alignment(0.92, -0.45),
                       radius: 0.72,
-                      colors: [
-                        Color(0x2457D6C7),
-                        Colors.transparent,
-                      ],
-                      stops: [
-                        0.0,
-                        0.78,
-                      ],
+                      colors: [Color(0x2457D6C7), Colors.transparent],
+                      stops: [0.0, 0.78],
                     ),
                   ),
                 ),
@@ -175,10 +157,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 420),
                           child: Padding(
-                            padding: const EdgeInsets.only(
-                              top: 35,
-                              bottom: 27,
-                            ),
+                            padding: const EdgeInsets.only(top: 35, bottom: 27),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
@@ -187,11 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                     'assets/images/logo_full.png',
                                     width: 230,
                                     fit: BoxFit.contain,
-                                    errorBuilder: (
-                                      context,
-                                      error,
-                                      stackTrace,
-                                    ) {
+                                    errorBuilder: (context, error, stackTrace) {
                                       return const SizedBox(
                                         height: 100,
                                         child: Center(
@@ -261,8 +236,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                       ),
                                     ),
                                     Padding(
-                                      padding:
-                                          EdgeInsets.symmetric(horizontal: 13),
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: 13,
+                                      ),
                                       child: Text(
                                         '간편 로그인',
                                         style: TextStyle(
@@ -291,12 +267,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   iconAsset:
                                       'assets/images/social/google_logo_normalized.png',
                                   iconSize: 60,
-                                  backgroundColor:
-                                      const Color(0xFFF2F2F2),
-                                  foregroundColor:
-                                      const Color(0xFF1F1F1F),
-                                  borderColor:
-                                      const Color(0xFFDADCE0),
+                                  backgroundColor: const Color(0xFFF2F2F2),
+                                  foregroundColor: const Color(0xFF1F1F1F),
+                                  borderColor: const Color(0xFFDADCE0),
                                   onPressed: _isGoogleSigningIn
                                       ? null
                                       : _loginWithGoogle,
@@ -309,12 +282,9 @@ class _LoginScreenState extends State<LoginScreen> {
                                   iconAsset:
                                       'assets/images/social/kakao_logo_normalized.png',
                                   iconSize: 30,
-                                  backgroundColor:
-                                      const Color(0xFFFEE500),
-                                  foregroundColor:
-                                      const Color(0xD9000000),
-                                  borderColor:
-                                      const Color(0xFFFEE500),
+                                  backgroundColor: const Color(0xFFFEE500),
+                                  foregroundColor: const Color(0xD9000000),
+                                  borderColor: const Color(0xFFFEE500),
                                   onPressed: () {
                                     _showPreparingMessage('카카오');
                                   },
@@ -327,17 +297,42 @@ class _LoginScreenState extends State<LoginScreen> {
                                   iconAsset:
                                       'assets/images/social/naver_logo_normalized.png',
                                   iconSize: 60,
-                                  backgroundColor:
-                                      const Color.fromARGB(255, 5, 173, 79),
+                                  backgroundColor: const Color.fromARGB(
+                                    255,
+                                    5,
+                                    173,
+                                    79,
+                                  ),
                                   foregroundColor: Colors.white,
-                                  borderColor:
-                                      const Color(0xFF03A94D),
+                                  borderColor: const Color(0xFF03A94D),
                                   onPressed: () {
                                     _showPreparingMessage('네이버');
                                   },
                                 ),
 
-                                const SizedBox(height: 34),
+                                const SizedBox(height: 22),
+
+                                OutlinedButton.icon(
+                                  onPressed: _openTestFeatures,
+                                  icon: const Icon(Icons.apps_rounded),
+                                  label: const Text('로그인 없이 테스트 기능 사용하기'),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: const Color(0xFF3198F4),
+                                    side: const BorderSide(
+                                      color: Color(0xFFB9DDFC),
+                                    ),
+                                    minimumSize: const Size.fromHeight(52),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(14),
+                                    ),
+                                    textStyle: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ),
+
+                                const SizedBox(height: 28),
 
                                 const Text(
                                   '소셜 로그인 후 서비스 이용에 필요한 약관 동의와 '
@@ -396,12 +391,8 @@ class _SocialLoginButton extends StatelessWidget {
           backgroundColor: backgroundColor,
           foregroundColor: foregroundColor,
           disabledBackgroundColor: backgroundColor,
-          disabledForegroundColor:
-              foregroundColor.withValues(alpha: 0.65),
-          side: BorderSide(
-            color: borderColor,
-            width: 1,
-          ),
+          disabledForegroundColor: foregroundColor.withValues(alpha: 0.65),
+          side: BorderSide(color: borderColor, width: 1),
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           shape: RoundedRectangleBorder(

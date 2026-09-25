@@ -177,6 +177,8 @@ PATIENT_GOOGLE_CLIENT_ID = os.environ.get(
     "",
 )
 
+PUBLIC_DATA_SERVICE_KEY = os.environ.get("PUBLIC_DATA_SERVICE_KEY", "")
+
 SPECTACULAR_SETTINGS = {
     'TITLE': 'Soom-it API',
     'VERSION': '1.6.0',
