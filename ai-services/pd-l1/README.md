@@ -1,5 +1,30 @@
 # PD-L1 AI Cloud Run
 
+## Performance measurements
+
+The server logs `latency service=pdl1` with `stage` and `elapsed_seconds`;
+the prediction response is unchanged.
+
+- `model_initialization`: startup AMD-MIL and Virchow2 loading.
+- `download`, `preview`: WSI download and preview generation/upload.
+- `inference_lock_wait`: waiting for another inference request.
+- `wsi_open_and_patch_selection`: ROI preparation and coordinate selection.
+- `patch_read`, `patch_transform`: accumulated batch reading and tensor transforms.
+- `embedding_transfer_and_inference`: accumulated input transfer, Virchow2 forward,
+  embedding pooling and CPU result transfer. The existing CPU transfer completes
+  GPU work before timing ends; no additional CUDA synchronization is introduced.
+- `embedding_total`: patch reading through concatenation of all batch embeddings.
+- `amd_mil_prediction`: feature validation, AMD-MIL and response postprocessing.
+- `total`: successful pipeline processing, including download and preview.
+
+Patch count, batch size and device are logged without patient identifiers.
+These are wall times, not isolated GPU kernel times. Totals include their detailed
+stages and must not be summed with them. Compare repeated warm requests using the
+same WSI, annotation, ROI and batch size; report startup separately. Evaluate
+TensorRT only if feature inference dominates rather than downloading or reading
+patches. Failed requests can have only partial stage logs; do not mix them into
+successful-request latency measurements.
+
 `pdl1-serve`는 PD-L1 IHC WSI와 HALO 종양 ROI annotation을 입력받아 TPS 구간을 3개 클래스로 분류합니다.
 
 ## 입력 파이프라인

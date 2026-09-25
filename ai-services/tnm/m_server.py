@@ -51,6 +51,10 @@ FOLD_DIR = NNUNET_DIR / "fold_0"
 MODEL_GCS_PREFIX = os.environ.get("M_MODEL_GCS_PREFIX", "gs://soomit-bucket/models/tnm/m").rstrip("/")
 OUTPUT_PREFIX = os.environ.get("TNM_OUTPUT_GCS_PREFIX", "gs://soomit-bucket/tnm").rstrip("/")
 MODEL_REVISION = os.environ.get("MODEL_REVISION", "tnm-m-v1.0.0")
+KEEP_NNUNET_ON_GPU = (
+    os.environ.get("TNM_M_KEEP_NNUNET_ON_GPU", "false").strip().lower()
+    in {"1", "true", "yes", "on"}
+)
 CASE_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 FILES = {
     "checkpoint_best.pth": (FOLD_DIR / "checkpoint_best.pth", os.environ.get("M_CHECKPOINT_SHA256")),
@@ -116,7 +120,7 @@ async def lifespan(_: FastAPI):
     if list(helper_model.feature_names_) != HELPER_FEATURE_ORDER:
         raise RuntimeError("M lesion helper feature order does not match the 28-feature contract")
     nnunet_predictor = ResidentNnUNetPredictor(
-        NNUNET_DIR, "checkpoint_best.pth", offload_after_predict=True
+        NNUNET_DIR, "checkpoint_best.pth", offload_after_predict=not KEEP_NNUNET_ON_GPU
     )
     log_latency("model_initialization", started)
     yield

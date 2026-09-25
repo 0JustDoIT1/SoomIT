@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import logging
 import os
 import sys
+import time
 from pathlib import Path
 
 import torch
@@ -11,6 +13,7 @@ import torch
 
 ROOT = Path(__file__).resolve().parent
 PACKAGES = ROOT / "packages"
+logger = logging.getLogger("uvicorn.error")
 
 
 def _load_module(name: str, path: Path, search_path: Path | None = None, aliases=None):
@@ -95,8 +98,17 @@ class ResidentSegmentationModel:
             in {"1", "true", "yes", "on"}
         )
         if self.device.type == "cuda" and not self.keep_on_gpu:
-            self.model.inferer.model.to("cpu")
+            self._move_to(torch.device("cpu"))
             torch.cuda.empty_cache()
+
+    def _move_to(self, device: torch.device) -> None:
+        started = time.perf_counter()
+        self.model.inferer.model.to(device)
+        logger.info(
+            "latency service=ct_phase1 stage=vista_model_to_%s elapsed_seconds=%.3f",
+            device.type,
+            time.perf_counter() - started,
+        )
 
     def _clear_request_cache(self) -> None:
         self.model.inferer.clear_cache()
@@ -104,7 +116,7 @@ class ResidentSegmentationModel:
     def run(self, image_file: Path, output_mask: Path, output_metadata: Path) -> dict:
         self._clear_request_cache()
         if self.device.type == "cuda" and not self.keep_on_gpu:
-            self.model.inferer.model.to(self.device)
+            self._move_to(self.device)
         try:
             return self.inference.run_inference(
                 image_file=image_file,
@@ -115,7 +127,7 @@ class ResidentSegmentationModel:
         finally:
             self._clear_request_cache()
             if self.device.type == "cuda" and not self.keep_on_gpu:
-                self.model.inferer.model.to("cpu")
+                self._move_to(torch.device("cpu"))
                 torch.cuda.empty_cache()
 
 
