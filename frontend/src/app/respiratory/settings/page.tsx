@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { DayPicker } from 'react-day-picker';
 import { ko } from 'react-day-picker/locale';
+import { showToast } from '@/components/ui/toast/toast';
 import { useRespiratoryAuth } from '../_components/respiratory-auth-provider';
 
 const ALLOWED_PROFILE_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
@@ -66,6 +67,7 @@ function formatBirthDate(date: Date) {
 
 type NotificationType = 'EXAMINATION_ORDER' | 'CASE_CHAT';
 type NotificationSetting = { notification_type: NotificationType; enabled: boolean };
+type NotificationSettingsState = Record<NotificationType, boolean>;
 
 export default function RespiratorySettingsPage() {
   const { authorizedFetch } = useRespiratoryAuth();
@@ -80,7 +82,13 @@ export default function RespiratorySettingsPage() {
   const [saving, setSaving] = useState(false);
   const [orderNotificationsEnabled, setOrderNotificationsEnabled] = useState(true);
   const [caseChatNotificationsEnabled, setCaseChatNotificationsEnabled] = useState(true);
+  const [savedNotificationSettings, setSavedNotificationSettings] =
+    useState<NotificationSettingsState | null>(null);
+  const [notificationLoading, setNotificationLoading] = useState(true);
+  const [notificationLoadError, setNotificationLoadError] = useState('');
   const [notificationSaving, setNotificationSaving] = useState(false);
+  const notificationSaveInFlightRef = useRef(false);
+  const mountedRef = useRef(false);
 
   // Saved profile image (already committed to GCS/DB).
   const [profileImageSrc, setProfileImageSrc] = useState<string | null>(null);
@@ -147,7 +155,9 @@ export default function RespiratorySettingsPage() {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (profileImageObjectUrlRef.current) {
         URL.revokeObjectURL(profileImageObjectUrlRef.current);
       }
@@ -177,11 +187,13 @@ export default function RespiratorySettingsPage() {
   }, [authorizedFetch, loadProfileImage, applyDoctorProfileToForm]);
 
   useEffect(() => {
+    const controller = new AbortController();
     void Promise.all(
       (['EXAMINATION_ORDER', 'CASE_CHAT'] as NotificationType[]).map(
         async (notificationType) => {
           const response = await authorizedFetch(
-            `${apiBase}/api/notifications/me/settings/?notification_type=${notificationType}`
+            `${apiBase}/api/notifications/me/settings/?notification_type=${notificationType}`,
+            { signal: controller.signal }
           );
           const data = await response.json();
           if (!response.ok) {
@@ -192,14 +204,26 @@ export default function RespiratorySettingsPage() {
       )
     )
       .then(([orderSetting, chatSetting]) => {
-        setOrderNotificationsEnabled(orderSetting.enabled !== false);
-        setCaseChatNotificationsEnabled(chatSetting.enabled !== false);
+        if (controller.signal.aborted) return;
+        const saved = {
+          EXAMINATION_ORDER: orderSetting.enabled !== false,
+          CASE_CHAT: chatSetting.enabled !== false,
+        };
+        setOrderNotificationsEnabled(saved.EXAMINATION_ORDER);
+        setCaseChatNotificationsEnabled(saved.CASE_CHAT);
+        setSavedNotificationSettings(saved);
+        setNotificationLoadError('');
       })
-      .catch((error) =>
-        setMessage(
+      .catch((error) => {
+        if (controller.signal.aborted) return;
+        setNotificationLoadError(
           error instanceof Error ? error.message : '알림 설정을 불러오지 못했습니다.'
-        )
-      );
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setNotificationLoading(false);
+      });
+    return () => controller.abort();
   }, [authorizedFetch]);
 
   // Independent from the profile-image endpoint below - this only ever
@@ -243,13 +267,33 @@ export default function RespiratorySettingsPage() {
   };
 
   const saveNotificationSettings = async () => {
+    if (
+      notificationSaveInFlightRef.current ||
+      notificationLoading ||
+      !savedNotificationSettings
+    ) {
+      return;
+    }
+    const currentSettings: NotificationSettingsState = {
+      EXAMINATION_ORDER: orderNotificationsEnabled,
+      CASE_CHAT: caseChatNotificationsEnabled,
+    };
+    const settings = (Object.keys(currentSettings) as NotificationType[])
+      .filter(
+        (notificationType) =>
+          currentSettings[notificationType] !==
+          savedNotificationSettings[notificationType]
+      )
+      .map((notificationType) => ({
+        notification_type: notificationType,
+        enabled: currentSettings[notificationType],
+      }));
+    if (!settings.length) return;
+
+    notificationSaveInFlightRef.current = true;
     setNotificationSaving(true);
     try {
-      const settings: NotificationSetting[] = [
-        { notification_type: 'EXAMINATION_ORDER', enabled: orderNotificationsEnabled },
-        { notification_type: 'CASE_CHAT', enabled: caseChatNotificationsEnabled },
-      ];
-      const responses = await Promise.all(
+      const results = await Promise.allSettled(
         settings.map(async (setting) => {
           const response = await authorizedFetch(
             `${apiBase}/api/notifications/me/settings/`,
@@ -266,17 +310,46 @@ export default function RespiratorySettingsPage() {
           return data as NotificationSetting;
         })
       );
-      setOrderNotificationsEnabled(responses[0].enabled);
-      setCaseChatNotificationsEnabled(responses[1].enabled);
-      setMessage('알림 설정을 저장했습니다.');
-    } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : '알림 설정을 저장하지 못했습니다.'
+      const successful = results.flatMap((result) =>
+        result.status === 'fulfilled' ? [result.value] : []
       );
+      if (mountedRef.current && successful.length) {
+        setSavedNotificationSettings((saved) => {
+          if (!saved) return saved;
+          const next = { ...saved };
+          successful.forEach((setting) => {
+            next[setting.notification_type] = setting.enabled;
+          });
+          return next;
+        });
+        successful.forEach((setting) => {
+          if (setting.notification_type === 'EXAMINATION_ORDER') {
+            setOrderNotificationsEnabled(setting.enabled);
+          } else {
+            setCaseChatNotificationsEnabled(setting.enabled);
+          }
+        });
+      }
+      if (results.some((result) => result.status === 'rejected')) {
+        showToast.error('알림 설정을 저장하지 못했습니다.', {
+          id: 'notification-settings-save',
+        });
+        return;
+      }
+      showToast.success('알림 설정이 저장되었습니다.', {
+        id: 'notification-settings-save',
+      });
     } finally {
-      setNotificationSaving(false);
+      notificationSaveInFlightRef.current = false;
+      if (mountedRef.current) setNotificationSaving(false);
     }
   };
+
+  const notificationSettingsDirty = Boolean(
+    savedNotificationSettings &&
+      (savedNotificationSettings.EXAMINATION_ORDER !== orderNotificationsEnabled ||
+        savedNotificationSettings.CASE_CHAT !== caseChatNotificationsEnabled)
+  );
 
   const addTag = () => {
     const trimmed = tagDraft.trim();
@@ -635,21 +708,36 @@ export default function RespiratorySettingsPage() {
                 description="내 담당 Case에 새 검사 오더가 생성되면 알립니다."
                 enabled={orderNotificationsEnabled}
                 onChange={setOrderNotificationsEnabled}
+                disabled={notificationLoading || notificationSaving}
               />
               <NotificationToggle
                 title="개인 Case 메시지 알림"
                 description="나를 수신자로 지정한 개인 Case 메시지가 도착하면 알립니다."
                 enabled={caseChatNotificationsEnabled}
                 onChange={setCaseChatNotificationsEnabled}
+                disabled={notificationLoading || notificationSaving}
               />
             </div>
+            {notificationLoadError && (
+              <p role="alert" className="mt-3 text-xs text-rose-700">
+                {notificationLoadError}
+              </p>
+            )}
             <button
               type="button"
-              disabled={notificationSaving}
+              disabled={
+                notificationLoading ||
+                notificationSaving ||
+                !notificationSettingsDirty
+              }
               onClick={() => void saveNotificationSettings()}
               className="mt-3 h-10 rounded-xl border border-blue-200 bg-blue-50 px-4 text-sm font-semibold text-blue-700 hover:bg-blue-100 disabled:bg-slate-100 disabled:text-slate-400"
             >
-              {notificationSaving ? '저장 중...' : '알림 설정 저장'}
+              {notificationSaving
+                ? '저장 중...'
+                : notificationLoading
+                  ? '불러오는 중...'
+                  : '알림 설정 저장'}
             </button>
           </section>
 
@@ -670,14 +758,16 @@ function NotificationToggle({
   description,
   enabled,
   onChange,
+  disabled = false,
 }: {
   title: string;
   description: string;
   enabled: boolean;
   onChange: (enabled: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5">
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2.5 has-disabled:cursor-not-allowed has-disabled:opacity-60">
       <span>
         <span className="block text-sm font-medium text-slate-700">{title}</span>
         <span className="mt-0.5 block text-xs text-slate-400">{description}</span>
@@ -685,6 +775,7 @@ function NotificationToggle({
       <input
         type="checkbox"
         checked={enabled}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.checked)}
         className="h-4 w-4 shrink-0 accent-blue-600"
       />

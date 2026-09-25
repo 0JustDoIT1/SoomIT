@@ -127,3 +127,51 @@ class StaffNotificationAPITests(TestCase):
             notification_type="CASE_CHAT",
             enabled=False,
         ).exists())
+
+    def test_staff_notification_setting_update_is_isolated_to_current_user(self):
+        UserNotificationSetting.objects.create(
+            user=self.other_user,
+            notification_type="CASE_CHAT",
+            enabled=True,
+        )
+
+        response = self.client.patch(
+            reverse("staff-notification-settings"),
+            {"notification_type": "CASE_CHAT", "enabled": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data["enabled"])
+        self.assertTrue(UserNotificationSetting.objects.get(
+            user=self.other_user,
+            notification_type="CASE_CHAT",
+        ).enabled)
+        self.assertFalse(UserNotificationSetting.objects.get(
+            user=self.recipient,
+            notification_type="CASE_CHAT",
+        ).enabled)
+
+    def test_staff_notification_setting_rejects_unsupported_type(self):
+        response = self.client.patch(
+            reverse("staff-notification-settings"),
+            {"notification_type": "SYSTEM", "enabled": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(UserNotificationSetting.objects.filter(
+            user=self.recipient,
+            notification_type="SYSTEM",
+        ).exists())
+
+    def test_unauthenticated_user_cannot_update_notification_setting(self):
+        self.client.credentials()
+
+        response = self.client.patch(
+            reverse("staff-notification-settings"),
+            {"notification_type": "CASE_CHAT", "enabled": False},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 401)
