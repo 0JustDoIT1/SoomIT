@@ -10,7 +10,7 @@ import type { AuthorizedFetch } from "./treatment-prescription-types";
 
 type Item = { id: string; drug_name: string; ingredient_name?: string | null; mfds_item_seq?: string | null; calculated_dose: string | number | null; final_dose: string | number | null; unit: string | null; route: string; instructions?: string | null };
 type Safety = { id: string; check_type_label: string; result: "PASS" | "WARNING" | "BLOCK"; result_label?: string; message: string; source_code?: string | null; acknowledged_at?: string | null; acknowledgment_note?: string | null };
-type Prescription = { id: string; regimen_detail?: { regimen_name: string; regimen_code: string }; cycle_number: number; phase_label?: string; prescription_status: string; prescription_status_label?: string; items: Item[]; safety_check_results: Safety[] };
+type Prescription = { id: string; regimen_detail?: { regimen_name: string; regimen_code: string }; cycle_number: number; phase_label?: string; prescription_status: string; prescription_status_label?: string; safety_freshness?: "NOT_RUN" | "CURRENT" | "RECHECK_REQUIRED"; items: Item[]; safety_check_results: Safety[] };
 type Props = { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; refreshKey?: number; actionable?: boolean; waitingMessage?: string; hasSelectedRegimen?: boolean; requiresPrescription?: boolean; onPrescriptionChanged?: () => void };
 
 const UNRESOLVED_SAFETY_SOURCE_CODES = new Set(["DUR_API_ERROR", "DUR_MAPPING_UNRESOLVED", "ALLERGY_UNCONFIRMED", "LAB_MISSING"]);
@@ -63,14 +63,22 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
       </details>
   ) : null;
   const active = prescriptions.find(p => p.id === selectedPrescriptionId) ?? prescriptions.find(p => p.prescription_status !== "CANCELLED" && p.prescription_status !== "FINAL") ?? prescriptions[0];
+  const safetyIsCurrent = active?.safety_freshness === "CURRENT";
+  const safetyRecheckRequired = Boolean(active
+    && active.prescription_status !== "FINAL"
+    && (active.safety_freshness === "RECHECK_REQUIRED"
+      || (active.prescription_status === "VALIDATED" && !safetyIsCurrent)));
   const hasUnresolvedWarning = active?.safety_check_results.some(result => result.result === "WARNING" && UNRESOLVED_SAFETY_SOURCE_CODES.has(result.source_code ?? "")) ?? false;
   const hasUnacknowledgedWarning = active?.safety_check_results.some(result => result.result === "WARNING" && !result.acknowledged_at && !UNRESOLVED_SAFETY_SOURCE_CODES.has(result.source_code ?? "")) ?? false;
+  const visibleMessage = message === "처방이 최종 확정되었습니다." && active?.prescription_status !== "FINAL"
+    ? ""
+    : message;
   return <section className="flex h-full min-h-0 flex-col gap-2 rounded-lg border border-slate-200 bg-white p-3" aria-label="처방 작업공간">
     <header className="flex shrink-0 items-center justify-between gap-3"><h2 className="text-sm font-bold text-slate-800">처방 관리</h2><p className="text-xs text-slate-500">임시 처방 → 안전성 검사 → 경고 확인 → 최종 확정</p></header>
     {!actionable && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">{waitingMessage ?? "현재 처방은 조회만 가능합니다."}</p>}
     {actionable && !requiresPrescription && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-xs text-sky-800">확정된 비약물 치료계획입니다. 약물 처방 없이 상단의 종료·의뢰 처리로 진행할 수 있습니다.</p>}
       {error && <p role="alert" className="shrink-0 rounded-lg bg-rose-50 p-2 text-xs text-rose-700">{error}</p>}
-      {message && <p role="status" className="shrink-0 rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700">{message}</p>}
+      {visibleMessage && <p role="status" className="shrink-0 rounded-lg bg-emerald-50 p-2 text-xs text-emerald-700">{visibleMessage}</p>}
       {prescriptions.length > 0 && <label className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-700">처방 선택<select aria-label="처방 선택" value={active?.id ?? ""} onChange={event => setSelectedPrescriptionId(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-200 p-2">{prescriptions.map(p => <option key={p.id} value={p.id}>{p.regimen_detail?.regimen_name ?? "Regimen"} · 주기 {p.cycle_number} · {p.prescription_status_label ?? p.prescription_status}</option>)}</select></label>}
       {active ? <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)] gap-3" key={active.id}>
         <section className="min-h-0 overflow-y-auto pr-1" aria-label="처방 약물 목록">
@@ -82,14 +90,14 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
         <aside className="flex min-h-0 flex-col gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="안전성 검토 및 최종 확정">
           <h3 className="shrink-0 text-sm font-semibold">Safety Check · {active.prescription_status_label ?? active.prescription_status}</h3>
           {active.safety_check_results.some(r => r.result === "BLOCK") && <p role="alert" className="shrink-0 rounded-lg border border-rose-300 bg-rose-50 p-2 text-xs font-semibold text-rose-800">BLOCK 결과가 있어 처방을 최종 확정할 수 없습니다.</p>}
-          {hasUnresolvedWarning ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">미해결 WARNING · 환자 정보 또는 외부 조회 상태를 보완한 뒤 Safety Check를 다시 실행해야 합니다.</p> : hasUnacknowledgedWarning && <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">WARNING · 의료진 검토와 확인 사유가 필요합니다.</p>}
+          {safetyRecheckRequired ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">환자 안전성 정보가 변경되어 재검사가 필요합니다.</p> : hasUnresolvedWarning ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">미해결 WARNING · 환자 정보 또는 외부 조회 상태를 보완한 뒤 Safety Check를 다시 실행해야 합니다.</p> : hasUnacknowledgedWarning && <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">WARNING · 의료진 검토와 확인 사유가 필요합니다.</p>}
           <div className="min-h-0 max-h-40 shrink overflow-y-auto" aria-label="안전성 검사 상세">
-            {active.safety_check_results.length === 0 && <p className="text-xs text-slate-500">안전성 검사 대기</p>}
+            {active.safety_check_results.length === 0 && <p className="text-xs text-slate-500">{active.prescription_status === "DRAFT" ? "안전성 검사 대기" : "저장된 안전성 검사 상세 결과가 없습니다."}</p>}
             {active.safety_check_results.map(result => <div key={result.id} className={`border-b py-2 text-xs ${result.result === "BLOCK" ? "border-rose-200 text-rose-800" : result.result === "WARNING" ? "border-amber-200 text-amber-800" : "border-slate-200 text-emerald-800"}`}><p className="font-semibold">{result.check_type_label} · {result.result_label ?? result.result}</p><p className="mt-1">{result.message}</p>{result.result === "WARNING" && result.acknowledged_at && <p className="mt-1">의료진 확인 완료{result.acknowledgment_note ? ` · ${result.acknowledgment_note}` : ""}</p>}</div>)}
           </div>
-          {actionable && active.prescription_status === "DRAFT" && <button type="button" disabled={working} onClick={() => void safety(active.id)} className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{working ? "실행 중..." : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
-          {actionable && active.prescription_status === "VALIDATED" && hasUnacknowledgedWarning && <button type="button" disabled={working} onClick={() => void acknowledge(active.id)} className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">WARNING 확인</button>}
-          {actionable && active.prescription_status === "VALIDATED" && !active.safety_check_results.some(r => r.result === "BLOCK") && !hasUnresolvedWarning && !hasUnacknowledgedWarning && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} onFinalize={async schedules => finalize(active.id, schedules)} /></div>}
+          {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working} onClick={() => void safety(active.id)} className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">{working ? "실행 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
+          {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && hasUnacknowledgedWarning && <button type="button" disabled={working} onClick={() => void acknowledge(active.id)} className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">WARNING 확인</button>}
+          {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && !active.safety_check_results.some(r => r.result === "BLOCK") && !hasUnresolvedWarning && !hasUnacknowledgedWarning && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} onFinalize={async schedules => finalize(active.id, schedules)} /></div>}
           {active.prescription_status === "FINAL" && <p className="shrink-0 rounded-lg bg-emerald-50 p-2 text-xs font-semibold text-emerald-700">최종 확정 완료 · 수정 불가</p>}
         </aside>
       </div> : <div className="min-h-0 flex-1 rounded-lg bg-slate-50 p-3 text-sm text-slate-500">{creationForm}<p className="mt-2">등록된 처방이 없습니다.</p></div>}

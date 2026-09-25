@@ -10,6 +10,8 @@ type ViewerMock = {
   destroy: ReturnType<typeof vi.fn>;
   forceRedraw: ReturnType<typeof vi.fn>;
   setMouseNavEnabled: ReturnType<typeof vi.fn>;
+  addTiledImage: ReturnType<typeof vi.fn>;
+  world: { removeItem: ReturnType<typeof vi.fn> };
   isDestroyed: () => boolean;
   viewport: Record<string, ReturnType<typeof vi.fn>>;
 };
@@ -28,6 +30,10 @@ const osd = vi.hoisted(() => {
       setMouseNavEnabled: vi.fn(() => {
         if (destroyed) throw new TypeError("Cannot read properties of undefined (reading 'tracking')");
       }),
+      addTiledImage: vi.fn((options: { success?: (event: { item: { setOpacity: ReturnType<typeof vi.fn> } }) => void }) => {
+        options.success?.({ item: { setOpacity: vi.fn() } });
+      }),
+      world: { removeItem: vi.fn() },
       isDestroyed: () => destroyed,
       viewport: {
         getCenter: vi.fn(() => ({ x: 0.5, y: 0.25 })),
@@ -54,6 +60,10 @@ vi.mock("openseadragon", () => ({ default: osd.factory }));
 
 function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+}
+
+function jpegResponse(content = "heatmap", status = 200) {
+  return new Response(content, { status, headers: { "Content-Type": "image/jpeg" } });
 }
 
 beforeEach(() => {
@@ -89,6 +99,7 @@ describe("CaseWsiEvidence", () => {
         sizes,
         tile_url_template: `/api/doctor/cases/slides/${slideId}/tiles/{level}/{x}/{y}.jpg`,
       });
+      if (url.endsWith(`/slides/${slideId}/tissue-heatmap/`)) return response({ detail: "not available" }, 404);
       if (url.includes("/image-annotations/")) return response({ detail: "temporary annotation failure" }, 503);
       throw new Error(`Unexpected request: ${url}`);
     });
@@ -142,6 +153,7 @@ describe("CaseWsiEvidence", () => {
           tile_url_template: `${url.replace("/viewer/", "/tiles/{level}/{x}/{y}.jpg")}`,
         });
       }
+      if (url.includes("/tissue-heatmap/")) return response({ detail: "not available" }, 404);
       if (url.includes("/image-annotations/")) return response([]);
       throw new Error(`Unexpected request: ${url}`);
     });
@@ -167,5 +179,52 @@ describe("CaseWsiEvidence", () => {
     expect(osd.viewers[2].destroy).toHaveBeenCalledOnce();
     expect(osd.viewers[2].isDestroyed()).toBe(true);
     await waitFor(() => expect(osd.viewers[3].viewport.goHome).toHaveBeenCalledWith(true));
+  });
+
+  it("adds a real heatmap as an OSD image layer without taking annotation interactions", async () => {
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/specimens/")) return response([{ id: "specimen-1", specimen_code: "SP-1" }]);
+      if (url.includes("/specimens/specimen-1/slides/")) return response([{
+        id: "slide-he", specimen_id: "specimen-1", image_asset_id: "asset-he", slide_code: "HE-1", stain: "HE", status: "READY", viewer_url: "/api/doctor/cases/slides/slide-he/viewer/",
+      }]);
+      if (url.endsWith("/slides/slide-he/viewer/")) return response({ width: 2048, height: 1024, tile_width: 512, tile_height: 512, max_level: 1, sizes: [[2048, 1024], [1024, 512]], tile_url_template: "/api/doctor/cases/slides/slide-he/tiles/{level}/{x}/{y}.jpg" });
+      if (url.endsWith("/slides/slide-he/tissue-heatmap/")) return jpegResponse();
+      if (url.includes("/image-annotations/")) return response([]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const createObjectUrl = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:heatmap");
+
+    render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-1" stain="HE" fillHeight />);
+
+    const toggle = await screen.findByRole("button", { name: "Heatmap" });
+    expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await waitFor(() => expect(osd.viewers[0].addTiledImage).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "Point" })).toBeEnabled();
+    toggle.click();
+    expect(await screen.findByLabelText("Heatmap 투명도")).toHaveValue("45");
+    expect(createObjectUrl).toHaveBeenCalled();
+  });
+
+  it("ignores a stale heatmap response after the Case viewer changes", async () => {
+    let resolveHeatmap!: (value: Response) => void;
+    const delayedHeatmap = new Promise<Response>((resolve) => { resolveHeatmap = resolve; });
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      const caseId = url.includes("case-b") ? "case-b" : "case-a";
+      if (url.endsWith("/specimens/")) return response([{ id: `specimen-${caseId}`, specimen_code: "SP-1" }]);
+      if (url.includes(`/specimens/specimen-${caseId}/slides/`)) return response([{ id: `slide-${caseId}`, specimen_id: `specimen-${caseId}`, image_asset_id: `asset-${caseId}`, slide_code: `slide-${caseId}`, stain: "HE", status: "READY", viewer_url: `/api/doctor/cases/slides/slide-${caseId}/viewer/` }]);
+      if (url.endsWith("/tissue-heatmap/")) return delayedHeatmap;
+      if (url.endsWith("/viewer/")) return response({ width: 2048, height: 1024, tile_width: 512, tile_height: 512, max_level: 1, sizes: [[2048, 1024], [1024, 512]], tile_url_template: "/tiles/{level}/{x}/{y}.jpg" });
+      if (url.includes("/image-annotations/")) return response([]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    const { rerender } = render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-a" stain="HE" fillHeight />);
+    await waitFor(() => expect(osd.viewers).toHaveLength(1));
+    rerender(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-b" stain="HE" fillHeight />);
+    await waitFor(() => expect(osd.viewers).toHaveLength(2));
+    resolveHeatmap(jpegResponse());
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(osd.viewers[0].addTiledImage).not.toHaveBeenCalled();
   });
 });

@@ -11,7 +11,7 @@ import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { ResultReviewPanel, WorkflowStatusFlow } from "./result-review-panel";
 import workspaceStyles from "./workspace.module.css";
 import { CaseChatPanel } from "./case-chat-panel";
-import { PathologyGeneReviewPanel } from "./pathology-gene-imaging-workstation";
+import { PathologyGeneImagingWorkspace } from "./pathology-gene-imaging-workstation";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
 import { CASE_WORKFLOW_STAGES, CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
 import { CasePatientSidebar } from "./case-patient-sidebar";
@@ -118,6 +118,12 @@ type TnmAnalysisResult = {
       confidence: number | string | null;
       result_payload?: { t?: Record<string, unknown>; n?: Record<string, unknown>; m?: Record<string, unknown> };
     };
+    genes?: {
+      gene_symbol?: string;
+      predicted_status?: string;
+      predicted_status_label?: string;
+      predicted_probability?: number | string | null;
+    }[];
   } | null;
 };
 
@@ -157,9 +163,17 @@ function formatAiTnm(value: Partial<NonNullable<NonNullable<TnmAnalysisResult["r
 }
 
 type GeneClinicalResult = {
+  id?: string;
   workflow_stage: string;
+  result_status?: string;
+  result_status_label?: string;
   result_date: string | null;
   result_detail: {
+    pathology?: {
+      malignancy_status_label?: string | null;
+      histologic_type?: string | null;
+      subtype?: string | null;
+    };
     gene?: {
       interpretation: string | null;
       additional_test_recommended: boolean;
@@ -167,6 +181,9 @@ type GeneClinicalResult = {
         gene_symbol: string;
         assessment: string;
         assessment_label: string;
+        source_assessment?: string;
+        source_assessment_label?: string;
+        alteration_code?: string | null;
         note: string | null;
       }[];
     };
@@ -507,6 +524,8 @@ export default function RespiratoryCaseDetailPage() {
 
   const [regimenCandidates, setRegimenCandidates] =
   useState<CaseRegimenCandidate[]>([]);
+  const [regimenCandidatesLoading, setRegimenCandidatesLoading] =
+  useState(false);
 
   const [caseTreatmentDecision, setCaseTreatmentDecision] =
   useState<CaseTreatmentDecision | null>(null);
@@ -552,6 +571,7 @@ export default function RespiratoryCaseDetailPage() {
   const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
   const [panelRetrying, setPanelRetrying] = useState<"AI" | "CLINICAL" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
+  const regimenRequestVersionRef = useRef(0);
   const resultSignatureRef = useRef("");
   const resultRefreshRequestRef = useRef(0);
   const aiToastStatusRef = useRef(new Map<string, string>());
@@ -683,6 +703,11 @@ export default function RespiratoryCaseDetailPage() {
   useEffect(() => {
     const controller = new AbortController();
     const applyCurrentResponse = (apply: () => void) => applyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted, apply);
+    const regimenRequestVersion = ++regimenRequestVersionRef.current;
+    const isLatestRegimenRequest = () => (
+      regimenRequestVersion === regimenRequestVersionRef.current
+      && canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)
+    );
     const fetchData = async () => {
       try {
         setLoading(true);
@@ -695,6 +720,7 @@ export default function RespiratoryCaseDetailPage() {
         setTnmClinicalResults([]);
         setResultSyncNotice("");
         setRegimenCandidates([]);
+        setRegimenCandidatesLoading(true);
         setCaseTreatmentDecision(null);
         setCaseOrders([]);
         setOrdersLoaded(false);
@@ -798,13 +824,19 @@ export default function RespiratoryCaseDetailPage() {
           const regimenCandidateData: CaseRegimenCandidate[] =
             await regimenCandidateResponse.json();
 
-          applyCurrentResponse(() => setRegimenCandidates(regimenCandidateData));
+          if (isLatestRegimenRequest()) {
+            setRegimenCandidates(regimenCandidateData);
+            setRegimenCandidatesLoading(false);
+          }
         } else {
-          applyCurrentResponse(() => setRegimenLoadError(
-            regimenCandidateRequest.status === "fulfilled"
-              ? getPanelFetchError(regimenCandidateRequest.value.status, "치료요법 후보")
-              : "치료요법 후보 조회 중 네트워크 오류가 발생했습니다.",
-          ));
+          if (isLatestRegimenRequest()) {
+            setRegimenCandidatesLoading(false);
+            setRegimenLoadError(
+              regimenCandidateRequest.status === "fulfilled"
+                ? getPanelFetchError(regimenCandidateRequest.value.status, "치료요법 후보")
+                : "치료요법 후보 조회 중 네트워크 오류가 발생했습니다.",
+            );
+          }
         }
 
         if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.ok) {
@@ -873,6 +905,7 @@ export default function RespiratoryCaseDetailPage() {
             ? err.message
             : "Case 조회 중 오류가 발생했습니다."
         ));
+        if (isLatestRegimenRequest()) setRegimenCandidatesLoading(false);
       } finally {
         applyCurrentResponse(() => setLoading(false));
       }
@@ -950,15 +983,21 @@ export default function RespiratoryCaseDetailPage() {
   const retryPanel = async (panel: "REGIMEN" | "TREATMENT" | "PRESCRIPTION") => {
     const requestCaseId = caseId;
     const toastId = `case-panel-retry-${requestCaseId}-${panel}`;
+    let regimenRetryVersion: number | null = null;
     setPanelRetrying(panel);
     showToast.info("정보를 다시 불러오고 있습니다.", { id: toastId });
     try {
       if (panel === "REGIMEN") {
+        regimenRetryVersion = ++regimenRequestVersionRef.current;
         setRegimenLoadError("");
+        setRegimenCandidatesLoading(true);
         const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/regimen-candidates/`);
         if (!response.ok) throw new Error(getPanelFetchError(response.status, "치료요법 후보"));
         const data: CaseRegimenCandidate[] = await response.json();
-        if (canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) setRegimenCandidates(data);
+        if (regimenRetryVersion === regimenRequestVersionRef.current && canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) {
+          setRegimenCandidates(data);
+          setRegimenCandidatesLoading(false);
+        }
       } else if (panel === "TREATMENT") {
         setTreatmentLoadError("");
         const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${requestCaseId}/treatment-decision/`);
@@ -985,7 +1024,10 @@ export default function RespiratoryCaseDetailPage() {
       if (!canApplyCaseResponse(requestCaseId, activeCaseIdRef.current, false)) return;
       console.error(retryError);
       const message = retryError instanceof Error ? retryError.message : "패널 조회에 실패했습니다.";
-      if (panel === "REGIMEN") setRegimenLoadError(message);
+      if (panel === "REGIMEN" && regimenRetryVersion === regimenRequestVersionRef.current) {
+        setRegimenCandidatesLoading(false);
+        setRegimenLoadError(message);
+      }
       else if (panel === "TREATMENT") setTreatmentLoadError(message);
       else setPrescriptionLoadError(message);
       showToast.error("정보를 다시 불러오지 못했습니다.", { id: toastId });
@@ -1210,11 +1252,9 @@ export default function RespiratoryCaseDetailPage() {
   const hasPdl1Result = tnmClinicalResults.some(
     (result) => result.workflow_stage === "PDL1",
   );
-  const pathologyResultForPdl1 = submittedPathologyResult?.workflow_stage === "PATHOLOGY_GENE"
-    ? submittedPathologyResult
-    : confirmedPathologyResult;
+  const pathologyResultForPdl1 = confirmedPathologyResult;
   const canAdvancePathologyToPdl1 = selectedCase?.current_stage === "PATHOLOGY_GENE"
-    && Boolean(pathologyResultForPdl1)
+    && pathologyResultForPdl1?.result_status === "CONFIRMED"
     && !confirmedPdl1Result;
   const canReorderCancelledPdl1 = selectedCase?.current_stage === "PDL1"
     && !activePdl1Order
@@ -1264,9 +1304,7 @@ export default function RespiratoryCaseDetailPage() {
     "PATHOLOGY_GENE_ANALYSIS",
   ) as TnmAnalysisResult | undefined;
 
-  const pathologyClinicalResult = tnmClinicalResults.find(
-    (result) => result.workflow_stage === "PATHOLOGY_GENE"
-  );
+  const pathologyClinicalResult = geneClinicalResult;
 
   const pathologyAiResult = selectPreferredAiResult(
     tnmAnalysisResults,
@@ -1992,7 +2030,7 @@ export default function RespiratoryCaseDetailPage() {
               </button>
             )}
             {selectedCase?.case_status === "ACTIVE" && canAdvancePathologyToPdl1 && selectedInfoMenu === "PATHOLOGY_GENE" && (
-              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" directProceed triggerLabel="결과 확정 및 PD-L1 검사 오더" confirmedResultId={pathologyResultForPdl1?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
+              <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" directProceed triggerLabel="PD-L1 검사 오더" confirmedResultId={pathologyResultForPdl1?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
             {selectedCase?.case_status === "ACTIVE" && canReorderCancelledPdl1 && selectedInfoMenu === "PDL1" && (
               <StageExaminationOrder caseId={caseId} orderType="PDL1" followUpPathologyOrder triggerLabel="PD-L1 재오더" onCreated={() => { void refreshCaseResults(); }} />
@@ -2149,6 +2187,8 @@ export default function RespiratoryCaseDetailPage() {
               )}
 
               {casePrescriptionMessage && (
+                casePrescriptionMessage !== "처방이 최종 확정되었습니다." || hasFinalPrescription
+              ) && (
                 <p className="mt-4 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
                   {casePrescriptionMessage}
                 </p>
@@ -2725,7 +2765,11 @@ export default function RespiratoryCaseDetailPage() {
             </p>
           </div>
 
-          {regimenCandidates.length > 0 ? (
+          {regimenCandidatesLoading ? (
+            <div role="status" className="rounded-2xl border border-emerald-100 bg-white px-6 py-16 text-center text-sm text-slate-400 shadow-sm">
+              치료요법 후보를 불러오는 중입니다.
+            </div>
+          ) : regimenLoadError ? null : regimenCandidates.length > 0 ? (
             <div className="grid grid-cols-2 gap-4">
               {regimenCandidates.map((candidate) => (
                 <section
@@ -3048,7 +3092,7 @@ export default function RespiratoryCaseDetailPage() {
           syncNotice={resultSyncNotice}
         />
         ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
-        <PathologyGeneReviewPanel
+        <PathologyGeneImagingWorkspace
           caseId={caseId}
           apiBaseUrl={API_BASE_URL}
           authorizedFetch={authorizedFetch}

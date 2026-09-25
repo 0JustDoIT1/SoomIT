@@ -18,8 +18,15 @@ from apps.patients.models import CurrentMedication, LabResult, MedicationSchedul
 from apps.patients.patient_authentication import PatientJWTAuthentication
 
 from .dur_client import DurClient, OPERATIONS
+from .gene_alterations import CANONICAL_ALTERATIONS
 from apps.radiology.services.tnm_stage_inference import TnmStageInferenceError, request_tnm_stage
 from .models import ClinicalResult, CtResult, Nodule, NoduleObservation, PDL1Result, Prescription, PrescriptionItem, RegimenDrug, SafetyCheckResult, TnmResult, TreatmentDecision, TreatmentRule
+from .safety import (
+    SafetyFreshness,
+    build_safety_input_snapshot as _safety_input_snapshot,
+    evaluate_prescription_safety_freshness,
+    explicit_item_seq as _explicit_item_seq,
+)
 from .serializers import (
     DoctorClinicalResultSerializer,
     DoctorPrescriptionSerializer,
@@ -481,29 +488,6 @@ def _valid_mfds_item_seq(drug):
     return value if value.isdigit() else None
 
 
-def _explicit_item_seq(obj):
-    value = getattr(obj, "mfds_item_seq", None)
-    if not isinstance(value, str):
-        return None
-    value = value.strip()
-    return value if value.isdigit() else None
-
-
-def _safety_input_snapshot(*, items, medications, patient_profile, latest_lab):
-    return {
-        "prescription_items": sorted([
-            {"id": str(getattr(item, "id", "")), "final_dose": str(getattr(item, "final_dose", None)), "mfds_item_seq": _explicit_item_seq(item)}
-            for item in items
-        ], key=lambda row: row["id"]),
-        "current_medications": sorted([
-            {"id": str(getattr(medication, "id", "")), "medication_name": getattr(medication, "medication_name", None), "ingredient_name": getattr(medication, "ingredient_name", None), "mfds_item_seq": _explicit_item_seq(medication)}
-            for medication in medications
-        ], key=lambda row: row["id"]),
-        "profile": {"exists": patient_profile is not None, "allergies": getattr(patient_profile, "allergies", None) if patient_profile is not None else None, "allergy_status": getattr(patient_profile, "allergy_status", None) if patient_profile is not None else None},
-        "latest_lab": None if latest_lab is None else {"id": str(getattr(latest_lab, "id", "")), "tested_at": str(getattr(latest_lab, "tested_at", "")), "creatinine": str(getattr(latest_lab, "creatinine", None)), "egfr": str(getattr(latest_lab, "egfr", None)), "ast": str(getattr(latest_lab, "ast", None)), "alt": str(getattr(latest_lab, "alt", None)), "total_bilirubin": str(getattr(latest_lab, "total_bilirubin", None))},
-    }
-
-
 def _allergy_names(patient_profile):
     """Return exact normalized strings and whether the recorded state is reliable."""
     if patient_profile is None:
@@ -671,9 +655,11 @@ class DoctorClinicalResultListAPIView(ListAPIView):
                 "tnm_detail",
                 "gene_detail",
                 "pdl1_detail",
+                "reviewed_ai_result",
             )
             .prefetch_related(
                 "gene_detail__gene_findings",
+                "reviewed_ai_result__gene_ai_results",
                 "ct_detail__nodule_observations__nodule",
             )
             .order_by("-confirmed_at", "-updated_at")
@@ -860,7 +846,12 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 {"detail": "해당 치료 유형은 Regimen 선택이 필요합니다."},
                 status=400,
             )
-        clinical_result = treatment_decision.clinical_result
+
+        # Keep using the row locked above. ``select_related`` materializes a
+        # second ClinicalResult/Case object for ``treatment_decision``; if that
+        # cached graph is serialized after the writes below, it can still
+        # expose the pre-confirmation Case.current_stage.
+        treatment_decision.clinical_result = clinical_result
 
         if clinical_result.result_status == "CONFIRMED":
             return Response(
@@ -902,6 +893,11 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
                 "updated_at",
             ]
         )
+
+        # The response contract is used to update the workflow badge
+        # immediately, so point the in-memory serializer graph at the updated
+        # locked Case instead of its stale select_related copy.
+        clinical_result.case = case
 
         serializer = DoctorTreatmentDecisionSerializer(treatment_decision)
 
@@ -1168,21 +1164,20 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                 status=400,
             )
 
-        snapshot_query = prescription.safety_check_results.filter(source_code="SAFETY_INPUT_SNAPSHOT")
-        snapshot_result = snapshot_query.order_by("-checked_at").first()
-        if snapshot_result is None:
-            return Response({"detail": "Safety re-run is required."}, status=400)
-        patient = prescription.case.patient
-        current_profile = PatientHealthProfile.objects.filter(patient=patient).first()
-        current_medications = list(CurrentMedication.objects.filter(patient=patient, is_active=True).select_related("drug"))
-        current_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at").first()
-        current_snapshot = _safety_input_snapshot(items=list(items), medications=current_medications, patient_profile=current_profile, latest_lab=current_lab)
-        try:
-            saved_snapshot = json.loads(snapshot_result.message or "")
-        except (TypeError, ValueError):
-            return Response({"detail": "Safety snapshot is invalid; re-run is required."}, status=400)
-        if saved_snapshot != current_snapshot:
-            return Response({"detail": "Safety inputs changed; re-run is required."}, status=400)
+        safety_freshness = evaluate_prescription_safety_freshness(
+            prescription,
+            items=list(items),
+        )
+        if safety_freshness.status != SafetyFreshness.CURRENT:
+            return Response(
+                {
+                    "detail": (
+                        "Safety Check 이후 환자 복용약, 알레르기 또는 검사 데이터가 변경되어 "
+                        "Safety Check를 다시 수행해야 합니다."
+                    )
+                },
+                status=400,
+            )
 
         if safety_results.filter(result="BLOCK").exists():
             return Response(
@@ -1221,35 +1216,6 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
                 },
                 status=400,
             )
-
-        latest_safety_result = safety_results.order_by("-checked_at").first()
-        if latest_safety_result is not None:
-            checked_at = latest_safety_result.checked_at
-            patient = prescription.case.patient
-            safety_inputs_changed = (
-                CurrentMedication.objects.filter(
-                    patient=patient,
-                    updated_at__gt=checked_at,
-                ).exists()
-                or PatientHealthProfile.objects.filter(
-                    patient=patient,
-                    updated_at__gt=checked_at,
-                ).exists()
-                or LabResult.objects.filter(
-                    patient=patient,
-                    updated_at__gt=checked_at,
-                ).exists()
-            )
-            if safety_inputs_changed:
-                return Response(
-                    {
-                        "detail": (
-                            "Safety Check 이후 환자 복용약, 알레르기 또는 검사 데이터가 변경되어 "
-                            "Safety Check를 다시 수행해야 합니다."
-                        )
-                    },
-                    status=400,
-                )
 
         finalization_serializer = PrescriptionFinalizeSerializer(
             data=request.data or {}, context={"prescription": prescription}
@@ -1598,9 +1564,12 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 status=400,
             )
 
-        if prescription.prescription_status != Prescription.PrescriptionStatus.DRAFT:
+        if prescription.prescription_status not in {
+            Prescription.PrescriptionStatus.DRAFT,
+            Prescription.PrescriptionStatus.VALIDATED,
+        }:
             return Response(
-                {"detail": "DRAFT 상태의 처방만 Safety Check를 수행할 수 있습니다."},
+                {"detail": "DRAFT 또는 재검사가 필요한 VALIDATED 처방만 Safety Check를 수행할 수 있습니다."},
                 status=400,
             )
 
@@ -1616,6 +1585,17 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
                 {"detail": "모든 처방 약물의 최종 용량을 입력한 후 Safety Check를 수행할 수 있습니다."},
                 status=400,
             )
+
+        if prescription.prescription_status == Prescription.PrescriptionStatus.VALIDATED:
+            safety_freshness = evaluate_prescription_safety_freshness(
+                prescription,
+                items=items,
+            )
+            if safety_freshness.status == SafetyFreshness.CURRENT:
+                return Response(
+                    {"detail": "현재 Safety Check가 최신 상태이므로 중복 실행할 수 없습니다."},
+                    status=400,
+                )
 
         patient = prescription.case.patient
 
@@ -1944,17 +1924,15 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             })
 
     # Codes describe manually verified molecular findings, never AI predictions.
-    SUPPORTED_ALTERATIONS = {
-        "EGFR": frozenset({"EGFR_EX19_DEL", "EGFR_L858R"}),
-        "BRAF": frozenset({"BRAF_V600E"}),
-        "MET": frozenset({"MET_EXON14_SKIPPING"}),
-    }
+    SUPPORTED_ALTERATIONS = CANONICAL_ALTERATIONS
     TARGET_RULES = {"TR01": "EGFR", "TR04": "BRAF", "TR05": "MET"}
     CONTEXT_GENES = frozenset({"TP53", "KEAP1", "STK11"})
     HISTOLOGY_ALIASES = {
         "adenocarcinoma": "adenocarcinoma", "선암": "adenocarcinoma",
+        "luad": "adenocarcinoma",
         "squamous cell carcinoma": "squamous", "squamous": "squamous",
         "편평상피암": "squamous",
+        "lusc": "squamous",
         "non-squamous": "non-squamous", "non_squamous": "non-squamous",
         "비편평": "non-squamous",
         "nsclc": "nsclc", "non-small cell lung cancer": "nsclc",
@@ -1969,6 +1947,26 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
     @classmethod
     def _histology(cls, value):
         return cls.HISTOLOGY_ALIASES.get(value.strip().casefold()) if isinstance(value, str) else None
+
+    @classmethod
+    def _histology_matches(cls, expected, actual):
+        normalized = cls._histology(expected)
+        if normalized == "non-squamous":
+            return actual in {"adenocarcinoma", "non-squamous"}
+        return normalized is not None and normalized == actual
+
+    @staticmethod
+    def _stage_matches(actual, expected_values):
+        if not isinstance(actual, str):
+            return False
+        normalized_actual = actual.strip().upper()
+        for expected in expected_values:
+            normalized_expected = expected.strip().upper()
+            if normalized_actual == normalized_expected:
+                return True
+            if normalized_expected == "IV" and normalized_actual in {"IVA", "IVB"}:
+                return True
+        return False
 
     def _candidate_input(self):
         if hasattr(self, "_candidate_input_cache"):
@@ -2009,6 +2007,14 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             ).first()
             if pdl1 is not None:
                 data["pdl1_tps"] = pdl1.tps_percent
+            treatment_decision = TreatmentDecision.objects.filter(
+                clinical_result__case=case,
+            ).order_by(
+                F("clinical_result__updated_at").desc(nulls_last=True),
+                "-clinical_result_id",
+            ).first()
+            if treatment_decision is not None:
+                data["treatment_line"] = treatment_decision.treatment_line
         self._candidate_input_cache = data
         return data
 
@@ -2049,8 +2055,6 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
 
     def _match_rule(self, rule, data):
         """Return reasons only for a complete match; None includes missing inputs."""
-        if rule.rule_code == "TR03":
-            return None  # Negative-test coverage/unsupported-driver contract is pending.
         try:
             stage = self._condition(rule.stage_condition, {"stage"})
             biomarker = self._condition(rule.biomarker_condition, {"positive", "alterations"})
@@ -2063,11 +2067,11 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 reasons.append(f"암종 일치: {data['cancer_type']}")
             if rule.histology and rule.histology.strip():
                 expected = self._histology(rule.histology)
-                if expected is None or expected != data["histology"]:
+                if expected is None or not self._histology_matches(rule.histology, data["histology"]):
                     return None
                 reasons.append(f"조직형 일치: {expected}")
             if "stage" in stage:
-                if data["stage_group"] not in self._strings(stage["stage"]):
+                if not self._stage_matches(data["stage_group"], self._strings(stage["stage"])):
                     return None
                 reasons.append(f"병기 일치: {data['stage_group']}")
             if rule.treatment_line and rule.treatment_line.strip():
@@ -2097,7 +2101,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 elif finding.assessment != "LIKELY_NEGATIVE" or code:
                     molecular_uncertain = True
             # No unsupported/ambiguous driver may fall through to another candidate.
-            if molecular_required and molecular_uncertain:
+            if molecular_uncertain:
                 return None
 
             required = set()
@@ -2124,9 +2128,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 if not matched:
                     return None
                 reasons.append(f"바이오마커 일치: {gene} / {', '.join(matched)}")
-            # TR02 cannot infer adequate negative coverage from missing supported pairs.
-            # Keep it closed until a molecular exclusion/negative-input contract exists.
-            if rule.rule_code == "TR02" or (not required and pairs):
+            if not required and pairs:
                 return None
             return reasons
         except (ValueError, TypeError, ArithmeticError):
@@ -2155,7 +2157,7 @@ class DoctorTreatmentEvidenceAPIView(APIView):
     permission_classes = [IsAuthenticated]
     NCI_PDQ_URI = "gs://soomit-bucket/knowledge/lung-cancer/nsclc-treatment-pdq/nci-nsclc-pdq.pdf"
 
-    def get(self, request, case_id):
+    def build_response(self, request, case_id, *, selected_regimen_id=None):
         candidate_view = DoctorRegimenCandidateListAPIView()
         candidate_view.request = request
         candidate_view.kwargs = {"case_id": case_id}
@@ -2164,15 +2166,21 @@ class DoctorTreatmentEvidenceAPIView(APIView):
         if case is None:
             return Response({"status": "REGIMEN_NOT_CURRENT_CANDIDATE"}, status=404)
 
-        decision = TreatmentDecision.objects.filter(
-            clinical_result__case=case, clinical_result__result_status="CONFIRMED",
-        ).select_related("selected_regimen").order_by("-clinical_result__confirmed_at").first()
-        regimen = decision.selected_regimen if decision else None
-        if regimen is None:
-            return Response({"status": "NO_SELECTED_REGIMEN", "case_id": str(case_id)})
-
         candidates = list(candidate_view.get_queryset())
-        matching = next((rule for rule in candidates if rule.regimen_id == regimen.id), None)
+        if selected_regimen_id is not None:
+            matching = next(
+                (rule for rule in candidates if rule.regimen_id == selected_regimen_id),
+                None,
+            )
+            regimen = matching.regimen if matching is not None else None
+        else:
+            decision = TreatmentDecision.objects.filter(
+                clinical_result__case=case, clinical_result__result_status="CONFIRMED",
+            ).select_related("selected_regimen").order_by("-clinical_result__confirmed_at").first()
+            regimen = decision.selected_regimen if decision else None
+            if regimen is None:
+                return Response({"status": "NO_SELECTED_REGIMEN", "case_id": str(case_id)})
+            matching = next((rule for rule in candidates if rule.regimen_id == regimen.id), None)
         if matching is None:
             return Response({"status": "REGIMEN_NOT_CURRENT_CANDIDATE", "case_id": str(case_id)})
 
@@ -2209,9 +2217,12 @@ class DoctorTreatmentEvidenceAPIView(APIView):
             "regimen": {"id": str(regimen.id), "code": regimen.regimen_code, "name": regimen.regimen_name},
             "treatment_rule": {
                 "rule_code": matching.rule_code,
-                "match_reasons": candidate_view._match_reasons.get(matching.id, []),
+                "match_reasons": getattr(candidate_view, "_match_reasons", {}).get(matching.id, []),
                 "evidence_source": matching.evidence_source,
             },
             "clinical_context": context,
             "evidence": evidence,
         })
+
+    def get(self, request, case_id):
+        return self.build_response(request, case_id)

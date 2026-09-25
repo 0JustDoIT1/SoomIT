@@ -7,12 +7,20 @@ import {
   fetchPathologyCompletedExams,
   fetchPathologyWorkstation,
   fetchPdl1Analyses,
+  submitPathologyForReview,
 } from "./_lib/pathology-workstation-api";
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
   vi.mocked(fetchPdl1Analyses).mockResolvedValue([]);
   vi.mocked(fetchPathologyCompletedExams).mockResolvedValue([]);
+  vi.mocked(submitPathologyForReview).mockResolvedValue({
+    review_work_item_id: "review-1",
+    case_id: "case-1",
+    status: "PENDING",
+    task_type: "DIAGNOSTIC_REVIEW",
+    submitted: true,
+  });
 });
 
 function emptyWorkflow(caseId: string, patientName = caseId) {
@@ -69,9 +77,11 @@ it("loads completed pathology exams from the dedicated read-only endpoint", asyn
 
 vi.mock("./_lib/pathology-workstation-api", () => ({
   fetchPathologyCaseWorkflow: vi.fn(), fetchPathologyCompletedExams: vi.fn(), fetchPathologyWorkstation: vi.fn(),
+  fetchPathologyGeneAnalyses: vi.fn().mockResolvedValue([]),
   fetchPathologyWsiPreview: vi.fn().mockResolvedValue(new Blob(["preview"], { type: "image/jpeg" })),
   fetchPathologyWsiTissueHeatmap: vi.fn().mockResolvedValue(null),
   fetchPdl1Analyses: vi.fn(),
+  runPathologyGeneAnalysis: vi.fn(), uploadPathologyGeneInput: vi.fn(),
   runPdl1Analysis: vi.fn(), uploadPdl1Input: vi.fn(), savePdl1Draft: vi.fn(), submitPathologyForReview: vi.fn(),
 }));
 
@@ -185,6 +195,10 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
           malignancy_assessment_label: "악성",
           malignancy_probability: 0.95,
         },
+        genes: [
+          { gene_symbol: "EGFR", predicted_status: "PREDICTED_POSITIVE", predicted_status_label: "양성 예측", predicted_probability: 0.91 },
+          { gene_symbol: "BRAF", predicted_status: "PREDICTED_NEGATIVE", predicted_status_label: "음성 예측", predicted_probability: 0.12 },
+        ],
       },
     },
     latest_gene_analysis: null,
@@ -235,7 +249,7 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
 
   render(<Page />);
   await userEvent.click(await screen.findByText("계층환자"));
-  await screen.findByText("선택 환자 정보");
+  await screen.findByRole("region", { name: "계층환자" });
 
   const patientSummary = screen.getByRole("region", { name: "계층환자" });
   expect(within(patientSummary).getByText("현재 검사")).toBeInTheDocument();
@@ -257,8 +271,17 @@ it("presents the selected patient, pathology workflow, result metrics, and submi
   expect(screen.getAllByText("아형 신뢰도").length).toBeGreaterThan(0);
   expect(screen.getAllByText("악성 판정").length).toBeGreaterThan(0);
   expect(screen.getAllByText("악성 확률").length).toBeGreaterThan(0);
-  expect(screen.getByText("AI 분석 결과를 의사 판독 대상으로 제출합니다.")).toBeInTheDocument();
+  expect(screen.getByText("완료된 현재 검사 결과만 제출할 수 있습니다.")).toBeInTheDocument();
 
   expect(screen.queryByRole("button", { name: "AI 결과 보기" })).not.toBeInTheDocument();
   expect(screen.getAllByText("AI 분석 결과").length).toBeGreaterThan(0);
+
+  expect(screen.queryByText("의료진 유전자 검토")).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("EGFR 세부 변이")).not.toBeInTheDocument();
+  await userEvent.click(screen.getByRole("button", { name: "의사에게 제출" }));
+  await waitFor(() => expect(submitPathologyForReview).toHaveBeenCalledWith(
+    "case-1",
+    "order-1",
+    "analysis-1",
+  ));
 });

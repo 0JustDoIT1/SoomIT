@@ -24,14 +24,42 @@ class TreatmentRuleSourceTests(SimpleTestCase):
         for row in self.rows:
             values = {key: value for key, value in row.items() if key != "regimen_code"}
             rule = TreatmentRule(**values)
-            gene, codes = next(iter(row["biomarker_condition"]["alterations"].items()))
-            for code in [*codes, None, "UNSUPPORTED"]:
-                data = dict(cancer_type="NSCLC", histology=None, stage_group=None,
-                            pdl1_tps=None, treatment_line=None, ecog=None,
-                            findings=[GeneFinding(gene_symbol=gene, alteration_code=code,
-                                                  assessment="LIKELY_POSITIVE")])
-                with self.subTest(rule=row["rule_code"], regimen=row["regimen_code"], code=code):
-                    self.assertEqual(view._match_rule(rule, data) is not None, code in codes)
+            data = dict(
+                cancer_type="NSCLC",
+                histology="adenocarcinoma",
+                stage_group="IV",
+                pdl1_tps=50,
+                treatment_line="1L",
+                ecog=None,
+                findings=[],
+            )
+            if row["biomarker_condition"]:
+                gene, codes = next(iter(row["biomarker_condition"]["alterations"].items()))
+                for code in [*codes, None, "UNSUPPORTED"]:
+                    candidate_data = {
+                        **data,
+                        "findings": [
+                            GeneFinding(
+                                gene_symbol=gene,
+                                alteration_code=code,
+                                assessment="LIKELY_POSITIVE",
+                            )
+                        ],
+                    }
+                    with self.subTest(
+                        rule=row["rule_code"], regimen=row["regimen_code"], code=code,
+                    ):
+                        self.assertEqual(
+                            view._match_rule(rule, candidate_data) is not None,
+                            code in codes,
+                        )
+            else:
+                with self.subTest(rule=row["rule_code"], regimen=row["regimen_code"]):
+                    self.assertIsNotNone(view._match_rule(rule, data))
+                if row["rule_code"] == "TR02":
+                    self.assertIsNone(view._match_rule(rule, {**data, "pdl1_tps": 49}))
+                if row["rule_code"] == "TR03":
+                    self.assertIsNone(view._match_rule(rule, {**data, "histology": "squamous"}))
 
     def test_reuse_and_both_conflict_keys(self):
         values = {key: value for key, value in self.rows[0].items() if key != "regimen_code"}
@@ -62,11 +90,11 @@ class TreatmentRuleSourceTests(SimpleTestCase):
     @patch("apps.clinical.management.commands.import_treatment_rules_source.Regimen.objects")
     def test_dry_run_and_missing_regimen(self, regimens, rules):
         regimens.filter.return_value = [Regimen(regimen_code=code, cancer_type="NSCLC")
-                                       for code in ("R1", "R2", "R5", "R6")]
+                                       for code in ("R1", "R2", "R3", "R4", "R5", "R6")]
         rules.all.return_value = []
         output = StringIO()
         call_command("import_treatment_rules_source", dry_run=True, stdout=output)
-        self.assertIn("CREATE=4 REUSE=0 CONFLICT=0", output.getvalue())
+        self.assertIn("CREATE=6 REUSE=0 CONFLICT=0", output.getvalue())
         self.assertEqual([call[0] for call in rules.mock_calls], ["all"])
         regimens.filter.return_value = []
         with self.assertRaisesMessage(CommandError, "Missing or incompatible regimen"):
@@ -77,28 +105,29 @@ class TreatmentRuleSourceTests(SimpleTestCase):
     @patch("apps.clinical.management.commands.import_treatment_rules_source.Regimen.objects")
     def test_apply_then_reuse(self, regimens, rules, atomic):
         regimens.filter.return_value = [Regimen(regimen_code=code, cancer_type="NSCLC")
-                                       for code in ("R1", "R2", "R5", "R6")]
+                                       for code in ("R1", "R2", "R3", "R4", "R5", "R6")]
         rules.all.return_value = []
         call_command("import_treatment_rules_source", stdout=StringIO())
-        self.assertEqual(rules.create.call_count, 4)
+        self.assertEqual(rules.create.call_count, 6)
         atomic.return_value.__enter__.assert_called_once()
         atomic.return_value.__exit__.assert_called_once_with(None, None, None)
         created = [TreatmentRule(**call.kwargs) for call in rules.create.call_args_list]
         self.assertEqual({(r.rule_code, r.priority) for r in created},
-                         {("TR01", 1), ("TR01", 2), ("TR04", 1), ("TR05", 1)})
+                         {("TR01", 1), ("TR01", 2), ("TR02", 1), ("TR03", 1),
+                          ("TR04", 1), ("TR05", 1)})
         rules.all.return_value = created
         rules.create.reset_mock()
         output = StringIO()
         call_command("import_treatment_rules_source", stdout=output)
         rules.create.assert_not_called()
-        self.assertIn("CREATE=0 REUSE=4 CONFLICT=0 ERROR=0", output.getvalue())
+        self.assertIn("CREATE=0 REUSE=6 CONFLICT=0 ERROR=0", output.getvalue())
 
     @patch("apps.clinical.management.commands.import_treatment_rules_source.transaction.atomic")
     @patch("apps.clinical.management.commands.import_treatment_rules_source.TreatmentRule.objects")
     @patch("apps.clinical.management.commands.import_treatment_rules_source.Regimen.objects")
     def test_conflicts_and_fk_errors_prevent_all_writes(self, regimens, rules, atomic):
         targets = [Regimen(regimen_code=code, cancer_type="NSCLC")
-                   for code in ("R1", "R2", "R5", "R6")]
+                   for code in ("R1", "R2", "R3", "R4", "R5", "R6")]
         regimens.filter.return_value = targets
         values = {k: v for k, v in self.rows[-1].items() if k != "regimen_code"}
         for change in ({"regimen_id": targets[-1].pk, "evidence_source": "different"},
@@ -119,7 +148,7 @@ class TreatmentRuleSourceTests(SimpleTestCase):
     @patch("apps.clinical.management.commands.import_treatment_rules_source.Regimen.objects")
     def test_mid_write_exception_exits_atomic_for_rollback(self, regimens, rules, atomic):
         regimens.filter.return_value = [Regimen(regimen_code=code, cancer_type="NSCLC")
-                                       for code in ("R1", "R2", "R5", "R6")]
+                                       for code in ("R1", "R2", "R3", "R4", "R5", "R6")]
         rules.all.return_value = []
         failure = IntegrityError("simulated concurrent conflict")
         rules.create.side_effect = [TreatmentRule(), failure]

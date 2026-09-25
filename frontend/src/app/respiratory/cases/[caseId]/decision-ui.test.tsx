@@ -23,9 +23,10 @@ it("uses one primary action and locks input, cancel and Escape while busy", () =
   const onClose = vi.fn();
   const onSubmit = vi.fn();
   render(<DecisionModal title="결과 처리" busy error="이전 오류" primaryLabel="Case 종료" onClose={onClose} onSubmit={onSubmit}><label>소견<input /></label></DecisionModal>);
-  expect(screen.getAllByRole("button")).toHaveLength(2);
+  expect(screen.getAllByRole("button")).toHaveLength(3);
   expect(screen.getByLabelText("소견")).toBeDisabled();
   expect(screen.getByRole("button", { name: "처리 중" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "닫기" })).toBeDisabled();
   expect(screen.getByRole("button", { name: "취소" })).toBeDisabled();
   expect(screen.getByRole("alert")).toHaveTextContent("이전 오류");
   fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });

@@ -4,8 +4,10 @@ from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis, AnalysisType
 
-from .models import ClinicalResult, CtResult, NoduleObservation, TnmResult
+from .models import ClinicalResult, CtResult, GeneFinding, NoduleObservation, TnmResult
+from .gene_alterations import AI_TO_CLINICAL_ASSESSMENT, canonical_code_gene, canonicalize_alteration_code
 from .models import Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision, TreatmentRule
+from .safety import evaluate_prescription_safety_freshness
 
 
 TNM_T_VALUES = {
@@ -461,6 +463,46 @@ class PatientClinicalResultSerializer(serializers.ModelSerializer):
             return sections
 
         return sections
+# 호흡기내과가 병리과 전달 결과를 최종 임상 유전자 결과로 검토할 때만 사용합니다.
+class DoctorGeneFindingWriteSerializer(serializers.Serializer):
+    gene_symbol = serializers.CharField(max_length=30)
+    assessment = serializers.ChoiceField(choices=GeneFinding.Assessment.choices)
+    alteration_code = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, attrs):
+        gene_symbol = attrs["gene_symbol"].strip().upper()
+        alteration_code = canonicalize_alteration_code(gene_symbol, attrs.get("alteration_code"))
+        owner_gene = canonical_code_gene(alteration_code)
+        if owner_gene is not None and owner_gene != gene_symbol:
+            raise serializers.ValidationError({
+                "alteration_code": f"{alteration_code} is not a {gene_symbol} alteration.",
+            })
+        if alteration_code is not None and attrs["assessment"] != GeneFinding.Assessment.LIKELY_POSITIVE:
+            raise serializers.ValidationError({
+                "alteration_code": "An alteration can only be recorded for a positive finding.",
+            })
+        attrs["gene_symbol"] = gene_symbol
+        attrs["alteration_code"] = alteration_code
+        return attrs
+
+
+class DoctorPathologyGeneReviewSerializer(serializers.Serializer):
+    gene_findings = DoctorGeneFindingWriteSerializer(many=True)
+
+    def validate_gene_findings(self, value):
+        symbols = [finding["gene_symbol"] for finding in value]
+        if len(symbols) != len(set(symbols)):
+            raise serializers.ValidationError("Gene symbols must be unique.")
+        result = self.context["result"]
+        existing_symbols = {
+            symbol.strip().upper()
+            for symbol in result.gene_detail.gene_findings.values_list("gene_symbol", flat=True)
+        }
+        if set(symbols) != existing_symbols:
+            raise serializers.ValidationError("All submitted pathology gene findings must be reviewed exactly once.")
+        return value
+
+
 # 호흡기내과 - Case 검사 결과 상세 조회용
 class DoctorClinicalResultSerializer(serializers.ModelSerializer):
     workflow_stage = serializers.CharField(read_only=True)
@@ -569,6 +611,16 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
         # 유전자
         if hasattr(obj, "gene_detail"):
             gene = obj.gene_detail
+            source_assessments = {}
+            reviewed_ai_result = getattr(obj, "reviewed_ai_result", None)
+            ai_gene_results = getattr(reviewed_ai_result, "gene_ai_results", None)
+            if ai_gene_results is not None:
+                source_assessments = {
+                    finding.gene_symbol.strip().upper(): AI_TO_CLINICAL_ASSESSMENT.get(
+                        finding.predicted_status,
+                    )
+                    for finding in ai_gene_results.all()
+                }
             detail["gene"] = {
                 "interpretation": gene.interpretation,
                 "additional_test_recommended": gene.additional_test_recommended,
@@ -578,6 +630,16 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
                         "alteration_code": finding.alteration_code,
                         "assessment": finding.assessment,
                         "assessment_label": finding.get_assessment_display(),
+                        "source_assessment": source_assessments.get(
+                            finding.gene_symbol.strip().upper(),
+                            finding.assessment,
+                        ),
+                        "source_assessment_label": GeneFinding.Assessment(
+                            source_assessments.get(
+                                finding.gene_symbol.strip().upper(),
+                                finding.assessment,
+                            )
+                        ).label,
                         "note": finding.note,
                     }
                     for finding in gene.gene_findings.all()
@@ -658,6 +720,7 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
             "ai_recommendation_action_label",
             "treatment_type",
             "treatment_type_label",
+            "treatment_line",
             "requires_prescription",
             "selected_regimen",
             "selected_regimen_detail",
@@ -786,6 +849,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
         read_only=True,
     )
     safety_check_results = serializers.SerializerMethodField()
+    safety_freshness = serializers.SerializerMethodField()
 
     def get_safety_check_results(self, obj):
         results = [
@@ -794,6 +858,9 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
             if result.source_code != "SAFETY_INPUT_SNAPSHOT"
         ]
         return SafetyCheckResultSerializer(results, many=True).data
+
+    def get_safety_freshness(self, obj):
+        return evaluate_prescription_safety_freshness(obj).status
 
     class Meta:
         model = Prescription
@@ -815,6 +882,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
             "cancellation_reason",
             "items",
             "safety_check_results",
+            "safety_freshness",
             "created_at",
             "updated_at",
         ]

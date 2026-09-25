@@ -20,7 +20,7 @@ from apps.ai_results.models import (
     PDL1AiResult,
 )
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult, PDL1Result, PathologyResult
+from apps.clinical.models import ClinicalResult, GeneFinding, PDL1Result, PathologyResult
 from apps.patients.models import Patient
 from apps.pathology.models import (
     PathologySpecimen,
@@ -289,6 +289,60 @@ class PathologyReadAPITestCase(APITestCase):
         self.authenticate_pathology_user()
         url = reverse("pathology:case-submit-for-review", kwargs={"case_id": self.case.id})
         return url, order, specimen, asset, wsi
+
+    def test_pathology_review_submission_does_not_accept_final_alterations(self):
+        url = self.prepare_review_submission()
+
+        response = self.client.post(
+            url,
+            {
+                "work_item_id": self.work_item.id,
+                "ai_analysis_id": self.ai_analysis.id,
+                "gene_findings": [
+                    {"gene_symbol": "EGFR", "assessment": "LIKELY_POSITIVE", "alteration_code": "Exon 19 deletion"},
+                    {"gene_symbol": "BRAF", "assessment": "LIKELY_POSITIVE", "alteration_code": "V600E"},
+                    {"gene_symbol": "MET", "assessment": "LIKELY_POSITIVE", "alteration_code": "Exon 14 skipping"},
+                    {"gene_symbol": "TP53", "assessment": "LIKELY_POSITIVE", "alteration_code": "TP53 R273H"},
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        findings = {
+            finding.gene_symbol: finding
+            for finding in GeneFinding.objects.filter(
+                gene_result__clinical_result__case=self.case,
+                gene_result__clinical_result__workflow_stage=WorkflowStage.PATHOLOGY_GENE,
+            )
+        }
+        self.assertEqual(findings["EGFR"].assessment, GeneFinding.Assessment.LIKELY_POSITIVE)
+        self.assertTrue(all(finding.alteration_code is None for finding in findings.values()))
+
+    def test_pathology_review_submission_keeps_ai_assessment_without_actionable_code(self):
+        url = self.prepare_review_submission()
+
+        response = self.client.post(
+            url,
+            {
+                "work_item_id": self.work_item.id,
+                "ai_analysis_id": self.ai_analysis.id,
+                "gene_findings": [{
+                    "gene_symbol": "EGFR",
+                    "assessment": "LIKELY_POSITIVE",
+                    "alteration_code": None,
+                }],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        finding = GeneFinding.objects.get(
+            gene_result__clinical_result__case=self.case,
+            gene_symbol="EGFR",
+        )
+        self.assertEqual(finding.assessment, GeneFinding.Assessment.LIKELY_POSITIVE)
+        self.assertIsNone(finding.alteration_code)
 
     def test_pdl1_review_submission_creates_clinical_draft_from_succeeded_ai_result(self):
         url, order, _, asset, wsi = self.prepare_pdl1_review_submission()
@@ -573,12 +627,20 @@ class PathologyReadAPITestCase(APITestCase):
         payload = {"work_item_id": self.work_item.id, "ai_analysis_id": self.ai_analysis.id}
 
         first = self.client.post(url, payload, format="json")
+        finding = GeneFinding.objects.get(
+            gene_result__clinical_result__case=self.case,
+            gene_symbol="EGFR",
+        )
+        finding.alteration_code = "EGFR_EX19_DEL"
+        finding.save(update_fields=["alteration_code"])
         second = self.client.post(url, payload, format="json")
 
         self.assertEqual(first.status_code, status.HTTP_201_CREATED)
         self.assertEqual(second.status_code, status.HTTP_200_OK)
         self.assertFalse(second.data["submitted"])
         self.assertEqual(first.data["review_work_item_id"], second.data["review_work_item_id"])
+        finding.refresh_from_db()
+        self.assertEqual(finding.alteration_code, "EGFR_EX19_DEL")
         self.assertEqual(
             PathologyWorkItem.objects.filter(
                 case=self.case,

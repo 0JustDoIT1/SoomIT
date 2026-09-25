@@ -24,9 +24,14 @@ from apps.pathology.services.orthanc import (
     get_wsi_tile,
     get_wsi_tile_grid,
 )
+from apps.pathology.services.pathology_storage import (
+    PathologyStorageError,
+    download_pathology_wsi_tissue_heatmap,
+)
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
-from apps.clinical.models import ClinicalResult, Prescription, TreatmentDecision, XrayResult
+from apps.clinical.models import ClinicalResult, GeneFinding, Prescription, TreatmentDecision, XrayResult
+from apps.clinical.serializers import DoctorClinicalResultSerializer, DoctorPathologyGeneReviewSerializer
 from apps.radiology.models import RadiologyReview
 from apps.clinical.views import DoctorTreatmentEvidenceAPIView
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
@@ -39,7 +44,7 @@ from apps.radiology.services.orthanc_dicomweb import (
     retrieve_instance,
 )
 
-from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
+from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
 from apps.ai_results.models import AiAnalysis, AnalysisType
 from .serializers import (
     DoctorCaseImageAssetSerializer,
@@ -49,6 +54,9 @@ from .serializers import (
     LungCancerCaseSerializer,
     MedicalOpinionRequestSerializer,
     MedicalOpinionResponseSerializer,
+    TreatmentOpinionRequestSerializer,
+    PhysicianTreatmentOpinionSerializer,
+    PhysicianTreatmentOpinionWriteSerializer,
     FollowUpPathologyOrderCreateSerializer,
     ExaminationOrderCreateSerializer,
     ExaminationOrderUpdateSerializer,
@@ -331,6 +339,25 @@ class DoctorSlideThumbnailAPIView(APIView):
         return response
 
 
+class DoctorSlideTissueHeatmapAPIView(APIView):
+    """Expose an existing pathology AI heatmap only to the assigned Case team."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, slide_id):
+        slide = _doctor_slide_or_404(request, slide_id)
+        try:
+            content, content_type = download_pathology_wsi_tissue_heatmap(
+                slide.image_asset.storage_uri,
+            )
+        except PathologyStorageError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        response = HttpResponse(content, content_type=content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
 class DoctorSlideTileAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
@@ -583,11 +610,22 @@ class DoctorTreatmentOpinionAPIView(APIView):
     )
 
     def post(self, request, case_id):
-        evidence_response = DoctorTreatmentEvidenceAPIView().get(request, case_id)
+        request_serializer = TreatmentOpinionRequestSerializer(data=request.data or {})
+        request_serializer.is_valid(raise_exception=True)
+        draft_context = request_serializer.validated_data
+        evidence_response = DoctorTreatmentEvidenceAPIView().build_response(
+            request,
+            case_id,
+            selected_regimen_id=draft_context.get("selected_regimen"),
+        )
         if evidence_response.status_code != status.HTTP_200_OK:
             return evidence_response
         evidence = evidence_response.data
+        if evidence.get("status") != "AVAILABLE":
+            return Response(evidence, status=status.HTTP_400_BAD_REQUEST)
         case = LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user, case_status="ACTIVE").first()
+        if case is None:
+            return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
         prescription = Prescription.objects.filter(case=case).prefetch_related("items", "safety_check_results").order_by("-created_at").first()
         prescription_data = {"prescription_available": prescription is not None}
         safety_data = {"safety_status": "safety_not_run", "results": []}
@@ -605,6 +643,10 @@ class DoctorTreatmentOpinionAPIView(APIView):
                 else "safety_completed") if results else "safety_not_run"
         prompt_context = {"clinical_context": evidence["clinical_context"], "regimen": evidence["regimen"],
             "treatment_rule": evidence["treatment_rule"], "evidence": evidence["evidence"],
+            "draft_treatment": {
+                "treatment_type": draft_context.get("treatment_type", ""),
+                "treatment_plan": draft_context.get("treatment_plan", ""),
+            },
             "prescription": prescription_data, "safety": safety_data}
         try:
             opinion = request_chat_completion([{"role": "system", "content": self.SYSTEM_PROMPT},
@@ -614,6 +656,54 @@ class DoctorTreatmentOpinionAPIView(APIView):
         return Response({"status": "AVAILABLE", "case_id": str(case_id), "regimen": evidence["regimen"],
             "treatment_rule": evidence["treatment_rule"], "opinion": opinion, "sources": evidence["evidence"]["sources"],
             "safety_status": safety_data["safety_status"], "review_required": True})
+
+
+class DoctorPhysicianTreatmentOpinionAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    @staticmethod
+    def _case(request, case_id):
+        return LungCancerCase.objects.filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
+
+    def get(self, request, case_id):
+        case = self._case(request, case_id)
+        if case is None:
+            return Response({"detail": "Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        opinion = PhysicianTreatmentOpinion.objects.filter(case=case).first()
+        if opinion is None:
+            return Response({
+                "id": None,
+                "case": str(case.id),
+                "physician_opinion": "",
+                "created_at": None,
+                "updated_at": None,
+            })
+        return Response(PhysicianTreatmentOpinionSerializer(opinion).data)
+
+    def put(self, request, case_id):
+        case = self._case(request, case_id)
+        if case is None:
+            return Response({"detail": "Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        if case.current_stage != WorkflowStage.TREATMENT:
+            return Response(
+                {"detail": "호흡기내과 치료 소견은 치료결정 단계에서만 저장할 수 있습니다."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        request_serializer = PhysicianTreatmentOpinionWriteSerializer(data=request.data)
+        request_serializer.is_valid(raise_exception=True)
+        opinion, created = PhysicianTreatmentOpinion.objects.update_or_create(
+            case=case,
+            defaults={"physician_opinion": request_serializer.validated_data["physician_opinion"]},
+        )
+        return Response(
+            PhysicianTreatmentOpinionSerializer(opinion).data,
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
 
 
 class DoctorFollowUpPathologyOrderAPIView(APIView):
@@ -969,25 +1059,50 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
 
-    @transaction.atomic
-    def post(self, request, case_id, result_id):
+    def _locked_context(self, request, case_id, result_id):
         case = LungCancerCase.objects.select_for_update().filter(
             id=case_id,
             primary_doctor=request.user,
             case_status=LungCancerCase.CaseStatus.ACTIVE,
         ).first()
         if case is None:
-            return Response(
-                {"detail": "The active case assigned to this doctor was not found."},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return None, None
 
         result = ClinicalResult.objects.select_for_update().filter(
             id=result_id,
             case=case,
             workflow_stage__in=[WorkflowStage.PATHOLOGY_GENE, WorkflowStage.PDL1],
+        ).select_related("gene_detail", "reviewed_ai_result").prefetch_related(
+            "reviewed_ai_result__gene_ai_results",
         ).first()
-        if result is None:
+        return case, result
+
+    @staticmethod
+    def _update_gene_findings(result, payload):
+        if result.workflow_stage != WorkflowStage.PATHOLOGY_GENE or not hasattr(result, "gene_detail"):
+            raise ValidationError({"gene_findings": "A pathology/gene draft is required."})
+        serializer = DoctorPathologyGeneReviewSerializer(
+            data=payload,
+            context={"result": result},
+        )
+        serializer.is_valid(raise_exception=True)
+        findings_by_symbol = {
+            finding.gene_symbol.strip().upper(): finding
+            for finding in result.gene_detail.gene_findings.select_for_update()
+        }
+        for values in serializer.validated_data["gene_findings"]:
+            finding = findings_by_symbol[values["gene_symbol"]]
+            finding.assessment = values["assessment"]
+            finding.alteration_code = values.get("alteration_code")
+        GeneFinding.objects.bulk_update(
+            findings_by_symbol.values(),
+            ["assessment", "alteration_code"],
+        )
+
+    @transaction.atomic
+    def patch(self, request, case_id, result_id):
+        case, result = self._locked_context(request, case_id, result_id)
+        if case is None or result is None:
             return Response(
                 {"detail": "The submitted pathology result was not found."},
                 status=status.HTTP_404_NOT_FOUND,
@@ -997,6 +1112,29 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
                 {"detail": "The result is already confirmed."},
                 status=status.HTTP_409_CONFLICT,
             )
+        if case.current_stage != WorkflowStage.PATHOLOGY_GENE:
+            return Response(
+                {"detail": "PATHOLOGY_GENE is not the current workflow stage."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        self._update_gene_findings(result, request.data)
+        return Response(DoctorClinicalResultSerializer(result).data)
+
+    @transaction.atomic
+    def post(self, request, case_id, result_id):
+        case, result = self._locked_context(request, case_id, result_id)
+        if case is None or result is None:
+            return Response(
+                {"detail": "The submitted pathology result was not found."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        if result.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+            return Response(
+                {"detail": "The result is already confirmed."},
+                status=status.HTTP_409_CONFLICT,
+            )
+        if result.workflow_stage == WorkflowStage.PATHOLOGY_GENE and "gene_findings" in request.data:
+            self._update_gene_findings(result, request.data)
         try:
             _confirm_submitted_pathology_result(
                 case=case,
@@ -1009,15 +1147,7 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        return Response(
-            {
-                "id": str(result.id),
-                "workflow_stage": result.workflow_stage,
-                "result_status": result.result_status,
-                "confirmed_by_user_id": str(result.confirmed_by_user_id),
-                "confirmed_at": result.confirmed_at,
-            }
-        )
+        return Response(DoctorClinicalResultSerializer(result).data)
 
 
 class DoctorXrayWorkflowAPIView(APIView):

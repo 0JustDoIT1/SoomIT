@@ -29,6 +29,8 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.medications = mock("CurrentMedication.objects")
         self.labs = mock("LabResult.objects")
         self.snapshot = mock("_safety_input_snapshot")
+        self.freshness = mock("evaluate_prescription_safety_freshness")
+        self.freshness.return_value = NS(status="CURRENT")
         self.output = mock("DoctorPrescriptionSerializer")
         self.atomic = mock("transaction.atomic")
         self.request = NS(user=object(), data={})
@@ -235,13 +237,8 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         safety.filter.return_value.exists.return_value = False
         safety.order_by.return_value.first.return_value = NS(checked_at=object())
 
-        with patch("apps.clinical.views.CurrentMedication.objects") as medications, \
-                patch("apps.clinical.views.PatientHealthProfile.objects") as profiles, \
-                patch("apps.clinical.views.LabResult.objects") as labs:
-            medications.filter.return_value.exists.return_value = True
-            profiles.filter.return_value.exists.return_value = False
-            labs.filter.return_value.exists.return_value = False
-            response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
+        self.freshness.return_value = NS(status="RECHECK_REQUIRED")
+        response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
 
         self.assertEqual(response.status_code, 400)
         self.prescription.save.assert_not_called()
@@ -253,20 +250,11 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         items.filter.return_value.exists.return_value = False
         safety.exists.return_value = True
         safety.filter.return_value.exists.return_value = False
-        snapshot_result = (
-            self.prescription.safety_check_results.filter.return_value
-            .order_by.return_value.first
-        )
-
-        for saved_result in (
-            None,
-            NS(message="not-json"),
-            NS(message=json.dumps({"snapshot": "old"})),
-        ):
-            with self.subTest(saved_result=saved_result):
+        for reason in ("SNAPSHOT_MISSING", "SNAPSHOT_INVALID", "INPUTS_CHANGED"):
+            with self.subTest(reason=reason):
                 self.prescription.prescription_status = "VALIDATED"
                 self.prescription.save.reset_mock()
-                snapshot_result.return_value = saved_result
+                self.freshness.return_value = NS(status="RECHECK_REQUIRED", reason=reason)
 
                 response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
 
@@ -285,6 +273,16 @@ class PrescriptionBoundaryTests(SimpleTestCase):
 
         serializer.assert_called_once_with([visible], many=True)
         self.assertEqual(data, [{"source_code": "DUPLICATION_CHECK"}])
+
+    def test_prescription_serializer_exposes_computed_safety_freshness(self):
+        prescription = NS()
+        with patch(
+            "apps.clinical.serializers.evaluate_prescription_safety_freshness",
+            return_value=NS(status="RECHECK_REQUIRED"),
+        ):
+            freshness = DoctorPrescriptionSerializer().get_safety_freshness(prescription)
+
+        self.assertEqual(freshness, "RECHECK_REQUIRED")
 
     def test_finalized_items_cannot_be_patched(self):
         self.prescription.prescription_status = "FINAL"

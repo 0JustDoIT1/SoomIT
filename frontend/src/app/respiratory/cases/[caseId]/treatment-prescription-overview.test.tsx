@@ -56,8 +56,34 @@ describe("TreatmentPrescriptionOverview", () => {
 
     expect(screen.getByText("TPS 55%")).toBeTruthy();
     expect(screen.getByText("≥50%")).toBeTruthy();
-    expect(screen.getAllByText("확정").length).toBeGreaterThanOrEqual(5);
+    expect(screen.getAllByText("확정").length).toBeGreaterThanOrEqual(3);
     expect(screen.getAllByText("AI").length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("does not use an AI PD-L1 result as the clinical completion state", () => {
+    const { rerender } = render(
+      <TreatmentPrescriptionOverview
+        treatment={null}
+        prescriptions={[]}
+        aiResults={[{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED", result_detail: { pdl1: { predicted_tps_range_label: "<1%" } } }]}
+      />,
+    );
+
+    const pdl1 = screen.getByText("PD-L1").parentElement!;
+    expect(pdl1).toHaveTextContent("대기");
+    expect(pdl1).toHaveTextContent("결과 대기");
+    expect(pdl1).toHaveTextContent("<1%");
+
+    rerender(
+      <TreatmentPrescriptionOverview
+        treatment={null}
+        prescriptions={[]}
+        clinicalResults={[{ workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: {} }]}
+        aiResults={[{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED", result_detail: { pdl1: { predicted_tps_range_label: "<1%" } } }]}
+      />,
+    );
+    expect(screen.getByText("PD-L1").parentElement).toHaveTextContent("확정");
+    expect(screen.getByText("PD-L1").parentElement).toHaveTextContent("임상 결과 확정");
   });
 
   it("does not treat pending, running, or failed AI analyses as completed evidence", () => {

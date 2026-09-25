@@ -1,4 +1,5 @@
 from contextlib import ExitStack
+import json
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
@@ -10,6 +11,7 @@ from apps.clinical.views import (
     _dur_pair_matches,
     _safety_input_snapshot,
 )
+from apps.clinical.safety import SafetyFreshness, compare_safety_snapshot
 
 
 class SafetyRuleTests(SimpleTestCase):
@@ -27,6 +29,8 @@ class SafetyRuleTests(SimpleTestCase):
         self.labs = mock("LabResult.objects")
         self.serializers = mock("DoctorPrescriptionSerializer")
         self.dur_client = mock("DurClient")
+        self.freshness = mock("evaluate_prescription_safety_freshness")
+        self.freshness.return_value = NS(status=SafetyFreshness.CURRENT)
         self.serializers.return_value.data = {}
         self.request = NS(user=object(), data={})
         self.patient = object()
@@ -104,6 +108,42 @@ class SafetyRuleTests(SimpleTestCase):
         self.assertNotEqual(snapshot, _safety_input_snapshot(items=[], medications=[medication], patient_profile=profile, latest_lab=lab))
         self.assertNotEqual(snapshot, _safety_input_snapshot(items=[item], medications=[], patient_profile=profile, latest_lab=lab))
         self.assertNotEqual(snapshot, _safety_input_snapshot(items=[item], medications=[medication], patient_profile=profile, latest_lab=None))
+
+        changed_inputs = (
+            _safety_input_snapshot(
+                items=[item],
+                medications=[NS(id="med-2", medication_name="New medication", ingredient_name="New", mfds_item_seq="201")],
+                patient_profile=profile,
+                latest_lab=lab,
+            ),
+            _safety_input_snapshot(
+                items=[item],
+                medications=[medication],
+                patient_profile=NS(allergies=["Ingredient"], allergy_status="PRESENT"),
+                latest_lab=lab,
+            ),
+            _safety_input_snapshot(
+                items=[item],
+                medications=[medication],
+                patient_profile=profile,
+                latest_lab=NS(id="lab-2", tested_at="2026-01-02", creatinine=2, egfr=45, ast=30, alt=30, total_bilirubin=2),
+            ),
+        )
+        for current_snapshot in changed_inputs:
+            with self.subTest(current_snapshot=current_snapshot):
+                freshness = compare_safety_snapshot(
+                    saved_message=json.dumps(snapshot),
+                    current_snapshot=current_snapshot,
+                )
+                self.assertEqual(freshness.status, SafetyFreshness.RECHECK_REQUIRED)
+        self.assertEqual(
+            compare_safety_snapshot(
+                saved_message=json.dumps(snapshot),
+                current_snapshot=snapshot,
+                inputs_changed=True,
+            ).status,
+            SafetyFreshness.RECHECK_REQUIRED,
+        )
 
     def test_allergy_exact_match_and_unconfirmed_states(self):
         item = self.prescription_item(drug_name="Pemetrexed", ingredient="Pemetrexed")
@@ -272,6 +312,35 @@ class SafetyRuleTests(SimpleTestCase):
         self.prescription.prescription_status = "VALIDATED"
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
         self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
+
+        response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
+
+        self.assertEqual(response.status_code, 400)
+        self.safety_results.all.return_value.delete.assert_not_called()
+
+    def test_stale_validated_prescription_can_run_safety_check_again(self):
+        self.prescription.prescription_status = "VALIDATED"
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
+        self.freshness.return_value = NS(status=SafetyFreshness.RECHECK_REQUIRED)
+
+        response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
+
+        self.assertEqual(response.status_code, 200)
+        self.safety_results.all.return_value.delete.assert_called_once()
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
+        self.assertTrue(self.results.create.called)
+        self.assertTrue(all(
+            "acknowledged_at" not in call.kwargs
+            and "acknowledged_by_user" not in call.kwargs
+            and "acknowledgment_note" not in call.kwargs
+            for call in self.results.create.call_args_list
+        ))
+
+    def test_final_prescription_cannot_run_safety_check_even_when_inputs_are_stale(self):
+        self.prescription.prescription_status = "FINAL"
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.freshness.return_value = NS(status=SafetyFreshness.RECHECK_REQUIRED)
 
         response = Safety.post.__wrapped__(Safety(), self.request, "case", "prescription")
 

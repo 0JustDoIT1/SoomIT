@@ -49,3 +49,27 @@ it("fetches the tissue heatmap through the authenticated WSI endpoint", async ()
   expect(result?.type).toBe("image/jpeg");
 });
 
+it("submits the pathology review without a treatment-rule alteration payload", async () => {
+  vi.mocked(staffAuthenticatedFetch).mockResolvedValue(
+    new Response(JSON.stringify({
+      review_work_item_id: "review-1",
+      case_id: "case-1",
+      status: "PENDING",
+      task_type: "DIAGNOSTIC_REVIEW",
+      submitted: true,
+    }), { status: 201 }),
+  );
+  vi.stubEnv("NEXT_PUBLIC_API_BASE_URL", "http://api.test");
+  const { submitPathologyForReview } = await import("./pathology-workstation-api");
+
+  await submitPathologyForReview("case-1", "work-1", "analysis-1");
+
+  const [url, init] = vi.mocked(staffAuthenticatedFetch).mock.calls[0];
+  expect(url).toBe("http://api.test/api/pathology/cases/case-1/submit-for-review/");
+  expect(init?.method).toBe("POST");
+  expect(JSON.parse(String(init?.body))).toEqual({
+    work_item_id: "work-1",
+    ai_analysis_id: "analysis-1",
+  });
+});
+

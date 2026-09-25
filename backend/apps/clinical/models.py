@@ -247,6 +247,11 @@ class TreatmentDecision(models.Model):
         OBSERVATION = "OBSERVATION", "경과관찰"
         OTHER = "OTHER", "기타"
 
+    class TreatmentLine(models.TextChoices):
+        FIRST_LINE = "1L", "First-line"
+        SECOND_LINE = "2L", "Second-line"
+        THIRD_OR_LATER = "3L_PLUS", "Third-line or later"
+
     REGIMEN_REQUIRED_TYPES = frozenset({
         TreatmentType.CHEMOTHERAPY,
         TreatmentType.TARGETED_THERAPY,
@@ -259,6 +264,12 @@ class TreatmentDecision(models.Model):
     )
     ai_recommendation_action = models.CharField(max_length=15, choices=AiRecommendationAction.choices)
     treatment_type = models.CharField(max_length=20, choices=TreatmentType.choices)
+    treatment_line = models.CharField(
+        max_length=10,
+        choices=TreatmentLine.choices,
+        null=True,
+        blank=True,
+    )
     selected_regimen = models.ForeignKey(
         "Regimen",
         on_delete=models.PROTECT,

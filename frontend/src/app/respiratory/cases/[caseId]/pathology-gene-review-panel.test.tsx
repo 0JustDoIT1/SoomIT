@@ -1,32 +1,44 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
-import { PathologyGeneReviewPanel } from "./pathology-gene-imaging-workstation";
+import { describe, expect, it, vi } from "vitest";
+import { PathologyGeneImagingWorkspace } from "./pathology-gene-imaging-workstation";
 
-describe("PathologyGeneReviewPanel", () => {
-  it("separates pathology and gene sources without fabricating missing values", () => {
+vi.mock("./case-wsi-evidence", () => ({ CaseWsiEvidence: () => <div>H&amp;E WSI</div> }));
+vi.mock("./evidence-viewer-panel", () => ({ EvidenceViewerPanel: () => <div>Evidence viewer</div> }));
+vi.mock("./result-review-panel", () => ({ ResultReviewPanel: () => <div>AI 분석 후보</div> }));
+
+describe("PathologyGeneImagingWorkspace", () => {
+  it("keeps the WSI and AI result while omitting the pulmonology gene review editor", () => {
+    const authorizedFetch = vi.fn();
     render(
-      <PathologyGeneReviewPanel
+      <PathologyGeneImagingWorkspace
         pathologyClinicalResult={{
           workflow_stage: "PATHOLOGY_GENE",
-          result_status_label: "확정",
-          result_detail: { pathology: { histologic_type: "NSCLC" } },
+          result_status: "DRAFT",
+          result_detail: {
+            pathology: { histologic_type: "NSCLC" },
+            gene: { findings: [{ gene_symbol: "EGFR", alteration_code: "EGFR_EX19_DEL" }] },
+          },
         }}
-        geneAiResult={{
-          analysis_type: "PATHOLOGY_GENE_ANALYSIS",
-          status_label: "완료",
-          result_detail: { genes: [{ gene_symbol: "EGFR", predicted_status_label: "양성 예측", predicted_probability: 0.91 }] },
-        }}
+        geneAiResult={{ analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED" }}
+        caseId="case-1"
+        apiBaseUrl="http://127.0.0.1:8000"
+        authorizedFetch={authorizedFetch}
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "조직/유전자" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "병리 검사·결과" })).toBeNull();
-    expect(screen.getByText("NSCLC")).toBeTruthy();
-    expect(screen.getByText("EGFR")).toBeTruthy();
-    expect(screen.getByText("양성 예측 · 91.00%")).toBeTruthy();
+    expect(screen.getByText("H&E WSI")).toBeTruthy();
+    expect(screen.getByText("AI 분석 후보")).toBeTruthy();
+    expect(screen.queryByText("호흡기내과 최종 검토")).toBeNull();
+    expect(screen.queryByText("유전자 결과 및 세부 alteration")).toBeNull();
+    expect(screen.queryByRole("button", { name: /DRAFT 저장|최종 확정/ })).toBeNull();
+    expect(screen.queryByLabelText(/최종 assessment|상세 alteration/)).toBeNull();
+    expect(authorizedFetch).not.toHaveBeenCalled();
   });
 
-  it("renders the shared evidence viewer only once", () => {
-    render(<PathologyGeneReviewPanel />);
+  it("keeps the local evidence fallback without exposing gene review controls", () => {
+    render(<PathologyGeneImagingWorkspace />);
+
+    expect(screen.getByText("Evidence viewer")).toBeTruthy();
+    expect(screen.queryByLabelText(/최종 assessment|상세 alteration/)).toBeNull();
   });
 });

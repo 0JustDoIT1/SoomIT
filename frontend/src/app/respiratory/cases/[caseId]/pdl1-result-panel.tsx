@@ -32,7 +32,7 @@ type Pdl1ClinicalResult = {
   result_date: string | null;
   result_detail: {
     pdl1?: {
-      tps_percent: number | string | null;
+      tps_percent?: number | string | null;
       interpretation: string | null;
       note: string | null;
     };
@@ -70,7 +70,8 @@ export function Pdl1ResultPanel({
   const clinicalConfirmed = clinicalResult?.result_status === "CONFIRMED";
   const clinicalNote = clinical?.note ?? null;
   const isAiGeneratedClinicalNote = /^Generated from PD-L1 AI result:/i.test(clinicalNote ?? "");
-  const hasConfirmedTps = clinical?.tps_percent !== null && clinical?.tps_percent !== undefined;
+  const clinicalTps = clinical?.tps_percent;
+  const hasClinicalTps = hasTpsValue(clinicalTps);
   const clinicalInterpretation = isAiGeneratedClinicalNote
     ? "병리과 최종 해석 미입력"
     : clinical?.interpretation ?? (clinicalConfirmed ? "확정 결과 없음" : "병리과 검토 결과 없음");
@@ -109,7 +110,7 @@ export function Pdl1ResultPanel({
         )}
 
         <div className="mt-4 grid grid-cols-2 gap-2.5">
-          <ResultCard className="col-span-2" source={clinicalSource} label={clinicalTpsLabel} value={hasConfirmedTps ? `${clinical?.tps_percent}%` : "TPS 미입력"} tone="emerald" />
+          {hasClinicalTps && <ResultCard className="col-span-2" source={clinicalSource} label={clinicalTpsLabel} value={formatClinicalTps(clinicalTps)} tone="emerald" />}
           <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "AI 결과 없음"} tone="blue" />
           <ResultCard source="PD-L1 AI 분석 후보" label="분석 신뢰도" value={confidence !== null ? `${confidence.toFixed(2)}%` : "-"} tone="blue" />
         </div>
@@ -155,6 +156,15 @@ function toPercentage(value: unknown) {
   if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number * 100 : null;
+}
+
+function hasTpsValue(value: unknown): value is number | string {
+  return value !== null && value !== undefined && (typeof value !== "string" || value.trim() !== "");
+}
+
+function formatClinicalTps(value: number | string) {
+  const displayValue = typeof value === "string" ? value.trim() : String(value);
+  return displayValue.endsWith("%") ? displayValue : `${displayValue}%`;
 }
 
 function ResultCard({ source, label, value, tone, className = "" }: { source: string; label: string; value: string; tone: "blue" | "emerald"; className?: string }) {

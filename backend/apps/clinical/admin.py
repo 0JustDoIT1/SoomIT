@@ -27,8 +27,8 @@ admin.site.register(GeneFinding)
 
 @admin.register(TreatmentDecision)
 class TreatmentDecisionAdmin(admin.ModelAdmin):
-    list_display = ("clinical_result", "treatment_type", "ai_recommendation_action")
-    list_filter = ("treatment_type", "ai_recommendation_action")
+    list_display = ("clinical_result", "treatment_type", "treatment_line", "ai_recommendation_action")
+    list_filter = ("treatment_type", "treatment_line", "ai_recommendation_action")
 
 
 @admin.register(CaseFinalResult)

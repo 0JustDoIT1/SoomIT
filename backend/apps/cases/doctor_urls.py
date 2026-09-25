@@ -31,6 +31,7 @@ from .views import (
     DoctorCasePathologySpecimenListAPIView,
     DoctorSpecimenSlideListAPIView,
     DoctorSlideViewerAPIView,
+    DoctorSlideTissueHeatmapAPIView,
     DoctorSlideThumbnailAPIView,
     DoctorSlideTileAPIView,
     DoctorCaseDicomWebMetadataAPIView,
@@ -51,6 +52,7 @@ from .views import (
     DoctorMedicalOpinionAPIView,
     DoctorCaseAssistantAPIView,
     DoctorTreatmentOpinionAPIView,
+    DoctorPhysicianTreatmentOpinionAPIView,
     DoctorLungCancerCaseDetailAPIView,
     DoctorLungCancerCaseListAPIView,
 )
@@ -90,6 +92,7 @@ urlpatterns = [
     path("<uuid:case_id>/specimens/", DoctorCasePathologySpecimenListAPIView.as_view(), name="doctor-case-specimen-list"),
     path("specimens/<uuid:specimen_id>/slides/", DoctorSpecimenSlideListAPIView.as_view(), name="doctor-specimen-slide-list"),
     path("slides/<uuid:slide_id>/viewer/", DoctorSlideViewerAPIView.as_view(), name="doctor-slide-viewer"),
+    path("slides/<uuid:slide_id>/tissue-heatmap/", DoctorSlideTissueHeatmapAPIView.as_view(), name="doctor-slide-tissue-heatmap"),
     path("slides/<uuid:slide_id>/thumbnail/", DoctorSlideThumbnailAPIView.as_view(), name="doctor-slide-thumbnail"),
     path("slides/<uuid:slide_id>/tiles/<int:level>/<int:x>/<int:y>.jpg", DoctorSlideTileAPIView.as_view(), name="doctor-slide-tile"),
     path("<uuid:case_id>/image-assets/<uuid:asset_id>/dicom-web/metadata/", DoctorCaseDicomWebMetadataAPIView.as_view(), name="doctor-case-dicom-web-metadata"),
@@ -194,6 +197,7 @@ urlpatterns = [
     name="doctor-current-medication-list-create",
     ),
     path("<uuid:case_id>/treatment-opinion/", DoctorTreatmentOpinionAPIView.as_view(), name="doctor-treatment-opinion"),
+    path("<uuid:case_id>/physician-treatment-opinion/", DoctorPhysicianTreatmentOpinionAPIView.as_view(), name="doctor-physician-treatment-opinion"),
     path("<uuid:case_id>/allergy-profile/", DoctorAllergyProfileAPIView.as_view(), name="doctor-allergy-profile"),
     path(
         "<uuid:case_id>/lab-results/",

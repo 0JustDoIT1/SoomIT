@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 from django.db.models import Model
 from django.test import SimpleTestCase
 
+from apps.clinical.gene_alterations import CANONICAL_ALTERATIONS
 from apps.clinical.models import GeneFinding, TreatmentRule
 from apps.clinical.serializers import DoctorClinicalResultSerializer, TreatmentRuleCandidateSerializer
 from apps.clinical.views import DoctorRegimenCandidateListAPIView as View
@@ -37,6 +38,7 @@ class RegimenCandidateTests(SimpleTestCase):
         return TreatmentRule(**values)
 
     def test_supported_exact_pairs(self):
+        self.assertIs(View.SUPPORTED_ALTERATIONS, CANONICAL_ALTERATIONS)
         for rule, gene, code in [
             ("TR01", "EGFR", "EGFR_EX19_DEL"), ("TR01", "EGFR", "EGFR_L858R"),
             ("TR04", "BRAF", "BRAF_V600E"), ("TR05", "MET", "MET_EXON14_SKIPPING"),
@@ -79,6 +81,39 @@ class RegimenCandidateTests(SimpleTestCase):
         self.assertIsNone(self.view._match_rule(
             self.rule(stage_condition={"stage": ["III"]}), self.data))
 
+    def test_document_tr02_requires_stage_iv_confirmed_tps_and_first_line(self):
+        rule = self.rule(
+            rule_code="TR02",
+            stage_condition={"stage": ["IV"]},
+            pdl1_condition={"min": 50},
+            treatment_line="1L",
+        )
+        data = {**self.data, "findings": [], "treatment_line": "1L"}
+
+        for stage in ("IV", "IVA", "IVB"):
+            with self.subTest(stage=stage):
+                self.assertIsNotNone(self.view._match_rule(rule, {**data, "stage_group": stage}))
+        for changes in (
+            {"stage_group": "III"},
+            {"pdl1_tps": Decimal("49.99")},
+            {"pdl1_tps": None},
+            {"treatment_line": None},
+            {"treatment_line": "2L"},
+        ):
+            with self.subTest(changes=changes):
+                self.assertIsNone(self.view._match_rule(rule, {**data, **changes}))
+
+    def test_document_tr03_matches_only_non_squamous_nsclc(self):
+        rule = self.rule(rule_code="TR03", histology="non-squamous")
+        data = {**self.data, "findings": []}
+
+        for histology in ("adenocarcinoma", "non-squamous"):
+            with self.subTest(histology=histology):
+                self.assertIsNotNone(
+                    self.view._match_rule(rule, {**data, "histology": histology})
+                )
+        self.assertIsNone(self.view._match_rule(rule, {**data, "histology": "squamous"}))
+
     def test_common_and_exact_histology(self):
         for value in (None, ""):
             self.assertIsNotNone(self.view._match_rule(self.rule(histology=value), self.data))
@@ -86,6 +121,12 @@ class RegimenCandidateTests(SimpleTestCase):
             self.rule(histology="Adenocarcinoma"), self.data))
         for value in ("squamous", "adeno", "unrecognized"):
             self.assertIsNone(self.view._match_rule(self.rule(histology=value), self.data))
+
+    def test_standard_histology_abbreviations_are_normalized(self):
+        self.assertEqual(View._histology("LUAD"), "adenocarcinoma")
+        self.assertEqual(View._histology("LUSC"), "squamous")
+        self.assertEqual(View.CANCER_TYPES[View._histology("LUAD")], "NSCLC")
+        self.assertEqual(View.CANCER_TYPES[View._histology("LUSC")], "NSCLC")
 
     def test_cancer_mapping_is_explicit(self):
         self.assertEqual(View.CANCER_TYPES[View._histology("NSCLC")], "NSCLC")
@@ -169,10 +210,6 @@ class RegimenCandidateTests(SimpleTestCase):
         for code in ("TR01", "TR02", "TR03"):
             self.assertIsNone(self.view._match_rule(self.rule(rule_code=code), self.data))
 
-    def test_tr03_and_unresolved_tr02_are_closed(self):
-        for code in ("TR02", "TR03"):
-            self.assertIsNone(self.view._match_rule(self.rule(rule_code=code), self.data))
-
     def test_ai_and_note_are_not_molecular_evidence(self):
         self.data["findings"] = []
         self.data["ai_results"] = [NS(gene_symbol="EGFR", predicted_status="PREDICTED_POSITIVE")]
@@ -212,10 +249,11 @@ class RegimenCandidateTests(SimpleTestCase):
         self.assertEqual(serializer.get_match_reasons(rule), reasons)
         self.assertTrue({"id", "regimen", "regimen_detail", "priority", "match_reasons"}.issubset(serializer.fields))
 
+    @patch("apps.clinical.views.TreatmentDecision.objects")
     @patch("apps.clinical.views.PDL1Result.objects")
     @patch("apps.clinical.views.ClinicalResult.objects")
     @patch("apps.clinical.views.LungCancerCase.objects")
-    def test_direct_pdl1_latest_null_and_request_cache(self, cases, clinical, pdl1):
+    def test_direct_pdl1_latest_null_and_request_cache(self, cases, clinical, pdl1, decisions):
         case = object()
         cases.filter.return_value.first.return_value = case
         confirmed = clinical.filter.return_value
@@ -223,10 +261,12 @@ class RegimenCandidateTests(SimpleTestCase):
         gene_query = confirmed.filter.return_value.select_related.return_value.prefetch_related.return_value
         gene_query.order_by.return_value.first.return_value = None
         pdl1.filter.return_value.order_by.return_value.first.return_value = NS(tps_percent=None)
+        decisions.filter.return_value.order_by.return_value.first.return_value = NS(treatment_line="2L")
         self.view.kwargs = {"case_id": "case"}
         self.view.request = NS(user=object())
         data = self.view._candidate_input()
         self.assertIsNone(data["pdl1_tps"])
+        self.assertEqual(data["treatment_line"], "2L")
         self.assertEqual(data["findings"], [])
         self.assertIs(self.view._candidate_input(), data)
         pdl1.filter.assert_called_once_with(

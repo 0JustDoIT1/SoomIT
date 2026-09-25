@@ -1,5 +1,7 @@
 from unittest.mock import patch
 
+from google.auth.exceptions import DefaultCredentialsError
+
 from django.test import SimpleTestCase, TestCase, override_settings
 from django.urls import reverse
 from rest_framework import status
@@ -9,7 +11,7 @@ from rest_framework_simplejwt.tokens import AccessToken
 from apps.accounts.models import User
 from apps.knowledge.models import KnowledgeChunk, KnowledgeDocument
 from apps.knowledge.services.chunking import chunk_text, split_in_half
-from apps.knowledge.services.embedding_client import EmbeddingServiceError, InputTooLong
+from apps.knowledge.services.embedding_client import EmbeddingServiceError, InputTooLong, _fetch_id_token
 from apps.knowledge.services.ingestion import _embed_passages, ingest_document
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.rag import answer_with_rag
@@ -20,6 +22,14 @@ def fake_embed_response(texts, revision="test-rev"):
         "model": "intfloat/multilingual-e5-base", "revision": revision, "dimensions": 768,
         "embeddings": [[0.1] * 768 for _ in texts], "token_counts": [len(t) for t in texts],
     }
+
+
+class EmbeddingClientTests(SimpleTestCase):
+    @override_settings(EMBEDDING_SERVICE_URL="https://embedding.test")
+    @patch("google.oauth2.id_token.fetch_id_token", side_effect=DefaultCredentialsError("missing credentials"))
+    def test_id_token_credentials_failure_uses_service_error_contract(self, _fetch):
+        with self.assertRaises(EmbeddingServiceError):
+            _fetch_id_token()
 
 
 class ChunkingTests(TestCase):

@@ -46,6 +46,46 @@ describe("Pdl1ResultPanel", () => {
     expect(screen.getByText("AI 결과는 TPS 예측 구간이며 병리과 TPS 결과는 실제 TPS 값입니다. 호흡기내과 확정 후 최종 TPS로 표시됩니다.")).toBeTruthy();
   });
 
+  it.each([null, undefined, ""])("does not render a clinical TPS card when TPS is %p", (tpsPercent) => {
+    render(
+      <Pdl1ResultPanel
+        aiResult={{
+          result_detail: { pdl1: { predicted_tps_range_label: "≥50%" } },
+        }}
+        clinicalResult={{
+          result_status: "CONFIRMED",
+          result_date: null,
+          result_detail: { pdl1: { tps_percent: tpsPercent, interpretation: "확정 해석", note: null } },
+        }}
+      />,
+    );
+
+    expect(screen.queryByText("TPS 미입력")).toBeNull();
+    expect(screen.queryByText("최종 TPS")).toBeNull();
+    expect(screen.getByText("≥50%")).toBeTruthy();
+  });
+
+  it.each([
+    [0, "0%"],
+    ["<1%", "<1%"],
+    ["1–49%", "1–49%"],
+    ["≥50%", "≥50%"],
+  ])("keeps the actual clinical TPS value %p visible as %s", (tpsPercent, displayValue) => {
+    render(
+      <Pdl1ResultPanel
+        aiResult={null}
+        clinicalResult={{
+          result_status: "CONFIRMED",
+          result_date: null,
+          result_detail: { pdl1: { tps_percent: tpsPercent, interpretation: "확정 해석", note: null } },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("최종 TPS")).toBeTruthy();
+    expect(screen.getByText(displayValue)).toBeTruthy();
+  });
+
   it("labels submitted pathology TPS as a review result before pulmonology confirmation", () => {
     render(
       <Pdl1ResultPanel

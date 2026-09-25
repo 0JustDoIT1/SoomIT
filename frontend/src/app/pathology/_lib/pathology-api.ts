@@ -155,6 +155,16 @@ export type PathologyDiagnosis = {
     subtype: string | null;
     diagnosis_summary: string | null;
   } | null;
+  gene: {
+    interpretation: string | null;
+    additional_test_recommended: boolean;
+    findings: Array<{
+      gene_symbol: string;
+      assessment: "LIKELY_POSITIVE" | "LIKELY_NEGATIVE" | "INDETERMINATE";
+      alteration_code: string | null;
+      note: string | null;
+    }>;
+  } | null;
   created_at: string;
   updated_at: string;
 };

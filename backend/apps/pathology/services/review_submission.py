@@ -7,6 +7,7 @@ from apps.clinical.models import (
     PDL1Result,
     PathologyResult,
 )
+from apps.clinical.gene_alterations import AI_TO_CLINICAL_ASSESSMENT
 from apps.cases.models import LungCancerCase, WorkflowStage
 
 from ..models import PathologyWorkItem, WholeSlideImage
@@ -24,6 +25,16 @@ class ReviewSubmissionError(Exception):
 
 def prepare_pathology_gene_clinical_draft(*, case, order, analysis, clinical_result):
     """Create or refresh a pathology/gene draft from a successful AI result."""
+    if clinical_result is not None and PathologyWorkItem.objects.filter(
+        case=case,
+        examination_order=order,
+        task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+        status__in=ACTIVE_REVIEW_STATUSES,
+    ).exists():
+        # Once delivered, pulmonology owns the draft. A repeated pathology submit
+        # must not erase its assessment/alteration review.
+        return clinical_result
+
     ai_result = analysis.ai_result
     pathology_ai = getattr(ai_result, "pathology_detail", None)
     if pathology_ai is None:
@@ -63,21 +74,22 @@ def prepare_pathology_gene_clinical_draft(*, case, order, analysis, clinical_res
         clinical_result=clinical_result,
     )
     gene_result.gene_findings.all().delete()
-    assessment_map = {
-        "PREDICTED_POSITIVE": GeneFinding.Assessment.LIKELY_POSITIVE,
-        "PREDICTED_NEGATIVE": GeneFinding.Assessment.LIKELY_NEGATIVE,
-        "INDETERMINATE": GeneFinding.Assessment.INDETERMINATE,
-    }
-    GeneFinding.objects.bulk_create(
-        [
-            GeneFinding(
-                gene_result=gene_result,
-                gene_symbol=finding.gene_symbol,
-                assessment=assessment_map[finding.predicted_status],
-            )
-            for finding in ai_result.gene_ai_results.all()
-        ]
-    )
+    findings_to_create = [
+        {
+            "gene_symbol": finding.gene_symbol,
+            "assessment": AI_TO_CLINICAL_ASSESSMENT[finding.predicted_status],
+        }
+        for finding in ai_result.gene_ai_results.all()
+    ]
+    GeneFinding.objects.bulk_create([
+        GeneFinding(
+            gene_result=gene_result,
+            gene_symbol=finding["gene_symbol"],
+            assessment=finding["assessment"],
+            alteration_code=None,
+        )
+        for finding in findings_to_create
+    ])
     return clinical_result
 
 

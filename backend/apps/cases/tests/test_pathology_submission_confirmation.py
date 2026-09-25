@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.cases.models import ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult, PathologyResult
+from apps.clinical.models import ClinicalResult, GeneFinding, GeneResult, PathologyResult
 from apps.pathology.models import PathologyWorkItem
 from apps.patients.models import Patient
 
@@ -92,6 +92,23 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
             kwargs={"case_id": self.case.id, "result_id": self.result.id},
         )
 
+    def _add_gene_findings(self):
+        gene_result = GeneResult.objects.create(
+            clinical_result=self.result,
+            interpretation="Pathology-delivered molecular findings",
+        )
+        GeneFinding.objects.create(
+            gene_result=gene_result,
+            gene_symbol="EGFR",
+            assessment=GeneFinding.Assessment.LIKELY_POSITIVE,
+        )
+        GeneFinding.objects.create(
+            gene_result=gene_result,
+            gene_symbol="BRAF",
+            assessment=GeneFinding.Assessment.LIKELY_NEGATIVE,
+        )
+        return gene_result
+
     def test_unsubmitted_draft_is_hidden_and_cannot_be_confirmed(self):
         list_response = self.client.get(
             reverse("doctor-clinical-result-list", kwargs={"case_id": self.case.id})
@@ -129,6 +146,107 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
             ClinicalResult.objects.filter(case=self.case, workflow_stage=WorkflowStage.PATHOLOGY_GENE).count(),
             1,
         )
+
+    def test_pulmonology_can_save_gene_review_as_draft_with_canonical_alteration(self):
+        gene_result = self._add_gene_findings()
+        self._submit()
+
+        response = self.client.patch(
+            self._confirm_url(),
+            {
+                "gene_findings": [
+                    {
+                        "gene_symbol": "EGFR",
+                        "assessment": "LIKELY_POSITIVE",
+                        "alteration_code": "Exon 19 deletion",
+                    },
+                    {
+                        "gene_symbol": "BRAF",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": None,
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.result.refresh_from_db()
+        egfr = gene_result.gene_findings.get(gene_symbol="EGFR")
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(egfr.alteration_code, "EGFR_EX19_DEL")
+        response_findings = {
+            finding["gene_symbol"]: finding
+            for finding in response.data["result_detail"]["gene"]["findings"]
+        }
+        self.assertEqual(response_findings["EGFR"]["alteration_code"], "EGFR_EX19_DEL")
+
+    def test_pulmonology_can_confirm_gene_review_and_it_becomes_read_only(self):
+        gene_result = self._add_gene_findings()
+        self._submit()
+
+        response = self.client.post(
+            self._confirm_url(),
+            {
+                "gene_findings": [
+                    {
+                        "gene_symbol": "EGFR",
+                        "assessment": "LIKELY_POSITIVE",
+                        "alteration_code": "L858R",
+                    },
+                    {
+                        "gene_symbol": "BRAF",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": None,
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(
+            gene_result.gene_findings.get(gene_symbol="EGFR").alteration_code,
+            "EGFR_L858R",
+        )
+        self.assertEqual(
+            self.client.patch(
+                self._confirm_url(),
+                {"gene_findings": []},
+                format="json",
+            ).status_code,
+            409,
+        )
+
+    def test_gene_review_rejects_alteration_for_negative_assessment_without_mutation(self):
+        gene_result = self._add_gene_findings()
+        self._submit()
+
+        response = self.client.patch(
+            self._confirm_url(),
+            {
+                "gene_findings": [
+                    {
+                        "gene_symbol": "EGFR",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": "L858R",
+                    },
+                    {
+                        "gene_symbol": "BRAF",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": None,
+                    },
+                ],
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        egfr = gene_result.gene_findings.get(gene_symbol="EGFR")
+        self.assertEqual(egfr.assessment, GeneFinding.Assessment.LIKELY_POSITIVE)
+        self.assertIsNone(egfr.alteration_code)
 
     def test_non_pulmonology_doctor_cannot_confirm(self):
         self._submit()

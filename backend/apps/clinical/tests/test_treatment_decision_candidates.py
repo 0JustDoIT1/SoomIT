@@ -86,6 +86,7 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         clinical = MagicMock(result_status="DRAFT")
         decision = NS(clinical_result=clinical, treatment_type=treatment_type,
                       selected_regimen=NS(pk=regimen) if regimen else None)
+        self.confirmation_decision = decision
         self.results.select_for_update.return_value.filter.return_value.first.return_value = clinical
         self.decisions.select_related.return_value.filter.return_value.first.return_value = decision
         return clinical
@@ -122,6 +123,8 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
         self.case.save.assert_called_once_with(update_fields=["current_stage", "updated_at"])
         self.audit.create.assert_called_once()
         self.assertEqual(self.audit.create.call_args.kwargs["target_stage"], "PRESCRIPTION")
+        self.assertIs(self.confirmation_decision.clinical_result, clinical)
+        self.assertIs(clinical.case, self.case)
 
     def test_repeated_confirmation_does_not_duplicate_decision(self):
         clinical = self.prepare_confirmation()
@@ -195,6 +198,7 @@ class CandidateContractTests(SimpleTestCase):
             clinical_result=clinical_result,
             ai_recommendation_action="NOT_USED",
             treatment_type="OBSERVATION",
+            treatment_line="1L",
             treatment_plan="Observation",
         )
 
@@ -203,6 +207,7 @@ class CandidateContractTests(SimpleTestCase):
         self.assertEqual(payload["decision_status"], "CONFIRMED")
         self.assertEqual(payload["current_stage"], "PRESCRIPTION")
         self.assertEqual(payload["case_status"], "ACTIVE")
+        self.assertEqual(payload["treatment_line"], "1L")
         self.assertFalse(payload["requires_prescription"])
 
     def test_queryset_order_and_response_contract(self):

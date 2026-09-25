@@ -46,6 +46,18 @@ class LungCancerCase(TimestampedUUIDModel):
         return self.case_code
 
 
+class PhysicianTreatmentOpinion(TimestampedUUIDModel):
+    case = models.OneToOneField(
+        LungCancerCase,
+        on_delete=models.CASCADE,
+        related_name="physician_treatment_opinion",
+    )
+    physician_opinion = models.TextField(blank=True, default="")
+
+    class Meta:
+        db_table = "physician_treatment_opinions"
+
+
 # ── 3-2. clinician_decisions ────────────────────────────────────
 # 스펙상 created_at/updated_at 없음(decided_at만 존재) → UUIDModel만 상속
 class ClinicianDecision(UUIDModel):

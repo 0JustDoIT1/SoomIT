@@ -4,8 +4,13 @@ from uuid import uuid4
 
 from django.test import SimpleTestCase
 
-from apps.cases.views import DoctorSlideTileAPIView, DoctorSlideViewerAPIView
+from apps.cases.views import (
+    DoctorSlideTileAPIView,
+    DoctorSlideTissueHeatmapAPIView,
+    DoctorSlideViewerAPIView,
+)
 from apps.pathology.services.orthanc import OrthancBinaryResponse, OrthancError
+from apps.pathology.services.pathology_storage import PathologyStorageError
 
 
 class DoctorWsiViewerMetadataTests(SimpleTestCase):
@@ -125,3 +130,27 @@ class DoctorWsiViewerMetadataTests(SimpleTestCase):
         response = DoctorSlideViewerAPIView().get(SimpleNamespace(), slide.id)
 
         self.assertEqual(response.status_code, 409)
+
+    @patch("apps.cases.views.download_pathology_wsi_tissue_heatmap")
+    @patch("apps.cases.views._doctor_slide_or_404")
+    def test_reads_existing_heatmap_without_mutating_storage(self, slide_or_404, download):
+        slide = SimpleNamespace(id=uuid4(), image_asset=SimpleNamespace(storage_uri="gs://test-bucket/wsi.svs"))
+        slide_or_404.return_value = slide
+        download.return_value = (b"jpeg", "image/jpeg")
+
+        response = DoctorSlideTissueHeatmapAPIView().get(SimpleNamespace(), slide.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"jpeg")
+        download.assert_called_once_with("gs://test-bucket/wsi.svs")
+
+    @patch("apps.cases.views.download_pathology_wsi_tissue_heatmap")
+    @patch("apps.cases.views._doctor_slide_or_404")
+    def test_missing_heatmap_is_nonfatal_404(self, slide_or_404, download):
+        slide = SimpleNamespace(id=uuid4(), image_asset=SimpleNamespace(storage_uri="gs://test-bucket/wsi.svs"))
+        slide_or_404.return_value = slide
+        download.side_effect = PathologyStorageError("WSI tissue heatmap is not available yet.")
+
+        response = DoctorSlideTissueHeatmapAPIView().get(SimpleNamespace(), slide.id)
+
+        self.assertEqual(response.status_code, 404)

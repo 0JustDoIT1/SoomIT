@@ -20,7 +20,7 @@ type Pdl1AiResult = {
 type Pdl1ClinicalResult = {
   result_status?: string;
   result_date: string | null;
-  result_detail: { pdl1?: { tps_percent: number | string | null; interpretation: string | null; note: string | null } };
+  result_detail: { pdl1?: { tps_percent?: number | string | null; interpretation: string | null; note: string | null } };
 };
 
 export function Pdl1ResultPanel({

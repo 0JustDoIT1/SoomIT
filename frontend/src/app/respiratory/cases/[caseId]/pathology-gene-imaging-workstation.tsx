@@ -1,3 +1,5 @@
+"use client";
+
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 import { ResultReviewPanel } from "./result-review-panel";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
@@ -42,7 +44,7 @@ type Props = {
   authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 };
 
-export function PathologyGeneReviewPanel({
+export function PathologyGeneImagingWorkspace({
   pathologyClinicalResult,
   pathologyAiResult,
   geneClinicalResult,
@@ -61,22 +63,38 @@ export function PathologyGeneReviewPanel({
   apiBaseUrl,
   authorizedFetch,
 }: Props) {
+  const clinicalResult = pathologyClinicalResult ?? geneClinicalResult;
+  const aiResult = pathologyAiResult ?? geneAiResult;
+
   return (
-    <section aria-label="조직/유전자 작업공간" className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"><h1 className="sr-only">조직/유전자</h1>
-      <div className="grid min-h-0 flex-1 gap-2 bg-slate-50 p-1 grid-cols-[minmax(0,7fr)_minmax(300px,3fr)]">
+    <section
+      aria-label="조직/유전자 영상 작업공간"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white"
+    >
+      <h1 className="sr-only">조직/유전자</h1>
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(300px,0.32fr)] gap-2 bg-slate-50 p-1">
         <div className="min-h-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
           {caseId && apiBaseUrl && authorizedFetch ? (
-            <CaseWsiEvidence caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stain="HE" fillHeight />
+            <CaseWsiEvidence
+              caseId={caseId}
+              apiBaseUrl={apiBaseUrl}
+              authorizedFetch={authorizedFetch}
+              stain="HE"
+              fillHeight
+            />
           ) : (
             <EvidenceViewerPanel />
           )}
         </div>
-
-        <aside data-clinical-rail className="min-h-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 [scrollbar-gutter:stable]" aria-label="병리 검사 결과 rail">
+        <aside
+          data-clinical-rail
+          aria-label="AI 분석 결과"
+          className="min-h-0 overflow-y-auto rounded-lg border border-slate-200 bg-white p-2 [scrollbar-gutter:stable]"
+        >
           <ResultReviewPanel
             stage="PATHOLOGY_GENE"
-            clinicalResult={pathologyClinicalResult ?? geneClinicalResult}
-            aiResult={pathologyAiResult ?? geneAiResult}
+            clinicalResult={clinicalResult}
+            aiResult={aiResult}
             clinicalError={clinicalError}
             aiError={aiError}
             clinicalRetrying={clinicalRetrying}
@@ -85,6 +103,7 @@ export function PathologyGeneReviewPanel({
             onRetryAi={onRetryAi}
             showEvidence={false}
             showWorkspaceHeader={false}
+            showClinicalPanel={false}
             compactRail
             lastSyncedAt={lastSyncedAt}
             syncingResults={syncingResults}

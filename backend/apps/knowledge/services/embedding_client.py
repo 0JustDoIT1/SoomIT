@@ -16,11 +16,15 @@ class InputTooLong(EmbeddingServiceError):
 def _fetch_id_token():
     # Cloud Run은 IAM으로 보호되므로, 서비스 URL을 audience로 하는 구글 ID 토큰이 필요하다.
     # 로컬 uvicorn처럼 인증이 없는 환경에서는 EMBEDDING_SERVICE_USE_ID_TOKEN=0으로 끈다.
+    import google.auth.exceptions
     import google.auth.transport.requests
     import google.oauth2.id_token
 
     request = google.auth.transport.requests.Request()
-    return google.oauth2.id_token.fetch_id_token(request, settings.EMBEDDING_SERVICE_URL)
+    try:
+        return google.oauth2.id_token.fetch_id_token(request, settings.EMBEDDING_SERVICE_URL)
+    except google.auth.exceptions.GoogleAuthError as exc:
+        raise EmbeddingServiceError("Embedding service authentication is not available.") from exc
 
 
 def request_embeddings(texts, input_type):

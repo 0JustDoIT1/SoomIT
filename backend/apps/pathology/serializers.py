@@ -55,11 +55,6 @@ class PDL1InputUploadSerializer(serializers.Serializer):
         return value
 
 
-class PathologyReviewSubmissionSerializer(serializers.Serializer):
-    work_item_id = serializers.UUIDField()
-    ai_analysis_id = serializers.UUIDField()
-
-
 class PDL1ResultDraftSerializer(serializers.Serializer):
     ai_analysis_id = serializers.UUIDField()
     source_wsi_id = serializers.UUIDField()
@@ -71,8 +66,16 @@ class PDL1ResultDraftSerializer(serializers.Serializer):
 class GeneFindingWriteSerializer(serializers.Serializer):
     gene_symbol = serializers.CharField(max_length=30)
     assessment = serializers.ChoiceField(choices=GeneFinding.Assessment.choices)
-    alteration_code = serializers.CharField(max_length=64, required=False, allow_blank=True, allow_null=True)
     note = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+
+    def validate(self, attrs):
+        attrs["gene_symbol"] = attrs["gene_symbol"].strip().upper()
+        return attrs
+
+
+class PathologyReviewSubmissionSerializer(serializers.Serializer):
+    work_item_id = serializers.UUIDField()
+    ai_analysis_id = serializers.UUIDField()
 
 
 class PathologyDiagnosisSerializer(serializers.ModelSerializer):
@@ -321,7 +324,7 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
                 gene_result=gene_result,
                 gene_symbol=finding["gene_symbol"],
                 assessment=finding["assessment"],
-                alteration_code=finding.get("alteration_code"),
+                alteration_code=None,
                 note=finding.get("note"),
             )
             for finding in gene_data["findings"]
@@ -365,7 +368,7 @@ class PathologyDiagnosisWriteSerializer(serializers.Serializer):
                     gene_result=gene_detail,
                     gene_symbol=finding["gene_symbol"],
                     assessment=finding["assessment"],
-                    alteration_code=finding.get("alteration_code"),
+                    alteration_code=None,
                     note=finding.get("note"),
                 )
                 for finding in gene_findings

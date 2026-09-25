@@ -853,7 +853,10 @@ function WorkArea({
     pdl1?.result_detail?.result_payload,
     "model_revision",
   );
-  const geneResults = pathology?.result_detail?.genes ?? [];
+  const geneResults = useMemo(
+    () => pathology?.result_detail?.genes ?? [],
+    [pathology],
+  );
   const pathologyGeneResultStatus = pathologyGeneStatus(
     pathology?.result_detail?.result_payload,
   );
@@ -1549,6 +1552,7 @@ function WorkArea({
                 )}
               </div>
             ) : null}
+
           </section>
         ) : null}
 
