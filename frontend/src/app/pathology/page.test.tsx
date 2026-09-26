@@ -86,7 +86,7 @@ vi.mock("./_lib/pathology-workstation-api", () => ({
 }));
 
 it("keeps selection and workflow across numbered/next/previous pages and loading", async () => {
-  const row = (id: string) => ({ case_id: id, patient: { name: id, patient_code: id + "-code" },
+  const row = (id: string) => ({ id: `order-${id}`, case_id: id, patient: { name: id, patient_code: id + "-code" },
     case: { case_code: `case-${id}` }, workflow_status: "SCHEDULED" });
   let release: (() => void) | undefined;
   let delay = true;
@@ -130,7 +130,7 @@ it("shows the initial skeleton and replaces it with the existing error UI on fai
   }));
   render(<Page />);
   const skeleton = screen.getByRole("status", { name: "Worklist 로딩 중" });
-  expect(skeleton.querySelectorAll("tbody tr")).toHaveLength(10);
+  expect(skeleton.querySelectorAll("tbody tr")).toHaveLength(7);
   expect(screen.queryByText("Worklist를 불러오는 중입니다.")).not.toBeInTheDocument();
   await act(async () => { rejectRequest?.(new Error("Worklist request failed")); });
   expect(await screen.findByText("Worklist request failed")).toBeInTheDocument();

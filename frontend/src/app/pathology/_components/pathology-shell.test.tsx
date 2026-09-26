@@ -27,7 +27,7 @@ it("shows the stored staff identity and uses the existing session logout flow", 
   );
 
   expect(screen.getByText("김병리")).toBeInTheDocument();
-  expect(screen.getByText("임상병리사")).toBeInTheDocument();
+  expect(screen.getByText("병리검사 업무")).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "로그아웃" }));
 
