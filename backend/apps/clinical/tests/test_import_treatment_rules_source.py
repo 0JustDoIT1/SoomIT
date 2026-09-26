@@ -29,7 +29,6 @@ class TreatmentRuleSourceTests(SimpleTestCase):
                 histology="adenocarcinoma",
                 stage_group="IV",
                 pdl1_tps=50,
-                treatment_line="1L",
                 ecog=None,
                 findings=[],
             )
@@ -94,7 +93,7 @@ class TreatmentRuleSourceTests(SimpleTestCase):
         rules.all.return_value = []
         output = StringIO()
         call_command("import_treatment_rules_source", dry_run=True, stdout=output)
-        self.assertIn("CREATE=6 REUSE=0 CONFLICT=0", output.getvalue())
+        self.assertIn("CREATE=6 REUSE=0 UPDATE=0 CONFLICT=0", output.getvalue())
         self.assertEqual([call[0] for call in rules.mock_calls], ["all"])
         regimens.filter.return_value = []
         with self.assertRaisesMessage(CommandError, "Missing or incompatible regimen"):
@@ -120,7 +119,7 @@ class TreatmentRuleSourceTests(SimpleTestCase):
         output = StringIO()
         call_command("import_treatment_rules_source", stdout=output)
         rules.create.assert_not_called()
-        self.assertIn("CREATE=0 REUSE=6 CONFLICT=0 ERROR=0", output.getvalue())
+        self.assertIn("CREATE=0 REUSE=6 UPDATE=0 CONFLICT=0 ERROR=0", output.getvalue())
 
     @patch("apps.clinical.management.commands.import_treatment_rules_source.transaction.atomic")
     @patch("apps.clinical.management.commands.import_treatment_rules_source.TreatmentRule.objects")

@@ -243,7 +243,10 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           if (!annotation_type || !Array.isArray(points) || !asset.series_instance_uid || !uids[index]) return;
           const annotationId = typeof annotation?.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-") ? annotation.annotationUID.slice("clinician-".length) : null;
           const text = annotation_type === "TEXT" ? annotationTextRef.current.trim() : undefined;
-          if (annotation_type === "TEXT" && !text) return;
+          if (annotation_type === "TEXT" && !text) {
+            showToast.error("CT 텍스트 주석 내용을 입력해주세요.", { id: `ct-text-annotation-required-${caseId}` });
+            return;
+          }
           const payload = { annotation_type, annotation_data: { series_instance_uid: asset.series_instance_uid, sop_instance_uid: uids[index], tool_name: String(toolName), viewport: "axial", frame_of_reference_uid: metadata?.FrameOfReferenceUID, world_points: points, cached_stats: data?.cachedStats, text } };
           if (annotationId) annotationUpdateRef.current(annotationId, payload);
           else if (completed) annotationSaveRef.current(payload);
@@ -298,7 +301,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           <ToolButton active={activeTool === "LENGTH"} onClick={() => setActiveTool("LENGTH")} label="측정" title="Length measurement" />
           <ToolButton active={activeTool === "ROI"} onClick={() => setActiveTool("ROI")} label="ROI" title="Rectangle ROI" />
           <ToolButton active={activeTool === "TEXT"} onClick={() => setActiveTool("TEXT")} label="Text" title="Text annotation" />
-          {activeTool === "TEXT" && <input aria-label="텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} placeholder="주석 입력 후 영상 클릭" className="h-6 w-28 rounded border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-white placeholder:text-slate-500" />}
+          {activeTool === "TEXT" && <input aria-label="텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} placeholder="내용 입력 후 위치 선택" className="h-6 w-32 rounded border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-white placeholder:text-slate-500" />}
           <ToolButton disabled={!selectedAnnotationId} onClick={() => void deleteSelectedAnnotation()} label="주석 삭제" title="선택한 의료진 주석 삭제" />
           <ToolButton label="Reset" disabled={!uids.length} onClick={resetSlice} title="중앙 슬라이스로 이동" />
           <ToolButton label="전체화면" disabled={!asset} onClick={() => void openFullscreen()} title="전체화면" />
@@ -323,9 +326,12 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
               <input aria-label="선택한 텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} className="h-6 w-28 rounded border border-slate-700 bg-slate-900 px-1.5 text-[8px] text-white" />
               <button type="button" onClick={() => {
                 const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
-                if (!selected || !annotationText.trim()) return;
+                if (!selected || !annotationText.trim()) {
+                  showToast.error("CT 텍스트 주석 내용을 입력해주세요.", { id: `ct-text-annotation-required-${caseId}` });
+                  return;
+                }
                 void updateAnnotation(selected.id, { annotation_type: selected.annotation_type, annotation_data: { ...selected.annotation_data, text: annotationText.trim() } });
-              }} className="shrink-0 rounded bg-blue-600 px-1.5 py-1 text-[8px] font-semibold text-white">텍스트 저장</button>
+              }} className="shrink-0 rounded bg-blue-600 px-1.5 py-1 text-[8px] font-semibold text-white">텍스트 주석 저장</button>
             </>
           )}
         </div>

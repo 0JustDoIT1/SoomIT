@@ -93,7 +93,8 @@ it("creates the first draft once and requires a cycle start date", async () => {
 
 it("shows a non-drug completion path without a prescription creation CTA", async () => {
   render(<PrescriptionPanel {...props} hasSelectedRegimen={false} requiresPrescription={false} authorizedFetch={mockFetch("DRAFT")} />);
-  expect(await screen.findByRole("status")).toHaveTextContent("약물 처방 없이");
+  expect(await screen.findByText(/약물 처방 없이/)).toBeInTheDocument();
+  expect(screen.queryByText("처방 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "임시 처방 생성" })).not.toBeInTheDocument();
 });
 

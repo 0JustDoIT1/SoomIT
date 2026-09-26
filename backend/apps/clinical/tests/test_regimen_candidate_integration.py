@@ -138,7 +138,6 @@ class RegimenCandidateIntegrationTests(TestCase):
             cancer_type="NSCLC",
             stage_condition={"stage": ["IV"]},
             pdl1_condition={"min": 50},
-            treatment_line="1L",
             regimen=r3,
             priority=1,
         )
@@ -155,10 +154,7 @@ class RegimenCandidateIntegrationTests(TestCase):
             priority=1,
         )
 
-    def candidate_codes(self, *, treatment_line=...):
-        if treatment_line is not ...:
-            self.treatment_decision.treatment_line = treatment_line
-            self.treatment_decision.save(update_fields=["treatment_line"])
+    def candidate_codes(self):
         view = DoctorRegimenCandidateListAPIView()
         view.request = SimpleNamespace(user=self.doctor)
         view.kwargs = {"case_id": self.case.id}
@@ -196,21 +192,19 @@ class RegimenCandidateIntegrationTests(TestCase):
     def test_met_exon14_skipping_generates_met_candidate(self):
         self.assertEqual(self.candidates_for("MET", "MET_EXON14_SKIPPING"), ["R6"])
 
-    def test_tr02_uses_saved_treatment_line_and_confirmed_clinical_pdl1_boundaries(self):
+    def test_tr02_uses_confirmed_clinical_pdl1_boundaries(self):
         self.gene_result.gene_findings.all().delete()
         pdl1 = self.pdl1_clinical_result.pdl1_detail
 
-        for tps, treatment_line, expected in [
-            (49, "1L", False),
-            (50, "1L", True),
-            (60, "1L", True),
-            (60, None, False),
-            (60, "2L", False),
+        for tps, expected in [
+            (49, False),
+            (50, True),
+            (60, True),
         ]:
-            with self.subTest(tps=tps, treatment_line=treatment_line):
+            with self.subTest(tps=tps):
                 pdl1.tps_percent = tps
                 pdl1.save(update_fields=["tps_percent"])
-                codes = self.candidate_codes(treatment_line=treatment_line)
+                codes = self.candidate_codes()
                 self.assertEqual("R3" in codes, expected)
 
     def test_draft_or_ai_only_pdl1_never_generates_r3(self):
@@ -222,7 +216,7 @@ class RegimenCandidateIntegrationTests(TestCase):
             update_fields=["result_status", "confirmed_by_user", "confirmed_at", "updated_at"]
         )
 
-        self.assertNotIn("R3", self.candidate_codes(treatment_line="1L"))
+        self.assertNotIn("R3", self.candidate_codes())
 
         self.pdl1_clinical_result.delete()
         model_version = ModelVersion.objects.create(
@@ -247,7 +241,7 @@ class RegimenCandidateIntegrationTests(TestCase):
             probabilities=[0.0, 0.01, 0.99],
         )
 
-        self.assertNotIn("R3", self.candidate_codes(treatment_line="1L"))
+        self.assertNotIn("R3", self.candidate_codes())
 
     def test_non_squamous_generates_r4_but_squamous_does_not(self):
         self.gene_result.gene_findings.all().delete()

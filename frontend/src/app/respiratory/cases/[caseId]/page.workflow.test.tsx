@@ -7,9 +7,10 @@ const mocks = vi.hoisted(() => ({
   authorizedFetch: vi.fn(),
   showToast: { success: vi.fn(), info: vi.fn(), warning: vi.fn(), error: vi.fn(), dismiss: vi.fn() },
   router: { push: vi.fn() },
+  search: "",
 }));
 
-vi.mock("next/navigation", () => ({ useParams: () => ({ caseId: "case-1" }), useRouter: () => mocks.router, useSearchParams: () => new URLSearchParams() }));
+vi.mock("next/navigation", () => ({ useParams: () => ({ caseId: "case-1" }), useRouter: () => mocks.router, useSearchParams: () => new URLSearchParams(mocks.search) }));
 vi.mock("../../_components/respiratory-auth-provider", () => ({ useRespiratoryAuth: () => ({ authorizedFetch: mocks.authorizedFetch }) }));
 vi.mock("@/components/ui/toast/toast", () => ({ showToast: mocks.showToast }));
 vi.mock("./case-chat-panel", () => ({ CaseChatPanel: () => null }));
@@ -40,7 +41,7 @@ vi.mock("./evidence-viewer-panel", () => ({ EvidenceViewerPanel: () => null }));
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
 const baseCase = (stage: string) => ({ id: "case-1", case_code: "CASE-1", patient_code: "PAT-1", patient_name: "환자", primary_doctor_name: "의사", current_stage: stage, case_status: "ACTIVE" });
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); mocks.search = ""; });
 
 it("treats effect cleanup aborts as normal cancellation without errors or toasts", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -77,6 +78,14 @@ async function openCaseWorkspace(name: string) {
   await userEvent.click(within(navigation).getByRole("button", { name }));
   return navigation;
 }
+
+it("opens the current evidence workspace from Dashboard without changing the stage", async () => {
+  mocks.search = "openCurrentEvidence=1";
+  installCaseResponses({ stage: "XRAY" });
+  render(<Page />);
+  expect(await screen.findByTestId("result-panel-XRAY")).toBeInTheDocument();
+  expect(mocks.authorizedFetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
+});
 
 it("keeps the Case action outside the constrained stage body when switching imaging workspaces", async () => {
   installCaseResponses({ stage: "CT", aiResults: [{ id: "analysis-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }] });

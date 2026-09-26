@@ -46,7 +46,7 @@ RULE_CONDITIONS = {
         "biomarker_condition": None,
         "pdl1_condition": {"min": 50},
         "ecog_condition": None,
-        "treatment_line": "1L",
+        "treatment_line": None,
     },
     "TR03": {
         "histology": "non-squamous",
@@ -143,8 +143,11 @@ class Command(BaseCommand):
         if same_key:
             if len(same_key) != 1 or any(item.pk != same_key[0].pk for item in same_slot):
                 return "CONFLICT"
-            return "REUSE" if all(getattr(same_key[0], key) == value
-                                  for key, value in values.items()) else "CONFLICT"
+            if all(getattr(same_key[0], key) == value for key, value in values.items()):
+                return "REUSE"
+            # TR02/R3 is the only document-controlled master rule whose condition
+            # may be revised in place. Other source drift remains fail-closed.
+            return "UPDATE" if same_key[0].rule_code == "TR02" else "CONFLICT"
         return "CONFLICT" if same_slot else "CREATE"
 
     def handle(self, *args, **options):
@@ -155,10 +158,22 @@ class Command(BaseCommand):
                 for status, values in decisions:
                     if status == "CREATE":
                         TreatmentRule.objects.create(**values)
+                    elif status == "UPDATE":
+                        target = next(
+                            item for item in TreatmentRule.objects.all()
+                            if item.rule_code == values["rule_code"]
+                            and item.regimen_id == values["regimen_id"]
+                        )
+                        for field, value in values.items():
+                            setattr(target, field, value)
+                        target.save(update_fields=[
+                            *("regimen" if field == "regimen_id" else field for field in values),
+                            "updated_at",
+                        ])
         if options["dry_run"]:
             self.stdout.write("Dry-run complete: database unchanged. CREATE means planned only.")
         else:
-            self.stdout.write("Import complete: transaction committed; existing rows unchanged.")
+            self.stdout.write("Import complete: transaction committed.")
 
     def plan(self, rows):
         regimen_rows = list(Regimen.objects.filter(
@@ -185,7 +200,7 @@ class Command(BaseCommand):
             statuses[status] += 1
             decisions.append((status, values))
             self.stdout.write(f"{row['rule_code']}/{code}/priority={row['priority']}: {status}")
-        self.stdout.write(" ".join(f"{name}={statuses[name]}" for name in ("CREATE", "REUSE", "CONFLICT", "ERROR")))
+        self.stdout.write(" ".join(f"{name}={statuses[name]}" for name in ("CREATE", "REUSE", "UPDATE", "CONFLICT", "ERROR")))
         if statuses["CONFLICT"]:
             raise CommandError("Conflicts detected; no automatic updates and no writes.")
         return decisions

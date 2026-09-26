@@ -6,6 +6,7 @@ import { MedicationSchedulePanel } from "./medication-schedule-panel";
 import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
 
 import { showToast } from "@/components/ui/toast/toast";
+import { LoadingIndicator } from "@/components/common/loading-indicator";
 import type { AuthorizedFetch } from "./treatment-prescription-types";
 
 type Item = { id: string; drug_name: string; ingredient_name?: string | null; mfds_item_seq?: string | null; calculated_dose: string | number | null; final_dose: string | number | null; unit: string | null; route: string; instructions?: string | null };
@@ -48,7 +49,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
   const acknowledge = async (id: string) => { const note = window.prompt("WARNING 확인 사유를 입력하세요.", "담당의 검토 후 처방 진행"); if (note === null) return; if (!note.trim()) { setError("WARNING 확인 사유를 입력해 주세요."); return; } await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/warnings/acknowledge/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acknowledgment_note: note.trim() }) }, "WARNING 확인이 완료되었습니다."); };
   const finalize = async (id: string, schedules: FinalizeMedicationSchedule[]) => { if (!window.confirm("처방을 최종 확정하면 이후 수정할 수 없습니다.\n계속하시겠습니까?")) return; const toastId = `case-prescription-finalize-${caseId}-${id}`; showToast.info("처방을 확정하고 있습니다.", { id: toastId }); await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/finalize/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medication_schedules: schedules }) }, "처방이 최종 확정되었습니다.", toastId); };
 
-  if (loading) return <section className="rounded-lg bg-white p-4 text-sm">처방 조회 중...</section>;
+  if (loading) return <LoadingIndicator label="처방 정보를 불러오는 중입니다." />;
 
   const creationForm = actionable && requiresPrescription ? (
       <details className="shrink-0 border-t border-slate-200 pt-2" open={prescriptions.length === 0}>

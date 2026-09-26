@@ -20,7 +20,7 @@ class RegimenCandidateTests(SimpleTestCase):
         self.view = View()
         self.data = dict(
             case=object(), histology="adenocarcinoma", cancer_type="NSCLC",
-            stage_group="IV", pdl1_tps=Decimal("60"), treatment_line=None, ecog=None,
+            stage_group="IV", pdl1_tps=Decimal("60"), ecog=None,
             findings=[self.finding("EGFR", "EGFR_EX19_DEL")],
         )
 
@@ -65,7 +65,6 @@ class RegimenCandidateTests(SimpleTestCase):
         for field, condition in [
             ("stage_group", {"stage_condition": {"stage": ["IV"]}}),
             ("pdl1_tps", {"pdl1_condition": {"min": 50}}),
-            ("treatment_line", {"treatment_line": "FIRST_LINE"}),
             ("ecog", {"ecog_condition": {"max": 1}}),
             ("cancer_type", {}),
         ]:
@@ -81,14 +80,13 @@ class RegimenCandidateTests(SimpleTestCase):
         self.assertIsNone(self.view._match_rule(
             self.rule(stage_condition={"stage": ["III"]}), self.data))
 
-    def test_document_tr02_requires_stage_iv_confirmed_tps_and_first_line(self):
+    def test_document_tr02_requires_stage_iv_and_confirmed_tps(self):
         rule = self.rule(
             rule_code="TR02",
             stage_condition={"stage": ["IV"]},
             pdl1_condition={"min": 50},
-            treatment_line="1L",
         )
-        data = {**self.data, "findings": [], "treatment_line": "1L"}
+        data = {**self.data, "findings": []}
 
         for stage in ("IV", "IVA", "IVB"):
             with self.subTest(stage=stage):
@@ -97,8 +95,6 @@ class RegimenCandidateTests(SimpleTestCase):
             {"stage_group": "III"},
             {"pdl1_tps": Decimal("49.99")},
             {"pdl1_tps": None},
-            {"treatment_line": None},
-            {"treatment_line": "2L"},
         ):
             with self.subTest(changes=changes):
                 self.assertIsNone(self.view._match_rule(rule, {**data, **changes}))
@@ -162,16 +158,16 @@ class RegimenCandidateTests(SimpleTestCase):
         self.assertTrue(all("?" not in key for key in keys))
 
     def test_korean_match_reasons_are_intact(self):
-        data = {**self.data, "treatment_line": "FIRST_LINE", "ecog": 1}
+        data = {**self.data, "ecog": 1}
         rule = self.rule(
             histology="선암", stage_condition={"stage": ["IV"]},
-            treatment_line="FIRST_LINE", pdl1_condition={"min": 50},
+            pdl1_condition={"min": 50},
             ecog_condition={"max": 1},
         )
         reasons = self.view._match_rule(rule, data)
         self.assertEqual(reasons, [
             "암종 일치: NSCLC", "조직형 일치: adenocarcinoma", "병기 일치: IV",
-            "치료 차수 일치: FIRST_LINE", "PD-L1 TPS 60%: 조건 충족",
+            "PD-L1 TPS 60%: 조건 충족",
             "ECOG 1: 조건 충족", "바이오마커 일치: EGFR / EGFR_EX19_DEL",
         ])
         serializer = TreatmentRuleCandidateSerializer(
@@ -249,11 +245,10 @@ class RegimenCandidateTests(SimpleTestCase):
         self.assertEqual(serializer.get_match_reasons(rule), reasons)
         self.assertTrue({"id", "regimen", "regimen_detail", "priority", "match_reasons"}.issubset(serializer.fields))
 
-    @patch("apps.clinical.views.TreatmentDecision.objects")
     @patch("apps.clinical.views.PDL1Result.objects")
     @patch("apps.clinical.views.ClinicalResult.objects")
     @patch("apps.clinical.views.LungCancerCase.objects")
-    def test_direct_pdl1_latest_null_and_request_cache(self, cases, clinical, pdl1, decisions):
+    def test_direct_pdl1_latest_null_and_request_cache(self, cases, clinical, pdl1):
         case = object()
         cases.filter.return_value.first.return_value = case
         confirmed = clinical.filter.return_value
@@ -261,12 +256,10 @@ class RegimenCandidateTests(SimpleTestCase):
         gene_query = confirmed.filter.return_value.select_related.return_value.prefetch_related.return_value
         gene_query.order_by.return_value.first.return_value = None
         pdl1.filter.return_value.order_by.return_value.first.return_value = NS(tps_percent=None)
-        decisions.filter.return_value.order_by.return_value.first.return_value = NS(treatment_line="2L")
         self.view.kwargs = {"case_id": "case"}
         self.view.request = NS(user=object())
         data = self.view._candidate_input()
         self.assertIsNone(data["pdl1_tps"])
-        self.assertEqual(data["treatment_line"], "2L")
         self.assertEqual(data["findings"], [])
         self.assertIs(self.view._candidate_input(), data)
         pdl1.filter.assert_called_once_with(

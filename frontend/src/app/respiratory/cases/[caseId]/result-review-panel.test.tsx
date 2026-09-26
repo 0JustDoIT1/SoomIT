@@ -66,7 +66,7 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText(/원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요/)).toBeTruthy();
     expect(screen.getByText(/호흡기내과 최종 판단 결과 대기/)).toBeTruthy();
     expect(screen.queryByText("Annotation API 연동 대기")).toBeNull();
-    expect(screen.getByText("연결된 영상이 없습니다.")).toBeTruthy();
+    expect(screen.getByText("표시 가능한 원본 영상이 없습니다.")).toBeTruthy();
   });
 
   it("keeps the successful AI panel when the clinical result request fails", () => {
@@ -168,15 +168,22 @@ describe("ResultReviewPanel", () => {
   });
 
   it.each([
-    ["XRAY", "흉부 X선"],
-    ["CT", "흉부 CT 검사·결과"],
-    ["PATHOLOGY_GENE", "병리 검사·결과"],
-  ])("uses the shared result layout for %s", (stage, heading) => {
+    ["XRAY", "흉부 X선", true],
+    ["CT", "흉부 CT 검사·결과", true],
+    ["PATHOLOGY_GENE", "병리 검사·결과", false],
+  ])("uses the shared result layout for %s", (stage, heading, imageWorkspace) => {
     render(<ResultReviewPanel stage={stage} />);
-    expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+    if (imageWorkspace) {
+      expect(screen.queryByRole("heading", { name: heading })).toBeNull();
+      expect(screen.getByRole("heading", { name: "호흡기내과 최종 판단" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "AI 분석 후보" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "X-ray Viewer" })).toBeTruthy();
+    } else {
+      expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "원본 영상" })).toBeTruthy();
+    }
     expect(screen.getByText("확정 결과 없음")).toBeTruthy();
     expect(screen.getByText("AI 후보 없음")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "원본 영상" })).toBeTruthy();
   });
 
   it("maps the actual gene findings arrays from clinical and AI serializers", () => {

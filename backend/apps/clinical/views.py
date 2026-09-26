@@ -1976,7 +1976,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             case_status="ACTIVE",
         ).first()
         data = dict(case=case, histology=None, cancer_type=None, stage_group=None,
-                    findings=[], pdl1_tps=None, treatment_line=None, ecog=None)
+                    findings=[], pdl1_tps=None, ecog=None)
         if case is not None:
             confirmed = ClinicalResult.objects.filter(case=case, result_status="CONFIRMED")
             ordering = (F("confirmed_at").desc(nulls_last=True), "-updated_at", "-id")
@@ -2007,14 +2007,6 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             ).first()
             if pdl1 is not None:
                 data["pdl1_tps"] = pdl1.tps_percent
-            treatment_decision = TreatmentDecision.objects.filter(
-                clinical_result__case=case,
-            ).order_by(
-                F("clinical_result__updated_at").desc(nulls_last=True),
-                "-clinical_result_id",
-            ).first()
-            if treatment_decision is not None:
-                data["treatment_line"] = treatment_decision.treatment_line
         self._candidate_input_cache = data
         return data
 
@@ -2074,10 +2066,6 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 if not self._stage_matches(data["stage_group"], self._strings(stage["stage"])):
                     return None
                 reasons.append(f"병기 일치: {data['stage_group']}")
-            if rule.treatment_line and rule.treatment_line.strip():
-                if data["treatment_line"] is None or rule.treatment_line != data["treatment_line"]:
-                    return None
-                reasons.append(f"치료 차수 일치: {data['treatment_line']}")
             if not self._range_matches(pdl1, data["pdl1_tps"], 100):
                 return None
             if not self._range_matches(ecog, data["ecog"], 5):
@@ -2194,13 +2182,12 @@ class DoctorTreatmentEvidenceAPIView(APIView):
             "cancer_type": data["cancer_type"], "histology": data["histology"],
             "stage": data["stage_group"], "confirmed_gene_findings": confirmed_findings,
             "pdl1_tps": data["pdl1_tps"], "ecog": data["ecog"],
-            "treatment_line": data["treatment_line"],
         }
         query = (
             f"{context['cancer_type'] or ''} {context['histology'] or ''}, "
             f"stage {context['stage'] or ''}, "
             f"confirmed alterations {', '.join(finding['alteration_code'] for finding in confirmed_findings)}, "
-            f"treatment line {context['treatment_line'] or ''}, selected regimen {regimen.regimen_code} {regimen.regimen_name}, "
+            f"selected regimen {regimen.regimen_code} {regimen.regimen_name}, "
             f"drugs {', '.join(drug_names)}. Summarize NCI PDQ evidence relevant to this selected regimen."
         ).strip()
         document = KnowledgeDocument.objects.filter(source_uri=self.NCI_PDQ_URI).first()

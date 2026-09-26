@@ -198,7 +198,6 @@ class CandidateContractTests(SimpleTestCase):
             clinical_result=clinical_result,
             ai_recommendation_action="NOT_USED",
             treatment_type="OBSERVATION",
-            treatment_line="1L",
             treatment_plan="Observation",
         )
 
@@ -207,7 +206,6 @@ class CandidateContractTests(SimpleTestCase):
         self.assertEqual(payload["decision_status"], "CONFIRMED")
         self.assertEqual(payload["current_stage"], "PRESCRIPTION")
         self.assertEqual(payload["case_status"], "ACTIVE")
-        self.assertEqual(payload["treatment_line"], "1L")
         self.assertFalse(payload["requires_prescription"])
 
     def test_queryset_order_and_response_contract(self):

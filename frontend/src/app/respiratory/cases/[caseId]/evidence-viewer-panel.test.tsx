@@ -22,15 +22,15 @@ describe("EvidenceViewerPanel", () => {
     const onRetry = vi.fn();
     render(<EvidenceViewerPanel error="영상 조회 권한이 없습니다." onRetry={onRetry} />);
     expect(screen.getByRole("alert")).toHaveTextContent("영상 조회 권한이 없습니다.");
-    fireEvent.click(screen.getByRole("button", { name: "영상만 다시 시도" }));
+    fireEvent.click(screen.getByRole("button", { name: "영상 다시 시도" }));
     expect(onRetry).toHaveBeenCalledOnce();
   });
 
   it("shows an honest inline empty state while the image API is unavailable", () => {
     render(<EvidenceViewerPanel />);
     expect(screen.getByText("표시 가능한 원본 영상이 없습니다.")).toBeTruthy();
-    expect(screen.getByText("연결된 영상이 없습니다.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "크게 보기" })).toBeDisabled();
+    expect(screen.getByText("Case 영상 API가 연결되면 이 영역에서 원본 영상을 바로 확인할 수 있습니다.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "전체화면" })).toBeDisabled();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
@@ -39,7 +39,7 @@ describe("EvidenceViewerPanel", () => {
     expect(screen.getByText("CT · DICOM")).toBeTruthy();
     expect(screen.getByText("ORTHANC · READY")).toBeTruthy();
     expect(screen.getByText("현재 저장소 형식은 영상 제공 API 연결 후 이 영역에 표시됩니다.")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "크게 보기" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "전체화면" })).toBeDisabled();
   });
 
   it("renders a browser image inline and expands the same viewer without a modal", () => {
@@ -47,7 +47,7 @@ describe("EvidenceViewerPanel", () => {
     Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: requestFullscreen });
     render(<EvidenceViewerPanel assets={[{ id: "asset-1", image_type: "XRAY", file_format: "PNG", storage_uri: "https://example.test/xray.png" }]} />);
     expect(screen.getByRole("img", { name: "XRAY 원본 영상" })).toHaveAttribute("src", "https://example.test/xray.png");
-    fireEvent.click(screen.getByRole("button", { name: "크게 보기" }));
+    fireEvent.click(screen.getByRole("button", { name: "전체화면" }));
     expect(requestFullscreen).toHaveBeenCalledOnce();
     expect(screen.queryByRole("dialog")).toBeNull();
   });
@@ -67,10 +67,10 @@ describe("EvidenceViewerPanel", () => {
       { class_name: "medium", score: 0.61, bbox_xyxy: [75, 75, 90, 90] },
     ]} />);
 
-    expect(screen.getByText("주요 병변 2/4")).toBeTruthy();
+    expect(screen.getByText("병변 주요 2/4")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /low/ })).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "전체 보기" }));
-    expect(screen.getByText("전체 병변 4/4")).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: /low/ })).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "병변 주요 2/4" }));
+    expect(screen.getByText("병변 전체 4/4")).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: /low/ })).toHaveLength(1);
   });
 });

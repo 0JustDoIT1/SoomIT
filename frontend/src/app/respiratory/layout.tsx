@@ -224,7 +224,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   if (!isReady || !isAuthenticated) return null;
 
   return (
-    <div className="clinical-app clinical-app-respiratory respiratory-app flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
+    <div className="clinical-app clinical-app-respiratory respiratory-app respiratory-cursor flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
       <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] px-1 py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm lg:h-11 lg:w-11" title="SoomIT">
           <Image src="/images/logo_small.png" alt="SoomIT" width={34} height={34} priority className="h-8 w-8 object-contain lg:h-9 lg:w-9" />
@@ -237,7 +237,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
           <ShellNavButton icon="notification" label="알림" active={pathname.startsWith("/respiratory/notifications")} onClick={() => router.push("/respiratory/notifications")} count={notifications.unread_count} />
         </nav>
         <nav className="mt-auto flex w-full flex-col items-center gap-1 border-t border-white/15 pt-3" aria-label="유틸리티 메뉴">
-          <ShellNavButton icon="help" label="도움말" active={false} onClick={() => undefined} disabled />
+          <ShellNavButton icon="help" label="도움말" active={pathname.startsWith("/respiratory/help")} onClick={() => router.push("/respiratory/help")} />
           <ShellNavButton icon="settings" label="설정" active={pathname.startsWith("/respiratory/settings")} onClick={() => router.push("/respiratory/settings")} />
         </nav>
       </aside>

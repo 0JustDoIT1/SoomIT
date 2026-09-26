@@ -4,6 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useRef, useState } from "reac
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { showToast } from "@/components/ui/toast/toast";
+import { LoadingIndicator } from "@/components/common/loading-indicator";
 import { API_BASE_URL, type ExaminationOrder } from "../../_lib/respiratory-api";
 import { PrescriptionSection, TreatmentSection } from "./treatment-prescription-sections";
 import { CaseWorkspaceEmpty } from "./case-workspace-empty";
@@ -215,7 +216,6 @@ type RegimenCandidateDetail = {
   regimen_name: string;
   cancer_type: string;
   histology: string | null;
-  treatment_line: string | null;
   cycle_length_days: number | null;
   induction_cycles: number | null;
   maintenance_yn: boolean;
@@ -1171,8 +1171,18 @@ export default function RespiratoryCaseDetailPage() {
     previousCaseIdRef.current = caseId;
     previousCaseStageRef.current = currentCaseStage;
 
-    // Case를 처음 열거나 다른 Case로 이동하면 항상 '전체 요약'에서 시작한다.
+    // Dashboard evidence links open only the server-reported current stage.
+    // Ordinary Case navigation continues to start at the overview.
     if (caseChanged || previousStage === undefined) {
+      if (searchParams.get("openCurrentEvidence") === "1") {
+        const evidenceStage = stage === "PRESCRIPTION" ? "TREATMENT" : stage;
+        const navigation = getCaseMenuNavigation(evidenceStage);
+        setSelectedInfoMenu(evidenceStage);
+        if (navigation.mainMenu) setSelectedMainMenu(navigation.mainMenu);
+        if (navigation.resultMenu) selectResultMenu(navigation.resultMenu);
+        if (navigation.aiMenu) setSelectedAiMenu(navigation.aiMenu);
+        return;
+      }
       setSelectedInfoMenu("OVERVIEW");
       return;
     }
@@ -1198,7 +1208,7 @@ export default function RespiratoryCaseDetailPage() {
     // Workflow 전환은 접근 가능 범위만 갱신한다. 사용자가 보고 있던 단계가
     // 새 current_stage의 과거 단계라면 읽기 전용 화면으로 그대로 유지한다.
     // 미래 workspace가 선택된 비정상 상태만 위의 LOCKED 분기에서 복구한다.
-  }, [caseId, caseOrders, currentCaseStage, selectedCase?.case_status, selectedInfoMenu, selectResultMenu, tnmAnalysisResults, tnmClinicalResults]);
+  }, [caseId, caseOrders, currentCaseStage, searchParams, selectedCase?.case_status, selectedInfoMenu, selectResultMenu, tnmAnalysisResults, tnmClinicalResults]);
 
   const latestPdl1Result =
     pdl1Results.length > 0
@@ -1739,9 +1749,7 @@ export default function RespiratoryCaseDetailPage() {
 
   if (loading) {
     return (
-      <div className="rounded-2xl bg-white p-6 text-sm text-slate-500 shadow-sm">
-        담당 환자 정보를 불러오는 중입니다.
-      </div>
+      <LoadingIndicator label="담당 환자 정보를 불러오는 중입니다." className="m-4 min-h-32 rounded-2xl shadow-sm" />
     );
   }
 
@@ -2783,9 +2791,6 @@ export default function RespiratoryCaseDetailPage() {
                       </h2>
                       <p className="mt-1 text-xs text-slate-400">
                         {candidate.regimen_detail.regimen_code}
-                        {candidate.regimen_detail.treatment_line
-                          ? ` · ${candidate.regimen_detail.treatment_line}`
-                          : ""}
                       </p>
                     </div>
                     <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-500">

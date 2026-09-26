@@ -143,7 +143,6 @@ class DoctorTreatmentEvidenceDraftRegimenTests(SimpleTestCase):
             "stage_group": "IV",
             "pdl1_tps": 50,
             "ecog": 1,
-            "treatment_line": "1L",
         }
         candidate_queryset.return_value = [rule]
         documents.filter.return_value.first.return_value = NS(id=uuid.uuid4())
@@ -183,7 +182,6 @@ class DoctorTreatmentEvidenceDraftRegimenTests(SimpleTestCase):
             "stage_group": "IVA",
             "pdl1_tps": 10,
             "ecog": None,
-            "treatment_line": None,
         }
         candidate_queryset.return_value = [rule]
         documents.filter.return_value.first.return_value = NS(id=uuid.uuid4())

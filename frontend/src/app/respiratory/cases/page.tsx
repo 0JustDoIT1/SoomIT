@@ -21,6 +21,9 @@ import {
   type DashboardCaseSnapshot,
   type DashboardConsultation,
 } from "../dashboard/dashboard-work-queues";
+import styles from "../dashboard/dashboard.module.css";
+import { LoadingIndicator } from "@/components/common/loading-indicator";
+import { DashboardAssistant } from "../dashboard/dashboard-assistant";
 import {
   getCaseListFetchError,
   getCaseListHttpError,
@@ -109,13 +112,13 @@ export default function RespiratoryCasesPage() {
   /* ---------------------------------------------------------------------- */
 
   const openCase = useCallback(
-    (id: string) => {
+    (id: string, openEvidence = false) => {
       window.localStorage.setItem(
         "respiratory-last-case-id",
         id,
       );
 
-      router.push(`/respiratory/cases/${id}`);
+      router.push(`/respiratory/cases/${id}${openEvidence ? "?openCurrentEvidence=1" : ""}`);
     },
     [router],
   );
@@ -796,13 +799,13 @@ export default function RespiratoryCasesPage() {
   /* ---------------------------------------------------------------------- */
 
   return (
-    <div className="h-full overflow-auto bg-slate-50 px-6 py-5">
-      <div className="mx-auto max-w-[1440px]">
+    <div className={`${styles.dashboard} h-full overflow-auto bg-slate-50 px-4 py-5 lg:px-6`}>
+      <div className="mx-auto max-w-[1600px]">
         {/* Header */}
 
         <header className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="h-1 bg-gradient-to-r from-blue-600 via-cyan-500 to-emerald-400" />
-          <div className="flex min-h-[136px] items-center justify-between gap-6 px-6 py-5">
+          <div className="h-0.5 bg-blue-600" />
+          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
             <div className="flex min-w-0 items-center gap-4">
               <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 sm:flex" aria-hidden="true">
                 <svg width="25" height="25" viewBox="0 0 24 24" fill="none">
@@ -821,7 +824,7 @@ export default function RespiratoryCasesPage() {
               </div>
             </div>
 
-            <div className="flex shrink-0 flex-col items-end gap-3">
+            <div className="flex shrink-0 items-center gap-3">
               <span className="hidden text-xs text-slate-500 md:block">
                 {casesSyncing
                   ? "업무함을 갱신하는 중입니다."
@@ -838,6 +841,14 @@ export default function RespiratoryCasesPage() {
                 {casesSyncing ? "갱신 중" : "업무 새로고침"}
               </button>
             </div>
+          </div>
+
+          <div className="border-t border-slate-100 px-5 py-4 xl:px-6">
+            <DashboardAssistant
+              cases={cases}
+              authorizedFetch={authorizedFetch}
+              onOpenCase={openCase}
+            />
           </div>
 
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 bg-slate-50/70 px-6 py-2.5 text-xs text-slate-500">
@@ -858,8 +869,8 @@ export default function RespiratoryCasesPage() {
         {/* Loading */}
 
         {loading && (
-          <section className="rounded-xl border border-slate-200 bg-white px-6 py-16 text-center text-sm text-slate-500">
-            담당 Case와 업무 현황을 불러오는 중입니다.
+          <section className="rounded-xl border border-slate-200 bg-white p-5">
+            <LoadingIndicator label="담당 Case와 업무 현황을 불러오는 중입니다." />
           </section>
         )}
 
@@ -867,7 +878,7 @@ export default function RespiratoryCasesPage() {
 
         {!loading &&
           error && (
-            <section className="rounded-xl border border-rose-200 bg-white px-6 py-16 text-center">
+            <section className="rounded-xl border border-slate-200 bg-white px-6 py-8 text-center">
               <p className="text-sm font-semibold text-rose-700">
                 {error}
               </p>
@@ -889,6 +900,8 @@ export default function RespiratoryCasesPage() {
         {!loading &&
           !error && (
             <DashboardWorkQueues
+              authorizedFetch={authorizedFetch}
+              onOpenEvidence={(id) => openCase(id, true)}
               cases={cases}
               snapshots={
                 caseSnapshots

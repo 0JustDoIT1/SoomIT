@@ -43,7 +43,8 @@ describe("CaseOverviewPanel", () => {
     render(<CaseOverviewPanel caseData={caseData} clinicalResults={[]} aiResults={[]} />);
 
     expect(screen.getByText("확인 가능한 전문과 확정 결과가 없습니다.")).toBeTruthy();
-    expect(screen.getByText("현재 기록된 호흡기내과 판단이 없습니다.")).toBeTruthy();
+    expect(screen.getByText("다음 단계의 상세 판단은 아직 기록되지 않았습니다.")).toBeTruthy();
+    expect(screen.getAllByText("PD-L1")).toHaveLength(3);
     expect(screen.getAllByText("정보 없음")).toHaveLength(6);
   });
 
@@ -64,7 +65,7 @@ describe("CaseOverviewPanel", () => {
     expect(screen.getByText("전문과 확정")).toBeTruthy();
     expect(screen.getByText("AI 후보 있음")).toBeTruthy();
     expect(screen.getByText("처방 있음")).toBeTruthy();
-    expect(screen.getAllByText("현재 단계")).toHaveLength(2);
+    expect(screen.getAllByText("현재 단계")).toHaveLength(3);
   });
 
   it("marks only an active examination order as in progress without treating it as a result", () => {

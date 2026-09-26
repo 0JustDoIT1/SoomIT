@@ -1,4 +1,4 @@
-import { getStageLabel } from "./case-workflow-header";
+import { CASE_STAGES, getStageLabel } from "./case-workflow-header";
 import { getCaseStatusLabel, getDecisionTypeLabel } from "./clinical-display-labels";
 
 type OverviewCase = {
@@ -53,6 +53,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
     .filter((result) => result.result_status === "CONFIRMED")
     .sort((left, right) => toTimestamp(right.result_date) - toTimestamp(left.result_date));
   const flowItems = buildFlowItems(caseData.current_stage, clinicalResults, aiResults, prescriptions, orders);
+  const nextStageLabel = getNextStageLabel(caseData.current_stage);
   const activeOrderCount = orders.filter((order) => ["ORDERED", "SCHEDULED"].includes(order.status)).length;
   const activeOrders = orders.filter((order) => ["ORDERED", "SCHEDULED"].includes(order.status)).slice(0, 3);
 
@@ -71,8 +72,9 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
 
       {decision && ["REPEAT_EXAMINATION", "REFERRED_OUT", "CLOSE_CASE"].includes(decision.decision_type) && <section className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-lg border px-3 py-2.5 text-xs ${decision.decision_type === "REPEAT_EXAMINATION" ? "border-amber-200 bg-amber-50 text-amber-800" : decision.decision_type === "REFERRED_OUT" ? "border-violet-200 bg-violet-50 text-violet-800" : "border-slate-300 bg-slate-50 text-slate-700"}`}><div><p className="font-bold">{decision.decision_type === "REPEAT_EXAMINATION" ? "재생검 요청" : decision.decision_type === "REFERRED_OUT" ? "의뢰·전원 처리" : "Case 종료"}</p><p className="mt-0.5 text-[10px] opacity-80">{decision.reason || "결정 사유가 기록되었습니다."}</p></div><span className="shrink-0 rounded-full bg-white/70 px-2 py-1 text-[10px] font-semibold">{formatDate(decision.decided_at)}</span></section>}
 
-      <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50/70 md:grid-cols-4">
+      <div className="grid grid-cols-2 border-b border-slate-200 bg-slate-50/70 md:grid-cols-5">
         <Metric label="현재 단계" value={getStageLabel(caseData.current_stage)} accent />
+        <Metric label="다음 단계" value={nextStageLabel} />
         <Metric label="Case 상태" value={getCaseStatusLabel(caseData.case_status)} />
         <Metric label="전문과 확정 결과" value={`${confirmedClinicalResults.length}건`} />
         <Metric label="진행 중 오더" value={ordersLoaded ? `${activeOrderCount}건` : "조회 불가"} />
@@ -97,7 +99,7 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
           items={confirmedClinicalResults.slice(0, 4).map((result) => ({
             id: result.id ?? `${result.workflow_stage}-${result.result_date ?? "none"}`,
             title: result.exam_name || getClinicalResultLabel(result.workflow_stage),
-            status: result.result_status_label || result.result_status || "-",
+            status: getClinicalResultStatusLabel(result.result_status_label, result.result_status),
             date: formatDate(result.result_date),
           }))}
         />
@@ -110,16 +112,20 @@ export function CaseOverviewPanel({ caseData, clinicalResults, aiResults, prescr
               <Detail label="결정" value={getDecisionTypeLabel(decision.decision_type)} />
               <Detail label="검토 단계" value={getStageLabel(decision.source_stage)} />
               <Detail label="다음 단계" value={decision.target_stage ? getStageLabel(decision.target_stage) : "-"} />
-              <Detail label="결정자" value={decision.decided_by} />
+              <Detail label="결정자" value={displayClinician(decision.decided_by)} />
               <Detail label="결정 시각" value={formatDate(decision.decided_at)} />
               {decision.reason && <p className="mt-3 border-t border-violet-100 pt-3 text-[11px] leading-5 text-slate-600">{decision.reason}</p>}
             </div>
           ) : (
-            <EmptyState message="현재 기록된 호흡기내과 판단이 없습니다." />
+            <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
+              <Detail label="현재 단계" value={getStageLabel(caseData.current_stage)} />
+              <Detail label="다음 단계" value={nextStageLabel} />
+              <p className="pt-2 text-[11px] leading-5 text-slate-500">다음 단계의 상세 판단은 아직 기록되지 않았습니다.</p>
+            </div>
           )}
           <section className="mt-3 rounded-lg border border-blue-100 bg-blue-50/40 px-3 py-2.5">
             <p className="text-[10px] font-semibold text-blue-700">진행 중 검사 예약</p>
-            {activeOrders.length ? <div className="mt-2 space-y-1.5">{activeOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 text-[11px]"><span className="min-w-0 truncate font-semibold text-slate-700">{order.order_type_label}</span>{order.scheduled_at && <span className="shrink-0 text-slate-500">{`${appointmentStatusLabel(order.appointment_status)} · ${formatDate(order.scheduled_at)}`}</span>}</div>)}</div> : <p className="mt-2 text-[11px] text-slate-400">진행 중인 검사 오더가 없습니다.</p>}
+            {!ordersLoaded ? <p className="mt-2 text-[11px] text-rose-600">검사 오더를 조회할 수 없습니다.</p> : activeOrders.length ? <div className="mt-2 space-y-1.5">{activeOrders.map((order) => <div key={order.id} className="flex items-center justify-between gap-3 text-[11px]"><span className="min-w-0 truncate font-semibold text-slate-700">{order.order_type_label}</span>{order.scheduled_at && <span className="shrink-0 text-slate-500">{`${appointmentStatusLabel(order.appointment_status)} · ${formatDate(order.scheduled_at)}`}</span>}</div>)}</div> : <p className="mt-2 text-[11px] text-slate-400">진행 중인 검사 오더 없음</p>}
           </section>
           <div className="mt-3 rounded-lg bg-slate-50 px-3 py-2.5">
             <p className="text-[10px] text-slate-400">Case 상태</p>
@@ -146,7 +152,7 @@ function EmptyState({ message }: { message: string }) {
 }
 
 function Detail({ label, value }: { label: string; value: string }) {
-  return <div className="flex items-start justify-between gap-3 border-b border-violet-100 py-1.5 last:border-0"><span className="shrink-0 text-[10px] text-slate-400">{label}</span><span className="min-w-0 text-right text-[11px] font-semibold text-slate-700">{value || "-"}</span></div>;
+  return <div className="flex items-start justify-between gap-3 border-b border-violet-100 py-1.5 last:border-0"><span className="shrink-0 text-[10px] text-slate-400">{label}</span><span className="min-w-0 text-right text-[11px] font-semibold text-slate-700">{value || "미입력"}</span></div>;
 }
 
 type FlowState = "current" | "confirmed" | "ai" | "ordered" | "recorded" | "empty";
@@ -190,8 +196,29 @@ function getClinicalResultLabel(examType: string) {
   return labels[examType] ?? getStageLabel(examType);
 }
 
+function getNextStageLabel(currentStage?: string | null) {
+  if (!currentStage) return "조회 불가";
+  if (currentStage === "FINAL") return "완료";
+  const index = CASE_STAGES.findIndex((stage) => stage.code === currentStage);
+  if (index < 0) return "조회 불가";
+  return CASE_STAGES[index + 1]?.label ?? "완료";
+}
+
+function getClinicalResultStatusLabel(label?: string, status?: string) {
+  if (label) return label;
+  if (status === "CONFIRMED") return "확정";
+  if (status === "DRAFT") return "작성 중";
+  if (status === "PENDING") return "대기";
+  return "상태 확인 필요";
+}
+
+function displayClinician(value?: string | null) {
+  if (!value) return "미입력";
+  return /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value) ? "기록됨" : value;
+}
+
 function formatDate(value?: string | null) {
-  if (!value) return "-";
+  if (!value) return "미입력";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString("ko-KR");
 }

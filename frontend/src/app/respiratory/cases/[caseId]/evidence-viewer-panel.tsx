@@ -80,6 +80,9 @@ export function EvidenceViewerPanel({
   return (
     <section className="grid h-full min-h-0 grid-rows-[40px_minmax(0,1fr)] overflow-hidden rounded-md border border-slate-800 bg-[#050812] shadow-inner">
       <span className="sr-only">
+        {activeAsset?.image_type || "-"} · {activeAsset?.file_format || "-"}
+      </span>
+      <span className="sr-only">
         {activeAsset?.storage_type || "-"} · {activeAsset?.status || "-"}
       </span>
 
@@ -197,10 +200,12 @@ export function EvidenceViewerPanel({
           )}
 
           {loading ? (
-            <ViewerState
-              title="원본 영상을 불러오는 중입니다."
-              description="영상 데이터를 준비하고 있습니다."
-            />
+            <div role="status" aria-live="polite">
+              <ViewerState
+                title="원본 영상을 불러오는 중입니다."
+                description="영상 데이터를 준비하고 있습니다."
+              />
+            </div>
           ) : error ? (
             <div role="alert" className="max-w-sm px-6 text-center">
               <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-full border border-rose-400/30 bg-rose-500/10 text-sm text-rose-300">

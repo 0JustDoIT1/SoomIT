@@ -720,7 +720,6 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
             "ai_recommendation_action_label",
             "treatment_type",
             "treatment_type_label",
-            "treatment_line",
             "requires_prescription",
             "selected_regimen",
             "selected_regimen_detail",
