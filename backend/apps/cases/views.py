@@ -44,7 +44,7 @@ from apps.radiology.services.orthanc_dicomweb import (
     retrieve_instance,
 )
 
-from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
+from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, DoctorDashboardMemo, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
 from apps.ai_results.models import AiAnalysis, AnalysisType
 from .serializers import (
     DoctorCaseImageAssetSerializer,
@@ -64,6 +64,8 @@ from .serializers import (
     DoctorXrayWorkflowSerializer,
     DoctorCaseConsultationRequestSerializer,
     DoctorCaseConsultationResponseSerializer,
+    DoctorDashboardMemoSerializer,
+    DoctorDashboardMemoWriteSerializer,
 )
 from .services.examination_orders import (
     ExaminationOrderCreationError,
@@ -73,7 +75,15 @@ from .services.examination_orders import (
     update_examination_order,
 )
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
-from .services.case_assistant import CaseAssistantNotConfigured, CaseAssistantServiceError, ask_case_assistant, build_case_context
+from .services.case_assistant import (
+    CaseAssistantNotConfigured,
+    CaseAssistantServiceError,
+    ask_case_assistant,
+    ask_dashboard_assistant,
+    build_case_context,
+    build_dashboard_context,
+    dashboard_case_references,
+)
 from .services.pathology_orders import (
     ACTIVE_ORDER_STATUSES,
     PathologyOrderCreationError,
@@ -597,6 +607,73 @@ class DoctorCaseAssistantAPIView(APIView):
         except CaseAssistantServiceError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
         return Response({"answer": result["answer"], "case_id": str(case_id), "context_used": result.get("context_used", [])})
+
+
+class DoctorDashboardAssistantAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def post(self, request):
+        from .serializers import DoctorCaseAssistantRequestSerializer
+
+        serializer = DoctorCaseAssistantRequestSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        context = build_dashboard_context(request.user, get_token_hospital_id(request))
+        try:
+            result = ask_dashboard_assistant(
+                context,
+                serializer.validated_data["message"],
+                serializer.validated_data["history"],
+            )
+        except CaseAssistantNotConfigured as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        except CaseAssistantServiceError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(
+            {
+                "answer": result["answer"],
+                "case_references": dashboard_case_references(result["answer"], context),
+                "context_used": result.get("context_used", []),
+            }
+        )
+
+
+class DoctorDashboardMemoAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def _case(self, request, case_id):
+        return get_object_or_404(
+            LungCancerCase,
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+            patient__hospital_id=get_token_hospital_id(request),
+        )
+
+    def get(self, request, case_id):
+        case = self._case(request, case_id)
+        memo = DoctorDashboardMemo.objects.filter(case=case, author=request.user).first()
+        if memo is None:
+            return Response({"content": "", "updated_at": None})
+        return Response(DoctorDashboardMemoSerializer(memo).data)
+
+    def put(self, request, case_id):
+        serializer = DoctorDashboardMemoWriteSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        case = self._case(request, case_id)
+        content = serializer.validated_data["content"].strip()
+
+        if not content:
+            DoctorDashboardMemo.objects.filter(case=case, author=request.user).delete()
+            return Response({"content": "", "updated_at": None})
+
+        memo, _ = DoctorDashboardMemo.objects.update_or_create(
+            case=case,
+            author=request.user,
+            defaults={"content": content},
+        )
+        return Response(DoctorDashboardMemoSerializer(memo).data)
 
 
 class DoctorTreatmentOpinionAPIView(APIView):

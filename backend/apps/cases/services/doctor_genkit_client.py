@@ -25,7 +25,7 @@ def _fetch_id_token():
 
     return google.oauth2.id_token.fetch_id_token(request, settings.GENKIT_SERVICE_URL)
 
-def request_doctor_case_chat(*, message, history, case_context):
+def request_doctor_case_chat(*, message, history, case_context, assistant_scope="case"):
     if not settings.GENKIT_SERVICE_URL: raise DoctorGenkitNotConfigured('의료진 AI Assistant Genkit 서비스가 아직 설정되지 않았습니다.')
     headers = {
         'Content-Type': 'application/json; charset=utf-8',
@@ -33,7 +33,7 @@ def request_doctor_case_chat(*, message, history, case_context):
     }
     if settings.GENKIT_SERVICE_USE_ID_TOKEN:
         headers['Authorization'] = f'Bearer {_fetch_id_token()}'
-    request = Request(f'{settings.GENKIT_SERVICE_URL}/doctor-case-chat', data=json.dumps({'message': message, 'history': history, 'case_context': case_context}, ensure_ascii=False, default=str).encode('utf-8'), headers=headers, method='POST')
+    request = Request(f'{settings.GENKIT_SERVICE_URL}/doctor-case-chat', data=json.dumps({'message': message, 'history': history, 'case_context': case_context, 'assistant_scope': assistant_scope}, ensure_ascii=False, default=str).encode('utf-8'), headers=headers, method='POST')
     try:
         with urlopen(request, timeout=settings.GENKIT_SERVICE_TIMEOUT_SECONDS) as response: payload=json.loads(response.read().decode())
     except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, json.JSONDecodeError) as exc: raise DoctorGenkitError('의료진 AI Assistant 서비스에 연결할 수 없습니다.') from exc

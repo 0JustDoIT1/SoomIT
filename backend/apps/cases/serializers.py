@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import CaseImageAsset, ClinicianDecision, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
+from .models import CaseImageAsset, ClinicianDecision, DoctorDashboardMemo, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
 
 
 class DoctorCaseImageAssetSerializer(serializers.ModelSerializer):
@@ -205,6 +205,17 @@ class PhysicianTreatmentOpinionSerializer(serializers.ModelSerializer):
     class Meta:
         model = PhysicianTreatmentOpinion
         fields = ["id", "case", "physician_opinion", "created_at", "updated_at"]
+        read_only_fields = fields
+
+
+class DoctorDashboardMemoWriteSerializer(serializers.Serializer):
+    content = serializers.CharField(max_length=300, allow_blank=True, trim_whitespace=False)
+
+
+class DoctorDashboardMemoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DoctorDashboardMemo
+        fields = ["content", "updated_at"]
         read_only_fields = fields
 
 

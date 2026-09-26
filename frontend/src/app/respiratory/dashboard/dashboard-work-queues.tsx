@@ -1,4 +1,7 @@
 import { useMemo, useState } from "react";
+import styles from "./dashboard.module.css";
+import { ThoraxIllustration } from "./thorax-illustration";
+import { DashboardStageEvidence, type DashboardFetch } from "./dashboard-stage-evidence";
 
 import {
   deriveCurrentActions,
@@ -876,6 +879,8 @@ export function DashboardWorkQueues({
   consultations,
   notifications,
   patientAppointments = [],
+  authorizedFetch,
+  onOpenEvidence,
   unreadNotificationCount,
   selectedCaseId,
   onSelectCase,
@@ -889,6 +894,8 @@ export function DashboardWorkQueues({
   consultations: DashboardConsultation[];
   notifications: DashboardNotification[];
   patientAppointments?: DashboardPatientAppointment[];
+  authorizedFetch?: DashboardFetch;
+  onOpenEvidence?: (caseId: string) => void;
   unreadNotificationCount: number;
 
   /*
@@ -1035,35 +1042,29 @@ export function DashboardWorkQueues({
       : `${selectedDate.getMonth() + 1}월 ${selectedDate.getDate()}일 예약 일정`;
 
   return (
-    <div className="grid gap-4">
-      {/* ================================================================ */}
-      {/* TOP                                                              */}
-      {/* ================================================================ */}
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,13fr)_minmax(340px,7fr)]">
-        {/* 환자 진료 맵 */}
-
+    <div className={styles.workspace}>
+      <div className={styles.leftColumn}>
         <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <header className="flex items-start justify-between gap-4 border-b border-slate-100 px-5 py-4">
+          <header className={`${styles.journeyHeader} border-b border-slate-200`}>
             <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-blue-600">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
                 Patient Journey
               </p>
 
-              <h2 className="mt-1 text-base font-bold text-slate-900">
+              <h2 className="mt-1 text-xl font-bold tracking-tight text-slate-900">
                 환자 진료 맵
               </h2>
 
-              <p className="mt-1 text-xs leading-5 text-slate-500">
+              <p className="mt-1.5 text-sm leading-5 text-slate-500">
                 선택된 Case의 진단 및 치료 진행 상태를 한눈에
                 확인합니다.
               </p>
             </div>
 
             {activeCases.length > 0 ? (
-              <div className="flex shrink-0 items-end gap-2">
-                <label className="min-w-0">
-                  <span className="block text-[10px] font-semibold text-slate-400">
+              <div className="flex w-full items-end gap-2 sm:w-auto">
+                <label className="min-w-0 flex-1">
+                  <span className="block text-xs font-semibold text-slate-500">
                     표시할 Case
                   </span>
 
@@ -1072,7 +1073,7 @@ export function DashboardWorkQueues({
                     onChange={(event) => {
                       onSelectCase(event.target.value);
                     }}
-                    className="mt-1 min-w-[210px] max-w-[280px] rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
+                    className="mt-1 w-full min-w-0 max-w-[300px] rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm font-semibold text-slate-700 outline-none transition focus:border-blue-400 focus:ring-2 focus:ring-blue-100"
                   >
                     {activeCases.map((caseItem) => (
                       <option key={caseItem.id} value={caseItem.id}>
@@ -1088,31 +1089,41 @@ export function DashboardWorkQueues({
                   <button
                     type="button"
                     onClick={() => onOpenCase(selectedCase.id)}
-                    className="whitespace-nowrap rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-blue-700"
+                    className="whitespace-nowrap rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700"
                   >
                     Case 열기
                   </button>
                 )}
               </div>
             ) : (
-              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[10px] font-semibold text-slate-500">
+              <span className="rounded-full bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-500">
                 ACTIVE Case 없음
               </span>
             )}
           </header>
 
-          <div className="grid min-h-[340px] gap-4 p-5 lg:grid-cols-[minmax(240px,5fr)_minmax(0,7fr)]">
+          <div className={styles.journeyBody}>
             {/* 폐/인체 시각화 */}
 
-            <div className="relative flex min-h-[300px] items-center justify-center overflow-hidden rounded-xl border border-blue-100/60 bg-gradient-to-b from-blue-50/80 via-white to-slate-50">
+            {selectedCase && authorizedFetch ? (
+              <DashboardStageEvidence
+                key={`${selectedCase.id}:${selectedCase.current_stage}:${journey.find(item => item.stage === selectedCase.current_stage)?.description ?? ""}`}
+                caseItem={selectedCase}
+                snapshot={selectedSnapshot}
+                status={journey.find(item => item.stage === selectedCase.current_stage)?.description ?? ""}
+                authorizedFetch={authorizedFetch}
+                onOpenCase={onOpenEvidence ?? onOpenCase}
+              />
+            ) : (
+            <div className={styles.anatomy}>
               <div className="absolute inset-x-0 top-5 text-center">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-slate-400">
-                  Respiratory Overview
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500">
+                  Thoracic anatomy / reference
                 </p>
               </div>
 
-              <div className="h-[250px] w-[160px]">
-                <HumanLungIllustration />
+              <div className={styles.anatomyDrawing}>
+                <ThoraxIllustration />
               </div>
 
               <div className="absolute bottom-4 left-1/2 w-[calc(100%-32px)] max-w-[230px] -translate-x-1/2 rounded-xl border border-slate-200 bg-white/95 px-4 py-2.5 text-center shadow-sm backdrop-blur">
@@ -1125,11 +1136,11 @@ export function DashboardWorkQueues({
 
                 {selectedCase && (
                   <>
-                    <p className="mt-0.5 truncate text-[10px] text-slate-400">
+                    <p className="mt-0.5 truncate text-xs text-slate-500">
                       {selectedCase.case_code}
                     </p>
 
-                    <p className="mt-1 text-[10px] font-semibold text-blue-600">
+                    <p className="mt-1 text-xs font-semibold text-blue-600">
                       현재 단계 ·{" "}
                       {STAGE_LABELS[
                         selectedCase.current_stage as Stage
@@ -1139,10 +1150,11 @@ export function DashboardWorkQueues({
                 )}
               </div>
             </div>
+            )}
 
             {/* 단계 카드 */}
 
-            <div className="grid content-center gap-2.5 sm:grid-cols-2">
+            <div className="grid content-center gap-3 sm:grid-cols-2">
               {journey.map((item) => {
                 const stageSummary = stageSummaries.find(
                   (summary) => summary.stage === item.stage,
@@ -1162,20 +1174,20 @@ export function DashboardWorkQueues({
                 );
               })}
 
-              <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/70 px-4 py-3 sm:col-span-2">
-                <div className="flex items-center justify-between gap-4">
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3.5 sm:col-span-2">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div className="min-w-0">
                     <p className="text-xs font-semibold text-slate-700">
                       이후 진료
                     </p>
 
-                    <p className="mt-1 text-[11px] leading-4 text-slate-400">
+                    <p className="mt-1 text-xs leading-4 text-slate-500">
                       PD-L1 확인 이후 치료결정과 처방 단계로
                       이어집니다.
                     </p>
                   </div>
 
-                  <div className="flex shrink-0 items-center gap-2 text-[10px] font-semibold text-slate-500">
+                  <div className="flex shrink-0 items-center gap-2 text-xs font-semibold text-slate-500">
                     <span className="rounded-full bg-white px-2.5 py-1 shadow-sm">
                       치료결정
                     </span>
@@ -1191,26 +1203,26 @@ export function DashboardWorkQueues({
             </div>
           </div>
 
-          <section className="border-t border-slate-100 px-5 py-4">
+          <section className={`${styles.timeline} border-t border-slate-200 px-5 py-4`}>
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h3 className="text-xs font-bold text-slate-800">
+                <h3 className="text-base font-bold text-slate-800">
                   진료 타임라인
                 </h3>
-                <p className="mt-0.5 text-[10px] text-slate-400">
+                <p className="mt-1 text-xs text-slate-500">
                   선택된 Case의 주요 검사·확정 날짜입니다.
                 </p>
               </div>
 
               {selectedCase && (
-                <span className="max-w-[180px] truncate rounded-full bg-blue-50 px-2.5 py-1 text-[9px] font-semibold text-blue-700">
+                <span className="max-w-[180px] truncate rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">
                   {selectedCase.patient_name ||
                     selectedCase.patient_code}
                 </span>
               )}
             </div>
 
-            <div className="mt-3 grid grid-cols-5 gap-2">
+            <div className="mt-3 grid min-w-[460px] grid-cols-5 gap-2">
               {clinicalTimeline.map((item, index) => {
                 const tone = {
                   confirmed: {
@@ -1251,18 +1263,18 @@ export function DashboardWorkQueues({
                       />
 
                       <p
-                        className="mt-2 w-full truncate text-[10px] font-bold text-slate-700"
+                        className="mt-2 w-full truncate text-xs font-bold text-slate-700"
                         title={item.label}
                       >
                         {item.label}
                       </p>
 
-                      <p className="mt-0.5 text-[9px] font-medium tabular-nums text-slate-400">
+                      <p className="mt-0.5 text-xs font-medium tabular-nums text-slate-500">
                         {item.dateLabel}
                       </p>
 
                       <span
-                        className={`mt-1 rounded-full px-2 py-0.5 text-[8px] font-semibold ${tone.badge}`}
+                        className={`mt-1 rounded-full px-2 py-0.5 text-xs font-semibold ${tone.badge}`}
                       >
                         {item.status}
                       </span>
@@ -1273,335 +1285,6 @@ export function DashboardWorkQueues({
             </div>
           </section>
         </article>
-
-        {/* 오늘 업무 요약 */}
-
-        <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <header className="border-b border-slate-100 px-5 py-4">
-            <h2 className="text-base font-bold text-slate-900">
-              오늘 업무 요약
-            </h2>
-
-            <p className="mt-1 text-xs text-slate-500">
-              현재 담당 Case와 우선 처리 업무입니다.
-            </p>
-          </header>
-
-          <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
-            <SummaryMetric
-              label="진행 중 Case"
-              value={activeCaseCount}
-              tone="slate"
-            />
-
-            <SummaryMetric
-              label="검토 대기"
-              value={queue.length}
-              tone="blue"
-            />
-
-            <SummaryMetric
-              label="새 알림"
-              value={unreadNotificationCount}
-              tone="amber"
-            />
-          </div>
-
-          <div className="p-4">
-            <div className="grid gap-3 lg:grid-cols-[0.95fr_1.05fr] xl:grid-cols-1 2xl:grid-cols-[0.95fr_1.05fr]">
-              {/* Mini calendar */}
-              <section className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[9px] font-semibold uppercase tracking-wide text-blue-600">
-                      Calendar
-                    </p>
-                    <h3 className="mt-0.5 whitespace-nowrap text-[14px] font-bold leading-none tracking-[-0.01em] text-slate-800">
-                      {calendarMonth.getFullYear()}년{" "}
-                      {calendarMonth.getMonth() + 1}월
-                    </h3>
-                  </div>
-
-                  <div className="flex shrink-0 items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCalendarMonth(
-                          (current) =>
-                            new Date(
-                              current.getFullYear(),
-                              current.getMonth() - 1,
-                              1,
-                            ),
-                        )
-                      }
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[14px] font-bold leading-none text-slate-500 transition hover:border-blue-200 hover:text-blue-700"
-                      aria-label="이전 달"
-                    >
-                      ‹
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCalendarMonth(
-                          new Date(
-                            today.getFullYear(),
-                            today.getMonth(),
-                            1,
-                          ),
-                        );
-                        setSelectedScheduleDate(todayKey);
-                      }}
-                      className="h-8 min-w-[42px] shrink-0 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-[10px] font-semibold leading-none text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
-                    >
-                      오늘
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setCalendarMonth(
-                          (current) =>
-                            new Date(
-                              current.getFullYear(),
-                              current.getMonth() + 1,
-                              1,
-                            ),
-                        )
-                      }
-                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[14px] font-bold leading-none text-slate-500 transition hover:border-blue-200 hover:text-blue-700"
-                      aria-label="다음 달"
-                    >
-                      ›
-                    </button>
-                  </div>
-                </div>
-
-                <div className="mt-3.5 grid grid-cols-7 items-center text-center">
-                  {["일", "월", "화", "수", "목", "금", "토"].map(
-                    (day, index) => (
-                      <span
-                        key={day}
-                        className={`pb-1.5 text-[9px] font-semibold leading-none ${
-                          index === 0
-                            ? "text-rose-400"
-                            : index === 6
-                              ? "text-blue-400"
-                              : "text-slate-400"
-                        }`}
-                      >
-                        {day}
-                      </span>
-                    ),
-                  )}
-
-                  {calendarDays.map((day) => {
-                    const selected =
-                      day.key === selectedScheduleDate;
-                    const isToday = day.key === todayKey;
-                    const appointmentCount =
-                      appointmentCountsByDate.get(day.key) ?? 0;
-
-                    return (
-                      <button
-                        key={day.key}
-                        type="button"
-                        onClick={() => {
-                          setSelectedScheduleDate(day.key);
-
-                          if (
-                            day.date.getMonth() !==
-                            calendarMonth.getMonth()
-                          ) {
-                            setCalendarMonth(
-                              new Date(
-                                day.date.getFullYear(),
-                                day.date.getMonth(),
-                                1,
-                              ),
-                            );
-                          }
-                        }}
-                        className={`relative mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[10px] font-semibold leading-none transition ${
-                          selected
-                            ? "bg-blue-600 text-white shadow-sm"
-                            : isToday
-                              ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
-                              : day.inMonth
-                                ? "text-slate-600 hover:bg-white hover:text-blue-700"
-                                : "text-slate-300"
-                        }`}
-                        aria-label={`${day.date.getMonth() + 1}월 ${day.date.getDate()}일${appointmentCount ? `, 예약 ${appointmentCount}건` : ""}`}
-                      >
-                        {day.date.getDate()}
-
-                        {appointmentCount > 0 && (
-                          <span
-                            aria-hidden="true"
-                            className={`absolute bottom-0.5 h-1 w-1 rounded-full ${
-                              selected
-                                ? "bg-white"
-                                : "bg-emerald-500"
-                            }`}
-                          />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              </section>
-
-              {/* Appointment list */}
-              <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-semibold uppercase tracking-wide text-emerald-600">
-                      Schedule
-                    </p>
-                    <h3 className="mt-0.5 truncate text-xs font-bold text-slate-800">
-                      {selectedDateTitle}
-                    </h3>
-                  </div>
-
-                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-[9px] font-bold text-slate-600">
-                    {selectedDateAppointments.length}건
-                  </span>
-                </div>
-
-                {selectedDateAppointments.length ? (
-                  <div className="mt-2 max-h-[174px] space-y-1.5 overflow-y-auto pr-1">
-                    {selectedDateAppointments.map(
-                      (appointment) => (
-                        <button
-                          key={appointment.id}
-                          type="button"
-                          disabled={!appointment.caseId}
-                          onClick={() => appointment.caseId && onOpenCase(appointment.caseId)}
-                          className="group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition hover:border-blue-100 hover:bg-blue-50/60 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent"
-                        >
-                          <span className="w-10 shrink-0 pt-0.5 text-[10px] font-bold tabular-nums text-slate-700">
-                            {formatAppointmentTime(
-                              appointment.scheduledAt,
-                            )}
-                          </span>
-
-                          <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-1.5">
-                              <span className="truncate text-[10px] font-bold text-slate-800">
-                                {appointment.patientName}
-                              </span>
-                              <span className="shrink-0 text-[8px] text-slate-400">
-                                {appointment.patientCode}
-                              </span>
-                            </span>
-
-                            <span className="mt-0.5 block truncate text-[9px] text-slate-500">
-                              {appointment.orderLabel}
-                            </span>
-                          </span>
-
-                          <span
-                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-[8px] font-semibold ${appointmentStatusClass(
-                              appointment.appointmentStatus,
-                              appointment.status,
-                            )}`}
-                          >
-                            {appointmentStatusLabel(
-                              appointment.appointmentStatus,
-                              appointment.status,
-                            )}
-                          </span>
-                        </button>
-                      ),
-                    )}
-                  </div>
-                ) : (
-                  <div className="mt-3 flex min-h-[108px] items-center justify-center rounded-lg bg-slate-50 px-3 text-center">
-                    <div>
-                      <p className="text-[10px] font-semibold text-slate-500">
-                        예약 일정이 없습니다.
-                      </p>
-                      <p className="mt-1 text-[9px] text-slate-400">
-                        예약이 등록되면 시간순으로 표시됩니다.
-                      </p>
-                    </div>
-                  </div>
-                )}
-              </section>
-            </div>
-
-            {/* Compact current actions */}
-            <section className="mt-3 border-t border-slate-100 pt-3">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-xs font-bold text-slate-800">
-                  지금 해야 할 일
-                </h3>
-
-                {groups.length > 0 && (
-                  <span className="text-[10px] font-medium text-slate-400">
-                    {groups.reduce(
-                      (total, group) => total + group.count,
-                      0,
-                    )}
-                    건
-                  </span>
-                )}
-              </div>
-
-              {groups.length ? (
-                <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
-                  {groups.slice(0, 2).map((group, index) => (
-                    <button
-                      key={group.key}
-                      type="button"
-                      onClick={() => onOpenCase(group.caseId)}
-                      className="group flex min-w-0 items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-left transition hover:bg-blue-50"
-                    >
-                      <span
-                        className={`flex h-7 min-w-7 shrink-0 items-center justify-center rounded-lg px-1 text-[10px] font-bold ${
-                          index === 0
-                            ? "bg-rose-50 text-rose-600"
-                            : "bg-blue-50 text-blue-700"
-                        }`}
-                      >
-                        {group.count}
-                      </span>
-
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[10px] font-semibold text-slate-700">
-                          {group.label}
-                        </span>
-                        <span className="mt-0.5 block truncate text-[9px] text-slate-400">
-                          {group.detail}
-                        </span>
-                      </span>
-
-                      <span className="shrink-0 text-[9px] font-bold text-blue-600">
-                        →
-                      </span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="mt-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-[10px] text-slate-400">
-                  현재 우선 처리할 업무가 없습니다.
-                </p>
-              )}
-            </section>
-
-            <PersonalMemoEditor key={selectedCase?.id ?? "none"} selectedCase={selectedCase} />
-          </div>
-        </aside>
-      </section>
-
-      {/* ================================================================ */}
-      {/* BOTTOM                                                           */}
-      {/* ================================================================ */}
-
-      <section className="grid gap-4 xl:grid-cols-[minmax(0,13fr)_minmax(340px,7fr)]">
-        {/* 업무 우선순위 */}
-
         <article className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <header className="flex items-center justify-between gap-4 border-b border-slate-100 px-5 py-4">
             <div>
@@ -1616,7 +1299,7 @@ export function DashboardWorkQueues({
             </div>
 
             {queue.length > 0 && (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
+              <span className="shrink-0 whitespace-nowrap rounded-full bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">
                 {queue.length}건
               </span>
             )}
@@ -1690,7 +1373,7 @@ export function DashboardWorkQueues({
                   <tr>
                     <td
                       colSpan={5}
-                      className="px-4 py-12 text-center text-slate-400"
+                      className="px-4 py-12 text-center text-slate-500"
                     >
                       현재 우선 처리할 업무가 없습니다.
                     </td>
@@ -1700,9 +1383,328 @@ export function DashboardWorkQueues({
             </table>
           </div>
         </article>
+      </div>
+      <div className={styles.rightColumn}>
+        <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+          <header className="border-b border-slate-100 px-5 py-4">
+            <h2 className="text-base font-bold text-slate-900">
+              오늘 업무 요약
+            </h2>
 
-        {/* 협진 / 알림 */}
+            <p className="mt-1 text-xs text-slate-500">
+              현재 담당 Case와 우선 처리 업무입니다.
+            </p>
+          </header>
 
+          <div className="grid grid-cols-3 divide-x divide-slate-100 border-b border-slate-100">
+            <SummaryMetric
+              label="진행 중 Case"
+              value={activeCaseCount}
+              tone="slate"
+            />
+
+            <SummaryMetric
+              label="검토 대기"
+              value={queue.length}
+              tone="blue"
+            />
+
+            <SummaryMetric
+              label="새 알림"
+              value={unreadNotificationCount}
+              tone="amber"
+            />
+          </div>
+
+          <div className="p-4">
+            <div className={styles.schedule}>
+              {/* Mini calendar */}
+              <section className="rounded-xl border border-slate-200 bg-slate-50/50 p-3.5">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-blue-600">
+                      Calendar
+                    </p>
+                    <h3 className="mt-0.5 whitespace-nowrap text-[14px] font-bold leading-none tracking-[-0.01em] text-slate-800">
+                      {calendarMonth.getFullYear()}년{" "}
+                      {calendarMonth.getMonth() + 1}월
+                    </h3>
+                  </div>
+
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCalendarMonth(
+                          (current) =>
+                            new Date(
+                              current.getFullYear(),
+                              current.getMonth() - 1,
+                              1,
+                            ),
+                        )
+                      }
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[14px] font-bold leading-none text-slate-500 transition hover:border-blue-200 hover:text-blue-700"
+                      aria-label="이전 달"
+                    >
+                      ‹
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCalendarMonth(
+                          new Date(
+                            today.getFullYear(),
+                            today.getMonth(),
+                            1,
+                          ),
+                        );
+                        setSelectedScheduleDate(todayKey);
+                      }}
+                      className="h-8 min-w-[42px] shrink-0 whitespace-nowrap rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold leading-none text-slate-600 transition hover:border-blue-200 hover:text-blue-700"
+                    >
+                      오늘
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setCalendarMonth(
+                          (current) =>
+                            new Date(
+                              current.getFullYear(),
+                              current.getMonth() + 1,
+                              1,
+                            ),
+                        )
+                      }
+                      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-[14px] font-bold leading-none text-slate-500 transition hover:border-blue-200 hover:text-blue-700"
+                      aria-label="다음 달"
+                    >
+                      ›
+                    </button>
+                  </div>
+                </div>
+
+                <div className="mt-3.5 grid grid-cols-7 items-center text-center">
+                  {["일", "월", "화", "수", "목", "금", "토"].map(
+                    (day, index) => (
+                      <span
+                        key={day}
+                        className={`pb-1.5 text-xs font-semibold leading-none ${
+                          index === 0
+                            ? "text-rose-400"
+                            : index === 6
+                              ? "text-blue-400"
+                              : "text-slate-500"
+                        }`}
+                      >
+                        {day}
+                      </span>
+                    ),
+                  )}
+
+                  {calendarDays.map((day) => {
+                    const selected =
+                      day.key === selectedScheduleDate;
+                    const isToday = day.key === todayKey;
+                    const appointmentCount =
+                      appointmentCountsByDate.get(day.key) ?? 0;
+
+                    return (
+                      <button
+                        key={day.key}
+                        type="button"
+                        onClick={() => {
+                          setSelectedScheduleDate(day.key);
+
+                          if (
+                            day.date.getMonth() !==
+                            calendarMonth.getMonth()
+                          ) {
+                            setCalendarMonth(
+                              new Date(
+                                day.date.getFullYear(),
+                                day.date.getMonth(),
+                                1,
+                              ),
+                            );
+                          }
+                        }}
+                        className={`relative mx-auto flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold leading-none transition ${
+                          selected
+                            ? "bg-blue-600 text-white shadow-sm"
+                            : isToday
+                              ? "bg-blue-50 text-blue-700 ring-1 ring-blue-200"
+                              : day.inMonth
+                                ? "text-slate-600 hover:bg-white hover:text-blue-700"
+                                : "text-slate-300"
+                        }`}
+                        aria-label={`${day.date.getMonth() + 1}월 ${day.date.getDate()}일${appointmentCount ? `, 예약 ${appointmentCount}건` : ""}`}
+                      >
+                        {day.date.getDate()}
+
+                        {appointmentCount > 0 && (
+                          <span
+                            aria-hidden="true"
+                            className={`absolute bottom-0.5 h-1 w-1 rounded-full ${
+                              selected
+                                ? "bg-white"
+                                : "bg-emerald-500"
+                            }`}
+                          />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
+
+              {/* Appointment list */}
+              <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-emerald-600">
+                      Schedule
+                    </p>
+                    <h3 className="mt-0.5 truncate text-xs font-bold text-slate-800">
+                      {selectedDateTitle}
+                    </h3>
+                  </div>
+
+                  <span className="shrink-0 rounded-full bg-slate-100 px-2 py-1 text-xs font-bold text-slate-600">
+                    {selectedDateAppointments.length}건
+                  </span>
+                </div>
+
+                {selectedDateAppointments.length ? (
+                  <div className="mt-2 max-h-[174px] space-y-1.5 overflow-y-auto pr-1">
+                    {selectedDateAppointments.map(
+                      (appointment) => (
+                        <button
+                          key={appointment.id}
+                          type="button"
+                          disabled={!appointment.caseId}
+                          onClick={() => appointment.caseId && onOpenCase(appointment.caseId)}
+                          className="group flex w-full items-start gap-2 rounded-lg border border-transparent px-2 py-2 text-left transition hover:border-blue-100 hover:bg-blue-50/60 disabled:cursor-default disabled:hover:border-transparent disabled:hover:bg-transparent"
+                        >
+                          <span className="w-10 shrink-0 pt-0.5 text-xs font-bold tabular-nums text-slate-700">
+                            {formatAppointmentTime(
+                              appointment.scheduledAt,
+                            )}
+                          </span>
+
+                          <span className="min-w-0 flex-1">
+                            <span className="flex items-center gap-1.5">
+                              <span className="truncate text-xs font-bold text-slate-800">
+                                {appointment.patientName}
+                              </span>
+                              <span className="shrink-0 text-xs text-slate-500">
+                                {appointment.patientCode}
+                              </span>
+                            </span>
+
+                            <span className="mt-0.5 block truncate text-xs text-slate-500">
+                              {appointment.orderLabel}
+                            </span>
+                          </span>
+
+                          <span
+                            className={`shrink-0 rounded-full px-1.5 py-0.5 text-xs font-semibold ${appointmentStatusClass(
+                              appointment.appointmentStatus,
+                              appointment.status,
+                            )}`}
+                          >
+                            {appointmentStatusLabel(
+                              appointment.appointmentStatus,
+                              appointment.status,
+                            )}
+                          </span>
+                        </button>
+                      ),
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-3 flex min-h-[108px] items-center justify-center rounded-lg bg-slate-50 px-3 text-center">
+                    <div>
+                      <p className="text-xs font-semibold text-slate-500">
+                        예약 일정이 없습니다.
+                      </p>
+                      <p className="mt-1 text-xs text-slate-500">
+                        예약이 등록되면 시간순으로 표시됩니다.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </section>
+            </div>
+
+            {/* Compact current actions */}
+            <section className="mt-3 border-t border-slate-100 pt-3">
+              <div className="flex items-center justify-between gap-3">
+                <h3 className="text-xs font-bold text-slate-800">
+                  지금 해야 할 일
+                </h3>
+
+                {groups.length > 0 && (
+                  <span className="text-xs font-medium text-slate-500">
+                    {groups.reduce(
+                      (total, group) => total + group.count,
+                      0,
+                    )}
+                    건
+                  </span>
+                )}
+              </div>
+
+              {groups.length ? (
+                <div className="mt-1.5 grid gap-1.5 sm:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2">
+                  {groups.slice(0, 2).map((group, index) => (
+                    <button
+                      key={group.key}
+                      type="button"
+                      onClick={() => onOpenCase(group.caseId)}
+                      className="group flex min-w-0 items-center gap-2 rounded-lg bg-slate-50 px-2.5 py-2 text-left transition hover:bg-blue-50"
+                    >
+                      <span
+                        className={`flex h-7 min-w-7 shrink-0 items-center justify-center rounded-lg px-1 text-xs font-bold ${
+                          index === 0
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-blue-50 text-blue-700"
+                        }`}
+                      >
+                        {group.count}
+                      </span>
+
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate text-xs font-semibold text-slate-700">
+                          {group.label}
+                        </span>
+                        <span className="mt-0.5 block truncate text-xs text-slate-500">
+                          {group.detail}
+                        </span>
+                      </span>
+
+                      <span className="shrink-0 text-xs font-bold text-blue-600">
+                        →
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-xs text-slate-500">
+                  현재 우선 처리할 업무가 없습니다.
+                </p>
+              )}
+            </section>
+
+            <PersonalMemoEditor
+              key={selectedCase?.id ?? "none"}
+              selectedCase={selectedCase}
+            />
+          </div>
+        </aside>
         <aside className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <header className="border-b border-slate-100 px-5 py-4">
             <h2 className="text-base font-bold text-slate-900">
@@ -1719,7 +1721,7 @@ export function DashboardWorkQueues({
               <button
                 type="button"
                 onClick={onOpenConsultations}
-                className="text-[10px] font-semibold text-blue-700 hover:underline"
+                className="text-xs font-semibold text-blue-700 hover:underline"
               >
                 전체 보기 →
               </button>
@@ -1754,7 +1756,7 @@ export function DashboardWorkQueues({
                 </h3>
 
                 {unreadNotificationCount > 0 && (
-                  <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600">
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-semibold text-blue-700">
                     읽지 않음 {unreadNotificationCount}
                   </span>
                 )}
@@ -1763,7 +1765,7 @@ export function DashboardWorkQueues({
               <button
                 type="button"
                 onClick={onOpenNotifications}
-                className="text-[10px] font-semibold text-blue-700 hover:underline"
+                className="text-xs font-semibold text-blue-700 hover:underline"
               >
                 전체 보기 →
               </button>
@@ -1789,11 +1791,11 @@ export function DashboardWorkQueues({
                     />
 
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[11px] font-semibold text-slate-700 transition group-hover:text-blue-700">
+                      <span className="block truncate text-xs font-semibold text-slate-700 transition group-hover:text-blue-700">
                         {notification.title}
                       </span>
 
-                      <span className="mt-0.5 block truncate text-[10px] leading-4 text-slate-400">
+                      <span className="mt-0.5 block truncate text-xs leading-4 text-slate-500">
                         {notification.message}
                       </span>
                     </span>
@@ -1801,13 +1803,13 @@ export function DashboardWorkQueues({
                 ))}
               </div>
             ) : (
-              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-5 text-center text-xs text-slate-400">
+              <p className="mt-3 rounded-lg bg-slate-50 px-3 py-5 text-center text-xs text-slate-500">
                 표시할 알림이 없습니다.
               </p>
             )}
           </section>
         </aside>
-      </section>
+      </div>
     </div>
   );
 }
@@ -1838,7 +1840,7 @@ function JourneyCard({
       dot: "bg-blue-500",
       icon: "bg-blue-50 text-blue-700",
       badge: "bg-blue-50 text-blue-700",
-      border: "border-blue-200",
+      border: "border-blue-200 bg-blue-50/50 ring-1 ring-blue-100",
       status: "진행",
     },
 
@@ -1856,7 +1858,8 @@ function JourneyCard({
       type="button"
       onClick={onClick}
       disabled={!onClick}
-      className={`group min-w-0 rounded-xl border bg-white px-3.5 py-3 text-left transition ${
+      aria-current={item.state === "active" ? "step" : undefined}
+      className={`group min-h-[96px] min-w-0 rounded-xl border bg-white px-3 py-3.5 text-left transition ${
         style.border
       } ${
         onClick
@@ -1864,36 +1867,36 @@ function JourneyCard({
           : "cursor-default"
       }`}
     >
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2">
         <div
-          className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold ${style.icon}`}
+          className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold ${style.icon}`}
         >
           {getStageIcon(item.stage)}
         </div>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-start justify-between gap-2">
-            <p className="min-w-0 truncate text-xs font-bold text-slate-800">
+            <p className="min-w-0 truncate text-sm font-bold text-slate-800">
               {item.label}
             </p>
 
             <span
-              className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${style.badge}`}
+              className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${style.badge}`}
             >
               {style.status}
             </span>
           </div>
 
-          <p className="mt-1 truncate text-[11px] font-medium text-slate-600">
+          <p className="mt-1 truncate text-xs font-medium text-slate-600">
             {item.description}
           </p>
 
-          <div className="mt-2 flex items-center gap-2">
+          <div className="mt-2.5 flex items-center gap-2">
             <span
               className={`h-1.5 w-1.5 rounded-full ${style.dot}`}
             />
 
-            <span className="text-[10px] text-slate-400">
+            <span className="text-xs text-slate-500">
               현재 Case {count}건
             </span>
           </div>
@@ -1930,7 +1933,7 @@ function SummaryMetric({
         {value}
       </p>
 
-      <p className="mt-1 text-[10px] font-medium text-slate-500">
+      <p className="mt-1 text-xs font-medium text-slate-500">
         {label}
       </p>
     </div>
@@ -1947,149 +1950,84 @@ function PersonalMemoEditor({
 }: {
   selectedCase?: DashboardCase;
 }) {
-  const storageKey = selectedCase
-    ? `respiratory-dashboard-memo:${selectedCase.id}`
-    : "";
-
-  const [memoDraft, setMemoDraft] = useState(() => {
-    if (!storageKey || typeof window === "undefined") {
-      return "";
-    }
-
+  const caseId = selectedCase?.id ?? "";
+  const storageKey = caseId ? `respiratory-dashboard-todos:${caseId}` : "";
+  const [todos, setTodos] = useState<Array<{ id: string; text: string; completed: boolean }>>(() => {
+    if (!storageKey || typeof window === "undefined") return [];
     try {
-      return window.localStorage.getItem(storageKey) ?? "";
+      const value: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]");
+      return Array.isArray(value)
+        ? value.filter((item): item is { id: string; text: string; completed: boolean } => Boolean(item) && typeof item.id === "string" && typeof item.text === "string" && typeof item.completed === "boolean")
+        : [];
     } catch {
-      return "";
+      return [];
     }
   });
+  const [todoInput, setTodoInput] = useState("");
 
-  const [memoSaved, setMemoSaved] = useState(() => {
-    if (!storageKey || typeof window === "undefined") {
-      return false;
-    }
-
-    try {
-      return Boolean(window.localStorage.getItem(storageKey));
-    } catch {
-      return false;
-    }
-  });
-
-  const savePersonalMemo = () => {
+  const updateTodos = (next: Array<{ id: string; text: string; completed: boolean }>) => {
+    setTodos(next);
     if (!storageKey) return;
-
     try {
-      const value = memoDraft.trim();
-
-      if (value) {
-        window.localStorage.setItem(storageKey, value);
-        setMemoDraft(value);
-        setMemoSaved(true);
-      } else {
-        window.localStorage.removeItem(storageKey);
-        setMemoSaved(false);
-      }
+      window.localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {
-      setMemoSaved(false);
+      // Keep the current interaction usable when browser storage is unavailable.
     }
   };
 
-  const clearPersonalMemo = () => {
-    if (!storageKey) return;
-
-    try {
-      window.localStorage.removeItem(storageKey);
-    } catch {
-      // 저장소 접근이 실패해도 UI에서는 메모를 비운다.
-    }
-
-    setMemoDraft("");
-    setMemoSaved(false);
+  const addTodo = () => {
+    const text = todoInput.trim();
+    if (!text || todos.length >= 12) return;
+    updateTodos([...todos, { id: `${Date.now()}-${Math.random()}`, text: text.slice(0, 120), completed: false }]);
+    setTodoInput("");
   };
 
   return (
     <section className="mt-3 border-t border-slate-100 pt-3">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h3 className="text-xs font-bold text-slate-800">
-            내 할 일 메모
-          </h3>
-          <p className="mt-0.5 text-[9px] text-slate-400">
-            진료기록과 분리된 개인 메모 · 이 브라우저에만 저장
+          <h3 className="text-xs font-bold text-slate-800">내 할 일</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Case별 개인 To-do · 이 브라우저에 저장
           </p>
         </div>
-
-        {memoSaved && (
-          <span className="rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-semibold text-emerald-700">
-            저장됨
-          </span>
-        )}
+        <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
+          미완료 {todos.filter((item) => !item.completed).length}
+        </span>
       </div>
 
       {selectedCase ? (
         <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
           <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="min-w-0 truncate text-[9px] font-semibold text-slate-600">
+            <p className="min-w-0 truncate text-xs font-semibold text-slate-600">
               {selectedCase.patient_name ||
                 selectedCase.patient_code}
               {" · "}
               {selectedCase.case_code}
             </p>
 
-            <span className="shrink-0 text-[8px] text-slate-400">
-              {memoDraft.length}/300
+            <span className="shrink-0 text-xs text-slate-500">
+              {todos.length}/12
             </span>
           </div>
 
-          <textarea
-            value={memoDraft}
-            onChange={(event) => {
-              setMemoDraft(event.target.value.slice(0, 300));
-              setMemoSaved(false);
-            }}
-            onKeyDown={(event) => {
-              if (
-                (event.ctrlKey || event.metaKey) &&
-                event.key === "Enter"
-              ) {
-                event.preventDefault();
-                savePersonalMemo();
-              }
-            }}
-            rows={2}
-            placeholder="예: CT 결과 확인 후 보호자 설명 / 내일 PD-L1 결과 확인"
-            className="min-h-[58px] w-full resize-none bg-transparent text-[10px] leading-5 text-slate-700 outline-none placeholder:text-slate-400"
-          />
-
-          <div className="mt-2 flex items-center justify-between gap-2 border-t border-slate-200 pt-2">
-            <span className="text-[8px] text-slate-400">
-              Ctrl + Enter 저장
-            </span>
-
-            <div className="flex items-center gap-1.5">
-              {memoDraft && (
-                <button
-                  type="button"
-                  onClick={clearPersonalMemo}
-                  className="h-7 rounded-lg px-2 text-[9px] font-semibold text-slate-500 transition hover:bg-white hover:text-rose-600"
-                >
-                  비우기
-                </button>
-              )}
-
-              <button
-                type="button"
-                onClick={savePersonalMemo}
-                disabled={!memoDraft.trim()}
-                className="h-7 rounded-lg bg-blue-600 px-2.5 text-[9px] font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400"
-              >
-                메모 저장
-              </button>
-            </div>
+          <div className="max-h-28 space-y-1 overflow-y-auto">
+            {todos.length ? todos.map((todo) => (
+              <div key={todo.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5">
+                <input type="checkbox" aria-label={`${todo.text} \uc644\ub8cc`} checked={todo.completed} onChange={() => updateTodos(todos.map((item) => item.id === todo.id ? { ...item, completed: !item.completed } : item))} className="h-3.5 w-3.5 accent-blue-600" />
+                <span className={`min-w-0 flex-1 truncate text-xs ${todo.completed ? "text-slate-500 line-through" : "text-slate-700"}`}>{todo.text}</span>
+                <button type="button" onClick={() => updateTodos(todos.filter((item) => item.id !== todo.id))} className="text-xs font-semibold text-slate-500 hover:text-rose-600" aria-label={`${todo.text} 삭제`}>×</button>
+              </div>
+            )) : <p className="py-2 text-center text-xs text-slate-500">추가한 할 일이 없습니다.</p>}
           </div>
+
+          <form onSubmit={(event) => { event.preventDefault(); addTodo(); }} className="mt-2 flex gap-1.5 border-t border-slate-200 pt-2">
+            <input aria-label={"\uac1c\uc778 \ud560 \uc77c"} value={todoInput} onChange={(event) => setTodoInput(event.target.value.slice(0, 120))} placeholder="할 일을 입력하세요" className="min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-500" />
+            <button type="submit" disabled={!todoInput.trim() || todos.length >= 12} className="h-7 rounded-lg bg-blue-600 px-2.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200">추가</button>
+          </form>
         </div>
       ) : (
-        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-[10px] text-slate-400">
+        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-xs text-slate-500">
           Case를 선택하면 개인 메모를 작성할 수 있습니다.
         </p>
       )}
@@ -2120,7 +2058,7 @@ function StatusCount({
         {value}
       </p>
 
-      <p className="mt-0.5 text-[9px] font-medium">
+      <p className="mt-0.5 text-xs font-medium">
         {label}
       </p>
     </div>
@@ -2129,176 +2067,6 @@ function StatusCount({
 
 /* -------------------------------------------------------------------------- */
 /* Human / Lung visual                                                        */
-/* -------------------------------------------------------------------------- */
-
-function HumanLungIllustration() {
-  return (
-    <svg
-      viewBox="0 0 220 360"
-      className="h-full w-full"
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient
-          id="bodyGradient"
-          x1="0"
-          y1="0"
-          x2="0"
-          y2="1"
-        >
-          <stop
-            offset="0%"
-            stopColor="#dbeafe"
-            stopOpacity="0.8"
-          />
-
-          <stop
-            offset="100%"
-            stopColor="#eff6ff"
-            stopOpacity="0.25"
-          />
-        </linearGradient>
-
-        <linearGradient
-          id="lungGradient"
-          x1="0"
-          y1="0"
-          x2="1"
-          y2="1"
-        >
-          <stop
-            offset="0%"
-            stopColor="#60a5fa"
-            stopOpacity="0.85"
-          />
-
-          <stop
-            offset="100%"
-            stopColor="#0ea5e9"
-            stopOpacity="0.45"
-          />
-        </linearGradient>
-      </defs>
-
-      {/* Head */}
-
-      <ellipse
-        cx="110"
-        cy="48"
-        rx="37"
-        ry="43"
-        fill="url(#bodyGradient)"
-        stroke="#bfdbfe"
-        strokeWidth="2"
-      />
-
-      {/* Neck */}
-
-      <path
-        d="M92 85 L88 110 L132 110 L128 85"
-        fill="url(#bodyGradient)"
-        stroke="#bfdbfe"
-        strokeWidth="2"
-      />
-
-      {/* Torso */}
-
-      <path
-        d="
-          M67 107
-          C42 120 36 150 40 196
-          C44 244 58 292 75 337
-          L145 337
-          C162 292 176 244 180 196
-          C184 150 178 120 153 107
-          C138 99 125 98 110 99
-          C95 98 82 99 67 107
-        "
-        fill="url(#bodyGradient)"
-        stroke="#bfdbfe"
-        strokeWidth="2"
-      />
-
-      {/* Arms */}
-
-      <path
-        d="M60 120 C35 145 22 188 17 247"
-        fill="none"
-        stroke="#bfdbfe"
-        strokeWidth="13"
-        strokeLinecap="round"
-        opacity="0.55"
-      />
-
-      <path
-        d="M160 120 C185 145 198 188 203 247"
-        fill="none"
-        stroke="#bfdbfe"
-        strokeWidth="13"
-        strokeLinecap="round"
-        opacity="0.55"
-      />
-
-      {/* Trachea */}
-
-      <path
-        d="M110 88 L110 142"
-        stroke="#60a5fa"
-        strokeWidth="7"
-        strokeLinecap="round"
-      />
-
-      <path
-        d="M110 136 L87 158"
-        stroke="#60a5fa"
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
-
-      <path
-        d="M110 136 L133 158"
-        stroke="#60a5fa"
-        strokeWidth="5"
-        strokeLinecap="round"
-      />
-
-      {/* Left Lung */}
-
-      <path
-        d="
-          M102 137
-          C83 126 64 138 58 165
-          C52 190 55 225 65 245
-          C74 262 93 260 101 245
-          C106 234 105 214 104 197
-          Z
-        "
-        fill="url(#lungGradient)"
-        stroke="#3b82f6"
-        strokeWidth="2"
-      />
-
-      {/* Right Lung */}
-
-      <path
-        d="
-          M118 137
-          C137 126 156 138 162 165
-          C168 190 165 225 155 245
-          C146 262 127 260 119 245
-          C114 234 115 214 116 197
-          Z
-        "
-        fill="url(#lungGradient)"
-        stroke="#3b82f6"
-        strokeWidth="2"
-      />
-    </svg>
-  );
-}
-
-/* -------------------------------------------------------------------------- */
-/* Stage Icon                                                                 */
 /* -------------------------------------------------------------------------- */
 
 function getStageIcon(stage: Stage) {

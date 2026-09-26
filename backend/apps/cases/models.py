@@ -58,6 +58,31 @@ class PhysicianTreatmentOpinion(TimestampedUUIDModel):
         db_table = "physician_treatment_opinions"
 
 
+class DoctorDashboardMemo(TimestampedUUIDModel):
+    """A private Dashboard memo owned by one doctor for one Case."""
+
+    case = models.ForeignKey(
+        LungCancerCase,
+        on_delete=models.PROTECT,
+        related_name="doctor_dashboard_memos",
+    )
+    author = models.ForeignKey(
+        User,
+        on_delete=models.PROTECT,
+        related_name="dashboard_case_memos",
+    )
+    content = models.CharField(max_length=300)
+
+    class Meta:
+        db_table = "doctor_dashboard_memos"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["case", "author"],
+                name="uq_doctor_dashboard_memo_case_author",
+            ),
+        ]
+
+
 # ── 3-2. clinician_decisions ────────────────────────────────────
 # 스펙상 created_at/updated_at 없음(decided_at만 존재) → UUIDModel만 상속
 class ClinicianDecision(UUIDModel):
