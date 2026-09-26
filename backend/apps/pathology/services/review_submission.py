@@ -73,23 +73,19 @@ def prepare_pathology_gene_clinical_draft(*, case, order, analysis, clinical_res
     gene_result, _ = GeneResult.objects.get_or_create(
         clinical_result=clinical_result,
     )
-    gene_result.gene_findings.all().delete()
-    findings_to_create = [
-        {
-            "gene_symbol": finding.gene_symbol,
+    findings_by_symbol = {
+        finding.gene_symbol.strip().upper(): {
+            "gene_symbol": finding.gene_symbol.strip().upper(),
             "assessment": AI_TO_CLINICAL_ASSESSMENT[finding.predicted_status],
         }
         for finding in ai_result.gene_ai_results.all()
-    ]
-    GeneFinding.objects.bulk_create([
-        GeneFinding(
+    }
+    for finding in findings_by_symbol.values():
+        GeneFinding.objects.update_or_create(
             gene_result=gene_result,
             gene_symbol=finding["gene_symbol"],
-            assessment=finding["assessment"],
-            alteration_code=None,
+            defaults={"assessment": finding["assessment"]},
         )
-        for finding in findings_to_create
-    ])
     return clinical_result
 
 

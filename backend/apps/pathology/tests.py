@@ -15,6 +15,7 @@ from apps.ai_results.models import (
     AiAnalysis,
     AiResult,
     AnalysisType,
+    GeneAiResult,
     ModelVersion,
     PathologyAiResult,
     PDL1AiResult,
@@ -166,6 +167,12 @@ class PathologyReadAPITestCase(APITestCase):
             predicted_histologic_type="NSCLC",
             predicted_subtype="Adenocarcinoma",
             subtype_confidence=0.8125,
+        )
+        GeneAiResult.objects.create(
+            ai_result=self.ai_result,
+            gene_symbol="EGFR",
+            predicted_status=GeneAiResult.PredictedStatus.PREDICTED_POSITIVE,
+            predicted_probability=0.8750,
         )
 
         self.pdl1_model_version = ModelVersion.objects.create(

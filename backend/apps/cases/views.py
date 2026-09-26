@@ -1068,13 +1068,19 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
         if case is None:
             return None, None
 
-        result = ClinicalResult.objects.select_for_update().filter(
+        locked_result = ClinicalResult.objects.select_for_update().filter(
             id=result_id,
             case=case,
             workflow_stage__in=[WorkflowStage.PATHOLOGY_GENE, WorkflowStage.PDL1],
-        ).select_related("gene_detail", "reviewed_ai_result").prefetch_related(
-            "reviewed_ai_result__gene_ai_results",
         ).first()
+        if locked_result is None:
+            return case, None
+
+        result = ClinicalResult.objects.select_related(
+            "gene_detail", "reviewed_ai_result"
+        ).prefetch_related(
+            "reviewed_ai_result__gene_ai_results",
+        ).get(pk=locked_result.pk)
         return case, result
 
     @staticmethod
