@@ -61,3 +61,16 @@ def can_access_case_chat(user, case):
         return department.hospital_id == case.patient.hospital_id
 
     return False
+
+
+def can_access_global_chat(user):
+    if not (user and user.is_authenticated and user.account_status == User.AccountStatus.ACTIVE and user.department_role_id):
+        return False
+    role = user.department_role
+    code = role.department.code
+    allowed = {
+        (getattr(settings, "SOOMIT_PULMONOLOGY_DEPARTMENT_CODE", PULMONOLOGY_DEPARTMENT_CODE), DepartmentRole.Role.DOCTOR),
+        (getattr(settings, "SOOMIT_RADIOLOGY_DEPARTMENT_CODE", RADIOLOGY_DEPARTMENT_CODE), DepartmentRole.Role.TECHNOLOGIST),
+        (getattr(settings, "SOOMIT_PATHOLOGY_DEPARTMENT_CODE", PATHOLOGY_DEPARTMENT_CODE), DepartmentRole.Role.TECHNOLOGIST),
+    }
+    return (code, role.role) in allowed

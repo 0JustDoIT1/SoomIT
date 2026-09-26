@@ -3,10 +3,12 @@
 import { useEffect, useState } from "react";
 import Image from "next/image";
 import { RecentPatients, useRecentPatients, type RecentPatient } from "@/components/workspace/recent-patients";
+import { SoomChatPanel } from "@/components/chat/SoomChatPanel";
 
 import { StateMessage } from "@/components/workspace/state-message";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { formatPatientSex } from "@/lib/patient-display";
+import { staffAuthenticatedFetch } from "@/lib/api";
 
 import { RadiologyDetail, RadiologyPatientSummary } from "./_components/radiology-detail";
 import { RadiologyCompletedHistory } from "./_components/radiology-completed-history";
@@ -177,6 +179,7 @@ export default function RadiologyWorklistPage() {
   const [worklistItems, setWorklistItems] = useState<RadiologyCaseWorklistItem[]>([]);
   const [selectedItem, setSelectedItem] = useState<RadiologyCaseWorklistItem | null>(null);
   const [recentSelection, setRecentSelection] = useState<RecentPatient | null>(null);
+  const [recentSelectionError, setRecentSelectionError] = useState("");
   const recent = useRecentPatients("radiologyRecentPatients");
   const selectedCaseId = selectedItem?.case.id ?? recentSelection?.case_id ?? null;
   const [filters, setFilters] = useState<RadiologyWorklistFilters>({});
@@ -195,6 +198,7 @@ export default function RadiologyWorklistPage() {
     currentPage * pageSize,
   );
   function handleSelectItem(item: RadiologyCaseWorklistItem) {
+    setRecentSelectionError("");
     setRecentSelection(null);
     setSelectedItem(item);
     recent.remember({ case_id: item.case.id, patient_name: item.patient.name, birth_date: item.patient.birth_date });
@@ -211,6 +215,40 @@ export default function RadiologyWorklistPage() {
     setCurrentPage(1);
     setFilters(nextFilters);
   }
+
+  useEffect(() => {
+    if (!recentSelection) return;
+
+    const controller = new AbortController();
+
+    void fetchRadiologyCaseWorkflow(recentSelection.case_id, controller.signal)
+      .then((workflow) => {
+        if (controller.signal.aborted) return;
+
+        const currentExam = workflow.exams[workflow.exams.length - 1];
+        if (!currentExam) {
+          setRecentSelectionError("표시할 현재 검사가 없습니다.");
+          return;
+        }
+
+        setSelectedItem({
+          patient: workflow.patient,
+          case: workflow.case,
+          responsible_doctor: workflow.responsible_doctor,
+          exam_count: workflow.exams.length,
+          current_exam: currentExam,
+          workflow_status: currentExam.workflow_status,
+          workflow_status_label: currentExam.workflow_status_label,
+        });
+      })
+      .catch((reason: unknown) => {
+        if (!controller.signal.aborted) {
+          setRecentSelectionError(reason instanceof Error ? reason.message : "환자 정보를 불러오지 못했습니다.");
+        }
+      });
+
+    return () => controller.abort();
+  }, [recentSelection]);
 
   function handleWorkflowStatusFilterChange(nextStatus: string) {
     if (selectedItem) {
@@ -316,7 +354,11 @@ export default function RadiologyWorklistPage() {
           <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(500px,42fr)_minmax(0,58fr)]">
             <section className="grid min-h-0 grid-cols-[160px_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <RecentPatients patients={recent.patients} selectedId={selectedCaseId} onSelect={patient => {
-              if (patient.case_id !== selectedCaseId) { setSelectedItem(null); setRecentSelection(patient); }
+              if (patient.case_id !== selectedCaseId) {
+                setSelectedItem(null);
+                setRecentSelectionError("");
+                setRecentSelection(patient);
+              }
               recent.remember(patient);
             }} className="min-h-0 w-[160px] shrink-0 overflow-y-auto border-r border-slate-200 bg-slate-50/50 p-3" />
             <div className="grid min-h-0 grid-rows-[minmax(0,62fr)_minmax(0,38fr)] overflow-hidden divide-y divide-slate-100">
@@ -338,7 +380,9 @@ export default function RadiologyWorklistPage() {
               {selectedItem ? (
                 <RadiologyPatientSummary item={selectedItem.current_exam} onClear={() => { setSelectedItem(null); setRecentSelection(null); }} />
               ) : recentSelection ? (
-                <div className="p-4"><p>{recentSelection.patient_name}</p><p>{recentSelection.birth_date || "-"}</p></div>
+                recentSelectionError ? <StateMessage variant="error" title={recentSelectionError} className="m-4" /> : (
+                  <div role="status" className="p-4 text-sm text-slate-500">환자 정보를 불러오는 중입니다.</div>
+                )
               ) : null}
             </div>
             </section>
@@ -389,6 +433,7 @@ export default function RadiologyWorklistPage() {
         {activeTab === "history" ? (
           <RadiologyCompletedHistory />
         ) : null}
+        <SoomChatPanel authorizedFetch={staffAuthenticatedFetch} />
       </div>
     </div>
   );

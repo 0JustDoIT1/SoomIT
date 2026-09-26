@@ -1,6 +1,7 @@
 from django.conf import settings
 from django.db import models
 
+from apps.accounts.models import Hospital
 from apps.cases.models import LungCancerCase
 from apps.common.models import CreatedOnlyUUIDModel
 
@@ -65,4 +66,26 @@ class CaseChatMessageReadReceipt(CreatedOnlyUUIDModel):
         indexes = [
             models.Index(fields=["reader", "-created_at"], name="idx_chat_receipt_reader"),
         ]
+
+
+class GlobalChatMessage(CreatedOnlyUUIDModel):
+    hospital = models.ForeignKey(Hospital, on_delete=models.CASCADE, related_name="global_chat_messages")
+    sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="global_chat_messages")
+    client_message_id = models.UUIDField()
+    body = models.CharField(max_length=2000)
+
+    class Meta:
+        db_table = "global_chat_messages"
+        ordering = ["-created_at", "-id"]
+        constraints = [models.UniqueConstraint(fields=["hospital", "sender", "client_message_id"], name="uq_global_chat_hospital_sender_client_msg")]
+        indexes = [models.Index(fields=["hospital", "-created_at", "-id"], name="idx_glob_chat_hosp_cur")]
+
+
+class GlobalChatMessageReadReceipt(CreatedOnlyUUIDModel):
+    message = models.ForeignKey(GlobalChatMessage, on_delete=models.CASCADE, related_name="read_receipts")
+    reader = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="global_chat_read_receipts")
+
+    class Meta:
+        db_table = "global_chat_message_read_receipts"
+        constraints = [models.UniqueConstraint(fields=["message", "reader"], name="uq_global_chat_message_reader")]
 

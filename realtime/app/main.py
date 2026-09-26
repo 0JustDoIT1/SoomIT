@@ -136,6 +136,16 @@ async def _authorize_case(case_id: str, access_token: str) -> tuple[int, str | N
         return 4403, None
     return 1011, None
 
+async def _authorize_global(access_token: str) -> tuple[int, str | None, str | None]:
+    try:
+        response = await http_client.get(f"{DJANGO_INTERNAL_BASE_URL}/api/chat/internal/global/access/", headers=_django_headers(access_token))
+    except httpx.HTTPError:
+        return 1011, None, None
+    if response.status_code == 200:
+        data = response.json()
+        return 0, str(data.get("user_id")), str(data.get("hospital_id"))
+    return (4401, None, None) if response.status_code == 401 else ((4403, None, None) if response.status_code in (403, 404) else (1011, None, None))
+
 
 async def _send_error(websocket: WebSocket, code: str, detail: str):
     await websocket.send_json({"type": "chat.error", "code": code, "detail": detail})
@@ -167,6 +177,12 @@ async def _mark_message_read(case_id: str, access_token: str, message_id: str) -
         headers=_django_headers(access_token),
         json={"message_ids": [message_id]},
     )
+
+async def _store_global_message(access_token: str, payload: dict) -> httpx.Response:
+    return await http_client.post(f"{DJANGO_INTERNAL_BASE_URL}/api/chat/internal/global/messages/", headers=_django_headers(access_token), json={"client_message_id": payload["client_message_id"], "body": payload["body"]})
+
+async def _mark_global_message_read(access_token: str, message_id: str) -> httpx.Response:
+    return await http_client.post(f"{DJANGO_INTERNAL_BASE_URL}/api/chat/global/messages/read/", headers=_django_headers(access_token), json={"message_ids": [message_id]})
 
 
 @app.on_event("startup")
@@ -203,6 +219,57 @@ async def health():
         return {"status": "ok", **version}
     except Exception:
         return {"status": "error", **version}
+
+
+@app.websocket("/ws/chat/global")
+async def global_chat_endpoint(websocket: WebSocket):
+    protocols = [p.strip() for p in websocket.headers.get("sec-websocket-protocol", "").split(",") if p.strip()]
+    selected = "soomit-chat" if "soomit-chat" in protocols else None
+    token = next((p for p in protocols if p != "soomit-chat"), "") or websocket.query_params.get("token", "")
+    if not token:
+        await _reject_websocket(websocket, 4401)
+        return
+    if websocket.headers.get("origin") not in ALLOWED_ORIGINS:
+        await _reject_websocket(websocket, 4403)
+        return
+    code, user_id, hospital_id = await _authorize_global(token)
+    if code:
+        await _reject_websocket(websocket, code)
+        return
+    room = f"global:{hospital_id}"
+    try:
+        await manager.connect(room, websocket, user_id, selected)
+    except Exception:
+        await _reject_websocket(websocket, 1011)
+        return
+    try:
+        while True:
+            payload = json.loads(await websocket.receive_text())
+            if payload.get("type") == "chat.message.read":
+                message_id = _canonical_uuid(payload.get("message_id"))
+                if message_id:
+                    response = await _mark_global_message_read(token, message_id)
+                    for read in response.json().get("read_messages", []):
+                        await redis_client.publish(f"chat:{room}", json.dumps({"type": "chat.message.read", "read": read}))
+                continue
+            if payload.get("type") != "chat.message.create" or not _canonical_uuid(payload.get("client_message_id")):
+                continue
+            body = payload.get("body")
+            if not isinstance(body, str) or not body.strip() or len(body.strip()) > 2000:
+                continue
+            payload["body"] = body.strip()
+            response = await _store_global_message(token, payload)
+            if response.status_code in (200, 201):
+                stored = response.json()
+                event = {"type": "chat.message.created", "message": stored["message"]}
+                if stored.get("created", response.status_code == 201):
+                    await redis_client.publish(f"chat:{room}", json.dumps(event, ensure_ascii=False))
+                else:
+                    await websocket.send_json(event)
+    except (WebSocketDisconnect, json.JSONDecodeError):
+        pass
+    finally:
+        manager.disconnect(room, websocket)
 
 
 @app.websocket("/ws/chat/{case_id}")
