@@ -2,10 +2,12 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type DragEvent } from "react";
 import Image from "next/image";
+import { SoomChatPanel } from "@/components/chat/SoomChatPanel";
 import { RecentPatients, useRecentPatients } from "@/components/workspace/recent-patients";
 import { StateMessage } from "@/components/workspace/state-message";
 import { showToast } from "@/components/ui/toast/toast";
 import { formatPatientSex } from "@/lib/patient-display";
+import { staffAuthenticatedFetch } from "@/lib/api";
 import { OrthancWsiViewer } from "./_components/orthanc-wsi-viewer";
 
 import {
@@ -2424,6 +2426,9 @@ export default function PathologyDashboardPage() {
         </div>
         )}
       </div>
+      {tab === "worklist" ? (
+        <SoomChatPanel authorizedFetch={staffAuthenticatedFetch} />
+      ) : null}
     </div>
   );
 }

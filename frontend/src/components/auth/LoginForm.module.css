@@ -1,5 +1,5 @@
 .page {
-  min-height: 100vh;
+  min-height: 100svh;
   position: relative;
   display: flex;
   align-items: center;
@@ -7,133 +7,39 @@
   overflow: hidden;
   padding: 56px 48px;
   background:
-    radial-gradient(circle at 62% 24%, rgba(116, 130, 210, 0.13), transparent 31%),
-    radial-gradient(circle at 10% 70%, rgba(88, 194, 190, 0.1), transparent 31%),
-    radial-gradient(circle at 90% 88%, rgba(137, 154, 230, 0.09), transparent 26%),
-    linear-gradient(135deg, #fbfdff 0%, #f5f7ff 53%, #f9fcff 100%);
+    linear-gradient(115deg, transparent, rgba(88, 194, 190, 0.04), transparent),
+    linear-gradient(135deg, #fbfdff 0%, #f9fcff 53%, #fbfdff 100%);
 }
 
-/* =========================
-   은은한 원형 gradient 장식
-========================= */
-
-.page::before {
-  content: "";
-  position: absolute;
-
-  top: -20%;
-  left: 40%;
-  width: 720px;
-  height: 720px;
-
-  border-radius: 50%;
-
-  background: radial-gradient(
-    circle,
-    rgba(83, 205, 224, 0.09) 0%,
-    rgba(75, 138, 246, 0.04) 44%,
-    transparent 70%
-  );
-
-  pointer-events: none;
-}
-
-.page::after {
-  content: "";
-  position: absolute;
-
-  left: -12%;
-  bottom: -16%;
-  width: 80%;
-  height: 43%;
-  border: 1px solid rgba(56, 189, 248, 0.22);
-  border-radius: 44% 60% 0 0 / 50% 52% 0 0;
-  background: linear-gradient(112deg, rgba(45, 212, 191, 0.13), rgba(96, 165, 250, 0.12) 55%, rgba(255, 255, 255, 0.16));
-  transform: rotate(7deg);
-
-  pointer-events: none;
-}
-
-.backgroundOrb {
-  position: absolute;
-  z-index: 0;
-  left: 40%;
-  bottom: 10%;
-  width: 92px;
-  height: 92px;
-  border-radius: 50%;
-  background: linear-gradient(145deg, rgba(93, 197, 190, 0.2), rgba(116, 130, 210, 0.22));
-  opacity: 0.72;
-  filter: blur(1px);
-  animation: floatOrb 11s ease-in-out infinite;
-  pointer-events: none;
-}
-
-.backgroundOrbSmall {
-  position: absolute;
-  z-index: 0;
-  left: 43.5%;
-  top: 36%;
-  width: 52px;
-  height: 52px;
-  border-radius: 50%;
-  background: linear-gradient(145deg, rgba(120, 211, 197, 0.22), rgba(137, 154, 230, 0.24));
-  opacity: 0.68;
-  filter: blur(1px);
-  animation: floatOrbSmall 8s ease-in-out 0.8s infinite;
-  pointer-events: none;
-}
-
+/* Static waves and gently flowing breath lines. */
 .backgroundWave {
   position: absolute;
-  z-index: 0;
-  left: -18%;
-  bottom: -17%;
-  width: 86%;
-  height: 45%;
-  border: 1px solid rgba(45, 212, 191, 0.28);
-  border-radius: 48% 58% 0 0 / 54% 48% 0 0;
-  background: linear-gradient(100deg, rgba(255, 255, 255, 0.04), rgba(45, 212, 191, 0.07), rgba(59, 130, 246, 0.08));
-  transform: rotate(-5deg);
+  inset: auto 0 0;
+  width: 100%;
+  height: 23%;
   pointer-events: none;
-  animation: driftWave 16s ease-in-out infinite alternate;
 }
-
-.backgroundWaveSecondary {
+.breathLines {
   position: absolute;
-  z-index: 0;
-  right: -23%;
-  bottom: -24%;
-  width: 85%;
-  height: 49%;
-  border: 1px solid rgba(96, 165, 250, 0.22);
-  border-radius: 57% 43% 0 0 / 50% 58% 0 0;
-  background: linear-gradient(120deg, rgba(96, 165, 250, 0.08), rgba(45, 212, 191, 0.07), transparent 70%);
-  transform: rotate(-10deg);
+  left: -65%;
+  top: 0;
+  width: 235%;
+  height: 90%;
+  overflow: visible;
   pointer-events: none;
-  animation: driftWaveSecondary 19s ease-in-out 1s infinite alternate;
+  animation: lineReveal 650ms ease-out both;
 }
-
-@keyframes floatOrb {
-  0%, 100% { transform: translate3d(0, 0, 0); }
-  50% { transform: translate3d(10px, -14px, 0); }
+.breathLine {
+  animation: lineFlow 10s ease-in-out infinite alternate;
 }
-
-@keyframes floatOrbSmall {
-  0%, 100% { transform: translate3d(0, 0, 0); opacity: 0.58; }
-  50% { transform: translate3d(-7px, 10px, 0); opacity: 0.74; }
+@keyframes lineReveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
-
-@keyframes driftWave {
-  from { transform: rotate(-5deg) translate3d(0, 0, 0); }
-  to { transform: rotate(-4deg) translate3d(10px, -4px, 0); }
+@keyframes lineFlow {
+  from { transform: translate(-24px, 2px); }
+  to { transform: translate(24px, -2px); }
 }
-
-@keyframes driftWaveSecondary {
-  from { transform: rotate(-10deg) translate3d(0, 0, 0); }
-  to { transform: rotate(-9deg) translate3d(-12px, -5px, 0); }
-}
-
 
 /* =========================
    전체 로그인 영역 (데스크톱 2열)
@@ -147,7 +53,7 @@
   max-width: 1180px;
 
   display: grid;
-  grid-template-columns: minmax(380px, 1.05fr) minmax(440px, 0.95fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   align-items: center;
   gap: clamp(56px, 8vw, 112px);
 }
@@ -158,17 +64,19 @@
 ========================= */
 
 .brand {
+  position: relative;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   align-items: center;
   text-align: center;
-  animation: brandReveal 900ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: brandReveal 600ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 .logoWrap {
+  position: relative;
   width: min(100%, 470px);
   filter: drop-shadow(0 14px 28px rgba(73, 91, 183, 0.1));
-  animation: logoBreath 7s ease-in-out 1s infinite;
 }
 
 .logo {
@@ -212,10 +120,10 @@
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 24px;
   box-shadow:
-    0 28px 70px rgba(67, 79, 164, 0.1),
-    0 8px 24px rgba(15, 23, 42, 0.035);
-  animation: cardReveal 700ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
-  backdrop-filter: blur(10px);
+    0 20px 52px rgba(67, 79, 164, 0.1),
+    0 6px 18px rgba(15, 23, 42, 0.035);
+  animation: cardReveal 650ms cubic-bezier(0.22, 1, 0.36, 1) 100ms both;
+  min-width: 0;
 }
 
 
@@ -444,21 +352,16 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes logoBreath {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.012); }
-}
+
 
 @keyframes cardReveal {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .backgroundOrb,
-  .backgroundOrbSmall,
-  .backgroundWave,
-  .backgroundWaveSecondary,
+  .breathLines,
+  .breathLine,
   .brand,
   .logoWrap,
   .card {
@@ -477,7 +380,7 @@
   }
 
   .container {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     max-width: 500px;
     gap: 24px;
   }
@@ -516,20 +419,9 @@
     display: none;
   }
 
-  .backgroundOrbSmall {
-    left: 8%;
-    top: 10%;
-    width: 38px;
-    height: 38px;
-  }
 
-  .backgroundOrb {
-    right: 5%;
-    left: auto;
-    bottom: 7%;
-    width: 62px;
-    height: 62px;
-  }
+
+
 
   .card {
     max-width: none;
@@ -569,3 +461,4 @@
     font-size: 11px;
   }
 }
+@media (max-width: 900px) { .breathLines { display: none; } }

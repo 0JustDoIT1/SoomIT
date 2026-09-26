@@ -179,7 +179,6 @@ it("filters the full worklist by exam enum and workflow status before pagination
     makeItem("pet-pending", "PET_CT_TNM", "REVIEW_PENDING"),
     makeItem("pet-completed", "PET_CT_TNM", "REVIEW_COMPLETED"),
   ];
-  const user = userEvent.setup();
   const renderFiltered = (orderType: "XRAY" | "CT" | "PET_CT_TNM" | "", status: string) => render(
     <RadiologyWorklist items={allItems.filter(item => (!orderType || item.current_exam.examination_order.order_type === orderType) && (status === "ALL" || (status === "REVIEW_PENDING" ? item.workflow_status === "REVIEW_PENDING" : item.workflow_status === "REVIEW_COMPLETED")))} selectedId={null} onSelect={vi.fn()}
       viewStatus="ready" errorMessage="" filters={orderType ? { order_type: orderType } : {}} onFiltersChange={vi.fn()}

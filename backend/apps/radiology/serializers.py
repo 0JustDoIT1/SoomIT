@@ -9,7 +9,6 @@ from apps.cases.models import CaseImageAsset, ExaminationOrder
 from .services.workflow import (
     calculate_workflow_status,
     get_workflow_status_label,
-    is_pet_ct_tnm_order,
 )
 
 

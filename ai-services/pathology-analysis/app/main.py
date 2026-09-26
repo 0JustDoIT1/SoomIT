@@ -42,6 +42,7 @@ def log_latency(stage: str, started: float) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    started = time.perf_counter()
     device_name = os.getenv("PATHOLOGY_DEVICE", "cuda")
     if device_name == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("PATHOLOGY_DEVICE=cuda but CUDA is unavailable")
@@ -58,6 +59,7 @@ async def lifespan(app: FastAPI):
         batch_size=BATCH_SIZE,
         tissue_confidence_threshold=0.60,
     )
+    log_latency("model_initialization", started)
     yield
     app.state.pipeline = None
 
@@ -112,6 +114,7 @@ def predict(body: PredictRequest) -> dict:
             log_latency("wsi_open_patch_embed_and_predict", stage_started)
             heatmap_uri = None
             if body.include_heatmap:
+                stage_started = time.perf_counter()
                 try:
                     if len(coordinates) != len(tissue_attention):
                         raise ValueError("attention and patch coordinate counts do not match")
@@ -127,6 +130,7 @@ def predict(body: PredictRequest) -> dict:
                     )
                 except Exception:
                     logger.exception("Failed to generate or upload tissue attention heatmap")
+                log_latency("heatmap", stage_started)
             preview_uri = None
             stage_started = time.perf_counter()
             try:

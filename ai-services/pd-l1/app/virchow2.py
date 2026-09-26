@@ -1,4 +1,6 @@
 
+import time
+
 import torch
 import timm
 
@@ -43,15 +45,21 @@ def extract_virchow2_features(
     patches,
     model,
     transform,
-    device
+    device,
+    *,
+    timings=None,
 ):
 
+    transform_started = time.perf_counter()
     image_tensor = torch.stack(
         [
             transform(patch)
             for patch in patches
         ]
-    ).to(
+    )
+    transform_seconds = time.perf_counter() - transform_started
+    inference_started = time.perf_counter()
+    image_tensor = image_tensor.to(
         device,
         non_blocking=True
     )
@@ -89,9 +97,13 @@ def extract_virchow2_features(
 
     # shape: [batch, 2560]
 
-    return (
+    result = (
         embeddings
         .detach()
         .cpu()
         .half()
     )
+    if timings is not None:
+        timings["patch_transform"] += transform_seconds
+        timings["embedding_transfer_and_inference"] += time.perf_counter() - inference_started
+    return result

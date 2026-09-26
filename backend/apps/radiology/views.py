@@ -2,7 +2,7 @@ import json
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Exists, OuterRef, Prefetch, Q
+from django.db.models import Count, Exists, OuterRef, Prefetch
 from django.http import HttpResponse
 from django.urls import reverse
 from django.utils import timezone
@@ -35,7 +35,6 @@ from .services.xray_storage import (
     download_xray_image_bytes,
     upload_xray_image,
 )
-from .services.workflow import is_pet_ct_tnm_order
 from .services.dicom_validation import CtSeriesValidationError, parse_ct_headers, validate_ct_series, validate_pet_series
 from .services.orthanc_storage import OrthancError, delete_orthanc_series, upload_ct_series
 from .services.orthanc_dicomweb import (

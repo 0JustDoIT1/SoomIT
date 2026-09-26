@@ -45,18 +45,29 @@ from .views import (
 
 
 urlpatterns = [
+    # ─────────────────────────────────────────────
+    # 부가기능
+    # ─────────────────────────────────────────────
+
+    # 미세먼지
+    # 현재는 테스트용 공개 API 상태 유지
     path(
         "public/air-quality/",
         AirQualityAPIView.as_view(),
         name="air-quality",
     ),
+
+    # 주변 약국
+    # 로그인한 환자만 접근 가능
     path(
-        "public/nearby-pharmacies/",
+        "nearby-pharmacies/",
         NearbyPharmacyAPIView.as_view(),
         name="nearby-pharmacies",
     ),
 
+    # ─────────────────────────────────────────────
     # QR
+    # ─────────────────────────────────────────────
     path(
         "qr-token/public-resolve/",
         PatientPublicQrTokenResolveAPIView.as_view(),
@@ -73,7 +84,9 @@ urlpatterns = [
         name="patient-qr-token-create",
     ),
 
+    # ─────────────────────────────────────────────
     # 환자앱 인증
+    # ─────────────────────────────────────────────
     path(
         "auth/google/",
         PatientGoogleLoginAPIView.as_view(),
@@ -95,7 +108,9 @@ urlpatterns = [
         name="patient-link",
     ),
 
+    # ─────────────────────────────────────────────
     # 원무과 / 환자 기본 정보
+    # ─────────────────────────────────────────────
     path(
         "",
         PatientListAPIView.as_view(),
@@ -122,7 +137,9 @@ urlpatterns = [
         name="patient-account-lookup",
     ),
 
+    # ─────────────────────────────────────────────
     # Flutter 환자 앱 - 예약
+    # ─────────────────────────────────────────────
     path(
         "appointments/doctors/",
         PatientAppointmentDoctorListAPIView.as_view(),
@@ -154,21 +171,27 @@ urlpatterns = [
         name="patient-appointment-change-request",
     ),
 
+    # ─────────────────────────────────────────────
     # 검사 일정
+    # ─────────────────────────────────────────────
     path(
         "exam-schedules/",
         ExaminationScheduleListAPIView.as_view(),
         name="exam-schedule-list",
     ),
 
+    # ─────────────────────────────────────────────
     # 프로필
+    # ─────────────────────────────────────────────
     path(
         "profile/",
         PatientProfileAPIView.as_view(),
         name="patient-profile",
     ),
 
+    # ─────────────────────────────────────────────
     # 알림
+    # ─────────────────────────────────────────────
     path(
         "notifications/",
         PatientNotificationListAPIView.as_view(),
@@ -195,7 +218,9 @@ urlpatterns = [
         name="patient-device-token",
     ),
 
+    # ─────────────────────────────────────────────
     # 문진표
+    # ─────────────────────────────────────────────
     path(
         "questionnaires/",
         PatientQuestionnaireListAPIView.as_view(),
@@ -212,7 +237,9 @@ urlpatterns = [
         name="coordinator-patient-questionnaire",
     ),
 
+    # ─────────────────────────────────────────────
     # 복약
+    # ─────────────────────────────────────────────
     path(
         "medications/",
         PatientMedicationScheduleListAPIView.as_view(),
@@ -229,7 +256,9 @@ urlpatterns = [
         name="patient-medication-intake-taken",
     ),
 
+    # ─────────────────────────────────────────────
     # 증상
+    # ─────────────────────────────────────────────
     path(
         "symptoms/",
         PatientSymptomLogListCreateAPIView.as_view(),
@@ -241,7 +270,9 @@ urlpatterns = [
         name="patient-symptom-detail",
     ),
 
+    # ─────────────────────────────────────────────
     # 환자 상세
+    # ─────────────────────────────────────────────
     path(
         "<uuid:id>/",
         PatientDetailAPIView.as_view(),

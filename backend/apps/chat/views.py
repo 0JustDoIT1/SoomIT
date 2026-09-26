@@ -15,10 +15,10 @@ from apps.audit.models import AuditLog
 from apps.cases.models import LungCancerCase
 from apps.notifications.services import create_in_app_staff_notifications
 
-from .models import CaseChatMessage, CaseChatMessageReadReceipt
+from .models import CaseChatMessage, CaseChatMessageReadReceipt, GlobalChatMessage, GlobalChatMessageReadReceipt
 from .pagination import CaseChatMessageCursorPagination
-from .permissions import IsRealtimeService, can_access_case_chat
-from .serializers import CaseChatMessageCreateSerializer, CaseChatMessageSerializer
+from .permissions import IsRealtimeService, can_access_case_chat, can_access_global_chat
+from .serializers import CaseChatMessageCreateSerializer, CaseChatMessageSerializer, GlobalChatMessageCreateSerializer, GlobalChatMessageSerializer
 
 
 class ClientMessageIdConflict(APIException):
@@ -292,3 +292,85 @@ class InternalCaseChatAccessAPIView(APIView):
         if not can_access_case_chat(request.user, case):
             raise PermissionDenied("이 Case의 채팅방에 접근할 권한이 없습니다.")
         return Response({"allowed": True, "case_id": case.id, "user_id": str(request.user.id)})
+
+
+def visible_global_messages(user):
+    return GlobalChatMessage.objects.filter(hospital_id=user.department_role.department.hospital_id).select_related("sender__department_role__department").prefetch_related("read_receipts__reader")
+
+
+class GlobalChatMessageListAPIView(ListAPIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+    serializer_class = GlobalChatMessageSerializer
+    pagination_class = CaseChatMessageCursorPagination
+
+    def get_queryset(self):
+        if not can_access_global_chat(self.request.user):
+            raise PermissionDenied("Global chat access denied.")
+        return visible_global_messages(self.request.user)
+
+
+class GlobalChatMessageReadAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not can_access_global_chat(request.user):
+            raise PermissionDenied("Global chat access denied.")
+        ids = request.data.get("message_ids")
+        if not isinstance(ids, list) or not ids or len(ids) > 50:
+            return Response({"detail": "message_ids must contain 1-50 IDs."}, status=400)
+        messages = list(visible_global_messages(request.user).filter(id__in=ids).exclude(sender=request.user))
+        existing = set(GlobalChatMessageReadReceipt.objects.filter(message__in=messages, reader=request.user).values_list("message_id", flat=True))
+        receipts = [GlobalChatMessageReadReceipt(message=m, reader=request.user) for m in messages if m.id not in existing]
+        GlobalChatMessageReadReceipt.objects.bulk_create(receipts, ignore_conflicts=True)
+        return Response({"marked_count": len(receipts), "read_messages": [{"message_id": str(r.message_id), "sender_id": str(r.message.sender_id), "reader": {"id": str(r.reader_id), "name": request.user.name, "read_at": r.created_at}} for r in receipts]})
+
+
+class GlobalChatUnreadCountAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not can_access_global_chat(request.user):
+            raise PermissionDenied("Global chat access denied.")
+        count = visible_global_messages(request.user).exclude(sender=request.user).exclude(read_receipts__reader=request.user).count()
+        return Response({"unread_count": count})
+
+
+class GlobalChatParticipantsAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not can_access_global_chat(request.user):
+            raise PermissionDenied("Global chat access denied.")
+        users = User.objects.filter(account_status=User.AccountStatus.ACTIVE, department_role__department__hospital_id=request.user.department_role.department.hospital_id).select_related("department_role__department").order_by("name")
+        return Response([{"id": str(u.id), "name": u.name, "department": u.department_role.department.code, "role": u.department_role.role} for u in users])
+
+
+class InternalGlobalChatAccessAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsRealtimeService]
+
+    def get(self, request):
+        if not can_access_global_chat(request.user):
+            raise PermissionDenied("Global chat access denied.")
+        return Response({"allowed": True, "user_id": str(request.user.id), "hospital_id": str(request.user.department_role.department.hospital_id)})
+
+
+class InternalGlobalChatMessageCreateAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsRealtimeService]
+
+    def post(self, request):
+        if not can_access_global_chat(request.user):
+            raise PermissionDenied("Global chat access denied.")
+        serializer = GlobalChatMessageCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        hospital_id = request.user.department_role.department.hospital_id
+        message, created = GlobalChatMessage.objects.get_or_create(hospital_id=hospital_id, sender=request.user, client_message_id=serializer.validated_data["client_message_id"], defaults={"body": serializer.validated_data["body"]})
+        if not created and message.body != serializer.validated_data["body"]:
+            raise ClientMessageIdConflict()
+        message = GlobalChatMessage.objects.select_related("sender__department_role__department").prefetch_related("read_receipts__reader").get(id=message.id)
+        return Response({"message": GlobalChatMessageSerializer(message).data, "created": created}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

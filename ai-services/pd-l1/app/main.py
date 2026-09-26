@@ -1,10 +1,11 @@
 from contextlib import asynccontextmanager
+import time
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from .config import Settings
-from .pipeline import InvalidPipelineInput, PDL1Pipeline
+from .pipeline import InvalidPipelineInput, PDL1Pipeline, log_latency
 from .predictor import InvalidFeatureFile, PDL1Predictor
 from .storage import InvalidGCSUri
 
@@ -46,6 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
+        started = time.perf_counter()
         predictor = PDL1Predictor(
             resolved.checkpoint_path,
             resolved.mil_baseline_path,
@@ -56,6 +58,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             max_patches=resolved.max_patches,
         )
         app.state.pipeline = PDL1Pipeline(predictor, batch_size=resolved.batch_size)
+        log_latency("model_initialization", started)
         yield
 
     app = FastAPI(title="SoomIT PD-L1 inference", version="1.0.0", lifespan=lifespan)

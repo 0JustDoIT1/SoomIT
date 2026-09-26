@@ -14,7 +14,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff
 from apps.cases.models import ClinicianDecision, ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.patients.models import CurrentMedication, LabResult, MedicationSchedule, Patient, PatientAccount, PatientHealthProfile
+from apps.patients.models import CurrentMedication, LabResult, MedicationSchedule, PatientAccount, PatientHealthProfile
 from apps.patients.patient_authentication import PatientJWTAuthentication
 
 from .dur_client import DurClient, OPERATIONS

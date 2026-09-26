@@ -1,6 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP, ROUND_HALF_EVEN, localcontext
 from types import SimpleNamespace as NS
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 from contextlib import ExitStack
 
 from django.test import SimpleTestCase

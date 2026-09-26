@@ -221,16 +221,22 @@ class Uni2hEmbedder:
             batches: list[torch.Tensor] = []
             use_amp = self.device.type == "cuda"
             read_and_transform_seconds = 0.0
+            prefetch_wait_seconds = 0.0
+            host_to_device_seconds = 0.0
             gpu_embed_seconds = 0.0
 
             def read_batch(batch_coordinates: list[tuple[int, int, int]]) -> torch.Tensor:
+                nonlocal read_and_transform_seconds
+                read_started = time.perf_counter()
                 images = [
                     self.transform(
                         slide.read_region((x, y), patch_level, (tile_size, tile_size)).convert("RGB")
                     )
                     for x, y, patch_level in batch_coordinates
                 ]
-                return torch.stack(images)
+                batch = torch.stack(images)
+                read_and_transform_seconds += time.perf_counter() - read_started
+                return batch
 
             batch_slices = [
                 coordinates[start : start + self.batch_size]
@@ -247,10 +253,12 @@ class Uni2hEmbedder:
                 for index, _ in enumerate(batch_slices):
                     wait_started = time.perf_counter()
                     batch_cpu = next_batch_future.result()
-                    read_and_transform_seconds += time.perf_counter() - wait_started
+                    prefetch_wait_seconds += time.perf_counter() - wait_started
                     if index + 1 < len(batch_slices):
                         next_batch_future = prefetch_executor.submit(read_batch, batch_slices[index + 1])
+                    transfer_started = time.perf_counter()
                     batch = batch_cpu.to(self.device)
+                    host_to_device_seconds += time.perf_counter() - transfer_started
                     gpu_started = time.perf_counter()
                     with torch.inference_mode(), torch.autocast(
                         device_type=self.device.type,
@@ -265,12 +273,22 @@ class Uni2hEmbedder:
                 read_and_transform_seconds,
             )
             logger.info(
+                "latency service=pathology_analysis stage=patch_prefetch_wait elapsed_seconds=%.3f",
+                prefetch_wait_seconds,
+            )
+            logger.info(
+                "latency service=pathology_analysis stage=embedding_host_to_device elapsed_seconds=%.3f",
+                host_to_device_seconds,
+            )
+            logger.info(
                 "latency service=pathology_analysis stage=embedding_gpu_inference elapsed_seconds=%.3f",
                 gpu_embed_seconds,
             )
             logger.info(
-                "latency service=pathology_analysis stage=patch_count value=%d",
+                "latency service=pathology_analysis stage=patch_count value=%d batch_size=%d device=%s",
                 len(coordinates),
+                self.batch_size,
+                self.device,
             )
             return torch.cat(batches, dim=0), coordinates, level
         finally:

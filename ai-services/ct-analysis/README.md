@@ -80,3 +80,17 @@ network back to CPU before the later GPU stages. This preserves the former GPU
 memory profile while removing repeated checkpoint and Python-process startup.
 Set `CT_ANALYSIS_KEEP_VISTA_ON_GPU=true` only after deployment memory profiling
 shows VISTA3D can coexist with TotalSegmentator and the nodule models.
+
+Transfer timings are logged as `vista_model_to_cuda` and `vista_model_to_cpu`.
+The CPU move during startup is separate from per-request transfers. These are
+wall times for the existing blocking moves, not isolated CUDA kernel timings.
+
+Deployment inspection on 2026-09-26 found production traffic on revision
+`00018-8pp` and the resident implementation on the zero-traffic `resident-bench`
+revision `00019-zus`. Recent logs for the resident revision contain three completed
+requests: mean request time 220.913 s, segmentation 50.844 s, anatomy segmentation
+129.784 s. This is an observed baseline, not a controlled same-input speedup claim.
+Before production promotion, compare the same input on tagged revisions with
+residency disabled/enabled, verify output artifacts, and measure whole-GPU peak
+memory including the TotalSegmentator subprocess. Do not infer GPU headroom from
+the Cloud Run host RAM setting or only the parent process's PyTorch allocator.

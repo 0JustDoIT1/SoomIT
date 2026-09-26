@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
 import torch
 
 from .models import load_clam
-from .wsi import Uni2hEmbedder
+from .wsi import Uni2hEmbedder, log_latency
 
 
 TISSUE_LABELS = ("Benign", "LUAD", "LUSC")
@@ -96,9 +97,15 @@ class PathologyPipeline:
     def predict_wsi(
         self, slide_path: Path, **embedding_options: Any
     ) -> tuple[dict[str, Any], list[tuple[int, int, int]], list[float]]:
+        wait_started = time.perf_counter()
         with self.lock:
+            log_latency("inference_lock_wait", wait_started)
+            stage_started = time.perf_counter()
             embedding, coordinates, level = self.embedder.embed(slide_path, **embedding_options)
+            log_latency("embedding_total", stage_started)
+            stage_started = time.perf_counter()
             tissue, gene, tissue_attention = self._predict_embedding(embedding)
+            log_latency("clam_prediction", stage_started)
         result = {
             "embedding": {
                 "backbone": "UNI2-h",

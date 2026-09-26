@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from django.test import SimpleTestCase
 from rest_framework.exceptions import ValidationError
-from apps.clinical.serializers import DoctorPrescriptionSerializer, PrescriptionItemUpdateSerializer
+from apps.clinical.serializers import DoctorPrescriptionSerializer
 from apps.clinical.views import (DoctorPrescriptionAPIView as Create,
     DoctorSafetyWarningAcknowledgeAPIView as Acknowledge,
     DoctorPrescriptionItemUpdateAPIView as Update,

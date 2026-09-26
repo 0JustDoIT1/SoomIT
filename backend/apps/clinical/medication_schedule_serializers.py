@@ -2,7 +2,7 @@ from rest_framework import serializers
 
 from apps.patients.models import MedicationSchedule, MedicationScheduleItem
 
-from .models import DrugRoute, Prescription, PrescriptionItem
+from .models import DrugRoute, PrescriptionItem
 
 
 class DoctorMedicationScheduleSerializer(serializers.ModelSerializer):

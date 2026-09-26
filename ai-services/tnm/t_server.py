@@ -244,7 +244,7 @@ def predict(body: TRequest) -> dict:
             root = Path(temporary)
             input_dir, output_dir = root / "input", root / "output"
             stage_started = time.perf_counter()
-            input_path = download_file(body.t_input_uri, input_dir / f"{body.case_id}_0000.nii.gz")
+            download_file(body.t_input_uri, input_dir / f"{body.case_id}_0000.nii.gz")
             metadata_uri = body.crop_metadata_uri or body.t_input_uri.rsplit("/", 1)[0] + "/crop_metadata.json"
             metadata_path = download_file(metadata_uri, input_dir / "crop_metadata.json")
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
