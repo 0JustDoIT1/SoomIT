@@ -26,7 +26,8 @@ function jsonResponse(value: unknown) {
 describe("coordinator appointments", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-09-21T08:00:00Z"));
+    vi.setSystemTime(new Date(2026, 8, 21, 8));
+    const scheduledAt = new Date(2026, 8, 21, 9).toISOString();
     api.staffAuthenticatedFetch.mockReset();
     api.staffAuthenticatedFetch.mockImplementation((input: string) => {
       if (input.includes("/requests/")) return jsonResponse([]);
@@ -40,7 +41,7 @@ describe("coordinator appointments", () => {
           patient_name: "첫 환자",
           case_code: null,
           doctor_name: "김의사",
-          scheduled_at: "2026-09-21T09:00:00+09:00",
+          scheduled_at: scheduledAt,
           appointment_status: "REQUESTED",
           created_by_type: "PATIENT",
           confirmed_at: null,
@@ -55,7 +56,7 @@ describe("coordinator appointments", () => {
           patient_name: "둘째 환자",
           case_code: null,
           doctor_name: "김의사",
-          scheduled_at: "2026-09-21T09:00:00+09:00",
+          scheduled_at: scheduledAt,
           appointment_status: "CONFIRMED",
           created_by_type: "PATIENT",
           confirmed_at: "2026-09-20T10:00:00+09:00",
