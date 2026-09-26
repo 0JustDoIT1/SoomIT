@@ -26,7 +26,7 @@ function jsonResponse(value: unknown) {
 describe("coordinator appointments", () => {
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.setSystemTime(new Date("2026-09-21T08:00:00+09:00"));
+    vi.setSystemTime(new Date("2026-09-21T08:00:00Z"));
     api.staffAuthenticatedFetch.mockReset();
     api.staffAuthenticatedFetch.mockImplementation((input: string) => {
       if (input.includes("/requests/")) return jsonResponse([]);
