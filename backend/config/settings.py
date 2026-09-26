@@ -9,9 +9,55 @@ from dotenv import load_dotenv
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
 
+
+def env_flag(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+DJANGO_ENV = os.environ.get("DJANGO_ENV", "development").strip().lower()
+IS_PRODUCTION = DJANGO_ENV in {"production", "prod"}
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
-DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
+# DEBUG is opt-in for local development and is always disabled in production.
+DEBUG = False if IS_PRODUCTION else env_flag("DJANGO_DEBUG", default=False)
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("DJANGO_CSRF_TRUSTED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+# Production traffic reaches Django only through infra/nginx.conf, which sets
+# X-Forwarded-Proto from the TLS-terminating HTTPS virtual host.
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if IS_PRODUCTION else None
+SECURE_SSL_REDIRECT = IS_PRODUCTION
+SESSION_COOKIE_SECURE = IS_PRODUCTION
+CSRF_COOKIE_SECURE = IS_PRODUCTION
+
+# Start HSTS with a reversible one-day policy. Production can increase this
+# incrementally through environment variables after validating all subdomains.
+SECURE_HSTS_SECONDS = (
+    int(os.environ.get("DJANGO_SECURE_HSTS_SECONDS", "86400"))
+    if IS_PRODUCTION
+    else 0
+)
+SECURE_HSTS_INCLUDE_SUBDOMAINS = (
+    env_flag("DJANGO_SECURE_HSTS_INCLUDE_SUBDOMAINS", default=True)
+    if IS_PRODUCTION
+    else False
+)
+SECURE_HSTS_PRELOAD = (
+    env_flag("DJANGO_SECURE_HSTS_PRELOAD", default=True)
+    if IS_PRODUCTION
+    else False
+)
 
 # Set by infra/docker-compose.yml at deploy time to the same commit SHA
 # already used as this deploy's Docker image tag - read by the system-admin

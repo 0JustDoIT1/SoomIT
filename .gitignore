@@ -30,10 +30,24 @@ model_validation/
 *.pth
 *.pt
 
-gcs-key.json
+# Google Cloud service-account credentials
+**/gcs-key.json
+**/gcs-key .json
+**/gcs-key*.json
+**/*service-account*.json
+**/*service_account*.json
 .knowledge-deps/
 .pytest_cache/
 **/.pytest_cache/
 
 # Firebase Admin service account credentials
 /backend/soomit-patient-firebase-admin.json
+
+# Local verification artifacts (kept locally, never versioned)
+/reports/dashboard-chrome/
+/.tmp-*.log
+/backend/.*.log
+/backend/*-verification.*.log
+/ai-services/genkit/*-verification.*.log
+/frontend/astra_p1p2_wip_backup.patch
+/package-lock.json
