@@ -31,6 +31,7 @@ from apps.pathology.services.pathology_storage import (
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
 from apps.clinical.models import ClinicalResult, GeneFinding, Prescription, TreatmentDecision, XrayResult
+from apps.clinical.gene_alterations import CANONICAL_ALTERATIONS
 from apps.clinical.serializers import DoctorClinicalResultSerializer, DoctorPathologyGeneReviewSerializer
 from apps.radiology.models import RadiologyReview
 from apps.clinical.views import DoctorTreatmentEvidenceAPIView
@@ -880,6 +881,20 @@ def _confirm_submitted_pathology_result(*, case, result, confirming_user):
         raise SubmittedPathologyResultConfirmationError(
             "The pathology result is not linked to an examination order."
         )
+
+    gene_detail = getattr(result, "gene_detail", None)
+    if gene_detail is not None:
+        for finding in gene_detail.gene_findings.all():
+            gene_symbol = finding.gene_symbol.strip().upper()
+            supported_codes = CANONICAL_ALTERATIONS.get(gene_symbol)
+            if (
+                supported_codes
+                and finding.assessment == GeneFinding.Assessment.LIKELY_POSITIVE
+                and finding.alteration_code not in supported_codes
+            ):
+                raise SubmittedPathologyResultConfirmationError(
+                    f"{gene_symbol} 양성 결과는 구체적인 변이 유형을 확정해야 합니다."
+                )
 
     review = (
         PathologyWorkItem.objects.select_for_update()

@@ -16,7 +16,7 @@ describe("PathologyGeneImagingWorkspace", () => {
           result_status: "DRAFT",
           result_detail: {
             pathology: { histologic_type: "NSCLC" },
-            gene: { findings: [{ gene_symbol: "EGFR", alteration_code: "EGFR_EX19_DEL" }] },
+            gene: { findings: [{ gene_symbol: "EGFR", assessment: "LIKELY_POSITIVE", alteration_code: "EGFR_EX19_DEL" }] },
           },
         }}
         geneAiResult={{ analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED" }}

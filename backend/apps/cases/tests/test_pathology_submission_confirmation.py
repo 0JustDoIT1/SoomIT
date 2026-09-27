@@ -92,22 +92,41 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
             kwargs={"case_id": self.case.id, "result_id": self.result.id},
         )
 
-    def _add_gene_findings(self):
+    def _add_gene_findings(self, *, positive_gene="EGFR"):
         gene_result = GeneResult.objects.create(
             clinical_result=self.result,
             interpretation="Pathology-delivered molecular findings",
         )
-        GeneFinding.objects.create(
-            gene_result=gene_result,
-            gene_symbol="EGFR",
-            assessment=GeneFinding.Assessment.LIKELY_POSITIVE,
-        )
-        GeneFinding.objects.create(
-            gene_result=gene_result,
-            gene_symbol="BRAF",
-            assessment=GeneFinding.Assessment.LIKELY_NEGATIVE,
-        )
+        for gene_symbol in ("EGFR", "BRAF", "MET"):
+            GeneFinding.objects.create(
+                gene_result=gene_result,
+                gene_symbol=gene_symbol,
+                assessment=(
+                    GeneFinding.Assessment.LIKELY_POSITIVE
+                    if gene_symbol == positive_gene
+                    else GeneFinding.Assessment.LIKELY_NEGATIVE
+                ),
+            )
         return gene_result
+
+    @staticmethod
+    def _review_payload(*, positive_gene="EGFR", alteration_code=None, assessment=None):
+        return {
+            "gene_findings": [
+                {
+                    "gene_symbol": gene_symbol,
+                    "assessment": (
+                        assessment
+                        if gene_symbol == positive_gene and assessment is not None
+                        else "LIKELY_POSITIVE"
+                        if gene_symbol == positive_gene
+                        else "LIKELY_NEGATIVE"
+                    ),
+                    "alteration_code": alteration_code if gene_symbol == positive_gene else None,
+                }
+                for gene_symbol in ("EGFR", "BRAF", "MET")
+            ],
+        }
 
     def test_unsubmitted_draft_is_hidden_and_cannot_be_confirmed(self):
         list_response = self.client.get(
@@ -165,6 +184,11 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
                         "assessment": "LIKELY_NEGATIVE",
                         "alteration_code": None,
                     },
+                    {
+                        "gene_symbol": "MET",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": None,
+                    },
                 ],
             },
             format="json",
@@ -196,6 +220,11 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
                     },
                     {
                         "gene_symbol": "BRAF",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": None,
+                    },
+                    {
+                        "gene_symbol": "MET",
                         "assessment": "LIKELY_NEGATIVE",
                         "alteration_code": None,
                     },
@@ -238,6 +267,11 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
                         "assessment": "LIKELY_NEGATIVE",
                         "alteration_code": None,
                     },
+                    {
+                        "gene_symbol": "MET",
+                        "assessment": "LIKELY_NEGATIVE",
+                        "alteration_code": None,
+                    },
                 ],
             },
             format="json",
@@ -247,6 +281,90 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
         egfr = gene_result.gene_findings.get(gene_symbol="EGFR")
         self.assertEqual(egfr.assessment, GeneFinding.Assessment.LIKELY_POSITIVE)
         self.assertIsNone(egfr.alteration_code)
+
+    def test_positive_actionable_gene_without_alteration_cannot_be_confirmed(self):
+        self._add_gene_findings()
+        review = self._submit()
+
+        response = self.client.post(self._confirm_url(), format="json")
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("EGFR", str(response.data))
+        self.result.refresh_from_db()
+        review.refresh_from_db()
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
+
+    def _assert_actionable_alteration_confirms(self, gene_symbol, alteration_code):
+        gene_result = self._add_gene_findings(positive_gene=gene_symbol)
+        self._submit()
+
+        response = self.client.post(
+            self._confirm_url(),
+            self._review_payload(
+                positive_gene=gene_symbol,
+                alteration_code=alteration_code,
+            ),
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.result.refresh_from_db()
+        finding = gene_result.gene_findings.get(gene_symbol=gene_symbol)
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(finding.alteration_code, alteration_code)
+
+    def test_egfr_exon19_positive_with_canonical_alteration_confirms(self):
+        self._assert_actionable_alteration_confirms("EGFR", "EGFR_EX19_DEL")
+
+    def test_braf_positive_with_canonical_alteration_confirms(self):
+        self._assert_actionable_alteration_confirms("BRAF", "BRAF_V600E")
+
+    def test_met_positive_with_canonical_alteration_confirms(self):
+        self._assert_actionable_alteration_confirms("MET", "MET_EXON14_SKIPPING")
+
+    def test_unknown_actionable_alteration_is_rejected_but_indeterminate_confirms(self):
+        gene_result = self._add_gene_findings()
+        self._submit()
+
+        rejected = self.client.post(
+            self._confirm_url(),
+            self._review_payload(alteration_code="OTHER_UNKNOWN"),
+            format="json",
+        )
+        self.assertEqual(rejected.status_code, 400)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.DRAFT)
+
+        confirmed = self.client.post(
+            self._confirm_url(),
+            self._review_payload(assessment="INDETERMINATE"),
+            format="json",
+        )
+        self.assertEqual(confirmed.status_code, 200, confirmed.data)
+        finding = gene_result.gene_findings.get(gene_symbol="EGFR")
+        self.assertEqual(finding.assessment, GeneFinding.Assessment.INDETERMINATE)
+        self.assertIsNone(finding.alteration_code)
+
+    def test_workflow_advance_cannot_auto_confirm_incomplete_actionable_gene(self):
+        self._add_gene_findings()
+        self._submit()
+
+        response = self.client.post(
+            reverse("doctor-case-workflow-decision", kwargs={"case_id": self.case.id}),
+            {
+                "action": "PROCEED_NEXT_STAGE",
+                "source_clinical_result_id": str(self.result.id),
+                "target_stage": WorkflowStage.PDL1,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.result.refresh_from_db()
+        self.case.refresh_from_db()
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(self.case.current_stage, WorkflowStage.PATHOLOGY_GENE)
 
     def test_non_pulmonology_doctor_cannot_confirm(self):
         self._submit()

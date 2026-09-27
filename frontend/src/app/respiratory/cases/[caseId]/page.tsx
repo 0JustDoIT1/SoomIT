@@ -1303,6 +1303,14 @@ export default function RespiratoryCaseDetailPage() {
   const geneClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PATHOLOGY_GENE"
   ) as GeneClinicalResult | undefined;
+  const unresolvedActionableGene = geneClinicalResult?.result_detail?.gene?.findings.find(
+    (finding) => ["EGFR", "BRAF", "MET"].includes(finding.gene_symbol.toUpperCase())
+      && finding.assessment === "LIKELY_POSITIVE"
+      && !finding.alteration_code,
+  );
+  const treatmentCandidateEmptyReason = unresolvedActionableGene
+    ? `${unresolvedActionableGene.gene_symbol.toUpperCase()} 양성 결과의 세부 변이가 확정되지 않아 표적치료 Regimen을 추천할 수 없습니다. 유전자 결과 검토를 완료한 후 다시 확인해주세요.`
+    : undefined;
 
   const pdl1ClinicalResult = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PDL1",
@@ -3115,6 +3123,7 @@ export default function RespiratoryCaseDetailPage() {
           syncingResults={resultsSyncing}
           onRefreshResults={() => { void refreshCaseResults(); }}
           syncNotice={resultSyncNotice}
+          onClinicalResultConfirmed={() => { void refreshCaseResults(); }}
         />
         ) : selectedMainMenu === "RESULTS" ? (
         <>

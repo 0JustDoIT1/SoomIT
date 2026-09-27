@@ -27,15 +27,31 @@ class GeneAlterationNormalizationTests(SimpleTestCase):
             "EGFR uncommon variant",
         )
 
-    def test_positive_assessment_without_variant_keeps_null_code(self):
+    def test_positive_actionable_assessment_without_variant_is_rejected(self):
         serializer = DoctorGeneFindingWriteSerializer(data={
             "gene_symbol": "egfr",
             "assessment": "LIKELY_POSITIVE",
             "alteration_code": "",
         })
-        self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertEqual(serializer.validated_data["gene_symbol"], "EGFR")
-        self.assertIsNone(serializer.validated_data["alteration_code"])
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("alteration_code", serializer.errors)
+
+    def test_unknown_actionable_variant_is_rejected_but_indeterminate_is_allowed(self):
+        positive = DoctorGeneFindingWriteSerializer(data={
+            "gene_symbol": "EGFR",
+            "assessment": "LIKELY_POSITIVE",
+            "alteration_code": "OTHER_UNKNOWN",
+        })
+        self.assertFalse(positive.is_valid())
+        self.assertIn("alteration_code", positive.errors)
+
+        indeterminate = DoctorGeneFindingWriteSerializer(data={
+            "gene_symbol": "EGFR",
+            "assessment": "INDETERMINATE",
+            "alteration_code": None,
+        })
+        self.assertTrue(indeterminate.is_valid(), indeterminate.errors)
+        self.assertIsNone(indeterminate.validated_data["alteration_code"])
 
     def test_nonpositive_finding_cannot_carry_an_alteration(self):
         serializer = DoctorGeneFindingWriteSerializer(data={

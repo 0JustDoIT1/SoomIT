@@ -3,14 +3,25 @@
 import { EvidenceViewerPanel } from "./evidence-viewer-panel";
 import { ResultReviewPanel } from "./result-review-panel";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
+import { PathologyGeneFinalReview } from "./pathology-gene-final-review";
 
 type ClinicalResult = {
+  id?: string;
   workflow_stage: string;
   exam_name?: string;
   result_status?: string;
   result_status_label?: string;
   result_date?: string | null;
-  result_detail?: unknown;
+  result_detail?: {
+    gene?: {
+      findings?: {
+        gene_symbol: string;
+        assessment: string;
+        alteration_code?: string | null;
+      }[];
+    };
+    [key: string]: unknown;
+  };
 };
 
 type AiResult = {
@@ -42,6 +53,7 @@ type Props = {
   caseId?: string;
   apiBaseUrl?: string;
   authorizedFetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
+  onClinicalResultConfirmed?: () => void;
 };
 
 export function PathologyGeneImagingWorkspace({
@@ -62,6 +74,7 @@ export function PathologyGeneImagingWorkspace({
   caseId,
   apiBaseUrl,
   authorizedFetch,
+  onClinicalResultConfirmed,
 }: Props) {
   const clinicalResult = pathologyClinicalResult ?? geneClinicalResult;
   const aiResult = pathologyAiResult ?? geneAiResult;
@@ -110,6 +123,15 @@ export function PathologyGeneImagingWorkspace({
             onRefreshResults={onRefreshResults}
             syncNotice={syncNotice}
           />
+          {caseId && apiBaseUrl && authorizedFetch && geneClinicalResult && (
+            <PathologyGeneFinalReview
+              caseId={caseId}
+              apiBaseUrl={apiBaseUrl}
+              authorizedFetch={authorizedFetch}
+              clinicalResult={geneClinicalResult}
+              onConfirmed={onClinicalResultConfirmed}
+            />
+          )}
         </aside>
       </div>
     </section>

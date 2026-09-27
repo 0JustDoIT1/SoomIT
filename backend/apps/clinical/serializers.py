@@ -18,6 +18,7 @@ from .models import (
 )
 from .gene_alterations import (
     AI_TO_CLINICAL_ASSESSMENT,
+    CANONICAL_ALTERATIONS,
     canonical_code_gene,
     canonicalize_alteration_code,
 )
@@ -486,15 +487,30 @@ class DoctorGeneFindingWriteSerializer(serializers.Serializer):
     def validate(self, attrs):
         gene_symbol = attrs["gene_symbol"].strip().upper()
         alteration_code = canonicalize_alteration_code(gene_symbol, attrs.get("alteration_code"))
+        assessment = attrs["assessment"]
         owner_gene = canonical_code_gene(alteration_code)
         if owner_gene is not None and owner_gene != gene_symbol:
             raise serializers.ValidationError({
                 "alteration_code": f"{alteration_code} is not a {gene_symbol} alteration.",
             })
-        if alteration_code is not None and attrs["assessment"] != GeneFinding.Assessment.LIKELY_POSITIVE:
+        if alteration_code is not None and assessment != GeneFinding.Assessment.LIKELY_POSITIVE:
             raise serializers.ValidationError({
                 "alteration_code": "An alteration can only be recorded for a positive finding.",
             })
+        supported_codes = CANONICAL_ALTERATIONS.get(gene_symbol)
+        if supported_codes and assessment == GeneFinding.Assessment.LIKELY_POSITIVE:
+            if alteration_code is None:
+                raise serializers.ValidationError({
+                    "alteration_code": (
+                        f"{gene_symbol} 양성 결과는 구체적인 변이 유형을 확정해야 합니다."
+                    ),
+                })
+            if alteration_code not in supported_codes:
+                raise serializers.ValidationError({
+                    "alteration_code": (
+                        f"{gene_symbol}의 지원되는 변이가 아니면 결과를 불확정으로 검토해주세요."
+                    ),
+                })
         attrs["gene_symbol"] = gene_symbol
         attrs["alteration_code"] = alteration_code
         return attrs
