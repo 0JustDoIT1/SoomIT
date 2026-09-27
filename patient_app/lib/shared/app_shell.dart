@@ -49,17 +49,23 @@ class _AppShellState extends State<AppShell>
   void initState() {
     super.initState();
 
+    // 앱이 위젯/알림을 통해 시작됐을 경우
+    // pending 된 탭 번호를 먼저 사용
     _selectedIndex =
         NotificationNavigationService.instance.consumeInitialTabIndex();
 
+    // 앱이 이미 실행 중일 때
+    // 외부에서 탭 이동 요청을 받음
     _notificationNavigationSubscription =
         NotificationNavigationService.instance.tabRequests.listen(
       (tabIndex) {
-        NotificationNavigationService.instance.consumePendingRequest();
-
         if (!mounted || tabIndex < 0 || tabIndex > 4) {
           return;
         }
+
+        debugPrint(
+          'AppShell 탭 이동 요청 수신: $tabIndex',
+        );
 
         setState(() {
           _selectedIndex = tabIndex;
@@ -69,12 +75,18 @@ class _AppShellState extends State<AppShell>
 
     _profileFuture = _profileService.getProfile();
 
-    unawaited(_refreshUnreadNotificationState());
+    unawaited(
+      _refreshUnreadNotificationState(),
+    );
 
     _chatbotController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 340),
-      reverseDuration: const Duration(milliseconds: 250),
+      duration: const Duration(
+        milliseconds: 340,
+      ),
+      reverseDuration: const Duration(
+        milliseconds: 250,
+      ),
     );
 
     _chatbotScale = Tween<double>(
@@ -117,6 +129,10 @@ class _AppShellState extends State<AppShell>
   // =========================================================
 
   void _onTabChanged(int index) {
+    // 사용자가 직접 하단 탭을 눌렀다면
+    // 이전 외부 이동 요청은 더 이상 유지하지 않음
+    NotificationNavigationService.instance.consumePendingRequest();
+
     setState(() {
       _selectedIndex = index;
     });
@@ -128,7 +144,8 @@ class _AppShellState extends State<AppShell>
 
   Future<void> _openQrScreen() async {
     try {
-      final profile = await _profileFuture;
+      final profile =
+          await _profileFuture;
 
       if (!mounted) {
         return;
@@ -184,16 +201,20 @@ class _AppShellState extends State<AppShell>
         return;
       }
 
-      final hasUnread = notifications.any(
-        (notification) => !notification.isRead,
+      final hasUnread =
+          notifications.any(
+        (notification) =>
+            !notification.isRead,
       );
 
-      if (_hasUnreadNotification == hasUnread) {
+      if (_hasUnreadNotification ==
+          hasUnread) {
         return;
       }
 
       setState(() {
-        _hasUnreadNotification = hasUnread;
+        _hasUnreadNotification =
+            hasUnread;
       });
     } catch (_) {
       // 알림 조회 실패는 앱 사용을 막지 않도록 무시
@@ -268,43 +289,51 @@ class _AppShellState extends State<AppShell>
     return FutureBuilder<PatientProfile>(
       future: _profileFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState != ConnectionState.done) {
+        if (snapshot.connectionState !=
+            ConnectionState.done) {
           return const Center(
-            child: CircularProgressIndicator(
-              color: Color(0xFF3198F4),
+            child:
+                CircularProgressIndicator(
+              color:
+                  Color(0xFF3198F4),
             ),
           );
         }
 
         final isLinked =
-            snapshot.data?.appLinkStatus == 'LINKED';
+            snapshot.data?.appLinkStatus ==
+                'LINKED';
 
         final screens = <Widget>[
-          // 홈
-          const HomeScreen(),
+          // 0 홈
+          HomeScreen(
+            onOpenExamResults: () {
+              _onTabChanged(2);
+            },
+          ),
 
-          // 예약
+          // 1 예약
           isLinked
               ? const AppointmentScreen()
               : const PatientLinkRequiredScreen(
                   featureName: '예약',
                 ),
 
-          // 검사결과
+          // 2 검사결과
           isLinked
               ? const ExamResultScreen()
               : const PatientLinkRequiredScreen(
                   featureName: '검사결과',
                 ),
 
-          // 복약관리
+          // 3 복약관리
           isLinked
               ? const MedicationScreen()
               : const PatientLinkRequiredScreen(
                   featureName: '복약관리',
                 ),
 
-          // 마이페이지
+          // 4 마이페이지
           const MyPageScreen(),
         ];
 
@@ -322,42 +351,53 @@ class _AppShellState extends State<AppShell>
 
   Widget _buildChatbotOverlay() {
     final topInset =
-        MediaQuery.of(context).padding.top;
+        MediaQuery.of(context)
+            .padding
+            .top;
 
     return Stack(
       children: [
-        // =================================================
         // 기존 화면
-        // =================================================
         Positioned.fill(
-          child: _buildScreenStack(),
+          child:
+              _buildScreenStack(),
         ),
 
-        // =================================================
         // 전체 화면 Blur
-        //
-        // 상태표시줄 영역까지 Blur가 보이도록
-        // SafeArea 밖에서 전체 화면을 덮는다.
-        // =================================================
         Positioned.fill(
-          child: AnimatedBuilder(
-            animation: _chatbotController,
-            builder: (context, child) {
+          child:
+              AnimatedBuilder(
+            animation:
+                _chatbotController,
+            builder:
+                (context, child) {
               final value =
-                  _chatbotController.value;
+                  _chatbotController
+                      .value;
 
               return GestureDetector(
                 behavior:
-                    HitTestBehavior.opaque,
-                onTap: _closeChatbot,
-                child: BackdropFilter(
-                  filter: ImageFilter.blur(
-                    sigmaX: 5 * value,
-                    sigmaY: 5 * value,
+                    HitTestBehavior
+                        .opaque,
+                onTap:
+                    _closeChatbot,
+                child:
+                    BackdropFilter(
+                  filter:
+                      ImageFilter.blur(
+                    sigmaX:
+                        5 * value,
+                    sigmaY:
+                        5 * value,
                   ),
-                  child: Container(
-                    color: Colors.black.withValues(
-                      alpha: 0.10 * value,
+                  child:
+                      Container(
+                    color:
+                        Colors.black
+                            .withValues(
+                      alpha:
+                          0.10 *
+                              value,
                     ),
                   ),
                 ),
@@ -366,41 +406,50 @@ class _AppShellState extends State<AppShell>
           ),
         ),
 
-        // =================================================
         // 챗봇 카드
-        //
-        // 상태표시줄 / 카메라 아래부터 시작
-        //
-        // 하단:
-        // 기존 112 → 88
-        //
-        // X 버튼이 작아진 만큼 채팅창을
-        // 더 아래까지 확장
-        // =================================================
         Positioned(
           left: 8,
           right: 8,
-          top: topInset + 8,
+          top:
+              topInset + 8,
           bottom: 88,
-          child: FadeTransition(
-            opacity: _chatbotOpacity,
-            child: ScaleTransition(
-              scale: _chatbotScale,
+          child:
+              FadeTransition(
+            opacity:
+                _chatbotOpacity,
+            child:
+                ScaleTransition(
+              scale:
+                  _chatbotScale,
               alignment:
-                  Alignment.bottomRight,
-              child: Material(
+                  Alignment
+                      .bottomRight,
+              child:
+                  Material(
                 elevation: 20,
                 borderRadius:
-                    BorderRadius.circular(26),
+                    BorderRadius
+                        .circular(
+                  26,
+                ),
                 clipBehavior:
-                    Clip.antiAlias,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Theme.of(context)
-                        .colorScheme
-                        .surface,
+                    Clip
+                        .antiAlias,
+                child:
+                    DecoratedBox(
+                  decoration:
+                      BoxDecoration(
+                    color:
+                        Theme.of(
+                      context,
+                    )
+                            .colorScheme
+                            .surface,
                     borderRadius:
-                        BorderRadius.circular(26),
+                        BorderRadius
+                            .circular(
+                      26,
+                    ),
                   ),
                   child:
                       const ChatbotScreen(),
@@ -418,149 +467,171 @@ class _AppShellState extends State<AppShell>
   // =========================================================
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(
+    BuildContext context,
+  ) {
     return Scaffold(
-      resizeToAvoidBottomInset: true,
+      resizeToAvoidBottomInset:
+          true,
+
       backgroundColor:
-          const Color(0xFFF4F6F9),
+          const Color(
+        0xFFF4F6F9,
+      ),
 
       // =====================================================
       // 상단바
-      //
       // 챗봇 열리면 숨김
       // =====================================================
-      appBar: _isChatbotOpen
-          ? null
-          : AppHeader(
-              onMenuPressed:
-                  _openQrScreen,
-              onNotificationPressed:
-                  _openNotificationScreen,
-              hasUnreadNotification:
-                  _hasUnreadNotification,
-            ),
+
+      appBar:
+          _isChatbotOpen
+              ? null
+              : AppHeader(
+                  onMenuPressed:
+                      _openQrScreen,
+                  onNotificationPressed:
+                      _openNotificationScreen,
+                  hasUnreadNotification:
+                      _hasUnreadNotification,
+                ),
 
       // =====================================================
       // 본문
       // =====================================================
-      body: _isChatbotOpen
-          ? _buildChatbotOverlay()
-          : _buildScreenStack(),
+
+      body:
+          _isChatbotOpen
+              ? _buildChatbotOverlay()
+              : _buildScreenStack(),
 
       // =====================================================
       // 숨이 챗봇 버튼 / 닫기 버튼
       // =====================================================
+
       floatingActionButton:
           GestureDetector(
-        onTap: _toggleChatbot,
-        child: AnimatedSwitcher(
+        onTap:
+            _toggleChatbot,
+
+        child:
+            AnimatedSwitcher(
           duration:
               const Duration(
-            milliseconds: 220,
+            milliseconds:
+                220,
           ),
 
           transitionBuilder:
-              (child, animation) {
+              (
+            child,
+            animation,
+          ) {
             return RotationTransition(
-              turns: Tween<double>(
+              turns:
+                  Tween<double>(
                 begin: 0.75,
                 end: 1,
-              ).animate(animation),
-              child: ScaleTransition(
-                scale: animation,
-                child: child,
+              ).animate(
+                animation,
+              ),
+              child:
+                  ScaleTransition(
+                scale:
+                    animation,
+                child:
+                    child,
               ),
             );
           },
 
-          child: _isChatbotOpen
-
-              // =============================================
-              // 닫기 X 버튼
-              //
-              // 기존 58 → 48
-              // 아이콘 30 → 25
-              // =============================================
-              ? Container(
-                  key:
-                      const ValueKey(
-                    'chatbot-close',
-                  ),
-                  width: 45,
-                  height: 45,
-                  decoration:
-                      BoxDecoration(
-                    gradient:
-                        const LinearGradient(
-                      begin:
-                          Alignment.topLeft,
-                      end: Alignment
-                          .bottomRight,
-                      colors: [
-                        Color(
-                          0xFF9DEEF7,
-                        ),
-                        Color(
-                          0xFF61D4F5,
-                        ),
-                        Color(
-                          0xFF359FF0,
-                        ),
-                        Color(
-                          0xFF75E5D5,
-                        ),
-                      ],
-                      stops: [
-                        0.0,
-                        0.34,
-                        0.70,
-                        1.0,
-                      ],
-                    ),
-                    shape:
-                        BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color:
-                            const Color(
-                          0xFF359FF0,
-                        ).withValues(
-                          alpha: 0.26,
-                        ),
-                        blurRadius: 10,
-                        offset:
-                            const Offset(
-                          0,
-                          5,
-                        ),
+          child:
+              _isChatbotOpen
+                  ? Container(
+                      key:
+                          const ValueKey(
+                        'chatbot-close',
                       ),
-                    ],
-                  ),
-                  child:
-                      const Icon(
-                    Icons.close_rounded,
-                    color: Colors.white,
-                    size: 25,
-                  ),
-                )
-
-              // =============================================
-              // 닫혀 있을 때 숨이 버튼
-              // =============================================
-              : SizedBox(
-                  key:
-                      const ValueKey(
-                    'chatbot-soomi',
-                  ),
-                  width: 70,
-                  height: 70,
-                  child:
-                      Image.asset(
-                    'assets/images/AIchat숨이.png',
-                    fit:
-                        BoxFit.contain,
-                  ),
-                ),
+                      width: 45,
+                      height: 45,
+                      decoration:
+                          BoxDecoration(
+                        gradient:
+                            const LinearGradient(
+                          begin:
+                              Alignment
+                                  .topLeft,
+                          end:
+                              Alignment
+                                  .bottomRight,
+                          colors: [
+                            Color(
+                              0xFF9DEEF7,
+                            ),
+                            Color(
+                              0xFF61D4F5,
+                            ),
+                            Color(
+                              0xFF359FF0,
+                            ),
+                            Color(
+                              0xFF75E5D5,
+                            ),
+                          ],
+                          stops: [
+                            0.0,
+                            0.34,
+                            0.70,
+                            1.0,
+                          ],
+                        ),
+                        shape:
+                            BoxShape
+                                .circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color:
+                                const Color(
+                              0xFF359FF0,
+                            ).withValues(
+                              alpha:
+                                  0.26,
+                            ),
+                            blurRadius:
+                                10,
+                            offset:
+                                const Offset(
+                              0,
+                              5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      child:
+                          const Icon(
+                        Icons.close_rounded,
+                        color:
+                            Colors.white,
+                        size:
+                            25,
+                      ),
+                    )
+                  : SizedBox(
+                      key:
+                          const ValueKey(
+                        'chatbot-soomi',
+                      ),
+                      width:
+                          70,
+                      height:
+                          70,
+                      child:
+                          Image.asset(
+                        'assets/images/AIchat숨이.png',
+                        fit:
+                            BoxFit.contain,
+                      ),
+                    ),
         ),
       ),
 
@@ -572,6 +643,7 @@ class _AppShellState extends State<AppShell>
       // 하단 네비게이션
       // 챗봇 열리면 숨김
       // =====================================================
+
       bottomNavigationBar:
           _isChatbotOpen
               ? null

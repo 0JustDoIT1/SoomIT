@@ -10,6 +10,9 @@
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
 
+        <!-- ===================================================== -->
+        <!-- Flutter Main Activity -->
+        <!-- ===================================================== -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -20,43 +23,95 @@
             android:hardwareAccelerated="true"
             android:windowSoftInputMode="adjustResize">
 
-            <!--
-                Specifies an Android theme to apply to this Activity
-                as soon as the Android process has started.
-            -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
 
+            <!-- 일반 앱 실행 -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+
+            <!-- 홈 위젯 클릭으로 앱 실행 -->
+            <intent-filter>
+                <action android:name="es.antonborri.home_widget.action.LAUNCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
         </activity>
 
+        <!-- ===================================================== -->
+        <!-- 카카오 로그인 Redirect 처리 -->
+        <!--
+            Redirect URI:
+            kakao{NATIVE_APP_KEY}://oauth
+        -->
+        <!-- ===================================================== -->
+        <activity
+            android:name="com.kakao.sdk.flutter.auth.AuthCodeHandlerActivity"
+            android:exported="true">
+
+            <intent-filter android:label="flutter_web_auth">
+
+                <action android:name="android.intent.action.VIEW" />
+
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+
+                <data
+                    android:scheme="kakao0a17fdd9b3ef886194a2c238393ddfc9"
+                    android:host="oauth" />
+
+            </intent-filter>
+
+        </activity>
+
+        <!-- ===================================================== -->
+        <!-- 복약 홈 위젯 -->
+        <!-- ===================================================== -->
+        <receiver
+            android:name=".MedicationWidgetProvider"
+            android:exported="true">
+
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/medication_widget_info" />
+
+        </receiver>
+
+        <!-- ===================================================== -->
+        <!-- FCM 기본 알림 채널 -->
+        <!-- ===================================================== -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="soomit_high_importance_channel" />
 
-        <!-- Don't delete the meta-data below.
-             This is used by the Flutter tool to generate
-             GeneratedPluginRegistrant.java -->
+        <!-- Flutter embedding -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
 
     </application>
 
-    <!-- Required to query activities that can process text -->
     <queries>
+
+        <!-- 네이버 지도 앱 -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="nmap" />
         </intent>
+
+        <!-- 텍스트 처리 -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT" />
             <data android:mimeType="text/plain" />
         </intent>
+
     </queries>
 
 </manifest>

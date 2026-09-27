@@ -5,7 +5,6 @@ import '../appointment/services/appointment_service.dart';
 import '../auth/existing_patient_link_screen.dart';
 
 import '../exam_result/exam_result_detail_screen.dart';
-import '../exam_result/exam_result_screen.dart';
 import '../exam_result/models/exam_result.dart';
 import '../exam_result/services/exam_result_service.dart';
 
@@ -23,7 +22,12 @@ import 'services/profile_service.dart';
 import 'widgets/appointment_card.dart';
 
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  final VoidCallback onOpenExamResults;
+
+  const HomeScreen({
+    super.key,
+    required this.onOpenExamResults,
+  });
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -834,7 +838,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
 
               InkWell(
-                onTap: _openExamResultScreen,
+                onTap: widget.onOpenExamResults,
                 borderRadius: BorderRadius.circular(999),
                 child: Container(
                   padding: const EdgeInsets.symmetric(
@@ -1010,7 +1014,7 @@ class _HomeScreenState extends State<HomeScreen> {
             color: const Color(0xFFF6FAFE),
             borderRadius: BorderRadius.circular(13),
             child: InkWell(
-              onTap: _openExamResultScreen,
+              onTap: widget.onOpenExamResults,
               borderRadius: BorderRadius.circular(13),
               child: Container(
                 width: double.infinity,
@@ -1082,7 +1086,7 @@ class _HomeScreenState extends State<HomeScreen> {
       color: Colors.white,
       borderRadius: BorderRadius.circular(24),
       child: InkWell(
-        onTap: _openExamResultScreen,
+        onTap: widget.onOpenExamResults,
         borderRadius: BorderRadius.circular(24),
         child: Container(
           width: double.infinity,
@@ -1169,16 +1173,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
       ),
-    );
-  }
-
-  // =========================================================
-  // 검사 결과 화면 열기
-  // =========================================================
-
-  void _openExamResultScreen() {
-    _openLinkedFeature(
-      const ExamResultScreen(),
     );
   }
 
