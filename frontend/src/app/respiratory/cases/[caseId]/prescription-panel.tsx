@@ -15,6 +15,21 @@ type Prescription = { id: string; regimen_detail?: { regimen_name: string; regim
 type Props = { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; refreshKey?: number; actionable?: boolean; waitingMessage?: string; hasSelectedRegimen?: boolean; requiresPrescription?: boolean; onPrescriptionChanged?: () => void };
 
 const UNRESOLVED_SAFETY_SOURCE_CODES = new Set(["DUR_API_ERROR", "DUR_MAPPING_UNRESOLVED", "ALLERGY_UNCONFIRMED", "LAB_MISSING"]);
+const REQUEST_FAILED = "처방 요청에 실패했습니다. 입력값과 연결 상태를 확인해 주세요.";
+const REFRESH_FAILED = "요청은 처리되었지만 처방 정보를 새로 불러오지 못했습니다. 상태를 확인한 뒤 계속해 주세요.";
+
+function prescriptionError(data: unknown): string {
+  if (!data || typeof data !== "object") return REQUEST_FAILED;
+  const values = Object.values(data);
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value;
+    if (Array.isArray(value)) {
+      const message = value.find(item => typeof item === "string" && item.trim());
+      if (message) return message;
+    }
+  }
+  return REQUEST_FAILED;
+}
 
 export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refreshKey = 0, actionable = true, waitingMessage, hasSelectedRegimen = false, requiresPrescription = true, onPrescriptionChanged }: Props) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
@@ -26,21 +41,21 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
 
   const load = useCallback(async () => {
     setLoading(true); setError("");
-    try { const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`); const d = await r.json().catch(() => ([])); if (!r.ok) throw new Error(d.detail || "처방 목록을 불러오지 못했습니다."); setPrescriptions(d as Prescription[]); }
-    catch (e) { setError(e instanceof Error ? e.message : "처방 목록을 불러오지 못했습니다."); }
+    try { const r = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`); const d = await r.json().catch(() => null); if (!r.ok || !Array.isArray(d)) throw new Error(d?.detail || "처방 목록을 불러오지 못했습니다."); setPrescriptions(d as Prescription[]); return true; }
+    catch (e) { setError(e instanceof Error ? e.message : "처방 목록을 불러오지 못했습니다."); return false; }
     finally { setLoading(false); }
   }, [apiBaseUrl, authorizedFetch, caseId]);
   useEffect(() => {
     const timer = window.setTimeout(() => { void load(); }, 0);
     return () => window.clearTimeout(timer);
   }, [load, refreshKey]);
-  const completed = async (text: string) => { await load(); setMessage(text); onPrescriptionChanged?.(); };
+  const completed = async (text: string) => { if (!await load()) { setError(REFRESH_FAILED); return false; } setMessage(text); onPrescriptionChanged?.(); return true; };
   const request = async (url: string, init: RequestInit, success: string, toastId?: string) => {
     if (workingRef.current) return false;
     workingRef.current = true;
     setWorking(true); setError(""); setMessage("");
-    try { const r = await authorizedFetch(url, init); const d = await r.json().catch(() => ({})); if (!r.ok) throw new Error(d.detail || success); await completed(success); if (toastId) showToast.success(success, { id: toastId }); return true; }
-    catch (e) { console.error(e); const text = e instanceof Error ? e.message : success; setError(text); if (toastId) showToast.error(text, { id: toastId }); return false; }
+    try { const r = await authorizedFetch(url, init); const d = await r.json().catch(() => null); if (!r.ok) throw new Error(prescriptionError(d)); if (!await completed(success)) { if (toastId) showToast.error(REFRESH_FAILED, { id: toastId }); return false; } if (toastId) showToast.success(success, { id: toastId }); return true; }
+    catch (e) { console.error(e); const text = e instanceof Error && e.message ? e.message : REQUEST_FAILED; setError(text); if (toastId) showToast.error(text, { id: toastId }); return false; }
     finally { workingRef.current = false; setWorking(false); }
   };
   const create = async () => { if (!actionable || workingRef.current || !requiresPrescription || !hasSelectedRegimen || !cycleStartDate) return; const id = `case-prescription-create-${caseId}`; showToast.info("처방을 저장하고 있습니다.", { id }); const ok = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cycle_number: Number(cycleNumber), phase, cycle_start_date: cycleStartDate }) }, "처방 DRAFT가 생성되었습니다.", id); if (ok) { setCycleNumber("1"); setPhase("INDUCTION"); setCycleStartDate(""); } };

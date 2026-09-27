@@ -1,12 +1,70 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { PrescriptionPanel } from "./prescription-panel";
+import { showToast } from "@/components/ui/toast/toast";
+
+vi.mock("@/components/ui/toast/toast", () => ({ showToast: { info: vi.fn(), success: vi.fn(), error: vi.fn() } }));
 
 vi.mock("./mfds-product-selector", () => ({ MfdsProductSelector: () => null }));
 vi.mock("./medication-schedule-panel", () => ({ MedicationSchedulePanel: () => <p>복약 일정</p> }));
 const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen: true };
 const base = { id: "rx-1", cycle_number: 1, regimen_detail: { regimen_name: "Test regimen", regimen_code: "TEST" }, items: [{ id: "item-1", drug_name: "Test drug", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "Day 1" }] };
 const mockFetch = (status: string, results: object[] = [], safetyFreshness = status === "DRAFT" ? (results.length ? "CURRENT" : "NOT_RUN") : "CURRENT") => vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ ...base, prescription_status: status, safety_freshness: safetyFreshness, safety_check_results: results }])));
+
+it.each(["create", "update", "finalize"])("never reports successful %s for rejected or failed requests", async action => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  vi.spyOn(console, "error").mockImplementation(() => {});
+  for (const failure of ["field400", "html502", "network", "unknown"]) {
+    vi.mocked(showToast.success).mockClear();
+    const changed = vi.fn();
+    const authorizedFetch = vi.fn(async (_: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method) {
+        if (failure === "network") throw new TypeError("Failed to fetch");
+        if (failure === "unknown") throw "Disconnected";
+        return failure === "field400" ? new Response(JSON.stringify({ final_dose: ["용량을 확인해 주세요."] }), { status: 400 }) : new Response("Bad Gateway", { status: 502 });
+      }
+      return new Response(JSON.stringify(action === "create" ? [] : [{ ...base, prescription_status: action === "finalize" ? "VALIDATED" : "DRAFT", safety_freshness: "CURRENT", safety_check_results: [] }]));
+    });
+    const { unmount } = render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
+    if (action === "create") {
+      const button = await screen.findByRole("button", { name: "임시 처방 생성" });
+      fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-27" } });
+      fireEvent.click(button);
+    } else if (action === "update") {
+      const button = await screen.findByRole("button", { name: "수정 저장" });
+      fireEvent.change(screen.getByLabelText("Test drug 최종 용량"), { target: { value: "75" } });
+      fireEvent.click(button);
+    } else {
+      fireEvent.click(await screen.findByRole("button", { name: "처방 최종 확정" }));
+    }
+    await waitFor(() => expect(showToast.error).toHaveBeenCalled());
+    expect(showToast.success).not.toHaveBeenCalled();
+    expect(changed).not.toHaveBeenCalled();
+    expect(screen.queryByText(/처방 DRAFT가 생성되었습니다|처방 약물 정보가 수정되었습니다|처방이 최종 확정되었습니다/)).not.toBeInTheDocument();
+    if (failure === "field400") expect(screen.getByText("용량을 확인해 주세요.")).toBeInTheDocument();
+    if (action === "create") expect(screen.getByLabelText("Cycle 시작일")).toHaveValue("2026-09-27");
+    if (action === "update") expect(screen.getByLabelText("Test drug 최종 용량")).toHaveValue(75);
+    vi.mocked(showToast.error).mockClear();
+    unmount();
+  }
+});
+
+it("distinguishes an accepted write from a failed refresh without announcing completion", async () => {
+  vi.mocked(showToast.success).mockClear();
+  const changed = vi.fn();
+  let wrote = false;
+  const authorizedFetch = vi.fn(async (_: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method) { wrote = true; return new Response("{}", { status: 201 }); }
+    return new Response(wrote ? "Bad Gateway" : "[]", { status: wrote ? 502 : 200 });
+  });
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
+  const button = await screen.findByRole("button", { name: "임시 처방 생성" });
+  fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-27" } });
+  fireEvent.click(button);
+  expect(await screen.findByText(/요청은 처리되었지만/)).toBeInTheDocument();
+  expect(showToast.success).not.toHaveBeenCalled();
+  expect(changed).not.toHaveBeenCalled();
+});
 
 it("keeps oral schedule fields separate from the final action and new prescription form", async () => {
   const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", items: [{ ...base.items[0], route: "ORAL" }], safety_check_results: [] }])));

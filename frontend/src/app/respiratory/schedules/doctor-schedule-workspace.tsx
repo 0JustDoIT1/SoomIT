@@ -20,6 +20,8 @@ export function DoctorScheduleWorkspace() {
   const [appointments, setAppointments] = useState<DoctorAppointment[]>([]);
   const [showAvailabilityForm, setShowAvailabilityForm] = useState(false);
   const [editingAvailability, setEditingAvailability] = useState<DoctorAvailability | null>(null);
+  const [availabilityStartTime, setAvailabilityStartTime] = useState("");
+  const [availabilityEndTime, setAvailabilityEndTime] = useState("");
   const [showUnavailableForm, setShowUnavailableForm] = useState(false);
   const [editingUnavailable, setEditingUnavailable] = useState<DoctorUnavailableSchedule | null>(null);
   const [loading, setLoading] = useState(true);
@@ -113,13 +115,15 @@ export function DoctorScheduleWorkspace() {
       setMessage("적용 요일과 올바른 시작·종료 시간을 입력해 주세요.");
       return;
     }
-    if (!editingAvailability && weekdays.some((weekday) => availability.some((item) => item.weekday === weekday && item.start_time < end_time && item.end_time > start_time))) {
+    if (!editingAvailability && weekdays.some((weekday) => availability.some((item) => item.weekday === weekday && availabilityOverlaps(item, start_time, end_time)))) {
       setMessage("선택한 요일 중 기존 진료시간과 겹치는 구간이 있습니다.");
       return;
     }
     setSaving(true);
     try {
-      const body = { start_time, end_time, enabled: data.get("enabled") === "on" };
+      // New clinic hours are active by default. Editing preserves the current
+      // state because patient-booking availability is not configured here.
+      const body = { start_time, end_time, enabled: editingAvailability?.enabled ?? true };
       if (editingAvailability) await updateWeeklyAvailability(authorizedFetch, editingAvailability.id, { ...body, weekday: weekdays[0] });
       else await Promise.all(weekdays.map((weekday) => createWeeklyAvailability(authorizedFetch, { ...body, weekday })));
       form.reset();
@@ -193,33 +197,33 @@ export function DoctorScheduleWorkspace() {
       <header className="border-b border-slate-200 bg-white px-8 py-4">
         <p className="text-[11px] font-bold tracking-[0.12em] text-blue-600">의료진 일정 관리</p>
         <h1 className="mt-1 text-[22px] font-bold">기본 진료시간 및 휴진 일정</h1>
-        <p className="mt-1 text-sm text-slate-500">환자 예약에 사용할 요일별 기본 진료시간과 특정 날짜의 진료 불가 일정을 관리합니다.</p>
+        <p className="mt-1 text-sm text-slate-500">요일별 기본 진료시간과 특정 날짜의 진료 불가 일정을 관리합니다.</p>
       </header>
       <main className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_340px] items-start gap-4 overflow-hidden p-5">
         <ScheduleMonthCalendar availability={availability} unavailable={unavailable} appointments={appointments} />
         <aside data-testid="schedule-detail-panel" className="h-full min-h-0 space-y-4 overflow-y-auto [scrollbar-gutter:stable]">
-          <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-[11px] font-bold tracking-[0.08em] text-blue-700">예약 운영 기준</p><p className="mt-1 text-sm font-bold text-slate-900">30분 슬롯 · 최대 5명</p><p className="mt-1 text-xs leading-5 text-slate-600">모든 예약 가능시간에 동일하게 적용됩니다. 예약 현황은 환자 예약 화면에서 3 / 5처럼 표시됩니다.</p></section>
+          <section className="rounded-xl border border-blue-100 bg-blue-50/60 p-4"><p className="text-[11px] font-bold tracking-[0.08em] text-blue-700">진료시간 운영 기준</p><p className="mt-1 text-sm font-bold text-slate-900">30분 단위</p><p className="mt-1 text-xs leading-5 text-slate-600">등록된 기본 진료시간은 월간 진료 일정에 표시됩니다.</p></section>
           <section className="rounded-xl border border-slate-200 bg-white">
             <header className="flex items-start justify-between gap-3 border-b border-slate-200 px-4 py-4">
               <div><h2 className="font-bold">요일별 기본 진료시간</h2><p className="mt-1 text-xs text-slate-500">예약 간격은 30분으로 고정됩니다.</p></div>
-              <button type="button" onClick={() => { setShowAvailabilityForm((open) => !open); setEditingAvailability(null); }} className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">{showAvailabilityForm ? "입력 닫기" : "시간 입력"}</button>
+              <button type="button" onClick={() => { const nextOpen = !showAvailabilityForm; setShowAvailabilityForm(nextOpen); setEditingAvailability(null); if (nextOpen) { setAvailabilityStartTime(""); setAvailabilityEndTime(""); } }} className="shrink-0 rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white">{showAvailabilityForm ? "입력 닫기" : "시간 입력"}</button>
             </header>
             <div className="divide-y divide-slate-100">
-              {loading ? <p className="px-4 py-6 text-center text-sm text-slate-400">일정을 불러오는 중입니다.</p> : availability.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-400">등록된 기본 진료시간이 없습니다.</p> : availability.map((item) => <div key={item.id} className="flex items-center gap-2 px-4 py-3 text-xs"><strong className="w-11 shrink-0">{WEEKDAYS[item.weekday]}</strong><span className="min-w-0 flex-1">{item.start_time.slice(0, 5)} – {item.end_time.slice(0, 5)}</span><span className="rounded bg-slate-100 px-1.5 py-1 font-medium text-slate-600">30분</span><button type="button" onClick={() => void toggle(item)} className={item.enabled ? "rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700" : "rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-500"}>{item.enabled ? "사용" : "미사용"}</button><button type="button" onClick={() => { setEditingAvailability(item); setShowAvailabilityForm(true); }} className="font-semibold text-blue-700">수정</button><button type="button" onClick={() => void removeAvailability(item.id)} className="font-semibold text-rose-600">삭제</button></div>)}
+              {loading ? <p className="px-4 py-6 text-center text-sm text-slate-400">일정을 불러오는 중입니다.</p> : availability.length === 0 ? <p className="px-4 py-6 text-center text-sm text-slate-400">등록된 기본 진료시간이 없습니다.</p> : availability.map((item) => <div key={item.id} className="flex items-center gap-2 px-4 py-3 text-xs"><strong className="w-11 shrink-0">{WEEKDAYS[item.weekday]}</strong><span className="min-w-0 flex-1">{item.start_time.slice(0, 5)} – {item.end_time.slice(0, 5)}</span><span className="rounded bg-slate-100 px-1.5 py-1 font-medium text-slate-600">30분</span><button type="button" onClick={() => void toggle(item)} className={item.enabled ? "rounded-full bg-emerald-50 px-2 py-1 font-semibold text-emerald-700" : "rounded-full bg-slate-100 px-2 py-1 font-semibold text-slate-500"}>{item.enabled ? "사용" : "미사용"}</button><button type="button" onClick={() => { setEditingAvailability(item); setAvailabilityStartTime(item.start_time.slice(0, 5)); setAvailabilityEndTime(item.end_time.slice(0, 5)); setShowAvailabilityForm(true); }} className="font-semibold text-blue-700">수정</button><button type="button" onClick={() => void removeAvailability(item.id)} className="font-semibold text-rose-600">삭제</button></div>)}
             </div>
           </section>
           <section className="rounded-xl border border-slate-200 bg-white">
             <header className="border-b border-slate-200 px-4 py-4"><h2 className="font-bold">휴진·진료 불가 일정</h2><p className="mt-1 text-xs text-slate-500">휴가, 휴진, 특정 시간 진료 불가를 등록합니다.</p></header>
             <div className="space-y-3 p-4">{unavailable.length === 0 ? <p className="py-3 text-center text-sm text-slate-400">등록된 휴진 일정이 없습니다.</p> : unavailable.map((item) => <div key={item.id} className="rounded-lg border border-slate-200 p-3 text-xs"><p className="font-semibold">{new Date(item.start_at).toLocaleString("ko-KR")} – {new Date(item.end_at).toLocaleString("ko-KR")}</p>{item.reason && <p className="mt-1 text-slate-500">{item.reason}</p>}<div className="mt-2 flex gap-3"><button type="button" onClick={() => { setEditingUnavailable(item); setShowUnavailableForm(true); }} className="font-semibold text-blue-700">수정</button><button type="button" onClick={() => void removeUnavailable(item.id)} className="font-semibold text-rose-600">삭제</button></div></div>)}<button type="button" onClick={() => { setShowUnavailableForm((open) => !open); setEditingUnavailable(null); }} className="w-full rounded-lg border border-blue-200 py-2.5 text-sm font-semibold text-blue-700">{showUnavailableForm ? "입력 닫기" : "휴진 일정 입력"}</button></div>
           </section>
-          <section className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-slate-600">활성화된 기본 진료시간에서 휴진 일정을 제외해 환자 예약 가능시간을 계산합니다. 추가 진료 가능 일정은 환자 예약 계산에 사용하지 않습니다.</section>
+          <section className="rounded-xl border border-blue-100 bg-blue-50 p-4 text-xs leading-5 text-slate-600">활성화된 기본 진료시간에서 휴진 일정을 제외해 월간 진료 일정을 표시합니다.</section>
         </aside>
       </main>
       {showAvailabilityForm && <Modal title={editingAvailability ? "기본 진료시간 수정" : "기본 진료시간 입력"} onClose={() => { setShowAvailabilityForm(false); setEditingAvailability(null); }}>
         <form key={editingAvailability?.id ?? "new"} onSubmit={submitAvailability} className="space-y-4">
-          {editingAvailability ? <Field label="요일"><select name="weekday" required defaultValue={editingAvailability.weekday}>{WEEKDAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field> : <fieldset><legend className="mb-1.5 text-xs font-semibold text-slate-600">적용 요일</legend><div className="grid grid-cols-4 gap-2">{WEEKDAYS.map((label, index) => <label key={label} className="flex items-center gap-1.5 rounded border border-slate-200 px-2 py-2 text-xs"><input name="weekdays" type="checkbox" value={index} />{label.slice(0, 1)}</label>)}</div><p className="mt-2 text-[11px] text-slate-500">같은 시간 구간을 선택한 모든 요일에 등록합니다.</p></fieldset>}
-          <div className="grid grid-cols-2 gap-3"><Field label="시작 시간"><input name="startTime" type="time" required defaultValue={editingAvailability?.start_time.slice(0, 5)} /></Field><Field label="종료 시간"><input name="endTime" type="time" required defaultValue={editingAvailability?.end_time.slice(0, 5)} /></Field></div>
-          <div className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-500">예약 간격 <strong className="ml-1 text-slate-800">30분</strong></span><label className="flex items-center gap-2"><input name="enabled" type="checkbox" defaultChecked={editingAvailability?.enabled ?? true} /> 환자 예약 사용</label></div>
+          {editingAvailability ? <Field label="요일"><select name="weekday" required defaultValue={editingAvailability.weekday}>{WEEKDAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field> : <AvailabilityWeekdaySelector availability={availability} startTime={availabilityStartTime} endTime={availabilityEndTime} />}
+          <div className="grid grid-cols-2 gap-3"><Field label="시작 시간"><input name="startTime" type="time" required value={availabilityStartTime} onChange={(event) => setAvailabilityStartTime(event.target.value)} /></Field><Field label="종료 시간"><input name="endTime" type="time" required value={availabilityEndTime} onChange={(event) => setAvailabilityEndTime(event.target.value)} /></Field></div>
+          <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-500">진료시간 단위 <strong className="ml-1 text-slate-800">30분</strong></span></div>
           <div className="flex justify-end gap-2"><button type="button" onClick={() => { setShowAvailabilityForm(false); setEditingAvailability(null); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">취소</button><button disabled={saving} className="button-primary">{saving ? "저장 중" : editingAvailability ? "수정 저장" : "저장"}</button></div>
         </form>
       </Modal>}
@@ -238,6 +242,26 @@ export function DoctorScheduleWorkspace() {
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return <label className="block text-xs font-semibold text-slate-600"><span className="mb-1.5 block">{label}</span>{children}</label>;
+}
+
+function formatAvailabilityTime(item: DoctorAvailability) {
+  return `${item.start_time.slice(0, 5)}–${item.end_time.slice(0, 5)}`;
+}
+
+function AvailabilityWeekdaySelector({ availability, startTime, endTime }: { availability: DoctorAvailability[]; startTime: string; endTime: string }) {
+  const hasValidRange = Boolean(startTime && endTime && endTime > startTime);
+  const overlaps = (weekday: number) => hasValidRange && availability.some((item) => item.weekday === weekday && availabilityOverlaps(item, startTime, endTime));
+  const hasAnyOverlap = WEEKDAYS.some((_, weekday) => overlaps(weekday));
+
+  return <fieldset><legend className="mb-1.5 text-xs font-semibold text-slate-600">적용 요일</legend><div className="grid grid-cols-4 gap-2">{WEEKDAYS.map((label, index) => { const existingTimes = availability.filter((item) => item.weekday === index).map(formatAvailabilityTime); const weekdayLabel = label.slice(0, 1); const overlapsExisting = overlaps(index); return <label key={label} className={`flex min-h-11 items-center gap-1.5 rounded border px-2 py-2 text-xs ${overlapsExisting ? "border-slate-200 bg-slate-100 text-slate-400" : "border-slate-200"}`}><input name="weekdays" type="checkbox" value={index} aria-label={weekdayLabel} disabled={overlapsExisting} /><span>{weekdayLabel}</span>{existingTimes.length > 0 && <span className={`ml-auto text-[10px] font-medium ${overlapsExisting ? "text-rose-600" : "text-amber-700"}`} title={`기존 ${existingTimes.join(", ")}`}>{overlapsExisting ? "겹침" : "기존"}</span>}</label>; })}</div><p className="mt-2 text-[11px] text-slate-500">{hasAnyOverlap ? "입력한 시간과 겹치는 요일은 선택할 수 없습니다." : "시작·종료 시간을 입력하면 기존 시간과 겹치는 요일은 선택할 수 없습니다."}</p></fieldset>;
+}
+
+function availabilityOverlaps(item: DoctorAvailability, start: string, end: string) {
+  const seconds = (value: string) => {
+    const [hours, minutes, seconds = 0] = value.split(":").map(Number);
+    return hours * 3600 + minutes * 60 + seconds;
+  };
+  return seconds(item.start_time) < seconds(end) && seconds(item.end_time) > seconds(start);
 }
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
