@@ -48,10 +48,10 @@ test("physician selects a regimen, confirms treatment, and opens prescription st
   await page.getByRole("button", { name: /치료계획 (검토하기|계속 작성)/ }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("치료 유형").selectOption("TARGETED_THERAPY");
-  await dialog.getByRole("textbox", { name: "치료 계획", exact: true }).fill("E2E 치료 계획");
   await dialog.getByRole("button", { name: /E2E Target Regimen/ }).click();
-  await dialog.getByRole("button", { name: "다음", exact: true }).click();
-  await dialog.getByRole("button", { name: "최종 확정", exact: true }).click();
+  await dialog.getByRole("textbox", { name: "치료 계획", exact: true }).fill("E2E 치료 계획");
+  await dialog.getByRole("button", { name: "저장하고 다음 단계", exact: true }).click();
+  await dialog.getByRole("button", { name: "치료계획 확정", exact: true }).click();
 
   await expect(page.getByText("치료계획 확정 완료", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "확정된 치료계획 보기", exact: true }).click();

@@ -504,11 +504,9 @@ export default function RespiratoryCaseDetailPage() {
 
   const [selectedResultMenu, setSelectedResultMenu] =
   useState<ResultSubMenu>("XRAY");
-  const [ctViewerVisitedCaseId, setCtViewerVisitedCaseId] = useState<string | null>(null);
   const selectResultMenu = useCallback((menu: ResultSubMenu) => {
-    if (menu === "CT") setCtViewerVisitedCaseId(caseId);
     setSelectedResultMenu(menu);
-  }, [caseId]);
+  }, []);
 
   const [selectedAiMenu, setSelectedAiMenu] =
   useState<AiSubMenu>("PET_CT_TNM");
@@ -2060,7 +2058,7 @@ export default function RespiratoryCaseDetailPage() {
             {selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PDL1" && Boolean(confirmedPdl1Result) && ["PDL1", "TREATMENT"].includes(selectedInfoMenu) && (
               <CaseWorkflowDecision caseId={caseId} currentStage="PDL1" triggerLabel="다음 단계 결정" confirmedResultId={confirmedPdl1Result?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
-            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && !["XRAY", "CT", "PATHOLOGY_GENE", "PDL1"].includes(selectedCase.current_stage) && (
+            {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === selectedCase.current_stage && !["XRAY", "CT", "PATHOLOGY_GENE", "PDL1", "TREATMENT"].includes(selectedCase.current_stage) && (
               <CaseWorkflowDecision caseId={caseId} currentStage={selectedCase.current_stage} secondary={selectedCase.current_stage === "TREATMENT" || selectedCase.current_stage === "PRESCRIPTION"} triggerLabel={selectedCase.current_stage === "TREATMENT" ? "단계 처리 메뉴" : selectedCase.current_stage === "PRESCRIPTION" && !treatmentRequiresPrescription ? "비약물 치료 종료·의뢰" : undefined} exceptionsOnly={selectedCase.current_stage === "PET_CT_TNM" || (selectedCase.current_stage === "TREATMENT" && !currentStageClinicalResult)} confirmedResultId={currentStageClinicalResult?.id} confirmedStageGroup={currentStageClinicalResult?.result_detail?.tnm?.stage_group} hasFinalPrescription={hasFinalPrescription} allowCaseCloseWithoutFinalPrescription={selectedCase.current_stage === "PRESCRIPTION" && !treatmentRequiresPrescription} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />
             )}
           </div>
@@ -2078,8 +2076,8 @@ export default function RespiratoryCaseDetailPage() {
           <TreatmentPrescriptionOverview mode={selectedInfoMenu === "PRESCRIPTION" || prescriptionActionable ? "PRESCRIPTION" : "TREATMENT"} treatment={caseTreatmentDecision} prescriptions={casePrescriptions} clinicalResults={tnmClinicalResults} aiResults={tnmAnalysisResults} prescriptionActionable={prescriptionActionable} />
         )}
 
-        {((selectedMainMenu === "RESULTS" && selectedResultMenu === "CT") || ctViewerVisitedCaseId === caseId) && (
-          <div className={selectedMainMenu === "RESULTS" && selectedResultMenu === "CT" ? "contents" : "hidden"}>
+        {selectedInfoMenu === "CT" && (
+          <div className="contents">
             <ResultReviewPanel
               stage="CT"
               caseId={caseId}
