@@ -901,7 +901,6 @@ export default function RespiratoryCasesPage() {
           !error && (
             <DashboardWorkQueues
               authorizedFetch={authorizedFetch}
-              onOpenEvidence={(id) => openCase(id, true)}
               cases={cases}
               snapshots={
                 caseSnapshots

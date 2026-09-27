@@ -13,6 +13,14 @@ it.each(["NODULE_DETECTED", "INDETERMINATE"])("separates browsing from action el
 });
 
 describe("CaseInfoMenu", () => {
+  it("keeps the overview label aligned on one line", () => {
+    render(<CaseInfoMenu selected="OVERVIEW" currentStage="XRAY" onSelect={vi.fn()} />);
+
+    const overview = screen.getByRole("button", { name: "전체 요약" });
+    expect(overview.querySelector("span:last-child")).toHaveClass("whitespace-nowrap", "leading-none");
+    expect(overview.closest("aside")).toHaveClass("w-[124px]", "xl:w-[132px]");
+  });
+
   it("derives the pathology to PD-L1 states from confirmed results and orders", () => {
     const pathologyDraft = [{ workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT" }];
     const pathologyConfirmed = [{ workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED" }];

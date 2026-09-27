@@ -55,6 +55,7 @@ export function DashboardAssistant({
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [isOpen, setIsOpen] = useState(true);
   const requestController = useRef<AbortController | null>(null);
 
   useEffect(
@@ -62,16 +63,19 @@ export function DashboardAssistant({
     [],
   );
 
-  async function sendQuestion(rawQuestion: string) {
+  async function sendQuestion(
+    rawQuestion: string,
+    { replaceConversation = false }: { replaceConversation?: boolean } = {},
+  ) {
     const message = rawQuestion.trim();
     if (!message || loading) return;
 
-    const history = messages.slice(-20).map(({ role, content }) => ({
+    const history = (replaceConversation ? [] : messages.slice(-20)).map(({ role, content }) => ({
       role,
       content,
     }));
     const userMessage: AssistantMessage = { role: "user", content: message };
-    setMessages((current) => [...current, userMessage]);
+    setMessages((current) => replaceConversation ? [userMessage] : [...current, userMessage]);
     setQuestion("");
     setError("");
     setLoading(true);
@@ -91,6 +95,7 @@ export function DashboardAssistant({
         },
       );
       const payload: AssistantResponse = await response.json().catch(() => ({}));
+      if (controller.signal.aborted || requestController.current !== controller) return;
       if (!response.ok || typeof payload.answer !== "string" || !payload.answer.trim()) {
         throw new Error(ERROR_MESSAGE);
       }
@@ -104,7 +109,7 @@ export function DashboardAssistant({
         },
       ]);
     } catch (cause) {
-      if (!(cause instanceof DOMException && cause.name === "AbortError")) {
+      if (!controller.signal.aborted && requestController.current === controller && !(cause instanceof DOMException && cause.name === "AbortError")) {
         setError(ERROR_MESSAGE);
       }
     } finally {
@@ -118,6 +123,37 @@ export function DashboardAssistant({
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void sendQuestion(question);
+  }
+
+  function closeAssistant() {
+    requestController.current?.abort();
+    requestController.current = null;
+    setLoading(false);
+    setIsOpen(false);
+  }
+
+  if (!isOpen) {
+    return (
+      <section
+        aria-labelledby="dashboard-assistant-title"
+        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h3 id="dashboard-assistant-title" className="text-base font-semibold text-slate-900">
+            의사 AI Assistant
+          </h3>
+          <button
+            type="button"
+            aria-expanded="false"
+            aria-controls="dashboard-assistant-content"
+            onClick={() => setIsOpen(true)}
+            className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50"
+          >
+            AI Assistant 열기
+          </button>
+        </div>
+      </section>
+    );
   }
 
   return (
@@ -137,15 +173,25 @@ export function DashboardAssistant({
         <span className="shrink-0 rounded-full bg-blue-100/70 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
           조회 전용
         </span>
+        <button
+          type="button"
+          aria-expanded="true"
+          aria-controls="dashboard-assistant-content"
+          onClick={closeAssistant}
+          className="ml-auto rounded-md px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+        >
+          대화 닫기
+        </button>
       </div>
 
+      <div id="dashboard-assistant-content">
       <div className="mt-3 flex flex-wrap gap-2" aria-label="빠른 질문">
           {QUICK_ACTIONS.map((action) => (
             <button
               key={action}
               type="button"
               disabled={loading}
-              onClick={() => void sendQuestion(action)}
+              onClick={() => void sendQuestion(action, { replaceConversation: true })}
               className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
             >
               {action}
@@ -237,6 +283,7 @@ export function DashboardAssistant({
           전송
         </button>
       </form>
+      </div>
     </section>
   );
 }

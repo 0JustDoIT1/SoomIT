@@ -880,7 +880,6 @@ export function DashboardWorkQueues({
   notifications,
   patientAppointments = [],
   authorizedFetch,
-  onOpenEvidence,
   unreadNotificationCount,
   selectedCaseId,
   onSelectCase,
@@ -895,7 +894,6 @@ export function DashboardWorkQueues({
   notifications: DashboardNotification[];
   patientAppointments?: DashboardPatientAppointment[];
   authorizedFetch?: DashboardFetch;
-  onOpenEvidence?: (caseId: string) => void;
   unreadNotificationCount: number;
 
   /*
@@ -1112,7 +1110,6 @@ export function DashboardWorkQueues({
                 snapshot={selectedSnapshot}
                 status={journey.find(item => item.stage === selectedCase.current_stage)?.description ?? ""}
                 authorizedFetch={authorizedFetch}
-                onOpenCase={onOpenEvidence ?? onOpenCase}
               />
             ) : (
             <div className={styles.anatomy}>

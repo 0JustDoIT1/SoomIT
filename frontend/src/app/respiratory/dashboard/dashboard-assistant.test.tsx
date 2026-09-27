@@ -84,6 +84,29 @@ describe("DashboardAssistant", () => {
     });
   });
 
+  it("replaces the prior result when a different quick question is selected", async () => {
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answer: "오늘 확인 결과", case_references: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ answer: "결과 대기 결과", case_references: [] }), { status: 200 }));
+
+    render(
+      <DashboardAssistant cases={cases} authorizedFetch={authorizedFetch} onOpenCase={vi.fn()} />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "오늘 확인할 Case" }));
+    expect(await screen.findByText("오늘 확인 결과")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "결과 대기 Case" }));
+    expect(await screen.findByText("결과 대기 결과")).toBeInTheDocument();
+    expect(screen.queryByText("오늘 확인 결과")).not.toBeInTheDocument();
+
+    const secondRequest = JSON.parse(String(authorizedFetch.mock.calls[1][1]?.body));
+    expect(secondRequest).toMatchObject({
+      message: "결과 대기 Case",
+      history: [],
+    });
+  });
+
   it("shows a non-blocking error while keeping the assistant usable", async () => {
     const authorizedFetch = vi.fn().mockResolvedValue(
       new Response(JSON.stringify({ detail: "upstream failure" }), { status: 502 }),
@@ -117,5 +140,27 @@ describe("DashboardAssistant", () => {
     expect(await screen.findByText("Cases needing review")).toBeInTheDocument();
     expect(screen.getByText((_, element) => element?.textContent === "RADPT0002 — result pending")).toBeInTheDocument();
     expect(screen.queryByText("---")).not.toBeInTheDocument();
+  });
+
+  it("can close the conversation and reopen it without losing prior answers", async () => {
+    const authorizedFetch = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ answer: "첫 답변", case_references: [] }), { status: 200 }),
+    );
+
+    render(
+      <DashboardAssistant cases={cases} authorizedFetch={authorizedFetch} onOpenCase={vi.fn()} />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Assistant 질문"), { target: { value: "첫 질문" } });
+    fireEvent.click(screen.getByRole("button", { name: "전송" }));
+    expect(await screen.findByText("첫 답변")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "대화 닫기" }));
+    expect(screen.queryByLabelText("Assistant 질문")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "AI Assistant 열기" })).toHaveAttribute("aria-expanded", "false");
+
+    fireEvent.click(screen.getByRole("button", { name: "AI Assistant 열기" }));
+    expect(screen.getByRole("button", { name: "대화 닫기" })).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByText("첫 답변")).toBeInTheDocument();
   });
 });

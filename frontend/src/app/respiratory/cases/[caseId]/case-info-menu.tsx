@@ -144,7 +144,7 @@ export function CaseInfoMenu({
   const overviewSelected = selected === "OVERVIEW";
 
   return (
-    <aside className="flex min-h-0 w-[108px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-[#f8fbff] py-3 xl:w-[116px]">
+    <aside className="flex min-h-0 w-[124px] shrink-0 flex-col overflow-hidden border-r border-slate-200 bg-[#f8fbff] py-3 xl:w-[132px]">
       <div className="mx-2.5 border-b border-slate-200 pb-3">
         <h2 className="text-[15px] font-bold tracking-[-0.02em] text-slate-900">
           진료 정보
@@ -179,7 +179,7 @@ export function CaseInfoMenu({
             <CaseInfoIcon value="OVERVIEW" />
           </span>
 
-          <span className="text-[11px] font-semibold leading-4">
+          <span className="whitespace-nowrap text-[11px] font-semibold leading-none">
             {overviewItem.displayLabel}
           </span>
         </button>

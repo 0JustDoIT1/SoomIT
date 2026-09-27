@@ -58,8 +58,8 @@ export function confirmedStageSummary(stage: string, snapshot?: DashboardCaseSna
   }).join(" · ");
 }
 
-export function DashboardStageEvidence({ caseItem, snapshot, status, authorizedFetch, onOpenCase }: {
-  caseItem: DashboardCase; snapshot?: DashboardCaseSnapshot; status: string; authorizedFetch: DashboardFetch; onOpenCase: (id: string) => void;
+export function DashboardStageEvidence({ caseItem, snapshot, status, authorizedFetch }: {
+  caseItem: DashboardCase; snapshot?: DashboardCaseSnapshot; status: string; authorizedFetch: DashboardFetch;
 }) {
   const [preview, setPreview] = useState<Preview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -127,7 +127,7 @@ export function DashboardStageEvidence({ caseItem, snapshot, status, authorizedF
       objectUrl = URL.createObjectURL(rendered);
       return { url: objectUrl, caption: `${asset.image_type} · 중간 단면 ${Math.floor(ordered.length / 2) + 1}/${ordered.length} · 병변 대표 단면 아님` };
     }
-    void load().then(result => { if (!controller.signal.aborted) { setPreview(result); setLoading(false); } }).catch(() => { if (!controller.signal.aborted) { setError(true); setLoading(false); } });
+    void load().then(result => { if (!controller.signal.aborted) { setPreview(result); setError(false); setLoading(false); } }).catch(() => { if (!controller.signal.aborted) { setPreview(null); setError(true); setLoading(false); } });
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [authorizedFetch, caseItem.id, stage, retry]);
 
@@ -137,7 +137,7 @@ export function DashboardStageEvidence({ caseItem, snapshot, status, authorizedF
         <h3 className="text-sm font-semibold text-slate-800">{labels[stage] ?? stage}</h3>
         <span className="shrink-0 rounded-full bg-blue-50 px-2 py-1 text-xs text-blue-700">{status}</span>
       </header>
-      <button type="button" aria-label={`${labels[stage] ?? stage} 검사 상세 열기`} onClick={() => onOpenCase(caseItem.id)} className="group relative flex min-h-[230px] flex-1 items-center justify-center overflow-hidden border-y border-slate-200 bg-[radial-gradient(circle_at_50%_42%,#ffffff_0%,#eef5f8_62%,#e3edf2_100%)] transition hover:bg-blue-50">
+      <div data-testid="stage-evidence-visual" className="relative flex min-h-[230px] flex-1 items-center justify-center overflow-hidden border-y border-slate-200 bg-[radial-gradient(circle_at_50%_42%,#ffffff_0%,#eef5f8_62%,#e3edf2_100%)]">
         {preview ? <>
           {/* Authenticated blobs are rendered locally, without the image optimizer. */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -149,7 +149,7 @@ export function DashboardStageEvidence({ caseItem, snapshot, status, authorizedF
           {Boolean(preview.detections?.length) && <svg viewBox={`0 0 ${preview.width} ${preview.height}`} preserveAspectRatio="xMidYMid meet" className="pointer-events-none absolute inset-0 h-full w-full" aria-label="AI 검출 후보 위치">
             {preview.detections!.map((item, index) => <rect key={index} x={item.bbox_xyxy[0]} y={item.bbox_xyxy[1]} width={item.bbox_xyxy[2] - item.bbox_xyxy[0]} height={item.bbox_xyxy[3] - item.bbox_xyxy[1]} fill="none" stroke="#fbbf24" strokeWidth="2" vectorEffect="non-scaling-stroke"><title>{item.class_name} · AI 검출 후보</title></rect>)}
           </svg>}
-        </> : <div className="h-[236px] w-[222px] opacity-90 transition duration-300 group-hover:scale-[1.025]"><ThoraxIllustration lesions={lesions} stage={stage} /></div>}
+        </> : <div className="h-[236px] w-[222px] opacity-90"><ThoraxIllustration lesions={lesions} stage={stage} /></div>}
         {!loading && lesions.length > 0 && <div className="absolute left-3 top-3 rounded-full border border-white/80 bg-white/90 px-2.5 py-1 text-[10px] font-bold text-slate-700 shadow-sm backdrop-blur">
           <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-rose-500 align-middle" />
           CT 확정 병변 {lesions.length}곳
@@ -161,18 +161,16 @@ export function DashboardStageEvidence({ caseItem, snapshot, status, authorizedF
           {lesions.length > 3 && <span className="rounded-full border border-slate-200 bg-white/92 px-2 py-1 text-[10px] font-semibold text-slate-600">+{lesions.length - 3}</span>}
         </div>}
         {loading && <LoadingIndicator label="검사 이미지 확인 중" className="absolute inset-x-3 bottom-3 min-h-0 text-xs" />}
-      </button>
+      </div>
       <div className="space-y-1.5 px-4 py-3 text-xs">
         <p className="font-semibold text-slate-800">{caseItem.patient_name || caseItem.patient_code} <span className="font-normal text-slate-500">· {caseItem.case_code}</span></p>
-        <p className="text-slate-500">{preview?.caption ?? (loading ? "현재 단계의 영상을 확인합니다." : error ? "미리보기를 불러오지 못했습니다. · 해부학 참고 그림" : "현재 단계 이미지 없음 · 해부학 참고 그림")}</p>
+        {(preview || loading) && <p className="text-slate-500">{preview?.caption ?? "현재 단계의 영상을 확인합니다."}</p>}
+        {!preview && !loading && <p role={error ? "alert" : "status"} className={error ? "text-rose-700" : "text-slate-500"}>
+          {error ? "검사 이미지를 불러오지 못했습니다." : "현재 단계 이미지가 없습니다."} 표시된 그림은 실제 검사 영상이 아닌 해부학 참고 그림입니다.
+        </p>}
         {Boolean(preview?.detections?.length) && <p className="text-amber-700">AI 검출 후보 {preview!.detections!.length}개 · 상세 영상에서 확인</p>}
-        {!preview && !loading && lesions.length > 0 && <p className="font-medium text-rose-700">번호 표시는 확정 CT의 엽 위치를 기준으로 한 해부학적 위치입니다.</p>}
-        {!preview && !loading && lesions.length === 0 && <p className="text-slate-400">확정된 CT 병변 위치 정보가 없어 참고 해부도를 표시합니다.</p>}
         {summary && <p className="font-medium text-teal-700">확정 결과 · {summary}</p>}
-        <div className="flex items-center justify-between gap-2 pt-1">
-          <button type="button" onClick={() => onOpenCase(caseItem.id)} className="font-semibold text-blue-700 hover:underline">검사 상세 보기 →</button>
-          {error && <button type="button" onClick={() => { setError(false); setLoading(true); setRetry(value => value + 1); }} className="text-slate-600 hover:underline">다시 시도</button>}
-        </div>
+        {error && <div className="pt-1"><button type="button" onClick={() => { setError(false); setLoading(true); setRetry(value => value + 1); }} className="text-slate-600 hover:underline">다시 시도</button></div>}
       </div>
     </section>
   );
