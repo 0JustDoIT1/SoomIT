@@ -28,6 +28,7 @@ from apps.pathology.services.orthanc import (
 )
 from apps.pathology.services.pathology_storage import (
     PathologyStorageError,
+    download_pathology_wsi_preview,
     download_pathology_wsi_tissue_heatmap,
 )
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
@@ -323,7 +324,13 @@ class DoctorSlideViewerAPIView(APIView):
     def get(self, request, slide_id):
         slide = _doctor_slide_or_404(request, slide_id)
         if not slide.orthanc_series_id:
-            return Response({"detail": "WSI viewer is not ready for this slide."}, status=status.HTTP_409_CONFLICT)
+            return Response(
+                {
+                    "detail": "WSI viewer is not ready for this slide.",
+                    "code": "ORTHANC_SERIES_NOT_LINKED",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         try:
             pyramid = get_wsi_pyramid(slide.orthanc_series_id)
         except OrthancError as exc:
@@ -348,6 +355,25 @@ class DoctorSlideViewerAPIView(APIView):
             "thumbnail_url": f"{base}/thumbnail/",
             "tile_url_template": f"{base}/tiles/{{level}}/{{x}}/{{y}}.jpg",
         })
+
+
+class DoctorSlidePreviewAPIView(APIView):
+    """Expose the stored WSI preview independently of its Orthanc linkage."""
+
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+
+    def get(self, request, slide_id):
+        slide = _doctor_slide_or_404(request, slide_id)
+        try:
+            content, content_type = download_pathology_wsi_preview(
+                slide.image_asset.storage_uri,
+            )
+        except PathologyStorageError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        response = HttpResponse(content, content_type=content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
 
 
 class DoctorSlideThumbnailAPIView(APIView):

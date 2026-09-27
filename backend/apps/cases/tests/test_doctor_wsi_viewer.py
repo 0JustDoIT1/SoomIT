@@ -5,6 +5,7 @@ from uuid import uuid4
 from django.test import SimpleTestCase
 
 from apps.cases.views import (
+    DoctorSlidePreviewAPIView,
     DoctorSlideTileAPIView,
     DoctorSlideTissueHeatmapAPIView,
     DoctorSlideViewerAPIView,
@@ -92,6 +93,34 @@ class DoctorWsiViewerMetadataTests(SimpleTestCase):
 
     @patch("apps.cases.views.get_wsi_pyramid")
     @patch("apps.cases.views._doctor_slide_or_404")
+    def test_unlinked_series_returns_machine_readable_conflict(
+        self, slide_or_404, get_pyramid
+    ):
+        slide = SimpleNamespace(id=uuid4(), orthanc_series_id=None, mpp=None)
+        slide_or_404.return_value = slide
+
+        response = DoctorSlideViewerAPIView().get(SimpleNamespace(), slide.id)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "ORTHANC_SERIES_NOT_LINKED")
+        get_pyramid.assert_not_called()
+
+    @patch("apps.cases.views.get_wsi_pyramid")
+    @patch("apps.cases.views._doctor_slide_or_404")
+    def test_blank_series_returns_machine_readable_conflict(
+        self, slide_or_404, get_pyramid
+    ):
+        slide = SimpleNamespace(id=uuid4(), orthanc_series_id="", mpp=None)
+        slide_or_404.return_value = slide
+
+        response = DoctorSlideViewerAPIView().get(SimpleNamespace(), slide.id)
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data["code"], "ORTHANC_SERIES_NOT_LINKED")
+        get_pyramid.assert_not_called()
+
+    @patch("apps.cases.views.get_wsi_pyramid")
+    @patch("apps.cases.views._doctor_slide_or_404")
     def test_missing_series_preserves_upstream_404(self, slide_or_404, get_pyramid):
         slide = SimpleNamespace(id=uuid4(), orthanc_series_id="missing-series", mpp=None)
         slide_or_404.return_value = slide
@@ -130,6 +159,36 @@ class DoctorWsiViewerMetadataTests(SimpleTestCase):
         response = DoctorSlideViewerAPIView().get(SimpleNamespace(), slide.id)
 
         self.assertEqual(response.status_code, 409)
+
+    @patch("apps.cases.views.download_pathology_wsi_preview")
+    @patch("apps.cases.views._doctor_slide_or_404")
+    def test_reads_preview_without_requiring_orthanc_link(self, slide_or_404, download):
+        slide = SimpleNamespace(
+            id=uuid4(),
+            orthanc_series_id=None,
+            image_asset=SimpleNamespace(storage_uri="gs://test-bucket/wsi.svs"),
+        )
+        slide_or_404.return_value = slide
+        download.return_value = (b"jpeg", "image/jpeg")
+
+        response = DoctorSlidePreviewAPIView().get(SimpleNamespace(), slide.id)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.content, b"jpeg")
+        download.assert_called_once_with("gs://test-bucket/wsi.svs")
+
+    @patch("apps.cases.views.download_pathology_wsi_preview")
+    @patch("apps.cases.views._doctor_slide_or_404")
+    def test_missing_preview_is_nonfatal_404(self, slide_or_404, download):
+        slide = SimpleNamespace(
+            id=uuid4(), image_asset=SimpleNamespace(storage_uri="gs://test-bucket/wsi.svs")
+        )
+        slide_or_404.return_value = slide
+        download.side_effect = PathologyStorageError("WSI preview is not available yet.")
+
+        response = DoctorSlidePreviewAPIView().get(SimpleNamespace(), slide.id)
+
+        self.assertEqual(response.status_code, 404)
 
     @patch("apps.cases.views.download_pathology_wsi_tissue_heatmap")
     @patch("apps.cases.views._doctor_slide_or_404")

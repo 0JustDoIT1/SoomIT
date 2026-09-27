@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
 import { authenticateWithoutLogin, installClinicalApi } from "./fixtures/clinical-api";
 
@@ -94,6 +94,26 @@ test("CT, WSI, and prescription safety viewers render deterministic empty or loa
   expect(fatalBrowserErrors).toEqual([]);
 });
 
+test("normal WSI viewer and unlinked-series preview fallback both render", async ({ page }) => {
+  await authenticateWithoutLogin(page);
+  let viewerLinked = true;
+  const image = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  await installWsiRoutes(page, () => viewerLinked, image);
+
+  await page.goto("/respiratory/cases/case-treatment");
+  const caseMenu = page.getByRole("navigation", { name: "Case 진료 정보 메뉴" });
+  await caseMenu.getByRole("button", { name: "조직/유전자" }).click();
+  await expect(page.getByLabel("HE-E2E WSI 뷰어")).toBeVisible();
+  await expect(page.getByText(/미리보기 이미지를 표시합니다/)).toHaveCount(0);
+
+  viewerLinked = false;
+  await page.reload();
+  await caseMenu.getByRole("button", { name: "조직/유전자" }).click();
+  await expect(page.getByRole("img", { name: "HE-E2E 미리보기" })).toBeVisible();
+  await expect(page.getByText("WSI 원본 뷰어 연결이 준비되지 않았습니다. 미리보기 이미지를 표시합니다.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Heatmap" })).toBeEnabled();
+});
+
 test("Preview V2 keeps multi-driver candidates unselected until physician choice", async ({ page }) => {
   await authenticateWithoutLogin(page);
   let savedDecision: Record<string, unknown> | null = null;
@@ -147,6 +167,32 @@ test("Preview V2 keeps multi-driver candidates unselected until physician choice
   const savedSnapshot = (savedDecision as unknown as { input_snapshot: { findings: unknown[] } }).input_snapshot;
   expect(savedSnapshot.findings).toHaveLength(3);
 });
+
+async function installWsiRoutes(page: Page, viewerLinked: () => boolean, image: Buffer) {
+  await page.route("**/api/doctor/cases/case-treatment/specimens/", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify([{ id: "specimen-wsi", specimen_code: "SP-E2E" }]),
+  }));
+  await page.route("**/api/doctor/cases/specimens/specimen-wsi/slides/", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify([{ id: "slide-wsi", specimen_id: "specimen-wsi", image_asset_id: "asset-wsi", slide_code: "HE-E2E", stain: "HE", status: "READY", viewer_url: "/api/doctor/cases/slides/slide-wsi/viewer/" }]),
+  }));
+  await page.route("**/api/doctor/cases/slides/slide-wsi/viewer/", (route) => route.fulfill(viewerLinked() ? {
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ width: 1, height: 1, tile_width: 1, tile_height: 1, max_level: 0, sizes: [[1, 1]], tile_url_template: "/api/doctor/cases/slides/slide-wsi/tiles/{level}/{x}/{y}.jpg" }),
+  } : {
+    status: 409,
+    contentType: "application/json",
+    body: JSON.stringify({ detail: "not linked", code: "ORTHANC_SERIES_NOT_LINKED" }),
+  }));
+  for (const suffix of ["preview", "tissue-heatmap"]) {
+    await page.route(`**/api/doctor/cases/slides/slide-wsi/${suffix}/`, (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
+  }
+  await page.route("**/api/doctor/cases/slides/slide-wsi/tiles/**", (route) => route.fulfill({ status: 200, contentType: "image/jpeg", body: image }));
+}
 
 function previewCandidate(id: string, ruleCode: string, regimenId: string, regimenCode: string, gene: string, alteration: string) {
   return {

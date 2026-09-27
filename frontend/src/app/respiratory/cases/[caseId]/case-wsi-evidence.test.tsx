@@ -206,6 +206,72 @@ describe("CaseWsiEvidence", () => {
     expect(createObjectUrl).toHaveBeenCalled();
   });
 
+  it("uses the preview and keeps the heatmap available when the Orthanc series is not linked", async () => {
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/specimens/")) return response([{ id: "specimen-1", specimen_code: "SP-1" }]);
+      if (url.includes("/specimens/specimen-1/slides/")) return response([{
+        id: "slide-unlinked", specimen_id: "specimen-1", image_asset_id: "asset-1", slide_code: "HE-UNLINKED", stain: "HE", status: "READY", viewer_url: "/api/doctor/cases/slides/slide-unlinked/viewer/",
+      }]);
+      if (url.endsWith("/viewer/")) return response({ detail: "not linked", code: "ORTHANC_SERIES_NOT_LINKED" }, 409);
+      if (url.endsWith("/preview/")) return jpegResponse("preview");
+      if (url.endsWith("/tissue-heatmap/")) return jpegResponse("heatmap");
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:image");
+
+    render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-1" stain="HE" fillHeight />);
+
+    expect(await screen.findByRole("img", { name: "HE-UNLINKED 미리보기" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("WSI 원본 뷰어 연결이 준비되지 않았습니다. 미리보기 이미지를 표시합니다.");
+    expect(osd.factory).not.toHaveBeenCalled();
+
+    const toggle = screen.getByRole("button", { name: "Heatmap" });
+    expect(toggle).toBeEnabled();
+    toggle.click();
+    expect(await screen.findByRole("img", { name: "WSI Heatmap" })).toBeInTheDocument();
+  });
+
+  it("distinguishes a viewer API error while still using the preview", async () => {
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/specimens/")) return response([{ id: "specimen-1", specimen_code: "SP-1" }]);
+      if (url.includes("/specimens/specimen-1/slides/")) return response([{
+        id: "slide-error", specimen_id: "specimen-1", image_asset_id: "asset-1", slide_code: "HE-ERROR", stain: "HE", status: "READY", viewer_url: "/api/doctor/cases/slides/slide-error/viewer/",
+      }]);
+      if (url.endsWith("/viewer/")) return response({ detail: "upstream unavailable" }, 502);
+      if (url.endsWith("/preview/")) return jpegResponse("preview");
+      if (url.endsWith("/tissue-heatmap/")) return response({ detail: "not available" }, 404);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:preview");
+
+    render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-1" stain="HE" fillHeight />);
+
+    expect(await screen.findByRole("img", { name: "HE-ERROR 미리보기" })).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("WSI 원본 뷰어를 불러오지 못했습니다. 미리보기 이미지를 표시합니다.");
+  });
+
+  it("shows an empty state when neither the viewer nor preview is available", async () => {
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/specimens/")) return response([{ id: "specimen-1", specimen_code: "SP-1" }]);
+      if (url.includes("/specimens/specimen-1/slides/")) return response([{
+        id: "slide-empty", specimen_id: "specimen-1", image_asset_id: "asset-1", slide_code: "HE-EMPTY", stain: "HE", status: "READY", viewer_url: "/api/doctor/cases/slides/slide-empty/viewer/",
+      }]);
+      if (url.endsWith("/viewer/")) return response({ detail: "not linked", code: "ORTHANC_SERIES_NOT_LINKED" }, 409);
+      if (url.endsWith("/preview/")) return response({ detail: "not available" }, 404);
+      if (url.endsWith("/tissue-heatmap/")) return response({ detail: "not available" }, 404);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+
+    render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-1" stain="HE" fillHeight />);
+
+    expect(await screen.findByText("표시할 WSI 이미지가 없습니다.")).toBeInTheDocument();
+    expect(screen.getByText("원본 WSI 뷰어 연결이 준비되지 않았습니다.")).toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("ignores a stale heatmap response after the Case viewer changes", async () => {
     let resolveHeatmap!: (value: Response) => void;
     const delayedHeatmap = new Promise<Response>((resolve) => { resolveHeatmap = resolve; });
