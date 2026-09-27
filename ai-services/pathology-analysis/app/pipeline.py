@@ -117,3 +117,27 @@ class PathologyPipeline:
             "gene": gene,
         }
         return result, coordinates, tissue_attention.tolist()
+
+    @torch.inference_mode()
+    def predict_heatmap_attention(
+        self,
+        slide_path: Path,
+        *,
+        overlap_ratio: float,
+        **embedding_options: Any,
+    ) -> tuple[list[tuple[int, int, int]], list[float]]:
+        wait_started = time.perf_counter()
+        with self.lock:
+            log_latency("heatmap_inference_lock_wait", wait_started)
+            stage_started = time.perf_counter()
+            embedding, coordinates, _ = self.embedder.embed(
+                slide_path,
+                **embedding_options,
+                overlap_ratio=overlap_ratio,
+            )
+            log_latency("heatmap_embedding_total", stage_started)
+            stage_started = time.perf_counter()
+            bag = embedding.float().to(self.device)
+            _, attention = self.tissue_model(bag)
+            log_latency("heatmap_clam_attention", stage_started)
+        return coordinates, attention.detach().float().cpu().tolist()
