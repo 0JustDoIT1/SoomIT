@@ -26,6 +26,19 @@ it("shows regimen candidates in Step 1", async () => {
   expect(screen.queryByText("치료 차수")).not.toBeInTheDocument();
 });
 
+it("shows multi-driver clinical review guidance without selecting a candidate", async () => {
+  const egfr = { ...candidate, matched_drivers: [{ gene_symbol: "EGFR", alteration_codes: ["EGFR_EX19_DEL"] }] };
+  const braf = { ...secondCandidate, id: "rule-braf", rule_code: "TR04", matched_drivers: [{ gene_symbol: "BRAF", alteration_codes: ["BRAF_V600E"] }] };
+  renderDraft(vi.fn().mockResolvedValueOnce(response([egfr, braf])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })));
+
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
+
+  expect(screen.getByText("복수의 actionable driver가 확인되었습니다.")).toBeInTheDocument();
+  expect(screen.getByText("Driver: EGFR EGFR_EX19_DEL · BRAF BRAF_V600E")).toBeInTheDocument();
+  expect(screen.getByText("Regimen을 선택해주세요")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "저장하고 다음 단계" })).toBeDisabled();
+});
+
 it("blocks Step 2 for drug treatment until a regimen is selected", async () => {
   renderDraft(vi.fn().mockResolvedValueOnce(response([candidate, secondCandidate])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })));
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));

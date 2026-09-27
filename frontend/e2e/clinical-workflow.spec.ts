@@ -93,3 +93,73 @@ test("CT, WSI, and prescription safety viewers render deterministic empty or loa
   await expect(page.getByText(/Safety Check/).first()).toBeVisible();
   expect(fatalBrowserErrors).toEqual([]);
 });
+
+test("Preview V2 keeps multi-driver candidates unselected until physician choice", async ({ page }) => {
+  await authenticateWithoutLogin(page);
+  let savedDecision: Record<string, unknown> | null = null;
+  const candidates = [
+    previewCandidate("rule-r1", "TR01", "regimen-r1", "R1", "EGFR", "EGFR_EX19_DEL"),
+    previewCandidate("rule-r2", "TR01", "regimen-r2", "R2", "EGFR", "EGFR_EX19_DEL"),
+    previewCandidate("rule-r5", "TR04", "regimen-r5", "R5", "BRAF", "BRAF_V600E"),
+  ];
+  await page.route("**/api/doctor/cases/case-treatment/clinical-results/", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify([
+      { result_status: "CONFIRMED", workflow_stage: "PATHOLOGY_GENE", result_detail: { pathology: { histologic_type: "LUAD" }, gene: { findings: [
+        { gene_symbol: "EGFR", assessment: "LIKELY_POSITIVE", alteration_code: "EGFR_EX19_DEL" },
+        { gene_symbol: "BRAF", assessment: "LIKELY_POSITIVE", alteration_code: "BRAF_V600E" },
+        { gene_symbol: "MET", assessment: "LIKELY_NEGATIVE", alteration_code: null },
+      ] } } },
+      { result_status: "CONFIRMED", workflow_stage: "PDL1", result_detail: { pdl1: { tps_percent: 60 } } },
+    ]),
+  }));
+  await page.route("**/api/doctor/cases/case-treatment/regimen-candidates**", (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify(candidates),
+  }));
+  await page.route("**/api/doctor/cases/case-treatment/treatment-decision/", async (route) => {
+    if (route.request().method() === "POST") {
+      savedDecision = route.request().postDataJSON() as Record<string, unknown>;
+      await route.fulfill({ status: 201, contentType: "application/json", body: JSON.stringify(savedDecision) });
+      return;
+    }
+    await route.fulfill(savedDecision
+      ? { status: 200, contentType: "application/json", body: JSON.stringify(savedDecision) }
+      : { status: 404, contentType: "application/json", body: JSON.stringify({ detail: "not found" }) });
+  });
+
+  await page.goto("/respiratory/treatment-preview-v2/case-treatment");
+  await page.getByRole("button", { name: /표적치료/ }).click();
+
+  await expect(page.getByText("복수의 actionable driver가 확인되었습니다.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /R1/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /R2/ })).toBeVisible();
+  await expect(page.getByRole("button", { name: /R5/ })).toBeVisible();
+  await expect(page.getByText(/선택 Regimen:/).filter({ hasText: "미선택" })).toBeVisible();
+
+  await page.getByRole("button", { name: /R5/ }).click();
+  await page.getByPlaceholder("치료계획").fill("BRAF 근거 수동 선택");
+  await page.getByRole("button", { name: "DRAFT 저장" }).click();
+
+  await expect.poll(() => (savedDecision as unknown as { selected_regimen?: string } | null)?.selected_regimen).toBe("regimen-r5");
+  const savedSnapshot = (savedDecision as unknown as { input_snapshot: { findings: unknown[] } }).input_snapshot;
+  expect(savedSnapshot.findings).toHaveLength(3);
+});
+
+function previewCandidate(id: string, ruleCode: string, regimenId: string, regimenCode: string, gene: string, alteration: string) {
+  return {
+    id,
+    rule_code: ruleCode,
+    priority: 1,
+    cancer_type: "NSCLC",
+    regimen: regimenId,
+    regimen_detail: { id: regimenId, regimen_code: regimenCode, regimen_name: `${regimenCode} regimen` },
+    therapy_components: ["TARGETED_THERAPY"],
+    therapy_label: "표적치료",
+    treatment_type: "TARGETED_THERAPY",
+    match_reasons: [`바이오마커 일치: ${gene} / ${alteration}`],
+    matched_drivers: [{ gene_symbol: gene, alteration_codes: [alteration] }],
+  };
+}

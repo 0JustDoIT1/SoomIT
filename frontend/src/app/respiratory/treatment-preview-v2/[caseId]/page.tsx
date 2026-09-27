@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { API_BASE_URL } from "../../_lib/respiratory-api";
@@ -54,14 +54,19 @@ export default function TreatmentPreviewV2Page() {
     return () => { cancelled = true; };
   }, [authorizedFetch, caseId]);
 
-  const visibleCandidate = useMemo(() => candidate ?? data?.candidates.find((item) => item.treatment_type === method) ?? null, [candidate, data?.candidates, method]);
+  const visibleCandidate = candidate;
   const confirmed = data?.decision?.decision_status === "CONFIRMED";
   const selectedRegimen = visibleCandidate?.regimen_detail.id ?? data?.decision?.selected_regimen ?? null;
 
   const handleSnapshotChange = useCallback((next: InputSnapshot) => {
     setSnapshot(next);
     void previewCandidates(authorizedFetch, API_BASE_URL, caseId, next)
-      .then((candidates) => setData((current) => current ? { ...current, candidates } : current))
+      .then((candidates) => {
+        setData((current) => current ? { ...current, candidates } : current);
+        setCandidate((current) => current && candidates.some(
+          (item) => item.regimen_detail.id === current.regimen_detail.id,
+        ) ? current : null);
+      })
       .catch(() => undefined);
   }, [authorizedFetch, caseId]);
 
@@ -86,7 +91,7 @@ export default function TreatmentPreviewV2Page() {
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
     <PreviewClinicalSummary data={data} onSnapshotChange={handleSnapshotChange} />
     <PreviewTreatmentSelector candidates={data.candidates} value={method} onChange={(value) => { setMethod(value); setCandidate(null); }} />
-    <PreviewRegimenCandidates candidates={data.candidates} treatmentType={method} selected={selectedRegimen ?? ""} onSelect={setCandidate} />
+    <PreviewRegimenCandidates candidates={data.candidates} treatmentType={method} selected={selectedRegimen ?? ""} findings={snapshot?.findings ?? []} onSelect={setCandidate} />
     <PreviewTreatmentDecision candidate={visibleCandidate} decision={data.decision} confirmed={Boolean(confirmed)} busy={busy} inputSnapshot={snapshot} onSave={saveDecision} onConfirm={() => void confirmDecision()} />
     <PreviewPrescription caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} prescriptions={data.prescriptions} selectedRegimen={selectedRegimen} onRefresh={() => void refresh()} />
     <PreviewSafetyPanel caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} prescription={data.prescriptions[0]} onRefresh={() => void refresh()} />
