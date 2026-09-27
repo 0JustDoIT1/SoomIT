@@ -417,12 +417,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       };
       setMprToolMode(activeToolRef.current);
 
-      const runtimeTools = tools as unknown as {
-        eventTarget?: EventTarget;
-        Enums?: { Events?: Record<string, string> };
-      };
-      const annotationEventName = runtimeTools.Enums?.Events?.ANNOTATION_COMPLETED;
-      const annotationModifiedEventName = runtimeTools.Enums?.Events?.ANNOTATION_MODIFIED;
+      const annotationEventName = tools.Enums.Events.ANNOTATION_COMPLETED;
+      const annotationModifiedEventName = tools.Enums.Events.ANNOTATION_MODIFIED;
       const syncAnnotation = (event: Event, completed: boolean) => {
         const detail = (event as CustomEvent<{ annotation?: Record<string, unknown> }>).detail;
         const annotation = detail?.annotation;
@@ -469,15 +465,15 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           onAnnotationCreatedRef.current?.(payload);
         }
       };
-      if (runtimeTools.eventTarget && annotationEventName) {
+      if (annotationEventName) {
         const handleAnnotationCompleted = (event: Event) => syncAnnotation(event, true);
         const handleAnnotationModified = (event: Event) => syncAnnotation(event, false);
-        runtimeTools.eventTarget.addEventListener(annotationEventName, handleAnnotationCompleted);
-        if (annotationModifiedEventName) runtimeTools.eventTarget.addEventListener(annotationModifiedEventName, handleAnnotationModified);
+        core.eventTarget.addEventListener(annotationEventName, handleAnnotationCompleted);
+        if (annotationModifiedEventName) core.eventTarget.addEventListener(annotationModifiedEventName, handleAnnotationModified);
         const previousCleanup = cleanupCornerstoneState;
         cleanupCornerstoneState = () => {
-          runtimeTools.eventTarget?.removeEventListener(annotationEventName, handleAnnotationCompleted);
-          if (annotationModifiedEventName) runtimeTools.eventTarget?.removeEventListener(annotationModifiedEventName, handleAnnotationModified);
+          core.eventTarget.removeEventListener(annotationEventName, handleAnnotationCompleted);
+          if (annotationModifiedEventName) core.eventTarget.removeEventListener(annotationModifiedEventName, handleAnnotationModified);
           previousCleanup?.();
         };
       }
@@ -650,7 +646,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           setSegmentationState("READY");
         } catch (reason) {
           if (!disposed) {
-            console.error("[ct-dicom-viewer] segmentation setup failed", reason);
+            console.warn("[ct-dicom-viewer] segmentation unavailable; continuing with the CT series", reason);
             setSegmentationState("ERROR");
             setSegmentationError(reason instanceof Error ? reason.message : "Segmentation을 불러오지 못했습니다.");
           }
@@ -672,11 +668,17 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     return () => {
       disposed = true;
       if (renderingEngine) {
+        const engine = renderingEngine;
         const cameras: Record<string, unknown> = {};
         MPR_VIEWPORT_IDS.forEach((viewportId) => {
-          const viewport = renderingEngine?.getViewport(viewportId) as { getCamera?: () => unknown } | undefined;
-          const camera = viewport?.getCamera?.();
-          if (camera) cameras[viewportId] = camera;
+          try {
+            const viewport = engine.getViewport(viewportId) as { getCamera?: () => unknown } | undefined;
+            const camera = viewport?.getCamera?.();
+            if (camera) cameras[viewportId] = camera;
+          } catch {
+            // A viewport can already be disabled by a concurrent React cleanup.
+            // Session persistence is best-effort and must not interrupt teardown.
+          }
         });
         sessionRef.current = { ...sessionRef.current, cameras };
         writeViewerSession(resolvedCacheKey, sessionRef.current);
