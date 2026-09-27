@@ -19,7 +19,7 @@ const renderDraft = (fetch = vi.fn().mockResolvedValueOnce(response([candidate, 
 
 it("shows regimen candidates in Step 1", async () => {
   renderDraft();
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   expect(screen.getByText("1. 치료요법 선택 및 계획")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Osimertinib \(R1\)/ })).toBeInTheDocument();
   expect(screen.getByRole("button", { name: /Pemetrexed/ })).toBeInTheDocument();
@@ -28,7 +28,7 @@ it("shows regimen candidates in Step 1", async () => {
 
 it("blocks Step 2 for drug treatment until a regimen is selected", async () => {
   renderDraft(vi.fn().mockResolvedValueOnce(response([candidate, secondCandidate])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })));
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   expect(screen.getByRole("button", { name: "다음" })).toBeDisabled();
   expect(screen.getByText(/Regimen을 선택해야 다음 단계/)).toBeInTheDocument();
 });
@@ -40,7 +40,7 @@ it("saves Step 1 and shows the summary plus opinion panels in Step 2", async () 
     .mockResolvedValueOnce(response(draft))
     .mockResolvedValueOnce(response([candidate, secondCandidate]));
   renderDraft(fetch);
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   expect(await screen.findByText("2. 치료 소견 및 확정")).toBeInTheDocument();
@@ -52,7 +52,7 @@ it("saves Step 1 and shows the summary plus opinion panels in Step 2", async () 
 it("keeps Step 1 values when returning from Step 2", async () => {
   const fetch = vi.fn().mockResolvedValueOnce(response([candidate])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })).mockResolvedValueOnce(response(draft)).mockResolvedValueOnce(response([candidate]));
   renderDraft(fetch);
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   await screen.findByText("2. 치료 소견 및 확정");
@@ -65,7 +65,7 @@ it("keeps the explicit non-drug branch without requiring a regimen", async () =>
   const nonDrug = { ...draft, treatment_type: "SURGERY", treatment_plan: "수술 계획", selected_regimen: null, selected_regimen_detail: null };
   const fetch = vi.fn().mockResolvedValueOnce(response([candidate])).mockResolvedValueOnce(response(nonDrug)).mockResolvedValueOnce(response(nonDrug)).mockResolvedValueOnce(response([candidate]));
   renderDraft(fetch);
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.change(screen.getByLabelText("치료 유형"), { target: { value: "SURGERY" } });
   fireEvent.change(screen.getByLabelText("치료 계획"), { target: { value: "수술 계획" } });
   expect(screen.getByText("선택한 비약물 치료는 Regimen과 약물 처방이 필요하지 않습니다.")).toBeInTheDocument();
@@ -74,7 +74,7 @@ it("keeps the explicit non-drug branch without requiring a regimen", async () =>
 
 it("opens a confirmed treatment as read-only without re-entering Step 1", async () => {
   renderDraft(vi.fn().mockResolvedValueOnce(response([])).mockResolvedValueOnce(response(confirmed)));
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정 보기" }));
+  fireEvent.click(await screen.findByRole("button", { name: "확정된 치료계획 보기" }));
   expect(screen.queryByLabelText("치료 결정 진행 단계")).not.toBeInTheDocument();
   expect(screen.getByTestId("treatment-opinions")).toHaveAttribute("data-read-only", "true");
   expect(screen.queryByRole("button", { name: "최종 확정" })).not.toBeInTheDocument();
@@ -84,11 +84,43 @@ it("confirms through the existing API after Step 2", async () => {
   const fetch = vi.fn().mockResolvedValueOnce(response([candidate])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })).mockResolvedValueOnce(response(draft)).mockResolvedValueOnce(response([candidate])).mockResolvedValueOnce(response(draft)).mockResolvedValueOnce(response(confirmed));
   const onTreatmentConfirmed = vi.fn();
   render(<TreatmentDecisionPanel {...props} authorizedFetch={fetch} onTreatmentConfirmed={onTreatmentConfirmed} />);
-  fireEvent.click(await screen.findByRole("button", { name: "치료 결정" }));
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "다음" }));
   await screen.findByText("2. 치료 소견 및 확정");
   fireEvent.click(screen.getByRole("button", { name: "최종 확정" }));
   await waitFor(() => expect(onTreatmentConfirmed).toHaveBeenCalledWith(expect.objectContaining({ decision_status: "CONFIRMED" })));
   expect(fetch.mock.calls[5][0]).toBe("http://test/api/doctor/cases/case-1/treatment-decision/confirm/");
+});
+
+it("explains when an unresolved actionable alteration caused an empty candidate list", async () => {
+  const fetch = vi.fn()
+    .mockResolvedValueOnce(response([]))
+    .mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null }));
+  render(
+    <TreatmentDecisionPanel
+      {...props}
+      authorizedFetch={fetch}
+      noCandidateMessage="EGFR 양성 결과의 세부 변이가 확정되지 않아 표적치료 Regimen을 추천할 수 없습니다."
+    />,
+  );
+
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
+  expect(screen.getByText(/EGFR 양성 결과의 세부 변이가 확정되지 않아/)).toBeInTheDocument();
+});
+
+it("uses a review CTA before the first treatment decision", async () => {
+  renderDraft(vi.fn().mockResolvedValueOnce(response([candidate])).mockResolvedValueOnce(response({}, 404)));
+  expect(await screen.findByRole("button", { name: "치료계획 검토하기 →" })).toBeInTheDocument();
+});
+
+it("makes prescription the primary next action after confirmation", async () => {
+  const onOpenPrescription = vi.fn();
+  render(<TreatmentDecisionPanel {...props} authorizedFetch={vi.fn().mockResolvedValueOnce(response([candidate])).mockResolvedValueOnce(response(confirmed))} onOpenPrescription={onOpenPrescription} />);
+
+  expect(await screen.findByText("최종 확정")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "확정된 치료계획 보기" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "처방 작성으로 이동 →" }));
+  expect(onOpenPrescription).toHaveBeenCalledOnce();
+  expect(screen.getByLabelText("치료계획·처방 진행 상태")).toHaveTextContent("✓ 치료계획 확정");
 });

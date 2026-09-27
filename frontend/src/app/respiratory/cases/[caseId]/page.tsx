@@ -2142,10 +2142,12 @@ export default function RespiratoryCaseDetailPage() {
             <TreatmentDecisionPanel
               actionable={treatmentDecisionActionable}
               waitingMessage={selectedInfoAccess.state === "WAITING" ? selectedInfoAccess.message : undefined}
+              noCandidateMessage={treatmentCandidateEmptyReason}
               key={caseId}
               caseId={caseId}
               apiBaseUrl={API_BASE_URL}
               authorizedFetch={authorizedFetch}
+              onOpenPrescription={() => setTreatmentView({ caseId, tab: "PRESCRIPTION" })}
               onTreatmentChanged={(decision) => {
                 setCaseTreatmentDecision(decision as CaseTreatmentDecision);
                 setCaseTreatmentForm({

@@ -45,7 +45,7 @@ test("physician selects a regimen, confirms treatment, and opens prescription st
   await authenticateWithoutLogin(page);
   await page.goto("/respiratory/cases/case-treatment?openCurrentEvidence=1");
 
-  await page.getByRole("button", { name: "치료 결정", exact: true }).click();
+  await page.getByRole("button", { name: /치료계획 (검토하기|계속 작성)/ }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByLabel("치료 유형").selectOption("TARGETED_THERAPY");
   await dialog.getByRole("textbox", { name: "치료 계획", exact: true }).fill("E2E 치료 계획");
@@ -54,12 +54,12 @@ test("physician selects a regimen, confirms treatment, and opens prescription st
   await dialog.getByRole("button", { name: "최종 확정", exact: true }).click();
 
   await expect(page.getByText("치료계획 확정 완료", { exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "치료 결정 보기", exact: true }).click();
+  await page.getByRole("button", { name: "확정된 치료계획 보기", exact: true }).click();
   await expect(page.getByRole("dialog", { name: "치료 결정 조회" })).toBeVisible();
   await expect(page.getByRole("dialog").getByLabel("치료 유형")).toHaveCount(0);
   await page.getByRole("button", { name: "닫기" }).click();
 
-  await page.getByRole("button", { name: "처방 · 안전성", exact: true }).click();
+  await page.getByRole("button", { name: "처방 작성으로 이동 →", exact: true }).click();
   const prescriptionSelect = page.getByLabel("처방 선택");
   await expect(prescriptionSelect.getByRole("option", { name: /임시저장/ })).toHaveCount(1);
   await expect(prescriptionSelect.getByRole("option", { name: /검증완료/ })).toHaveCount(1);
