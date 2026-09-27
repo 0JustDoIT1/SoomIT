@@ -41,7 +41,7 @@ describe("PathologyGeneFinalReview", () => {
 
     await waitFor(() => expect(onConfirmed).toHaveBeenCalledTimes(1));
     expect(authorizedFetch).toHaveBeenCalledWith(
-      "http://test/api/doctor/cases/case-1/submitted-pathology-results/result-1/confirm/",
+      "http://test/api/doctor/cases/case-1/clinical-results/pathology/result-1/confirm/",
       expect.objectContaining({ method: "POST" }),
     );
     const payload = JSON.parse(authorizedFetch.mock.calls[0][1].body);

@@ -36,6 +36,7 @@ type AiResult = {
 };
 
 type Props = {
+  actionable?: boolean;
   pathologyClinicalResult?: ClinicalResult;
   pathologyAiResult?: AiResult;
   geneClinicalResult?: ClinicalResult;
@@ -57,6 +58,7 @@ type Props = {
 };
 
 export function PathologyGeneImagingWorkspace({
+  actionable = false,
   pathologyClinicalResult,
   pathologyAiResult,
   geneClinicalResult,
@@ -123,8 +125,9 @@ export function PathologyGeneImagingWorkspace({
             onRefreshResults={onRefreshResults}
             syncNotice={syncNotice}
           />
-          {caseId && apiBaseUrl && authorizedFetch && geneClinicalResult && (
+          {actionable && caseId && apiBaseUrl && authorizedFetch && geneClinicalResult && (
             <PathologyGeneFinalReview
+              key={`${caseId}-${geneClinicalResult.id}-${geneClinicalResult.result_status}`}
               caseId={caseId}
               apiBaseUrl={apiBaseUrl}
               authorizedFetch={authorizedFetch}

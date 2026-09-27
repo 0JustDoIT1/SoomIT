@@ -93,6 +93,8 @@ class DoctorTnmDraftAPIView(APIView):
         case, order = self._case_and_order(request, case_id)
         if case is None or order is None:
             return Response({"detail": "PET-CT TNM order was not found."}, status=404)
+        if case.current_stage != WorkflowStage.PET_CT_TNM:
+            return Response({"detail": "PET-CT/TNM is not the current workflow stage."}, status=400)
         serializer = DoctorTnmDraftSerializer(
             data=request.data, context={"case": case, "order": order},
         )
@@ -213,6 +215,8 @@ class DoctorCtResultAPIView(APIView):
         case = self._context(request, case_id)
         if case is None:
             return Response({"detail": "CT order was not found."}, status=404)
+        if case.current_stage != WorkflowStage.CT:
+            return Response({"detail": "CT is not the current workflow stage."}, status=400)
         serializer = DoctorCtResultWriteSerializer(data=request.data, context={"case": case})
         serializer.is_valid(raise_exception=True)
         values = serializer.validated_data
@@ -287,7 +291,7 @@ class DoctorCtResultConfirmAPIView(APIView):
                 "current_stage": case.current_stage,
                 "case_status": case.case_status,
             })
-        if advance_to_next_stage and case.current_stage != WorkflowStage.CT:
+        if case.current_stage != WorkflowStage.CT:
             return Response({"detail": "CT is not the current workflow stage."}, status=400)
 
         active_pet_order_exists = False
@@ -365,6 +369,8 @@ class DoctorTnmConfirmAPIView(APIView):
         ) if case is not None else None
         if diagnosis is None:
             return Response({"detail": "TNM draft was not found."}, status=404)
+        if case.current_stage != WorkflowStage.PET_CT_TNM:
+            return Response({"detail": "PET-CT/TNM is not the current workflow stage."}, status=400)
         if diagnosis.result_status == ClinicalResult.ResultStatus.CONFIRMED:
             return Response({"detail": "TNM result is already confirmed."}, status=409)
         detail = diagnosis.tnm_detail
@@ -397,6 +403,8 @@ class DoctorTnmStageAPIView(APIView):
         ) if case is not None else None
         if diagnosis is None:
             return Response({"detail": "A confirmed TNM result was not found."}, status=404)
+        if case.current_stage != WorkflowStage.PET_CT_TNM:
+            return Response({"detail": "PET-CT/TNM is not the current workflow stage."}, status=400)
         detail = diagnosis.tnm_detail
         try:
             stage = request_tnm_stage(
@@ -434,6 +442,8 @@ class DoctorTnmStageConfirmAPIView(APIView):
         ) if case is not None else None
         if diagnosis is None:
             return Response({"detail": "A confirmed TNM result was not found."}, status=404)
+        if case.current_stage != WorkflowStage.PET_CT_TNM:
+            return Response({"detail": "PET-CT/TNM is not the current workflow stage."}, status=400)
         detail = diagnosis.tnm_detail
         stage = detail.evidence.get("stage") if isinstance(detail.evidence, dict) else None
         candidate = stage.get("stage_group_candidate") if isinstance(stage, dict) else None

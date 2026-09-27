@@ -135,6 +135,7 @@ class TnmWorkflowValidationTests(SimpleTestCase):
             workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             result_status=ClinicalResult.ResultStatus.DRAFT,
             examination_order_id=uuid4(),
+            gene_detail=None,
         )
         review = Mock(status=PathologyWorkItem.Status.PENDING)
         request = SimpleNamespace(user=Mock(), data={
@@ -275,6 +276,7 @@ class TnmWorkflowValidationTests(SimpleTestCase):
             workflow_stage=WorkflowStage.PATHOLOGY_GENE,
             result_status=ClinicalResult.ResultStatus.DRAFT,
             examination_order_id=uuid4(),
+            gene_detail=None,
         )
         review = Mock(status=PathologyWorkItem.Status.PENDING)
         request = SimpleNamespace(user=Mock(), data={

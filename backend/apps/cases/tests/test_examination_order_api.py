@@ -676,6 +676,19 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertTrue(ExaminationOrder.objects.filter(case=self.case, order_type=ExaminationOrder.OrderType.CT).exists())
         self.assertEqual(ClinicianDecision.objects.get(case=self.case).decision_type, ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE)
 
+    def test_xray_order_creation_error_returns_400_and_rolls_back(self):
+        with patch("apps.cases.views.create_examination_order", side_effect=ExaminationOrderCreationError("Order unavailable")):
+            response = self.client.post(reverse("doctor-xray-workflow", kwargs={"case_id": self.case.id}), {
+                "assessment": "SUSPICIOUS", "finding_summary": "Synthetic opacity", "next_action": "ORDER_CT",
+                "priority": "NORMAL", "purpose": "Synthetic CT", "clinical_note": "",
+            }, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "Order unavailable")
+        self.case.refresh_from_db()
+        self.assertEqual(self.case.current_stage, WorkflowStage.XRAY)
+        self.assertFalse(ClinicalResult.objects.filter(case=self.case).exists())
+        self.assertFalse(ExaminationOrder.objects.filter(case=self.case).exists())
+
     def test_xray_workflow_confirms_the_submitted_radiology_review(self):
         xray_order = ExaminationOrder.objects.create(
             case=self.case,

@@ -99,7 +99,7 @@ export function PathologyGeneFinalReview({
     setError("");
     try {
       const response = await authorizedFetch(
-        `${apiBaseUrl}/api/doctor/cases/${caseId}/submitted-pathology-results/${clinicalResult.id}/confirm/`,
+        `${apiBaseUrl}/api/doctor/cases/${caseId}/clinical-results/pathology/${clinicalResult.id}/confirm/`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

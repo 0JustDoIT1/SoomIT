@@ -3108,6 +3108,7 @@ export default function RespiratoryCaseDetailPage() {
         />
         ) : selectedMainMenu === "RESULTS" && selectedResultMenu === "PATHOLOGY_GENE" ? (
         <PathologyGeneImagingWorkspace
+          actionable={selectedCase?.case_status === "ACTIVE" && selectedCase.current_stage === "PATHOLOGY_GENE"}
           caseId={caseId}
           apiBaseUrl={API_BASE_URL}
           authorizedFetch={authorizedFetch}

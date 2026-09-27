@@ -92,6 +92,13 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
             kwargs={"case_id": self.case.id, "result_id": self.result.id},
         )
 
+    def test_gene_payload_without_gene_detail_returns_400_and_preserves_draft(self):
+        response = self.client.post(reverse("doctor-submitted-pathology-result-confirm", kwargs={"case_id": self.case.id, "result_id": self.result.id}), {"gene_findings": []}, format="json")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("gene_findings", response.data)
+        self.result.refresh_from_db()
+        self.assertEqual(self.result.result_status, ClinicalResult.ResultStatus.DRAFT)
+
     def _add_gene_findings(self, *, positive_gene="EGFR"):
         gene_result = GeneResult.objects.create(
             clinical_result=self.result,
@@ -165,6 +172,23 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
             ClinicalResult.objects.filter(case=self.case, workflow_stage=WorkflowStage.PATHOLOGY_GENE).count(),
             1,
         )
+
+    def test_failed_confirmation_does_not_persist_reviewed_gene_findings(self):
+        gene = self._add_gene_findings()
+        # Both a missing submission and a past-stage draft must remain unchanged.
+        for current_stage in (WorkflowStage.PATHOLOGY_GENE, WorkflowStage.TREATMENT):
+            with self.subTest(current_stage=current_stage):
+                self.case.current_stage = current_stage
+                self.case.save(update_fields=["current_stage"])
+                response = self.client.post(
+                    self._confirm_url(),
+                    self._review_payload(alteration_code="EGFR_EX19_DEL"),
+                    format="json",
+                )
+                self.assertEqual(response.status_code, 400, response.data)
+                self.assertIsNone(gene.gene_findings.get(gene_symbol="EGFR").alteration_code)
+                self.result.refresh_from_db()
+                self.assertEqual(self.result.result_status, "DRAFT")
 
     def test_pulmonology_can_save_gene_review_as_draft_with_canonical_alteration(self):
         gene_result = self._add_gene_findings()

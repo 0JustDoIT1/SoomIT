@@ -8,6 +8,7 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.response import Response
@@ -1275,6 +1276,7 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
                 confirming_user=request.user,
             )
         except SubmittedPathologyResultConfirmationError as exc:
+            transaction.set_rollback(True)
             return Response(
                 {"detail": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -1386,7 +1388,7 @@ class DoctorXrayWorkflowAPIView(APIView):
                     clinical_note=values["clinical_note"].strip(),
                 )
             except ExaminationOrderCreationError as exc:
-                raise serializers.ValidationError({"detail": str(exc)})
+                raise ValidationError({"detail": str(exc)})
             case.current_stage = WorkflowStage.CT
             decision_type = ClinicianDecision.DecisionType.PROCEED_NEXT_STAGE
             target_stage = WorkflowStage.CT
