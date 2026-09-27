@@ -11,7 +11,7 @@ import numpy as np
 import openslide
 import timm
 import torch
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageFilter
 from timm.data import create_transform, resolve_data_config
 
 
@@ -69,7 +69,7 @@ def create_tissue_attention_heatmap(
     tile_size: int,
     max_size: int = 1200,
 ) -> bytes:
-    """Render tissue CLAM attention over a bounded H&E thumbnail."""
+    """Render blended tissue CLAM attention over a bounded H&E thumbnail."""
     if len(coordinates) != len(attention) or not coordinates:
         raise ValueError("attention and patch coordinates must have equal nonzero lengths")
 
@@ -90,8 +90,9 @@ def create_tissue_attention_heatmap(
         else:
             normalized = np.clip((scores - low) / (high - low), 0.0, 1.0)
 
-        intensity = Image.new("L", preview.size, 0)
-        draw = ImageDraw.Draw(intensity)
+        score_sum = np.zeros((preview_height, preview_width), dtype=np.float32)
+        score_count = np.zeros((preview_height, preview_width), dtype=np.float32)
+        patch_sizes: list[float] = []
         for (base_x, base_y, level), score in zip(coordinates, normalized, strict=True):
             downsample = float(slide.level_downsamples[level])
             patch_width = tile_size * downsample * scale_x
@@ -100,12 +101,48 @@ def create_tissue_attention_heatmap(
             y1 = max(0, min(preview_height, int(base_y * scale_y)))
             x2 = max(x1, min(preview_width, int(np.ceil(base_x * scale_x + patch_width))))
             y2 = max(y1, min(preview_height, int(np.ceil(base_y * scale_y + patch_height))))
-            strength = int(float(score) * 255)
             if x2 > x1 and y2 > y1:
-                draw.rectangle((x1, y1, x2 - 1, y2 - 1), fill=strength)
+                score_sum[y1:y2, x1:x2] += float(score)
+                score_count[y1:y2, x1:x2] += 1.0
+                patch_sizes.append((patch_width + patch_height) / 2.0)
 
-        blur_radius = max(1.0, min(preview.size) / 700)
-        intensity = intensity.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+        coverage = score_count > 0
+        if not np.any(coverage):
+            raise ValueError("attention patches do not overlap the WSI preview")
+
+        # Blur the accumulated scores and their weights independently before
+        # division. This preserves an overlap-weighted average at patch edges
+        # instead of allowing the empty background to lower the score.
+        peak_count = float(score_count.max())
+        sum_image = Image.fromarray(
+            np.clip(score_sum / peak_count * 255.0, 0, 255).astype(np.uint8),
+            mode="L",
+        )
+        count_image = Image.fromarray(
+            np.clip(score_count / peak_count * 255.0, 0, 255).astype(np.uint8),
+            mode="L",
+        )
+        blur_radius = max(1.0, float(np.median(patch_sizes)) * 0.5)
+        blurred_sum = np.asarray(
+            sum_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)),
+            dtype=np.float32,
+        )
+        blurred_count = np.asarray(
+            count_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)),
+            dtype=np.float32,
+        )
+        blended = np.divide(
+            blurred_sum,
+            blurred_count,
+            out=np.zeros_like(blurred_sum),
+            where=blurred_count > 0,
+        )
+        blended = np.clip(blended * 255.0, 0, 255).astype(np.uint8)
+
+        gray = np.asarray(preview.convert("L"), dtype=np.uint8)
+        preview_tissue = gray < otsu_threshold(gray)
+        blended[~(coverage & preview_tissue)] = 0
+        intensity = Image.fromarray(blended, mode="L")
         # Suppress low attention and make high attention visible while retaining
         # the underlying H&E morphology.
         intensity = intensity.point(lambda value: 0 if value < 48 else min(170, int(((value - 48) / 207) ** 1.35 * 170)))
@@ -141,15 +178,19 @@ def patch_coordinates(
     target_mpp: float,
     max_patches: int,
     seed: int,
+    overlap_ratio: float = 0.0,
 ) -> tuple[list[tuple[int, int, int]], int]:
+    if not 0.0 <= overlap_ratio < 1.0:
+        raise ValueError("overlap_ratio must be at least 0 and less than 1")
     level, downsample = select_level(slide, target_mpp)
     level_width, level_height = slide.level_dimensions[level]
     base_width, base_height = slide.dimensions
     thumb_width, thumb_height = thumbnail_size
     scale_x, scale_y = base_width / thumb_width, base_height / thumb_height
+    stride = max(1, int(round(tile_size * (1.0 - overlap_ratio))))
     coordinates: list[tuple[int, int, int]] = []
-    for y in range(0, level_height, tile_size):
-        for x in range(0, level_width, tile_size):
+    for y in range(0, level_height, stride):
+        for x in range(0, level_width, stride):
             if x + tile_size > level_width or y + tile_size > level_height:
                 continue
             base_x, base_y = int(x * downsample), int(y * downsample)
@@ -200,6 +241,7 @@ class Uni2hEmbedder:
         tissue_fraction: float,
         thumbnail_size: int,
         seed: int,
+        overlap_ratio: float = 0.0,
     ) -> tuple[torch.Tensor, list[tuple[int, int, int]], int]:
         stage_started = time.perf_counter()
         slide = openslide.OpenSlide(str(slide_path))
@@ -214,6 +256,7 @@ class Uni2hEmbedder:
                 target_mpp=target_mpp,
                 max_patches=max_patches,
                 seed=seed,
+                overlap_ratio=overlap_ratio,
             )
             log_latency("wsi_open_and_patch_selection", stage_started)
             if not coordinates:
