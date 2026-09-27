@@ -187,6 +187,8 @@ jobs:
             export REALTIME_IMAGE='$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/realtime:${{ github.sha }}'
             export GIT_COMMIT_SHA='${{ github.sha }}'
             export DEPLOYED_AT=\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
+            export DJANGO_ENV=production
+            export DJANGO_DEBUG=0
             compose='sudo -E docker compose --env-file backend/.env --env-file frontend/.env -f infra/docker-compose.yml'
             \$compose config --quiet
             if [ '$BACKEND_CHANGED' = true ]; then

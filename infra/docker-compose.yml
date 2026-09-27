@@ -6,6 +6,10 @@ x-django-base: &django-base
   env_file:
     - ../backend/.env
   environment:
+    # VM release deployments explicitly set these values. Local Compose keeps
+    # the existing development defaults when they are not supplied.
+    DJANGO_ENV: ${DJANGO_ENV:-development}
+    DJANGO_DEBUG: ${DJANGO_DEBUG:-0}
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
     # GCS uses Google ADC. On GCE this resolves to the VM runtime service
