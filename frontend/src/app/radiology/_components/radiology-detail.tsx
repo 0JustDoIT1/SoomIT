@@ -21,7 +21,6 @@ import {
   fetchRadiologyAnalysis,
   fetchRadiologyAnalysisResult,
   fetchRadiologyXrayImage,
-  RadiologyApiError,
   resetRadiologyPetTnmAnalysis,
   startRadiologyAnalysis,
   submitRadiologyAnalysisForReview,
@@ -541,6 +540,8 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
   const [uploadingImage, setUploadingImage] = useState(false);
   const [uploadingCtSeries, setUploadingCtSeries] = useState(false);
   const [ctSeriesUploaded, setCtSeriesUploaded] = useState(false);
+  const [uploadingPetSeries, setUploadingPetSeries] = useState(false);
+  const [petSeriesUploaded, setPetSeriesUploaded] = useState(false);
   const [resetAssetId, setResetAssetId] = useState<string | null>(null);
   const [isUploadDragOver, setIsUploadDragOver] = useState(false);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
@@ -588,9 +589,9 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     [selectedSeriesFiles, order.order_type],
   );
   const ctReadyToUpload = !isXray && selectedSeriesFiles.length > 0 && ctSeriesValidation?.valid === true;
-  const serverImageReady = (image?.status === "READY" && image.id !== resetAssetId) || (isCt && ctSeriesUploaded);
+  const serverImageReady = (image?.status === "READY" && image.id !== resetAssetId) || (isCt && ctSeriesUploaded) || (order.order_type === "PET_CT_TNM" && petSeriesUploaded);
   const uploadLocked = serverImageReady;
-  const canStartAnalysis = trackedAnalysis === null && (serverImageReady || (!isXray && !isCt && ctReadyToUpload));
+  const canStartAnalysis = trackedAnalysis === null && serverImageReady;
   const activeStepIndex = !image
     ? 0
     : !analysisCompleted
@@ -728,24 +729,6 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
     setActionError("");
     setActionMessage("");
     try {
-      if (!isXray && order.order_type === "PET_CT_TNM" && !serverImageReady) {
-        if (!selectedSeriesUid) throw new RadiologyApiError("분석할 CT Series를 선택해 주세요.");
-        const selectedFilesForUpload = selectedSeriesFiles.map((header) => header.file);
-        if (order.order_type === "PET_CT_TNM") {
-          await uploadRadiologyPetSeries(order.id, selectedFilesForUpload, selectedSeriesUid);
-          setUploadedDicomPreview({
-            orderId: order.id,
-            seriesFiles: [...selectedSeriesFiles],
-            renderKey: `uploaded-${Date.now()}`,
-          });
-        } else {
-          await uploadRadiologyCtSeries(order.id, selectedFilesForUpload, selectedSeriesUid);
-        }
-        setSelectedFiles([]);
-        setDicomHeaders([]);
-        setSelectedSeriesUid(null);
-        onImageUploaded?.();
-      }
       const created = await startRadiologyAnalysis(order.id);
       analysisToastStateRef.current = { analysisId: created.analysis_id, status: created.status };
       setTrackedAnalysis(trackAnalysis(created));
@@ -773,6 +756,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       setResetAssetId(reset.invalidated_asset_id);
       setTrackedAnalysis(null);
       setAnalysisResult(null);
+      setPetSeriesUploaded(false);
       setSelectedFiles([]);
       setDicomHeaders([]);
       setSelectedSeriesUid(null);
@@ -809,6 +793,28 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
       showToast.error("\uC601\uC0C1 \uC5C5\uB85C\uB4DC\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574 \uC8FC\uC138\uC694.");
     } finally {
       setUploadingCtSeries(false);
+    }
+  }
+
+  async function handleUploadPetSeries() {
+    if (order.order_type !== "PET_CT_TNM" || !ctReadyToUpload || uploadingPetSeries || petSeriesUploaded || !selectedSeriesUid) return;
+    setUploadingPetSeries(true);
+    setActionError("");
+    setActionMessage("");
+    try {
+      await uploadRadiologyPetSeries(order.id, selectedSeriesFiles.map((header) => header.file), selectedSeriesUid);
+      setUploadedDicomPreview({ orderId: order.id, seriesFiles: [...selectedSeriesFiles], renderKey: `uploaded-${Date.now()}` });
+      setPetSeriesUploaded(true);
+      setSelectedFiles([]);
+      setDicomHeaders([]);
+      setSelectedSeriesUid(null);
+      showToast.success("영상 업로드가 완료되었습니다.");
+      onImageUploaded?.();
+    } catch (error) {
+      console.error(error);
+      showToast.error("영상 업로드에 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setUploadingPetSeries(false);
     }
   }
 
@@ -1005,6 +1011,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
             </div>
           ) : null}
           {isCt ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{ctSeriesUploaded || image?.status === "READY" ? "CT 영상이 서버에 등록되었습니다." : "선택한 Series를 먼저 서버에 등록하세요."}</p><button type="button" onClick={handleUploadCtSeries} disabled={!ctReadyToUpload || uploadingCtSeries || ctSeriesUploaded || image?.status === "READY"} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingCtSeries ? "업로드 중" : ctSeriesUploaded || image?.status === "READY" ? "서버 등록 완료" : "서버에 올리기"}</button></div> : null}
+          {order.order_type === "PET_CT_TNM" ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-slate-500">{petSeriesUploaded || image?.status === "READY" ? "PET 영상이 서버에 등록되었습니다." : "선택한 Series를 먼저 서버에 등록하세요."}</p><button type="button" onClick={handleUploadPetSeries} disabled={!ctReadyToUpload || uploadingPetSeries || petSeriesUploaded || image?.status === "READY"} className="rounded-lg bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300">{uploadingPetSeries ? "업로드 중" : petSeriesUploaded || image?.status === "READY" ? "서버 등록 완료" : "서버에 올리기"}</button></div> : null}
           <p className="mt-2 text-xs text-slate-500">영상 저장소 연결 후 등록됩니다.</p>
         </section>
 

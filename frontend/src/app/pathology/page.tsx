@@ -18,6 +18,7 @@ import {
   fetchPathologyWsiTissueHeatmap,
   fetchPathologyWorkstation,
   fetchPdl1Analyses,
+  cancelPathologyGeneAnalysis,
   runPathologyGeneAnalysis,
   runPdl1Analysis,
   uploadPdl1Input,
@@ -830,6 +831,7 @@ function WorkArea({
       : null,
   );
   const [runningPathologyGene, setRunningPathologyGene] = useState(false);
+  const [isCancellingGeneAnalysis, setIsCancellingGeneAnalysis] = useState(false);
   const [runningPdl1, setRunningPdl1] = useState(false);
   const [isResultOpen, setIsResultOpen] = useState(false);
   const [submittingReview, setSubmittingReview] = useState(false);
@@ -1049,6 +1051,28 @@ function WorkArea({
       showToast.error("AI 분석을 시작하지 못했습니다. 다시 시도해 주세요.");
     } finally {
       setRunningPathologyGene(false);
+    }
+  }
+
+  async function handlePathologyGeneCancel() {
+    if (
+      !pathologyGeneAnalysis ||
+      (pathologyGeneAnalysis.status !== "PENDING" && pathologyGeneAnalysis.status !== "RUNNING") ||
+      isCancellingGeneAnalysis
+    ) return;
+    if (!window.confirm("진행 중인 분석을 취소하시겠습니까?")) return;
+
+    setIsCancellingGeneAnalysis(true);
+    setError("");
+    try {
+      const result = await cancelPathologyGeneAnalysis(item.case_id, pathologyGeneAnalysis.id);
+      setPathologyGeneAnalysis(result);
+      showToast.info("AI 분석을 취소했습니다.");
+    } catch (reason) {
+      console.error(reason);
+      showToast.error("AI 분석을 취소하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setIsCancellingGeneAnalysis(false);
     }
   }
 
@@ -1398,6 +1422,16 @@ function WorkArea({
                 ? canViewPathologyGeneResult ? "재분석 중..." : "분석 중..."
                 : canViewPathologyGeneResult ? "재분석" : "분석 실행"}
             </button>
+            {pathologyGeneAnalysis?.status === "PENDING" || pathologyGeneAnalysis?.status === "RUNNING" ? (
+              <button
+                type="button"
+                disabled={isCancellingGeneAnalysis}
+                onClick={handlePathologyGeneCancel}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-400"
+              >
+                {isCancellingGeneAnalysis ? "취소 중..." : "분석 취소"}
+              </button>
+            ) : null}
             <AnalysisStatus status={canViewPathologyGeneResult ? "SUCCEEDED" : pathologyGeneAnalysisStatus} />
             </div>
           </div>
