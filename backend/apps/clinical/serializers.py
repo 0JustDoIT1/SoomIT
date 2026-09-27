@@ -750,6 +750,7 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
             "requires_prescription",
             "selected_regimen",
             "selected_regimen_detail",
+            "input_snapshot",
             "treatment_plan",
             "targeted_therapy_plan",
             "rationale",
@@ -759,6 +760,9 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
         ]
 
     def validate(self, attrs):
+        snapshot = attrs.get("input_snapshot")
+        if snapshot is not None:
+            validate_input_snapshot(snapshot)
         treatment_type = attrs.get(
             "treatment_type",
             getattr(self.instance, "treatment_type", None),
@@ -775,6 +779,22 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
                 "selected_regimen": "비약물 치료 유형에는 Regimen을 선택할 수 없습니다.",
             })
         return attrs
+
+
+def validate_input_snapshot(value):
+    if not isinstance(value, dict):
+        raise serializers.ValidationError("input_snapshot must be an object.")
+    required = {"cancer_type", "histology", "findings", "pdl1_category"}
+    if not required.issubset(value):
+        raise serializers.ValidationError({"input_snapshot": "cancer_type, histology, findings, and pdl1_category are required."})
+    if value["pdl1_category"] not in {"LT_1", "FROM_1_TO_49", "GE_50"}:
+        raise serializers.ValidationError({"input_snapshot": "Unsupported pdl1_category."})
+    if not isinstance(value["findings"], list):
+        raise serializers.ValidationError({"input_snapshot": "findings must be a list."})
+    for finding in value["findings"]:
+        if not isinstance(finding, dict) or not all(key in finding for key in ("gene_symbol", "assessment", "alteration_code")):
+            raise serializers.ValidationError({"input_snapshot": "Each finding requires gene_symbol, assessment, and alteration_code."})
+    return value
 
 
 class PrescriptionItemSerializer(serializers.ModelSerializer):
@@ -939,6 +959,28 @@ class PrescriptionItemUpdateSerializer(serializers.Serializer):
 class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
     regimen_detail = RegimenSummarySerializer(source="regimen", read_only=True)
     match_reasons = serializers.SerializerMethodField()
+    therapy_components = serializers.SerializerMethodField()
+    therapy_label = serializers.SerializerMethodField()
+    treatment_type = serializers.SerializerMethodField()
+
+    THERAPY_LABELS = {
+        "TARGETED_THERAPY": "표적치료",
+        "CHEMOTHERAPY": "항암화학요법",
+        "IMMUNOTHERAPY": "면역항암",
+    }
+
+    def get_therapy_components(self, obj):
+        return obj.regimen.therapy_components or []
+
+    def get_therapy_label(self, obj):
+        return " + ".join(
+            self.THERAPY_LABELS.get(component, component)
+            for component in self.get_therapy_components(obj)
+        )
+
+    def get_treatment_type(self, obj):
+        components = self.get_therapy_components(obj)
+        return "COMBINATION" if len(components) > 1 else (components[0] if components else None)
 
     class Meta:
         model = TreatmentRule
@@ -956,6 +998,9 @@ class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
             "evidence_source",
             "regimen",
             "regimen_detail",
+            "therapy_components",
+            "therapy_label",
+            "treatment_type",
             "match_reasons",
         ]
 

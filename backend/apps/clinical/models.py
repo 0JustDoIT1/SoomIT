@@ -266,6 +266,7 @@ class TreatmentDecision(models.Model):
         blank=True,
         related_name="treatment_decisions",
     )
+    input_snapshot = models.JSONField(default=dict, blank=True)
     treatment_plan = models.TextField()
     targeted_therapy_plan = models.TextField(null=True, blank=True)
     rationale = models.TextField(null=True, blank=True)
@@ -349,6 +350,7 @@ class Regimen(TimestampedUUIDModel):
     regimen_name = models.CharField(max_length=200)
     cancer_type = models.CharField(max_length=100)
     histology = models.CharField(max_length=100, null=True, blank=True)
+    therapy_components = models.JSONField(default=list, blank=True)
     treatment_line = models.CharField(max_length=30, null=True, blank=True)
     cycle_length_days = models.SmallIntegerField(null=True, blank=True)
     induction_cycles = models.SmallIntegerField(null=True, blank=True)

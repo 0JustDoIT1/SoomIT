@@ -1,4 +1,5 @@
 import json
+from types import SimpleNamespace
 
 from django.db import transaction
 from django.db.models import F, Q
@@ -36,6 +37,7 @@ from .serializers import (
     DoctorCtResultWriteSerializer,
     PatientClinicalResultSerializer,
     TreatmentRuleCandidateSerializer,
+    validate_input_snapshot,
 )
 from .medication_schedule_serializers import DoctorMedicationScheduleSerializer, PrescriptionFinalizeSerializer
 
@@ -792,7 +794,8 @@ class DoctorTreatmentDecisionAPIView(PulmonologyWritePermissionMixin, APIView):
         selected_regimen = serializer.validated_data.get(
             "selected_regimen", getattr(treatment_decision, "selected_regimen", None)
         )
-        DoctorRegimenCandidateListAPIView.validate_selected_regimen(request, case_id, selected_regimen)
+        snapshot = serializer.validated_data.get("input_snapshot", getattr(treatment_decision, "input_snapshot", None))
+        DoctorRegimenCandidateListAPIView.validate_selected_regimen(request, case_id, selected_regimen, snapshot=snapshot or None)
 
         if clinical_result is None:
             clinical_result = ClinicalResult.objects.create(
@@ -888,6 +891,7 @@ class DoctorTreatmentDecisionConfirmAPIView(APIView):
 
         DoctorRegimenCandidateListAPIView.validate_selected_regimen(
             request, case_id, treatment_decision.selected_regimen,
+            snapshot=treatment_decision.input_snapshot or None,
         )
 
         clinical_result.result_status = "CONFIRMED"
@@ -1124,6 +1128,191 @@ class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
         )
 
 @extend_schema(tags=["호흡기내과-처방관리"])
+class DoctorPreviewPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
+    """Create a preview DRAFT using request-scoped dose inputs only."""
+
+    @transaction.atomic
+    def post(self, request, case_id):
+        case = LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user, case_status="ACTIVE").first()
+        if case is None:
+            return Response({"detail": "Case was not found."}, status=404)
+        decision = TreatmentDecision.objects.select_related("selected_regimen").filter(
+            clinical_result__case=case, clinical_result__result_status="CONFIRMED",
+        ).order_by("-clinical_result__confirmed_at").first()
+        if decision is None or decision.selected_regimen is None:
+            return Response({"detail": "A confirmed regimen is required."}, status=400)
+        serializer = DoctorPrescriptionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        drugs = list(RegimenDrug.objects.filter(regimen=decision.selected_regimen, phase=serializer.validated_data["phase"]).select_related("drug").order_by("sequence"))
+        if not drugs:
+            return Response({"detail": "No regimen drugs exist for the selected phase."}, status=400)
+        prescription = serializer.save(case=case, treatment_decision=decision, regimen=decision.selected_regimen,
+            prescription_status="DRAFT", prescribed_by_user=request.user, prescribed_at=timezone.now())
+        for regimen_drug in drugs:
+            values = calculate_dose(regimen_drug.dose_basis, regimen_drug.dose, request.data.get("height_cm"), request.data.get("weight_kg"), request.data.get("egfr"))
+            PrescriptionItem.objects.create(prescription=prescription, drug=regimen_drug.drug, standard_dose=regimen_drug.dose,
+                dose_basis=regimen_drug.dose_basis, unit=regimen_drug.result_unit, route=regimen_drug.route,
+                administration_day=regimen_drug.administration_day, frequency=regimen_drug.frequency, **values)
+        prescription = Prescription.objects.select_related("regimen", "treatment_decision").prefetch_related("items__drug", "safety_check_results").get(id=prescription.id)
+        return Response(DoctorPrescriptionSerializer(prescription).data, status=201)
+
+
+class DoctorPreviewPrescriptionSafetyAPIView(PulmonologyWritePermissionMixin, APIView):
+    """Run safety checks from preview payload without touching patient tables."""
+
+    @transaction.atomic
+    def post(self, request, case_id, prescription_id):
+        prescription = Prescription.objects.select_for_update().filter(
+            id=prescription_id, case_id=case_id, case__primary_doctor=request.user,
+            case__case_status="ACTIVE", prescription_status="DRAFT",
+        ).prefetch_related("items__drug").first()
+        if prescription is None:
+            return Response({"detail": "Preview prescription was not found."}, status=404)
+        items = list(prescription.items.all())
+        if not items or any(item.final_dose is None for item in items):
+            return Response({"detail": "All final doses are required before Safety Check."}, status=400)
+        payload = request.data
+        allergy_status = payload.get("allergy_status", "UNCONFIRMED")
+        allergies = payload.get("allergies") or []
+        medications = payload.get("current_medications") or []
+        if allergy_status not in {"NONE", "PRESENT", "UNCONFIRMED"} or not isinstance(allergies, list) or not isinstance(medications, list):
+            return Response({"detail": "Invalid preview safety input."}, status=400)
+        now = timezone.now()
+        prescription.safety_check_results.all().delete()
+        preview_snapshot = {
+            "allergy_status": allergy_status,
+            "allergies": allergies,
+            "current_medications": medications,
+            "labs": {field: payload.get(field) for field in ("creatinine", "egfr", "ast", "alt", "total_bilirubin")},
+            "items": sorted([
+                {"id": str(item.id), "final_dose": str(item.final_dose), "mfds_item_seq": _explicit_item_seq(item)}
+                for item in items
+            ], key=lambda row: row["id"]),
+        }
+        SafetyCheckResult.objects.create(
+            prescription=prescription, prescription_item=None, check_type="INPUT_SNAPSHOT",
+            result="PASS", message=json.dumps(preview_snapshot, sort_keys=True, default=str),
+            source="PREVIEW_INTERNAL_RULE_V1", source_code="SAFETY_INPUT_SNAPSHOT", checked_at=now,
+        )
+        def add(item, check_type, result, message, source_code, source="INTERNAL_RULE_V1"):
+            SafetyCheckResult.objects.create(prescription=prescription, prescription_item=item,
+                check_type=check_type, result=result, message=message, source=source,
+                source_code=source_code, checked_at=now)
+        normalized_allergies = {str(value).strip().casefold() for value in allergies if str(value).strip()}
+        allergy_confirmed = allergy_status in {"NONE", "PRESENT"} and (allergy_status == "NONE" or bool(normalized_allergies))
+        med_rows = [SimpleNamespace(**row) for row in medications if isinstance(row, dict)]
+        for item in items:
+            ingredient = (item.drug.ingredient_name or "").strip()
+            drug_name = (item.drug.drug_name or "").strip()
+            duplicate = any((getattr(m, "ingredient_name", "") or "").strip().casefold() == ingredient.casefold() for m in med_rows if ingredient)
+            add(item, "DUPLICATION", "WARNING" if duplicate else "PASS", "Duplicate ingredient with current medication." if duplicate else "No duplicate ingredient found.", "DUPLICATION_CHECK")
+            match = ingredient.casefold() in normalized_allergies or drug_name.casefold() in normalized_allergies
+            add(item, "ALLERGY", "BLOCK" if match else "PASS" if allergy_confirmed else "WARNING",
+                "Prescription ingredient matches an allergy." if match else "Allergy information is unconfirmed." if not allergy_confirmed else "No matching allergy found.",
+                "ALLERGY_CHECK" if match or allergy_confirmed else "ALLERGY_UNCONFIRMED")
+        # DUR is queried only with explicit item sequence values supplied by the UI.
+        client, cache = DurClient(), {}
+        def query(operation, seq):
+            cache.setdefault((operation, seq), client.query(operation, seq))
+            return cache[(operation, seq)]
+        med_seqs = [(m, _explicit_item_seq(m)) for m in med_rows]
+        for item in items:
+            item_seq = _explicit_item_seq(item)
+            if not item_seq:
+                add(item, "DRUG_INTERACTION", "WARNING", "Prescription MFDS ITEM_SEQ is required for DUR.", "DUR_MAPPING_UNRESOLVED", "MFDS DUR")
+                continue
+            mapped = [(m, seq) for m, seq in med_seqs if seq]
+            for med, med_seq in mapped:
+                result = query("getUsjntTabooInfoList03", item_seq)
+                if result.status == "ERROR":
+                    add(item, "DRUG_INTERACTION", "WARNING", "MFDS DUR lookup failed.", "DUR_API_ERROR", "MFDS DUR")
+                    continue
+                for row in result.rows:
+                    if _dur_pair_matches(row, item_seq, med_seq):
+                        add(item, "DRUG_INTERACTION", "BLOCK", _dur_message("getUsjntTabooInfoList03", row), f"DUR_USJNT_{item_seq}_{med_seq}", "MFDS DUR")
+            for operation in OPERATIONS:
+                if operation == "getUsjntTabooInfoList03":
+                    continue
+                result = query(operation, item_seq)
+                if result.status == "ERROR":
+                    add(item, "DRUG_INTERACTION", "WARNING", "MFDS DUR lookup failed.", "DUR_API_ERROR", "MFDS DUR")
+                for row in result.rows:
+                    add(item, "DRUG_INTERACTION", "WARNING", _dur_message(operation, row), f"DUR_{operation}", "MFDS DUR")
+        lab_fields = ("creatinine", "egfr", "ast", "alt", "total_bilirubin")
+        missing_lab = any(payload.get(field) in (None, "") for field in lab_fields)
+        add(None, "RENAL_FUNCTION", "WARNING" if missing_lab else "PASS", "Creatinine/eGFR are required." if missing_lab else "Renal inputs received.", "LAB_MISSING" if missing_lab else "RENAL_DATA_CHECK")
+        hepatic_missing = any(payload.get(field) in (None, "") for field in ("ast", "alt", "total_bilirubin"))
+        add(None, "HEPATIC_FUNCTION", "WARNING" if hepatic_missing else "PASS", "AST/ALT/total bilirubin are required." if hepatic_missing else "Hepatic inputs received.", "LAB_MISSING" if hepatic_missing else "HEPATIC_DATA_CHECK")
+        if not prescription.safety_check_results.filter(result="BLOCK").exists() and not prescription.safety_check_results.filter(result="WARNING", source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES).exists():
+            prescription.prescription_status = "VALIDATED"
+            prescription.save(update_fields=["prescription_status", "updated_at"])
+        prescription = Prescription.objects.select_related("regimen", "treatment_decision").prefetch_related("items__drug", "safety_check_results").get(id=prescription.id)
+        return Response(DoctorPrescriptionSerializer(prescription).data)
+
+
+class DoctorPreviewPrescriptionWarningAcknowledgeAPIView(PulmonologyWritePermissionMixin, APIView):
+    @transaction.atomic
+    def post(self, request, case_id, prescription_id):
+        prescription = Prescription.objects.select_for_update().filter(
+            id=prescription_id, case_id=case_id, case__primary_doctor=request.user,
+            case__case_status="ACTIVE", prescription_status="DRAFT",
+        ).first()
+        if prescription is None:
+            return Response({"detail": "Preview prescription was not found."}, status=404)
+        note = str(request.data.get("acknowledgment_note", "")).strip()
+        if not note:
+            return Response({"detail": "Acknowledgment note is required."}, status=400)
+        warnings = prescription.safety_check_results.filter(result="WARNING").exclude(
+            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES
+        )
+        if not warnings.exists():
+            return Response({"detail": "No acknowledgeable warnings were found."}, status=400)
+        warnings.update(acknowledged_by_user=request.user, acknowledged_at=timezone.now(), acknowledgment_note=note)
+        prescription = Prescription.objects.select_related("regimen", "treatment_decision").prefetch_related("items__drug", "safety_check_results").get(id=prescription.id)
+        return Response(DoctorPrescriptionSerializer(prescription).data)
+
+
+class DoctorPreviewPrescriptionFinalizeAPIView(PulmonologyWritePermissionMixin, APIView):
+    @transaction.atomic
+    def post(self, request, case_id, prescription_id):
+        prescription = Prescription.objects.select_for_update().filter(
+            id=prescription_id, case_id=case_id, case__primary_doctor=request.user,
+            case__case_status="ACTIVE", prescription_status="DRAFT",
+        ).prefetch_related("items", "safety_check_results").first()
+        if prescription is None:
+            return Response({"detail": "Preview prescription was not found."}, status=404)
+        items = list(prescription.items.all())
+        if not items or any(item.final_dose is None for item in items):
+            return Response({"detail": "모든 최종 처방량을 입력하세요."}, status=400)
+        snapshot_result = prescription.safety_check_results.filter(source_code="SAFETY_INPUT_SNAPSHOT").order_by("-checked_at").first()
+        if snapshot_result is None:
+            return Response({"detail": "안전성 검사가 필요합니다."}, status=400)
+        try:
+            saved = json.loads(snapshot_result.message or "")
+        except (TypeError, ValueError):
+            return Response({"detail": "안전성 snapshot이 유효하지 않습니다."}, status=400)
+        current_items = sorted([
+            {"id": str(item.id), "final_dose": str(item.final_dose), "mfds_item_seq": _explicit_item_seq(item)}
+            for item in items
+        ], key=lambda row: row["id"])
+        if saved.get("items") != current_items:
+            return Response({"detail": "처방이 변경되어 안전성 재검사가 필요합니다."}, status=400)
+        results = prescription.safety_check_results.exclude(source_code="SAFETY_INPUT_SNAPSHOT")
+        if not results.exists():
+            return Response({"detail": "안전성 검사가 필요합니다."}, status=400)
+        if results.filter(result="BLOCK").exists():
+            return Response({"detail": "BLOCK 안전성 결과가 있어 확정할 수 없습니다."}, status=400)
+        unresolved = results.filter(result="WARNING", source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES)
+        if unresolved.exists():
+            return Response({"detail": "해결되지 않은 경고가 있습니다."}, status=400)
+        if results.filter(result="WARNING", acknowledged_at__isnull=True).exists():
+            return Response({"detail": "일반 WARNING을 확인해 주세요."}, status=400)
+        prescription.prescription_status = Prescription.PrescriptionStatus.FINAL
+        prescription.save(update_fields=["prescription_status", "updated_at"])
+        prescription = Prescription.objects.select_related("regimen", "treatment_decision").prefetch_related("items__drug", "safety_check_results").get(id=prescription.id)
+        return Response(DoctorPrescriptionSerializer(prescription).data)
+
+
 class DoctorPrescriptionFinalizeAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
@@ -1936,7 +2125,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
     permission_classes = [IsAuthenticated]
 
     @classmethod
-    def validate_selected_regimen(cls, request, case_id, regimen):
+    def validate_selected_regimen(cls, request, case_id, regimen, *, snapshot=None):
         # Optional/no-regimen treatments retain their existing policy. Any supplied
         # regimen, including one retained by a partial update, must be a candidate.
         if regimen is None:
@@ -1944,7 +2133,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
         view = cls()
         view.request = request
         view.kwargs = {"case_id": case_id}
-        candidate_ids = {rule.regimen_id for rule in view.get_queryset()}
+        candidate_ids = {rule.regimen_id for rule in view.get_queryset(snapshot=snapshot)}
         if regimen.pk not in candidate_ids:
             raise ValidationError({
                 "selected_regimen": "선택한 Regimen은 현재 확정 임상정보에 따른 치료 후보가 아닙니다. 후보를 다시 확인해주세요.",
@@ -1995,7 +2184,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 return True
         return False
 
-    def _candidate_input(self):
+    def _candidate_input(self, snapshot=None):
         if hasattr(self, "_candidate_input_cache"):
             return self._candidate_input_cache
         case = LungCancerCase.objects.filter(
@@ -2034,6 +2223,14 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             ).first()
             if pdl1 is not None:
                 data["pdl1_tps"] = pdl1.tps_percent
+        if snapshot is not None:
+            data["cancer_type"] = snapshot["cancer_type"]
+            data["histology"] = self._histology(snapshot["histology"])
+            data["findings"] = [SimpleNamespace(**finding) for finding in snapshot["findings"]]
+            data["pdl1_category"] = snapshot["pdl1_category"]
+            data["pdl1_tps"] = None
+        else:
+            data["pdl1_category"] = None
         self._candidate_input_cache = data
         return data
 
@@ -2077,7 +2274,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
         try:
             stage = self._condition(rule.stage_condition, {"stage"})
             biomarker = self._condition(rule.biomarker_condition, {"positive", "alterations"})
-            pdl1 = self._condition(rule.pdl1_condition, {"min", "max"})
+            pdl1 = self._condition(rule.pdl1_condition, {"min", "max", "category"})
             ecog = self._condition(rule.ecog_condition, {"min", "max"})
             reasons = []
             if rule.cancer_type:
@@ -2093,7 +2290,17 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 if not self._stage_matches(data["stage_group"], self._strings(stage["stage"])):
                     return None
                 reasons.append(f"병기 일치: {data['stage_group']}")
-            if not self._range_matches(pdl1, data["pdl1_tps"], 100):
+            if data.get("pdl1_category") is not None:
+                if "category" in pdl1:
+                    category_match = data["pdl1_category"] in self._strings(pdl1["category"])
+                else:
+                    bounds = {key: Decimal(str(value)) for key, value in pdl1.items()}
+                    ranges = {"LT_1": (Decimal("0"), Decimal("0.99")), "FROM_1_TO_49": (Decimal("1"), Decimal("49.99")), "GE_50": (Decimal("50"), Decimal("100"))}
+                    low, high = ranges[data["pdl1_category"]]
+                    category_match = bounds.get("min", Decimal("0")) <= low and bounds.get("max", Decimal("100")) >= high
+                if not category_match:
+                    return None
+            elif not self._range_matches(pdl1, data["pdl1_tps"], 100):
                 return None
             if not self._range_matches(ecog, data["ecog"], 5):
                 return None
@@ -2149,8 +2356,8 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
         except (ValueError, TypeError, ArithmeticError):
             return None
 
-    def get_queryset(self):
-        data = self._candidate_input()
+    def get_queryset(self, snapshot=None):
+        data = self._candidate_input(snapshot=snapshot)
         self._match_reasons = {}
         if data["case"] is None:
             return TreatmentRule.objects.none()
@@ -2160,6 +2367,18 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
             if reasons is not None:
                 self._match_reasons[rule.id] = reasons
         return rules.filter(id__in=self._match_reasons).order_by("priority", "rule_code")
+
+
+class DoctorRegimenCandidatePreviewAPIView(DoctorRegimenCandidateListAPIView):
+    def post(self, request, case_id):
+        snapshot = request.data
+        validate_input_snapshot(snapshot)
+        view = DoctorRegimenCandidateListAPIView()
+        view.request = request
+        view.kwargs = {"case_id": case_id}
+        queryset = view.get_queryset(snapshot=snapshot)
+        serializer = self.get_serializer(queryset, many=True, context={"match_reasons_by_id": view._match_reasons})
+        return Response(serializer.data)
 
     def get_serializer_context(self):
         context = super().get_serializer_context()

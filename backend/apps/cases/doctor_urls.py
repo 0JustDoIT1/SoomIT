@@ -4,6 +4,10 @@ from apps.ai_results.views import DoctorAiAnalysisListAPIView
 from apps.clinical.views import (
     DoctorClinicalResultListAPIView,
     DoctorPrescriptionAPIView,
+    DoctorPreviewPrescriptionAPIView,
+    DoctorPreviewPrescriptionSafetyAPIView,
+    DoctorPreviewPrescriptionWarningAcknowledgeAPIView,
+    DoctorPreviewPrescriptionFinalizeAPIView,
     DoctorPrescriptionFinalizeAPIView,
     DoctorMedicationScheduleListCreateAPIView,
     DoctorMedicationScheduleDetailAPIView,
@@ -13,6 +17,7 @@ from apps.clinical.views import (
     DoctorTreatmentDecisionConfirmAPIView,
     DoctorPrescriptionSafetyCheckAPIView,
     DoctorRegimenCandidateListAPIView,
+    DoctorRegimenCandidatePreviewAPIView,
     DoctorTreatmentEvidenceAPIView,
     DoctorTnmDraftAPIView,
     DoctorTnmConfirmAPIView,
@@ -170,6 +175,10 @@ urlpatterns = [
         DoctorPrescriptionAPIView.as_view(),
         name="doctor-prescription-list-create",
     ),
+    path("<uuid:case_id>/preview-prescriptions/", DoctorPreviewPrescriptionAPIView.as_view(), name="doctor-preview-prescription-create"),
+    path("<uuid:case_id>/prescriptions/<uuid:prescription_id>/preview-safety/", DoctorPreviewPrescriptionSafetyAPIView.as_view(), name="doctor-preview-prescription-safety"),
+    path("<uuid:case_id>/prescriptions/<uuid:prescription_id>/preview-warnings/acknowledge/", DoctorPreviewPrescriptionWarningAcknowledgeAPIView.as_view(), name="doctor-preview-prescription-warning-acknowledge"),
+    path("<uuid:case_id>/prescriptions/<uuid:prescription_id>/preview-finalize/", DoctorPreviewPrescriptionFinalizeAPIView.as_view(), name="doctor-preview-prescription-finalize"),
     path(
         "<uuid:case_id>/prescriptions/<uuid:prescription_id>/finalize/",
         DoctorPrescriptionFinalizeAPIView.as_view(),
@@ -214,5 +223,6 @@ urlpatterns = [
     name="doctor-prescription-safety-check",
     ),
     path("<uuid:case_id>/regimen-candidates/", DoctorRegimenCandidateListAPIView.as_view(), name="doctor-regimen-candidates"),
+    path("<uuid:case_id>/regimen-candidates/preview/", DoctorRegimenCandidatePreviewAPIView.as_view(), name="doctor-regimen-candidates-preview"),
     path("<uuid:case_id>/treatment-evidence/", DoctorTreatmentEvidenceAPIView.as_view(), name="doctor-treatment-evidence"),
 ]
