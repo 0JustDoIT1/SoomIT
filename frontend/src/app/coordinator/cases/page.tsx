@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, staffAuthenticatedFetch } from "@/lib/api";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -32,7 +32,7 @@ export default function CasesPage() {
       try {
         setError("");
 
-        const response = await fetch(
+        const response = await staffAuthenticatedFetch(
           `${API_BASE_URL}/api/cases/`
         );
 

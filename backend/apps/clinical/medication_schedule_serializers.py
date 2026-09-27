@@ -42,7 +42,7 @@ class DoctorMedicationScheduleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({"cycle_days": "cycle_days is only valid for CYCLE_DAY schedules."})
         return attrs
 
-    def validate_prescription_items(self, items):
+    def validate_prescription_item_ids(self, items):
         prescription = self.context["prescription"]
         if not items:
             raise serializers.ValidationError("At least one prescription item is required.")

@@ -117,7 +117,13 @@ def get_linked_patient_account(request):
 
 # 원무과 - 환자 목록 조회 / 신규 환자 등록
 class PatientListAPIView(ListCreateAPIView):
-    queryset = Patient.objects.all().order_by("-created_at")
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff]
+
+    def get_queryset(self):
+        return Patient.objects.filter(
+            hospital_id=self.request.user.department_role.department.hospital_id,
+        ).order_by("-created_at")
 
     def get_serializer_class(self):
         # GET /api/patients/
@@ -133,6 +139,8 @@ class PatientListAPIView(ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
 
         hospital_id = serializer.validated_data.pop("hospital_id")
+        if hospital_id != request.user.department_role.department.hospital_id:
+            raise PermissionDenied("다른 병원에 환자를 등록할 수 없습니다.")
         hospital = Hospital.objects.filter(id=hospital_id).first()
         if hospital is None:
             raise ValidationError({"hospital": "등록된 병원 정보가 없습니다."})
@@ -155,7 +163,9 @@ class PatientListAPIView(ListCreateAPIView):
         patient_account = None
         if patient_account_id is not None:
             try:
-                patient_account = PatientAccount.objects.select_for_update().get(
+                patient_account = PatientAccount.objects.select_for_update(of=("self",)).filter(
+                    Q(patient__isnull=True) | Q(patient__hospital_id=hospital_id),
+                ).get(
                     id=patient_account_id,
                 )
             except PatientAccount.DoesNotExist:
@@ -219,8 +229,7 @@ class PatientListAPIView(ListCreateAPIView):
         return Response(PatientSerializer(patient).data, status=status.HTTP_201_CREATED)
 
     def perform_create(self, serializer):
-        # 로그인/병원 연동 전 개발용 처리
-        hospital = Hospital.objects.first()
+        hospital = self.request.user.department_role.department.hospital
 
         if hospital is None:
             raise ValidationError(
@@ -300,6 +309,9 @@ class PatientAccountRegistrationAPIView(APIView):
 
 
 class PatientAccountLookupAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff]
+
     def post(self, request):
         serializer = PatientAccountLookupSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -308,6 +320,8 @@ class PatientAccountLookupAPIView(APIView):
         )
         phone_number_hash = hashlib.sha256(normalized_phone.encode("utf-8")).hexdigest()
         patient_account = PatientAccount.objects.select_related("patient").filter(
+            Q(patient__isnull=True)
+            | Q(patient__hospital_id=request.user.department_role.department.hospital_id),
             phone_number_hash=phone_number_hash,
         ).first()
 
@@ -345,8 +359,14 @@ class PatientAccountLookupAPIView(APIView):
 
 # 원무과 - 환자 상세 조회 / 환자정보 수정
 class PatientDetailAPIView(RetrieveUpdateAPIView):
-    queryset = Patient.objects.all()
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff]
     lookup_field = "id"
+
+    def get_queryset(self):
+        return Patient.objects.filter(
+            hospital_id=self.request.user.department_role.department.hospital_id,
+        )
 
     def get_serializer_class(self):
         # GET /api/patients/{id}/

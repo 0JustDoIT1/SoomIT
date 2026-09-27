@@ -101,6 +101,8 @@ logger = logging.getLogger(__name__)
 
 # 원무과 - Case 목록 조회
 class LungCancerCaseListAPIView(ListAPIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff]
     queryset = (
         LungCancerCase.objects
         .select_related("patient")
@@ -109,9 +111,16 @@ class LungCancerCaseListAPIView(ListAPIView):
     )
     serializer_class = LungCancerCaseSerializer
 
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            patient__hospital_id=self.request.user.department_role.department.hospital_id,
+        )
+
 
 # 원무과 - Case 상세 조회
 class LungCancerCaseDetailAPIView(RetrieveAPIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff]
     queryset = (
         LungCancerCase.objects
         .select_related("patient")
@@ -119,6 +128,11 @@ class LungCancerCaseDetailAPIView(RetrieveAPIView):
     )
     serializer_class = LungCancerCaseDetailSerializer
     lookup_field = "id"
+
+    def get_queryset(self):
+        return super().get_queryset().filter(
+            patient__hospital_id=self.request.user.department_role.department.hospital_id,
+        )
 
 
 # 호흡기내과 - 내 담당 Case 목록 조회

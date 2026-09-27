@@ -186,7 +186,7 @@ export default function PatientsPage() {
   const fetchPatients = async () => {
     try {
       setError("");
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/patients/`
       );
       if (!response.ok) {
@@ -213,7 +213,7 @@ export default function PatientsPage() {
     try {
       setDoctorsLoading(true);
       setDoctorsError("");
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/patients/doctors/?hospital_id=${encodeURIComponent(hospitalId)}`
       );
       if (!response.ok) {
@@ -240,7 +240,7 @@ export default function PatientsPage() {
 
   // 환자 상세 조회
   const fetchPatientDetail = async (patientId: string) => {
-    const response = await fetch(
+    const response = await staffAuthenticatedFetch(
       `${API_BASE_URL}/api/patients/${patientId}/`
     );
     if (!response.ok) {
@@ -304,7 +304,7 @@ export default function PatientsPage() {
     if (!phone) { setAppLookupMessage("연락처를 먼저 입력해주세요."); return; }
     setAppLookupLoading(true); setAppLookupMessage("");
     try {
-      const response = await fetch(`${API_BASE_URL}/api/patients/app-accounts/lookup/`, {
+      const response = await staffAuthenticatedFetch(`${API_BASE_URL}/api/patients/app-accounts/lookup/`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone_number: phone }),
       });
@@ -356,7 +356,7 @@ export default function PatientsPage() {
     try {
       setCreateLoading(true);
       setCreateError("");
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/patients/`,
         {
           method: "POST",
@@ -439,7 +439,7 @@ export default function PatientsPage() {
     try {
       setUpdateLoading(true);
       setUpdateError("");
-      const response = await fetch(
+      const response = await staffAuthenticatedFetch(
         `${API_BASE_URL}/api/patients/${selectedPatient.id}/`,
         {
           method: "PATCH",

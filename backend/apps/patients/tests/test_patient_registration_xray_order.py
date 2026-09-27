@@ -1,4 +1,5 @@
 from datetime import date
+import hashlib
 
 from django.test import TestCase
 from django.urls import reverse
@@ -6,7 +7,7 @@ from rest_framework.test import APIClient
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.cases.models import ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.patients.models import PatientAccount
+from apps.patients.models import Patient, PatientAccount
 
 
 class PatientRegistrationInitialXrayOrderTests(TestCase):
@@ -30,6 +31,7 @@ class PatientRegistrationInitialXrayOrderTests(TestCase):
             account_status=User.AccountStatus.ACTIVE,
         )
         self.client = APIClient()
+        self.client.force_authenticate(user=self.doctor)
 
     def _payload(self, patient_code="REG-001"):
         return {
@@ -69,4 +71,39 @@ class PatientRegistrationInitialXrayOrderTests(TestCase):
         self.assertIsNone(account.patient_id)
         self.assertFalse(LungCancerCase.objects.exists())
         self.assertFalse(ExaminationOrder.objects.exists())
+
+    def test_authenticated_registration_links_unlinked_account(self):
+        account = PatientAccount.objects.create(
+            name="Pre-registered", phone_number="01012345678",
+            phone_number_hash=hashlib.sha256(b"01012345678").hexdigest(),
+            link_status=PatientAccount.LinkStatus.UNLINKED,
+        )
+        response = self.client.post(reverse("patient-list"), {
+            **self._payload(), "patient_account_id": str(account.id),
+        }, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        account.refresh_from_db()
+        self.assertEqual(str(account.patient_id), str(response.data["id"]))
+        self.assertEqual(account.linked_by_user_id, self.doctor.id)
+        self.assertEqual(ExaminationOrder.objects.count(), 1)
+
+    def test_registration_cannot_disclose_foreign_linked_account(self):
+        other_hospital = Hospital.objects.create(name="Other", code="REG-OTHER")
+        patient = Patient.objects.create(
+            hospital=other_hospital, patient_code="REG-FOREIGN", name="Other patient",
+            birth_date=date(1970, 1, 1), sex="FEMALE", phone_number="01012345678",
+            phone_number_hash=hashlib.sha256(b"01012345678").hexdigest(),
+        )
+        account = PatientAccount.objects.create(
+            patient=patient, name="Other patient", phone_number="01012345678",
+            phone_number_hash=patient.phone_number_hash, link_status=PatientAccount.LinkStatus.LINKED,
+        )
+        response = self.client.post(reverse("patient-list"), {
+            **self._payload(), "patient_account_id": str(account.id),
+        }, format="json")
+        self.assertEqual(response.status_code, 400, response.data)
+        self.assertNotIn("patient", response.data)
+        self.assertFalse(Patient.objects.filter(hospital=self.hospital).exists())
+        account.refresh_from_db()
+        self.assertEqual(account.patient_id, patient.id)
 

@@ -1,6 +1,6 @@
 "use client";
 
-import { API_BASE_URL } from "@/lib/api";
+import { API_BASE_URL, staffAuthenticatedFetch } from "@/lib/api";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 
@@ -51,7 +51,7 @@ export default function CaseDetailPage() {
   useEffect(() => {
     const fetchCaseDetail = async () => {
       try {
-        const response = await fetch(
+        const response = await staffAuthenticatedFetch(
           `${API_BASE_URL}/api/cases/${caseId}/`
         );
 
