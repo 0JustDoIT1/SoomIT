@@ -53,7 +53,8 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   await dialog.getByRole("button", { name: "저장하고 다음 단계", exact: true }).click();
   await dialog.getByRole("button", { name: "치료계획 확정", exact: true }).click();
   await page.getByRole("button", { name: "처방 작성으로 이동 →", exact: true }).click();
-  await page.getByLabel("Cycle 시작일").fill("2026-09-27");
+  await page.getByRole("combobox", { name: "Cycle 시작일", exact: true }).click();
+  await page.getByRole("dialog", { name: "Cycle 시작일 선택", exact: true }).getByRole("button", { name: "오늘", exact: true }).click();
   await page.getByRole("button", { name: "임시 처방 생성", exact: true }).click();
   await expect(page.getByRole("button", { name: "처방 최종 확정", exact: true })).toHaveCount(0);
   await page.getByLabel("QA medication 최종 용량").fill("75");
