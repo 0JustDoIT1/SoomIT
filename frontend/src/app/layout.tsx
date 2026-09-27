@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import type { ReactNode } from 'react';
 import { AppToastProvider } from '@/components/ui/toast/toast-provider';
 import { CLINICIAN_THEME_BOOTSTRAP_SCRIPT } from '@/components/theme/clinician-theme';
 import './globals.css';
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
   description: '숨잇, 진단부터 처방까지',
 };
 
-export default function RootLayout({ children }: LayoutProps<'/'>) {
+export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="ko" className="h-full antialiased" suppressHydrationWarning>
       <head>
