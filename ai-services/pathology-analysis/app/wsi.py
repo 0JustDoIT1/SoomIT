@@ -41,6 +41,35 @@ def otsu_threshold(gray: np.ndarray) -> int:
     return int(np.argmax(variance))
 
 
+def preview_tissue_mask(rgb: np.ndarray) -> np.ndarray:
+    """Keep both dark and lightly stained H&E tissue while excluding white glass."""
+    gray = np.asarray(Image.fromarray(rgb).convert("L"), dtype=np.uint8)
+    chroma = rgb.max(axis=2).astype(np.int16) - rgb.min(axis=2).astype(np.int16)
+    return (gray <= otsu_threshold(gray)) | ((chroma >= 10) & (gray < 245))
+
+
+def attention_colormap(values: np.ndarray) -> np.ndarray:
+    """Map relative attention to a perceptually ordered blue-to-red palette."""
+    positions = np.asarray((0.0, 0.2, 0.4, 0.6, 0.8, 1.0), dtype=np.float32)
+    anchors = np.asarray(
+        (
+            (48, 18, 59),
+            (45, 92, 210),
+            (30, 185, 175),
+            (185, 225, 45),
+            (250, 140, 15),
+            (180, 4, 38),
+        ),
+        dtype=np.float32,
+    )
+    colors = np.empty((*values.shape, 3), dtype=np.uint8)
+    for channel in range(3):
+        colors[..., channel] = np.interp(values, positions, anchors[:, channel]).astype(
+            np.uint8
+        )
+    return colors
+
+
 def tissue_mask(slide: openslide.OpenSlide, thumbnail_size: int) -> tuple[np.ndarray, tuple[int, int]]:
     thumbnail = slide.get_thumbnail((thumbnail_size, thumbnail_size)).convert("RGB")
     rgb = np.asarray(thumbnail, dtype=np.uint8)
@@ -139,16 +168,20 @@ def create_tissue_attention_heatmap(
         )
         blended = np.clip(blended * 255.0, 0, 255).astype(np.uint8)
 
-        gray = np.asarray(preview.convert("L"), dtype=np.uint8)
-        preview_tissue = gray < otsu_threshold(gray)
-        blended[~(coverage & preview_tissue)] = 0
-        intensity = Image.fromarray(blended, mode="L")
-        # Suppress low attention and make high attention visible while retaining
-        # the underlying H&E morphology.
-        intensity = intensity.point(lambda value: 0 if value < 48 else min(170, int(((value - 48) / 207) ** 1.35 * 170)))
-        red_overlay = Image.new("RGBA", preview.size, (230, 35, 70, 0))
-        red_overlay.putalpha(intensity)
-        composed = Image.alpha_composite(preview.convert("RGBA"), red_overlay).convert("RGB")
+        preview_rgb = np.asarray(preview, dtype=np.uint8)
+        visible_tissue = coverage & preview_tissue_mask(preview_rgb)
+        relative_attention = blended.astype(np.float32) / 255.0
+        colors = attention_colormap(relative_attention)
+        alpha = np.where(
+            visible_tissue,
+            35.0 + 190.0 * np.power(relative_attention, 0.75),
+            0.0,
+        ).astype(np.uint8)
+        overlay = Image.fromarray(
+            np.dstack((colors, alpha)),
+            mode="RGBA",
+        )
+        composed = Image.alpha_composite(preview.convert("RGBA"), overlay).convert("RGB")
         output = BytesIO()
         composed.save(output, format="JPEG", quality=88, optimize=True)
         return output.getvalue()

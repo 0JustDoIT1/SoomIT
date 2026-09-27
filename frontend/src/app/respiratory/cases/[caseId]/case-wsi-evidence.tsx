@@ -43,7 +43,7 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
   const [viewerLoading, setViewerLoading] = useState(false);
   const [error, setError] = useState("");
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(45);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(65);
   const [heatmap, setHeatmap] = useState<HeatmapState>({ identity: "", status: "loading", imageUrl: null });
   const heatmapItemRef = useRef<HeatmapItem | null>(null);
   const heatmapOpacityRef = useRef(0);

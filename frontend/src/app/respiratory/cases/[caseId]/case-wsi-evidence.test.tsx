@@ -202,7 +202,7 @@ describe("CaseWsiEvidence", () => {
     await waitFor(() => expect(osd.viewers[0].addTiledImage).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Point" })).toBeEnabled();
     toggle.click();
-    expect(await screen.findByLabelText("Heatmap 투명도")).toHaveValue("45");
+    expect(await screen.findByLabelText("Heatmap 투명도")).toHaveValue("65");
     expect(createObjectUrl).toHaveBeenCalled();
   });
 
