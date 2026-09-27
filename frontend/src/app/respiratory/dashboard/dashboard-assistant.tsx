@@ -19,6 +19,7 @@ type AssistantMessage = {
   role: "user" | "assistant";
   content: string;
   references?: CaseReference[];
+  display?: "quick";
 };
 
 type CaseReference = {
@@ -74,7 +75,7 @@ export function DashboardAssistant({
       role,
       content,
     }));
-    const userMessage: AssistantMessage = { role: "user", content: message };
+    const userMessage: AssistantMessage = { role: "user", content: message, display: replaceConversation ? "quick" : undefined };
     setMessages((current) => replaceConversation ? [userMessage] : [...current, userMessage]);
     setQuestion("");
     setError("");
@@ -136,7 +137,7 @@ export function DashboardAssistant({
     return (
       <section
         aria-labelledby="dashboard-assistant-title"
-        className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-3 sm:px-5"
+        className="w-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-3"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h3 id="dashboard-assistant-title" className="text-base font-semibold text-slate-900">
@@ -159,40 +160,44 @@ export function DashboardAssistant({
   return (
     <section
       aria-labelledby="dashboard-assistant-title"
-      className="w-full min-w-0 rounded-xl border border-slate-200 bg-slate-50/70 px-4 py-4 sm:px-5"
+      className="w-full min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-white"
     >
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="flex min-h-14 flex-wrap items-center gap-x-3 gap-y-1 border-b border-slate-200 bg-slate-50/70 px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-[#2f6f9f] text-white" aria-hidden="true">
+            <AssistantIcon />
+          </span>
+          <div>
           <h3 id="dashboard-assistant-title" className="text-base font-semibold text-slate-900">
             의사 AI Assistant
           </h3>
-          <span className="shrink-0 text-[11px] font-semibold uppercase tracking-wide text-blue-600">
-            Read-only AI
-          </span>
+            <p className="text-[11px] text-slate-500">담당 Case 조회 및 업무 요약</p>
+          </div>
         </div>
-        <span className="shrink-0 rounded-full bg-blue-100/70 px-2 py-0.5 text-[11px] font-semibold text-blue-700">
-          조회 전용
+        <span className="shrink-0 rounded-full border border-blue-100 bg-white px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-blue-700">
+          Read-only
         </span>
         <button
           type="button"
           aria-expanded="true"
           aria-controls="dashboard-assistant-content"
           onClick={closeAssistant}
-          className="ml-auto rounded-md px-2 py-1 text-xs font-semibold text-slate-500 transition hover:bg-slate-200 hover:text-slate-700"
+          className="ml-auto rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-500 transition hover:border-slate-300 hover:text-slate-700"
         >
           대화 닫기
         </button>
       </div>
 
-      <div id="dashboard-assistant-content">
-      <div className="mt-3 flex flex-wrap gap-2" aria-label="빠른 질문">
+      <div id="dashboard-assistant-content" className="grid gap-3 p-3 sm:p-4">
+      <div className="flex min-h-9 items-center gap-2 overflow-x-auto" aria-label="빠른 질문">
+          <span className="shrink-0 text-[11px] font-semibold text-slate-400">빠른 질문</span>
           {QUICK_ACTIONS.map((action) => (
             <button
               key={action}
               type="button"
               disabled={loading}
               onClick={() => void sendQuestion(action, { replaceConversation: true })}
-              className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
+              className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-blue-300 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50"
             >
               {action}
             </button>
@@ -202,19 +207,27 @@ export function DashboardAssistant({
       {(messages.length > 0 || loading || error) && (
         <div
           aria-live="polite"
-          className="mt-4 max-h-80 space-y-3 overflow-auto rounded-xl border border-slate-200 bg-white p-4 [overflow-wrap:anywhere]"
+          className="max-h-[310px] space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-3 [overflow-wrap:anywhere]"
         >
-          {messages.map((message, index) => (
+          {messages.map((message, index) => message.display === "quick" ? (
+            <p key={`${message.role}-${index}`} className="sr-only">{message.content}</p>
+          ) : (
             <article
               key={`${message.role}-${index}`}
               className={
                 message.role === "user"
-                  ? "ml-8 rounded-lg bg-blue-600 px-3 py-2 text-sm leading-6 text-white"
-                  : "mr-3 rounded-lg bg-slate-50 px-3 py-2.5 text-sm leading-6 text-slate-700"
+                  ? "ml-auto max-w-[70%] rounded-xl rounded-tr-sm bg-[#2f6f9f] px-3.5 py-2 text-sm leading-6 text-white"
+                  : "rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700"
               }
             >
               {message.role === "assistant" ? (
-                <AssistantText content={message.content} />
+                <div>
+                  <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-50 text-blue-600" aria-hidden="true"><AssistantIcon small /></span>
+                    <span className="text-[11px] font-bold text-blue-700">AI 요약</span>
+                  </div>
+                  <AssistantText content={message.content} />
+                </div>
               ) : (
                 <p>{message.content}</p>
               )}
@@ -227,7 +240,7 @@ export function DashboardAssistant({
                 return (
                   <div
                     key={reference.case_code}
-                    className="mt-2 flex items-center justify-between gap-3 rounded-md border border-blue-100 bg-blue-50/70 px-3 py-2"
+                    className="mt-2 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50/60 px-3 py-2 transition hover:border-blue-200"
                   >
                     <div className="min-w-0">
                       <p className="truncate text-sm font-bold text-slate-800">{reference.case_code}</p>
@@ -238,7 +251,7 @@ export function DashboardAssistant({
                     <button
                       type="button"
                       onClick={() => onOpenCase(caseItem.id)}
-                      className="shrink-0 rounded-md bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-blue-700"
+                      className="shrink-0 rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-600 hover:text-white"
                     >
                       Case 열기
                     </button>
@@ -262,7 +275,7 @@ export function DashboardAssistant({
         </div>
       )}
 
-      <form onSubmit={submit} className="mt-3 flex gap-2 max-sm:flex-col">
+      <form onSubmit={submit} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-1.5 focus-within:border-blue-300 focus-within:ring-2 focus-within:ring-blue-100 max-sm:flex-col max-sm:items-stretch">
         <label className="sr-only" htmlFor="dashboard-assistant-question">
           Assistant 질문
         </label>
@@ -273,18 +286,30 @@ export function DashboardAssistant({
           onChange={(event) => setQuestion(event.target.value)}
           placeholder="담당 Case에 대해 질문하세요"
           maxLength={4000}
-          className="min-w-0 flex-1 rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-50"
+          className="min-w-0 flex-1 border-0 bg-transparent px-3 py-2 text-sm text-slate-800 outline-none placeholder:text-slate-400 disabled:text-slate-400"
         />
         <button
           type="submit"
           disabled={loading || !question.trim()}
-          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
         >
           전송
         </button>
       </form>
       </div>
     </section>
+  );
+}
+
+function AssistantIcon({ small = false }: { small?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" className={small ? "h-3.5 w-3.5" : "h-5 w-5"}>
+      <path d="M12 3v3M5.6 5.6l2.1 2.1M18.4 5.6l-2.1 2.1" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      <rect x="4" y="8" width="16" height="12" rx="4" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="9" cy="13" r="1" fill="currentColor" />
+      <circle cx="15" cy="13" r="1" fill="currentColor" />
+      <path d="M9 17h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
   );
 }
 

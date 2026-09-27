@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from django.db import transaction
+from django.db import models, transaction
 from django.db.models import Q
 from rest_framework import status
 from rest_framework.exceptions import APIException
@@ -294,8 +294,28 @@ class InternalCaseChatAccessAPIView(APIView):
         return Response({"allowed": True, "case_id": case.id, "user_id": str(request.user.id)})
 
 
-def visible_global_messages(user):
-    return GlobalChatMessage.objects.filter(hospital_id=user.department_role.department.hospital_id).select_related("sender__department_role__department").prefetch_related("read_receipts__reader")
+def direct_chat_participant(user, participant_id):
+    return get_object_or_404(
+        User.objects.filter(
+            account_status=User.AccountStatus.ACTIVE,
+            department_role__department__hospital_id=user.department_role.department.hospital_id,
+        ).exclude(id=user.id),
+        id=participant_id,
+    )
+
+
+def visible_global_messages(user, participant=None):
+    messages = GlobalChatMessage.objects.filter(
+        hospital_id=user.department_role.department.hospital_id,
+        recipient__isnull=False,
+    ).filter(Q(sender=user) | Q(recipient=user))
+    if participant is not None:
+        messages = messages.filter(
+            Q(sender=user, recipient=participant) | Q(sender=participant, recipient=user)
+        )
+    return messages.select_related(
+        "sender__department_role__department", "recipient__department_role__department"
+    ).prefetch_related("read_receipts__reader")
 
 
 class GlobalChatMessageListAPIView(ListAPIView):
@@ -307,7 +327,11 @@ class GlobalChatMessageListAPIView(ListAPIView):
     def get_queryset(self):
         if not can_access_global_chat(self.request.user):
             raise PermissionDenied("Global chat access denied.")
-        return visible_global_messages(self.request.user)
+        participant_id = self.request.query_params.get("participant_id")
+        if not participant_id:
+            return GlobalChatMessage.objects.none()
+        participant = direct_chat_participant(self.request.user, participant_id)
+        return visible_global_messages(self.request.user, participant)
 
 
 class GlobalChatMessageReadAPIView(APIView):
@@ -334,8 +358,12 @@ class GlobalChatUnreadCountAPIView(APIView):
     def get(self, request):
         if not can_access_global_chat(request.user):
             raise PermissionDenied("Global chat access denied.")
-        count = visible_global_messages(request.user).exclude(sender=request.user).exclude(read_receipts__reader=request.user).count()
-        return Response({"unread_count": count})
+        unread = visible_global_messages(request.user).filter(recipient=request.user).exclude(read_receipts__reader=request.user)
+        participant_id = request.query_params.get("participant_id")
+        if participant_id:
+            participant = direct_chat_participant(request.user, participant_id)
+            unread = unread.filter(sender=participant)
+        return Response({"unread_count": unread.count()})
 
 
 class GlobalChatParticipantsAPIView(APIView):
@@ -345,8 +373,16 @@ class GlobalChatParticipantsAPIView(APIView):
     def get(self, request):
         if not can_access_global_chat(request.user):
             raise PermissionDenied("Global chat access denied.")
-        users = User.objects.filter(account_status=User.AccountStatus.ACTIVE, department_role__department__hospital_id=request.user.department_role.department.hospital_id).select_related("department_role__department").order_by("name")
-        return Response([{"id": str(u.id), "name": u.name, "department": u.department_role.department.code, "role": u.department_role.role} for u in users])
+        users = User.objects.filter(account_status=User.AccountStatus.ACTIVE, department_role__department__hospital_id=request.user.department_role.department.hospital_id).exclude(id=request.user.id).select_related("department_role__department").order_by("name")
+        unread_counts = {
+            str(row["sender_id"]): row["count"]
+            for row in visible_global_messages(request.user)
+            .filter(recipient=request.user)
+            .exclude(read_receipts__reader=request.user)
+            .values("sender_id")
+            .annotate(count=models.Count("id"))
+        }
+        return Response([{"id": str(u.id), "name": u.name, "department": u.department_role.department.code, "role": u.department_role.role, "unread_count": unread_counts.get(str(u.id), 0)} for u in users])
 
 
 class InternalGlobalChatAccessAPIView(APIView):
@@ -369,8 +405,9 @@ class InternalGlobalChatMessageCreateAPIView(APIView):
         serializer = GlobalChatMessageCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         hospital_id = request.user.department_role.department.hospital_id
-        message, created = GlobalChatMessage.objects.get_or_create(hospital_id=hospital_id, sender=request.user, client_message_id=serializer.validated_data["client_message_id"], defaults={"body": serializer.validated_data["body"]})
-        if not created and message.body != serializer.validated_data["body"]:
+        recipient = direct_chat_participant(request.user, serializer.validated_data["recipient_id"])
+        message, created = GlobalChatMessage.objects.get_or_create(hospital_id=hospital_id, sender=request.user, client_message_id=serializer.validated_data["client_message_id"], defaults={"recipient": recipient, "body": serializer.validated_data["body"]})
+        if not created and (message.body != serializer.validated_data["body"] or message.recipient_id != recipient.id):
             raise ClientMessageIdConflict()
-        message = GlobalChatMessage.objects.select_related("sender__department_role__department").prefetch_related("read_receipts__reader").get(id=message.id)
+        message = GlobalChatMessage.objects.select_related("sender__department_role__department", "recipient").prefetch_related("read_receipts__reader").get(id=message.id)
         return Response({"message": GlobalChatMessageSerializer(message).data, "created": created}, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

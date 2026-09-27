@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { MfdsProductSelector } from "./mfds-product-selector";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
 import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
+import { PrescriptionDateField } from "./prescription-date-field";
 
 import { showToast } from "@/components/ui/toast/toast";
 import { LoadingIndicator } from "@/components/common/loading-indicator";
@@ -78,7 +79,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <input type="number" min="1" value={cycleNumber} onChange={e => setCycleNumber(e.target.value)} className="w-20 rounded-lg border border-slate-200 p-2 text-xs" aria-label="Cycle 번호" />
           <select value={phase} onChange={e => setPhase(e.target.value)} className="rounded-lg border border-slate-200 p-2 text-xs" aria-label="치료 단계"><option value="INDUCTION">INDUCTION</option><option value="MAINTENANCE">MAINTENANCE</option><option value="CONTINUOUS">지속치료</option></select>
-          <input required type="date" value={cycleStartDate} onChange={e => setCycleStartDate(e.target.value)} className="rounded-lg border border-slate-200 p-2 text-xs" aria-label="Cycle 시작일" />
+          <PrescriptionDateField required label="Cycle 시작일" value={cycleStartDate} onChange={setCycleStartDate} className="w-36" />
           <button type="button" disabled={working || !hasSelectedRegimen || !cycleStartDate} onClick={() => void create()} className={`rounded-lg px-4 py-2 text-sm font-semibold disabled:bg-slate-200 disabled:text-slate-500 ${prescriptions.length ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{working ? "생성 중..." : "임시 처방 생성"}</button>
           {!hasSelectedRegimen && <p className="text-xs text-amber-700">선택된 Regimen이 없어 처방을 생성할 수 없습니다.</p>}
         </div>

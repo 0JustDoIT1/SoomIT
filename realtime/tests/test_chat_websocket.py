@@ -202,6 +202,45 @@ def test_new_message_is_stored_then_published():
     assert websocket.sent_text == []
 
 
+def test_direct_message_passes_recipient_and_publishes_to_hospital_room():
+    user_id = str(uuid4())
+    hospital_id = str(uuid4())
+    recipient_id = str(uuid4())
+    payload = {
+        "type": "chat.message.create",
+        "client_message_id": str(uuid4()),
+        "recipient_id": recipient_id,
+        "body": "1:1 메시지",
+    }
+    websocket = FakeWebSocket(incoming=[json.dumps(payload)])
+    stored_message = {
+        "id": str(uuid4()),
+        "sender": {"id": user_id, "name": "의사", "department": "PULMONOLOGY", "role": "DOCTOR"},
+        "recipient_id": recipient_id,
+        "recipient_ids": [recipient_id],
+        "is_private": True,
+        "body": payload["body"],
+        "created_at": "2026-09-27T10:00:00+09:00",
+    }
+    fake_redis = FakeRedis()
+
+    with (
+        patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
+        patch.object(main, "_authorize_global", AsyncMock(return_value=(0, user_id, hospital_id))),
+        patch.object(main, "_store_global_message", AsyncMock(return_value=httpx.Response(201, json={"message": stored_message, "created": True}))) as store,
+        patch.object(main, "redis_client", fake_redis),
+        patch.object(main.manager, "connect", AsyncMock()),
+        patch.object(main.manager, "disconnect", Mock()),
+    ):
+        asyncio.run(main.global_chat_endpoint(websocket))
+
+    store.assert_awaited_once()
+    assert store.await_args.args[1]["recipient_id"] == recipient_id
+    channel, encoded = fake_redis.publish.await_args.args
+    assert channel == f"chat:global:{hospital_id}"
+    assert json.loads(encoded)["message"]["recipient_id"] == recipient_id
+
+
 def test_replayed_message_is_acknowledged_without_rebroadcast():
     case_id = str(uuid4())
     websocket = FakeWebSocket(

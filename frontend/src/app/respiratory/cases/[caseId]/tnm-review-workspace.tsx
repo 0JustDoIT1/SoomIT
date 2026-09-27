@@ -35,12 +35,6 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
 
   useEffect(() => onDirtyChange?.(dirty), [dirty, onDirtyChange]);
 
-  const updateDraft = (patch: Partial<TnmDraft>, target: TnmCategory = category) => {
-    if (!actionable || submittingRef.current || resultConfirmed) return;
-    const updated = { ...drafts[target], ...patch, dirty: false };
-    const original = { ...baseline[target], dirty: false };
-    setEdits((current) => ({ ...current, [target]: { ...updated, dirty: JSON.stringify(updated) !== JSON.stringify(original) } }));
-  };
   const [savedId, setSavedId] = useState<string | null>(null);
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [message, setMessage] = useState("");
@@ -75,19 +69,29 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
   const candidateReady = stage?.stage_group_status === "candidate_ready" && Boolean(stage.stage_group_candidate);
   const stageConfirmed = resultConfirmed && Boolean((stageResult ?? clinicalTnm)?.stage_group?.trim());
   const canFinalize = !stageConfirmed && draftComplete && Boolean(activeResultId || aiTnm?.ai_result_id);
+  const updateDraft = (patch: Partial<TnmDraft>, target: TnmCategory = category) => {
+    if (!actionable || submittingRef.current || stageConfirmed) return;
+    const updated = { ...drafts[target], ...patch, dirty: false };
+    const original = { ...baseline[target], dirty: false };
+    setEdits((current) => ({ ...current, [target]: { ...updated, dirty: JSON.stringify(updated) !== JSON.stringify(original) } }));
+  };
   const completeTnm = async () => {
     let latestId = activeResultId;
-    if (dirty || !latestId) latestId = await saveDraft();
-    if (!resultConfirmed) {
-      await post(`${latestId}/confirm/`);
-      setIsConfirmed(true);
-      await onConfirmed?.();
+    let shouldConfirm = !resultConfirmed;
+    if (dirty || !latestId) {
+      latestId = await saveDraft();
+      shouldConfirm = true;
     }
     const calculatedStage = await post(`${latestId}/stage/`);
     const calculatedCandidate = calculatedStage.evidence?.stage;
     setStageResult(calculatedStage);
     if (calculatedCandidate?.stage_group_status !== "candidate_ready" || !calculatedCandidate.stage_group_candidate) {
-      throw new Error("TNM Stage Group 후보를 계산할 수 없습니다.");
+      throw new Error(stageCalculationGuidance(drafts));
+    }
+    if (shouldConfirm) {
+      await post(`${latestId}/confirm/`);
+      setIsConfirmed(true);
+      await onConfirmed?.();
     }
     const confirmedStage = await post(`${latestId}/stage/confirm/`, { advance_to_next_stage: false });
     setStageResult(confirmedStage);
@@ -105,8 +109,9 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
       showToast.success("TNM 병기가 확정되었습니다. 다음 처리 방식을 선택하세요.", { id: toastId });
     } catch (cause) {
       console.error(cause);
-      setError("TNM 결과 처리에 실패했습니다.");
-      showToast.error("TNM 결과 처리에 실패했습니다.", { id: toastId });
+      const failureMessage = cause instanceof Error ? cause.message : "TNM 결과 처리에 실패했습니다.";
+      setError(failureMessage);
+      showToast.error(failureMessage, { id: toastId });
     }
     finally { submittingRef.current = false; setBusy(false); }
   };
@@ -180,7 +185,7 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
               <div className="grid grid-cols-2 gap-2 [&>article:last-child]:col-span-2">
                 <ReviewCard title="A. AI·규칙 후보" source="AI 분석 후보"><Field label={`${category} 후보`} value={aiValue} /><Field label="Confidence" value={aiTnm?.confidence} /><Field label="모델명·버전" value={[modelName, modelVersion].filter(Boolean).join(" · ")} /></ReviewCard>
                 <ReviewCard title="B. 호흡기내과 판정 근거" source={resultConfirmed ? "의료진 확정" : clinicalResultStatus === "DRAFT" ? "판독 초안" : "의료진 검토"}><Field label={resultConfirmed ? "확정 결과" : clinicalResultStatus === "DRAFT" ? "초안 결과" : "검토 결과"} value={clinicalValue} /><Field label="핵심 소견" value={clinicalTnm?.note} clamp /><Field label="근거 자료" value={clinicalTnm?.evidence ? "연결됨" : undefined} /></ReviewCard>
-                <ReviewCard title="C. 호흡기내과 결정" source={resultConfirmed ? "최종 진료 판단" : "호흡기내과 검토 중"}><label className="text-[9px] text-slate-500" htmlFor={`tnm-value-${category}`}>최종 {category} 선택</label><select disabled={!actionable || busy || resultConfirmed} id={`tnm-value-${category}`} value={draft.selectedValue} onChange={(event) => updateDraft({ selectedValue: event.target.value })} className="mt-0.5 h-7 w-full rounded border border-slate-200 px-2 text-[11px]"><option value="">선택</option>{OPTIONS[category].map((option) => <option key={option} value={option}>{option}</option>)}</select><label className="mt-1 text-[9px] text-slate-500" htmlFor={`tnm-opinion-${category}`}>TNM 종합 소견</label><textarea disabled={!actionable || busy || resultConfirmed} id={`tnm-opinion-${category}`} value={drafts.T.opinion} onChange={(event) => updateDraft({ opinion: event.target.value }, "T")} rows={2} placeholder="의사 소견 입력" className="mt-0.5 w-full resize-none rounded border border-slate-200 p-1.5 text-[11px]" /><p className="text-[9px] text-slate-500">T·N·M과 종합 소견은 함께 저장됩니다.</p></ReviewCard>
+                <ReviewCard title="C. 호흡기내과 결정" source={resultConfirmed ? "최종 진료 판단" : "호흡기내과 검토 중"}><label className="text-[9px] text-slate-500" htmlFor={`tnm-value-${category}`}>최종 {category} 선택</label><select disabled={!actionable || busy || stageConfirmed} id={`tnm-value-${category}`} value={draft.selectedValue} onChange={(event) => updateDraft({ selectedValue: event.target.value })} className="mt-0.5 h-7 w-full rounded border border-slate-200 px-2 text-[11px]"><option value="">선택</option>{OPTIONS[category].map((option) => <option key={option} value={option}>{optionLabel(category, option)}</option>)}</select><label className="mt-1 text-[9px] text-slate-500" htmlFor={`tnm-opinion-${category}`}>TNM 종합 소견</label><textarea disabled={!actionable || busy || stageConfirmed} id={`tnm-opinion-${category}`} value={drafts.T.opinion} onChange={(event) => updateDraft({ opinion: event.target.value }, "T")} rows={2} placeholder="의사 소견 입력" className="mt-0.5 w-full resize-none rounded border border-slate-200 p-1.5 text-[11px]" /><p className="text-[9px] text-slate-500">T·N·M과 종합 소견은 함께 저장됩니다.</p></ReviewCard>
               </div>
           <ReviewSidebar category={category} onSelect={selectCategory} aiTnm={aiTnm} clinicalTnm={clinicalTnm} />
           </section>
@@ -202,6 +207,24 @@ export function compareTnmValues(aiValue: unknown, clinicalValue: unknown): TnmC
   if (!hasAi && !hasClinical) return "EMPTY";
   if (!hasAi || !hasClinical) return "UNAVAILABLE";
   return String(aiValue) === String(clinicalValue) ? "MATCH" : "DIFFERENCE";
+}
+
+function optionLabel(category: TnmCategory, option: string) {
+  if (category === "M" && option === "M1") return "M1 (M1a/M1b/M1c 세부 분류 필요)";
+  if (category === "M" && option === "M1c") return "M1c (M1c1/M1c2 세부 분류 필요)";
+  if (category === "M" && option === "M_indeterminate") return "M 판정 보류";
+  if (category === "N" && option === "N2") return "N2 (N2a/N2b 세부 분류 필요)";
+  return option;
+}
+
+function stageCalculationGuidance(drafts: Record<TnmCategory, TnmDraft>) {
+  if (drafts.M.selectedValue === "M1") return "Stage Group 계산을 위해 M1a, M1b, M1c1 또는 M1c2를 선택해주세요.";
+  if (drafts.M.selectedValue === "M1c") return "Stage Group 계산을 위해 M1c1 또는 M1c2를 선택해주세요.";
+  if (drafts.M.selectedValue === "M_indeterminate") return "M 판정을 확정한 뒤 Stage Group을 계산해주세요.";
+  if (drafts.N.selectedValue === "N2") return "Stage Group 계산을 위해 N2a 또는 N2b를 선택해주세요.";
+  if (drafts.T.selectedValue === "T1" && drafts.N.selectedValue === "N0" && drafts.M.selectedValue === "M0") return "Stage Group 계산을 위해 T1 세부 분류를 선택해주세요.";
+  if (drafts.T.selectedValue === "T2" && drafts.N.selectedValue === "N0" && drafts.M.selectedValue === "M0") return "Stage Group 계산을 위해 T2a 또는 T2b를 선택해주세요.";
+  return "현재 T·N·M 조합으로 Stage Group을 계산할 수 없습니다. 세부 분류를 확인해주세요.";
 }
 
 function ResultDifference({ comparison, aiValue, clinicalValue }: { comparison: TnmComparison; aiValue: unknown; clinicalValue: unknown }) {

@@ -13,7 +13,7 @@ from apps.cases.models import LungCancerCase, WorkflowStage
 from apps.notifications.models import NotificationLog
 from apps.patients.models import Patient
 
-from .models import CaseChatMessage
+from .models import CaseChatMessage, GlobalChatMessage
 from .permissions import can_access_case_chat
 
 
@@ -426,3 +426,78 @@ class CaseChatMessageModelTestCase(TestCase):
     def test_inactive_user_cannot_access(self):
         self.radiologist.account_status = User.AccountStatus.DISABLED
         self.assertFalse(can_access_case_chat(self.radiologist, self.case))
+
+    def test_direct_chat_lists_only_the_selected_pair(self):
+        hospital = self.sender.department_role.department.hospital
+        expected = GlobalChatMessage.objects.create(
+            hospital=hospital,
+            sender=self.radiologist,
+            recipient=self.sender,
+            client_message_id=uuid.uuid4(),
+            body="판독 결과를 확인해 주세요.",
+        )
+        GlobalChatMessage.objects.create(
+            hospital=hospital,
+            sender=self.pathology_technologist,
+            recipient=self.sender,
+            client_message_id=uuid.uuid4(),
+            body="다른 대화입니다.",
+        )
+
+        self.authenticate(self.sender)
+        response = self.client.get(
+            reverse("chat:global-message-list"),
+            {"participant_id": str(self.radiologist.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([item["id"] for item in response.data["results"]], [str(expected.id)])
+        self.assertEqual(response.data["results"][0]["recipient_id"], str(self.sender.id))
+
+    def test_direct_chat_participants_exclude_self_and_show_sender_unread_count(self):
+        GlobalChatMessage.objects.create(
+            hospital=self.sender.department_role.department.hospital,
+            sender=self.radiologist,
+            recipient=self.sender,
+            client_message_id=uuid.uuid4(),
+            body="새 메시지",
+        )
+        self.authenticate(self.sender)
+
+        response = self.client.get(reverse("chat:global-participants"))
+
+        self.assertEqual(response.status_code, 200)
+        participants = {item["id"]: item for item in response.data}
+        self.assertNotIn(str(self.sender.id), participants)
+        self.assertNotIn(str(self.other_hospital_radiologist.id), participants)
+        self.assertEqual(participants[str(self.radiologist.id)]["unread_count"], 1)
+        self.assertEqual(participants[str(self.pathology_technologist.id)]["unread_count"], 0)
+
+    @override_settings(AI_SERVICE_TOKEN="test-realtime-service-token")
+    def test_internal_direct_message_requires_valid_same_hospital_recipient(self):
+        self.authenticate(self.sender)
+        url = reverse("chat:internal-global-message-create")
+        valid = self.client.post(
+            url,
+            {
+                "client_message_id": str(uuid.uuid4()),
+                "recipient_id": str(self.radiologist.id),
+                "body": "1:1 메시지",
+            },
+            format="json",
+            HTTP_X_SERVICE_TOKEN="test-realtime-service-token",
+        )
+        invalid = self.client.post(
+            url,
+            {
+                "client_message_id": str(uuid.uuid4()),
+                "recipient_id": str(self.other_hospital_radiologist.id),
+                "body": "다른 병원 메시지",
+            },
+            format="json",
+            HTTP_X_SERVICE_TOKEN="test-realtime-service-token",
+        )
+
+        self.assertEqual(valid.status_code, 201)
+        self.assertEqual(valid.data["message"]["recipient_id"], str(self.radiologist.id))
+        self.assertEqual(invalid.status_code, 404)

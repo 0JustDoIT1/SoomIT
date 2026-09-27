@@ -1,12 +1,12 @@
 "use client";
 
 import { FormEvent, ReactNode, useCallback, useEffect, useRef, useState } from "react";
-import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import { RespiratoryAuthProvider, useRespiratoryAuth } from "./_components/respiratory-auth-provider";
 import { API_BASE_URL } from "@/lib/api";
 import { requestCaseNavigation } from "./_lib/case-navigation-guard";
 import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
+import { SoomChatPanel } from "@/components/chat/SoomChatPanel";
 import {
   markNotificationRead,
   mergeNotificationSnapshot,
@@ -227,7 +227,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
     <div className="clinical-app clinical-app-respiratory respiratory-app respiratory-cursor flex h-dvh min-h-0 overflow-hidden bg-[#f3f7fd]">
       <aside className="flex w-[60px] shrink-0 flex-col items-center bg-[#123f4a] px-1 py-3 text-white shadow-[inset_-1px_0_0_rgba(148,210,210,0.16)] lg:w-[76px]" aria-label="호흡기내과 주 메뉴">
         <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white/5 shadow-sm lg:h-11 lg:w-11" title="SoomIT">
-          <Image src="/images/logo_small.png" alt="SoomIT" width={34} height={34} priority className="h-8 w-8 object-contain lg:h-9 lg:w-9" />
+          <SoomItMark />
         </div>
         <nav className="flex w-full flex-col items-center gap-1" aria-label="업무 메뉴">
           <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/dashboard")} />
@@ -317,12 +317,51 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       <main className="min-h-0 flex-1 overflow-hidden">
         {children}
       </main>
+      <SoomChatPanel authorizedFetch={authorizedFetch} />
       </div>
     </div>
   );
 }
 
-function ShellNavButton({ icon, label, active, onClick, count, disabled = false }: { icon: "home" | "case" | "calendar" | "consultation" | "notification" | "help" | "settings"; label: string; active: boolean; onClick: () => void; count?: number; disabled?: boolean }) {
+function SoomItMark() {
+  return (
+    <svg role="img" aria-label="SoomIT" viewBox="0 0 40 40" className="h-9 w-9 drop-shadow-[0_4px_8px_rgba(0,0,0,0.18)] lg:h-10 lg:w-10">
+      <defs>
+        <linearGradient id="soomit-mark-bg" x1="7" y1="5" x2="33" y2="35" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#1b7883" />
+          <stop offset="1" stopColor="#0d4d59" />
+        </linearGradient>
+        <linearGradient id="soomit-breath-line" x1="6" y1="0" x2="34" y2="0" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#73e1d5" stopOpacity=".45" />
+          <stop offset=".5" stopColor="#a7fff3" />
+          <stop offset="1" stopColor="#73e1d5" stopOpacity=".45" />
+        </linearGradient>
+      </defs>
+      <rect x="1.5" y="1.5" width="37" height="37" rx="11" fill="url(#soomit-mark-bg)" stroke="#8ee9df" strokeOpacity=".3" />
+      <circle cx="20" cy="19" r="12.5" fill="none" stroke="#b9fff7" strokeOpacity=".1" />
+      <text x="20" y="24.3" textAnchor="middle" fill="#f4fffd" fontFamily="Arial, sans-serif" fontSize="19" fontWeight="700" letterSpacing="-.8">S</text>
+      <path d="M6.5 28c3.1 0 3.3-3.3 5.7-3.3s2.8 3.3 5.3 3.3 2.8-3.3 5.3-3.3 2.8 3.3 5.3 3.3 2.7-3.3 5.4-3.3" fill="none" stroke="url(#soomit-breath-line)" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+type ShellNavIconName = "home" | "case" | "calendar" | "consultation" | "notification" | "help" | "settings";
+
+function ShellNavIcon({ icon }: { icon: ShellNavIconName }) {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="h-[22px] w-[22px]">
+      {icon === "home" && <><path d="m3.5 10.5 8.5-7 8.5 7" /><path d="M5.5 9.3v10.2h13V9.3M9.5 19.5v-5.2h5v5.2" /></>}
+      {icon === "case" && <><path d="M3.5 7.5h6l2 2h9v9.3a1.7 1.7 0 0 1-1.7 1.7H5.2a1.7 1.7 0 0 1-1.7-1.7V7.5Z" /><path d="M3.5 7.5V6.2a1.7 1.7 0 0 1 1.7-1.7h4.1l2.2 3" /></>}
+      {icon === "calendar" && <><rect x="3.5" y="5.5" width="17" height="15" rx="2.3" /><path d="M7.5 3.5v4M16.5 3.5v4M3.5 10h17" /><path d="M8 14h.01M12 14h.01M16 14h.01M8 17.5h.01M12 17.5h.01" strokeWidth="2.4" /></>}
+      {icon === "consultation" && <><path d="M4 5.5h11.5a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H9l-4.5 3v-3.6A2 2 0 0 1 2 13V7.5a2 2 0 0 1 2-2Z" /><path d="M7 9h6.5M7 12h4" /><path d="M18 9.2h.5a2 2 0 0 1 2 2v7.3l-3.2-2.1" /></>}
+      {icon === "notification" && <><path d="M18.2 9.7a6.2 6.2 0 0 0-12.4 0c0 6.8-2.8 7-2.8 8.8h18c0-1.8-2.8-2-2.8-8.8Z" /><path d="M9.5 21h5" /></>}
+      {icon === "help" && <><circle cx="12" cy="12" r="8.5" /><path d="M9.4 9.2a2.8 2.8 0 1 1 4.8 2c-1.3 1.1-2.2 1.6-2.2 3" /><path d="M12 17.8h.01" strokeWidth="2.4" /></>}
+      {icon === "settings" && <><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" /></>}
+    </svg>
+  );
+}
+
+function ShellNavButton({ icon, label, active, onClick, count, disabled = false }: { icon: ShellNavIconName; label: string; active: boolean; onClick: () => void; count?: number; disabled?: boolean }) {
   return (
     <button
       type="button"
@@ -332,20 +371,12 @@ function ShellNavButton({ icon, label, active, onClick, count, disabled = false 
       aria-disabled={disabled || undefined}
       aria-label={label}
       title={disabled ? `${label} 준비 중` : label}
-      className={`group relative flex w-12 flex-col items-center gap-0.5 rounded-lg px-1 py-1.5 text-[11px] font-medium transition lg:w-14 ${disabled ? "cursor-not-allowed text-cyan-50/35" : active ? "bg-[#14b8a6] font-semibold text-white shadow-sm shadow-slate-950/30" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
+      className={`group relative flex min-h-[58px] w-12 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-medium transition-all duration-150 lg:w-14 ${disabled ? "cursor-not-allowed text-cyan-50/35" : active ? "bg-[#14b8a6] font-semibold text-white shadow-[0_5px_14px_rgba(3,25,31,0.24)]" : "text-cyan-50/80 hover:bg-white/10 hover:text-white"}`}
     >
-      <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="h-6 w-6">
-        {icon === "home" && <><path d="m3 10 9-7 9 7" /><path d="M5 9v11h14V9M9 20v-7h6v7" /></>}
-        {icon === "case" && <><path d="M3 7h7l2 2h9v11H3z" /><path d="M3 7V5h6l2 2" /></>}
-        {icon === "calendar" && <><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M8 3v4M16 3v4M4 10h16M8 14h8M8 17h5" /></>}
-        {icon === "consultation" && <><path d="M4 5h16v11H8l-4 4V5Z" /><path d="M8 9h8M8 12h5" /></>}
-        {icon === "notification" && <><path d="M18 10a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" /><path d="M10 22h4" /></>}
-        {icon === "help" && <><circle cx="12" cy="12" r="8" /><path d="M9.5 9a2.5 2.5 0 1 1 4.2 1.8c-1.2 1-1.7 1.4-1.7 2.7" /><path d="M12 17h.01" /></>}
-        {icon === "settings" && <><circle cx="12" cy="12" r="3" /><path d="M19 12a7 7 0 0 0-.1-1l2-1.5-2-3.5-2.4 1a8 8 0 0 0-1.7-1L14.5 3h-5L9 6a8 8 0 0 0-1.7 1l-2.4-1-2 3.5 2 1.5a7 7 0 0 0 0 2l-2 1.5 2 3.5 2.4-1a8 8 0 0 0 1.7 1l.5 3h5l.5-3a8 8 0 0 0 1.7-1l2.4 1 2-3.5-2-1.5a7 7 0 0 0 .1-1Z" /></>}
-      </svg>
-      <span>{label}</span>
+      <span className={`flex h-7 w-7 items-center justify-center rounded-lg transition-colors ${active ? "bg-white/10" : "group-hover:bg-white/5"}`}><ShellNavIcon icon={icon} /></span>
+      <span className="leading-none tracking-[-0.01em]">{label}</span>
       <span role="tooltip" className="pointer-events-none absolute left-[calc(100%+8px)] top-1/2 z-50 hidden -translate-y-1/2 whitespace-nowrap rounded-md bg-slate-950 px-2 py-1 text-[11px] font-medium text-white shadow-lg group-hover:block">{disabled ? `${label} 준비 중` : label}</span>
-      {Boolean(count) && <span className="absolute right-0 top-0 rounded-full bg-rose-500 px-1 text-[9px] text-white">{count && count > 99 ? "99+" : count}</span>}
+      {Boolean(count) && <span className={`absolute right-0.5 top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full border-2 px-1 text-[9px] font-bold leading-none text-white shadow-sm ${active ? "border-[#14b8a6] bg-rose-500" : "border-[#123f4a] bg-rose-500"}`}>{count && count > 99 ? "99+" : count}</span>}
     </button>
   );
 }

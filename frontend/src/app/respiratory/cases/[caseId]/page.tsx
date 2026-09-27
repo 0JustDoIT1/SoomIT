@@ -11,7 +11,6 @@ import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { ResultReviewPanel, WorkflowStatusFlow } from "./result-review-panel";
 import workspaceStyles from "./workspace.module.css";
-import { CaseChatPanel } from "./case-chat-panel";
 import { PathologyGeneImagingWorkspace } from "./pathology-gene-imaging-workstation";
 import { TnmReviewWorkspace } from "./tnm-review-workspace";
 import { CASE_WORKFLOW_STAGES, CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
@@ -1768,7 +1767,6 @@ export default function RespiratoryCaseDetailPage() {
       <div className={`${workspaceStyles.workspace} h-full min-h-0 overflow-hidden bg-[#f3f7fd]`} aria-label="Case Workspace">
       <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(228px,244px)_116px_minmax(0,1fr)]">
       <div className="fixed bottom-3 right-16 z-40"><CaseConsultationRequest caseId={caseId} /></div>
-      <CaseChatPanel key={`${caseId}-${searchParams.get("openChat") === "1"}-${searchParams.get("chatMessage") || ""}`} caseId={caseId} authorizedFetch={authorizedFetch} initiallyOpen={searchParams.get("openChat") === "1"} focusMessageId={searchParams.get("chatMessage")} />
       <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
       <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} orders={caseOrders} aiResults={tnmAnalysisResults} onSelect={handleInfoMenuSelect} />
       <div className="flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden p-2">

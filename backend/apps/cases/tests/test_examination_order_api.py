@@ -464,6 +464,23 @@ class DoctorExaminationOrderAPITests(TestCase):
         self.assertEqual(results.get().reviewed_ai_result_id, replacement_ai_result.id)
         self.assertEqual(TnmResult.objects.get(clinical_result=results.get()).m_category, "M_indeterminate")
 
+        # A category confirmation without a finalized Stage Group must remain
+        # recoverable when the staging engine asks for a more specific value.
+        incomplete = results.get()
+        incomplete.result_status = ClinicalResult.ResultStatus.CONFIRMED
+        incomplete.confirmed_by_user = self.doctor
+        incomplete.confirmed_at = timezone.now()
+        incomplete.save(update_fields=["result_status", "confirmed_by_user", "confirmed_at"])
+        corrected = self.client.post(url, {**replacement_payload, "m_category": "M1a"}, format="json")
+
+        self.assertEqual(corrected.status_code, 200, corrected.data)
+        incomplete.refresh_from_db()
+        incomplete.tnm_detail.refresh_from_db()
+        self.assertEqual(incomplete.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertIsNone(incomplete.confirmed_by_user)
+        self.assertIsNone(incomplete.confirmed_at)
+        self.assertEqual(incomplete.tnm_detail.m_category, "M1a")
+
     def test_department_wide_consultation_response_locks_only_the_request(self):
         consultation = CaseConsultationRequest.objects.create(
             case=self.case,

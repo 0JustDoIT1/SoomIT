@@ -1,80 +1,24 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { DashboardStageEvidence, confirmedCtLesions, confirmedStageSummary, matchedDetections } from "./dashboard-stage-evidence";
 
-vi.mock("./dashboard-dicom-preview", () => ({ createDicomPreview: vi.fn(async () => new Blob(["preview"], { type: "image/png" })) }));
 const caseItem = { id: "case-a", case_code: "CASE-A", patient_code: "P-A", patient_name: "환자 가", current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" };
-const json = (data: unknown) => new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } });
-const imageResponse = () => new Response(new Blob(["image"], { type: "image/png" }), { headers: { "Content-Type": "image/png" } });
 const analysis = { analysis_type: "XRAY_ANALYSIS", status: "SUCCEEDED", input_context: { source_asset: { id: "asset-a" } }, result_detail: { result_payload: { image: { width: 100, height: 100 }, detections: [{ class_name: "nodule", bbox_xyxy: [10, 20, 30, 40] }, { class_name: "invalid", bbox_xyxy: [10, 20, 130, 140] }] } } };
 
-beforeEach(() => {
-  vi.stubGlobal("URL", URL);
-  URL.createObjectURL = vi.fn(() => "blob:preview");
-  URL.revokeObjectURL = vi.fn();
-});
-
 describe("stage evidence", () => {
-  it.each([["PATHOLOGY_GENE", "HE"], ["PDL1", "PDL1"]])("selects only the matching %s stain without making the visual navigate", async (stage, stain) => {
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-      if (String(url).endsWith("/specimens/")) return json([{ id: "specimen" }]);
-      if (String(url).endsWith("/slides/")) return json([{ id: "he", stain: "HE", status: "READY", slide_code: "HE-1" }, { id: "pdl1", stain: "PDL1", status: "READY", slide_code: "PD-1" }]);
-      return imageResponse();
-    });
-    const { unmount } = render(<DashboardStageEvidence caseItem={{ ...caseItem, current_stage: stage }} status="진행 중" authorizedFetch={fetcher} />);
-    expect(await screen.findByRole("img", { name: /환자 가/ })).toBeInTheDocument();
-    expect(fetcher.mock.calls.some(([url]) => String(url).endsWith(`/slides/${stain === "HE" ? "he" : "pdl1"}/thumbnail/`))).toBe(true);
-    expect(screen.queryByRole("button", { name: /검사 상세 열기/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "검사 상세 보기 →" })).not.toBeInTheDocument();
-    unmount();
-    expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:preview");
+  it.each(["XRAY", "CT", "PET_CT_TNM", "PATHOLOGY_GENE", "PDL1", "TREATMENT", "PRESCRIPTION"])("uses the same dashboard reference image for %s", (stage) => {
+    const fetcher = vi.fn();
+    render(<DashboardStageEvidence caseItem={{ ...caseItem, current_stage: stage }} status="진행 중" authorizedFetch={fetcher} />);
+
+    const referenceImage = screen.getByTestId("stage-evidence-visual").querySelector("image");
+    expect(referenceImage).toHaveAttribute("href", "/images/thorax-medical-visual-v2.webp");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(screen.queryByRole("status", { name: /영상 확인 중/ })).not.toBeInTheDocument();
   });
 
   it("never projects unmatched or invalid detection coordinates", () => {
     expect(matchedDetections([analysis], "another-asset")).toEqual({});
     expect(matchedDetections([analysis], "asset-a").detections).toHaveLength(1);
-  });
-
-  it("shows matched X-ray candidates and removes them for image dimension mismatch", async () => {
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => String(url).endsWith("/image-assets/") ? json([{ id: "asset-a", workflow_stage: "XRAY", status: "READY", preview_url: "/preview/" }]) : String(url).endsWith("/ai-results/") ? json([analysis]) : imageResponse());
-    render(<DashboardStageEvidence caseItem={{ ...caseItem, current_stage: "XRAY" }} status="완료" authorizedFetch={fetcher} />);
-    const img = await screen.findByRole("img", { name: /환자 가/ });
-    expect(screen.getByLabelText("AI 검출 후보 위치")).toBeInTheDocument();
-    fireEvent.load(img);
-    expect(screen.queryByLabelText("AI 검출 후보 위치")).not.toBeInTheDocument();
-  });
-
-  it.each(["CT", "PET_CT_TNM"])("loads only one %s instance and labels it as a middle slice", async stage => {
-    const fetcher = vi.fn(async (url: RequestInfo | URL) => {
-      if (String(url).endsWith("/image-assets/")) return json([{ id: "asset", workflow_stage: stage, status: "READY", image_type: "CT" }]);
-      if (String(url).endsWith("/instances/")) return json([3, 1, 2].map(i => ({ "00080018": { Value: [`uid-${i}`] }, "00200013": { Value: [i] } })));
-      return new Response(new Blob(["dicom"]));
-    });
-    render(<DashboardStageEvidence caseItem={{ ...caseItem, current_stage: stage }} status="진행 중" authorizedFetch={fetcher} />);
-    expect(await screen.findByRole("img", { name: /중간 단면 2\/3/ })).toBeInTheDocument();
-    expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/instances/uid-2/"))).toHaveLength(1);
-    expect(screen.queryByLabelText("AI 검출 후보 위치")).not.toBeInTheDocument();
-  });
-
-  it("distinguishes a failed request from an empty result and labels the fallback", async () => {
-    const fetcher = vi.fn().mockResolvedValueOnce(new Response(null, { status: 503 })).mockResolvedValue(json([]));
-    render(<DashboardStageEvidence caseItem={caseItem} status="대기" authorizedFetch={fetcher} />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("검사 이미지를 불러오지 못했습니다.");
-    expect(screen.getByRole("alert")).toHaveTextContent("실제 검사 영상이 아닌 해부학 참고 그림");
-    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
-    await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
-    expect(await screen.findByRole("status")).toHaveTextContent("현재 단계 이미지가 없습니다.");
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  });
-
-  it("does not leak a late previous Case image after switching Cases", async () => {
-    let finish!: (value: Response) => void;
-    const fetcher = vi.fn(() => new Promise<Response>(resolve => { finish = resolve; }));
-    const { rerender } = render(<DashboardStageEvidence key="a" caseItem={caseItem} status="대기" authorizedFetch={fetcher} />);
-    rerender(<DashboardStageEvidence key="b" caseItem={{ ...caseItem, id: "case-b", patient_name: "환자 나" }} status="대기" authorizedFetch={async () => json([])} />);
-    await act(async () => finish(json([])));
-    await waitFor(() => expect(screen.queryByText(/환자 가/)).not.toBeInTheDocument());
-    expect(screen.queryByRole("img", { name: /환자 가/ })).not.toBeInTheDocument();
   });
 
   it("never describes draft PD-L1 values as confirmed", () => {
@@ -83,7 +27,7 @@ describe("stage evidence", () => {
     expect(confirmedStageSummary("PDL1", { clinicalResults: [{ ...result, result_status: "CONFIRMED" }], orders: [], aiResults: [] })).toBe("TPS 0%");
   });
 
-  it("marks only clinician-confirmed CT lesion locations on the anatomy fallback", async () => {
+  it("marks only clinician-confirmed CT lesion locations on the shared reference image", () => {
     const snapshot = {
       clinicalResults: [{
         workflow_stage: "CT",
@@ -98,8 +42,8 @@ describe("stage evidence", () => {
     };
 
     expect(confirmedCtLesions(snapshot)).toEqual([{ id: "ct-nodule-1", label: "결절 1 · 우상엽", lobe: "RUL", diameterMm: 13.2 }]);
-    render(<DashboardStageEvidence caseItem={caseItem} snapshot={snapshot} status="검토 중" authorizedFetch={async () => json([])} />);
-    expect(await screen.findByText("CT 확정 병변 1곳")).toBeInTheDocument();
+    render(<DashboardStageEvidence caseItem={caseItem} snapshot={snapshot} status="검토 중" authorizedFetch={vi.fn()} />);
+    expect(screen.getByText("CT 확정 병변 1곳")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "확정 CT 병변 위치 1곳" })).toBeInTheDocument();
     expect(screen.getByText(/우상엽 · 13.2mm/)).toBeInTheDocument();
   });

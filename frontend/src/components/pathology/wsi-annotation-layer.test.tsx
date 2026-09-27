@@ -73,6 +73,19 @@ afterEach(() => {
 });
 
 describe("WsiAnnotationLayer", () => {
+  it("keeps annotation tools on one aligned toolbar row", async () => {
+    setup(vi.fn().mockResolvedValue(response(Array.from(
+      { length: 16 },
+      (_, index) => ({ ...baseAnnotation, id: `annotation-${index + 1}` }),
+    ))));
+
+    await waitFor(() => expect(screen.getByText("16개")).toBeInTheDocument());
+    for (const label of ["이동", "Point", "ROI", "Polygon", "Freehand", "Text", "선택 삭제"]) {
+      expect(screen.getByRole("button", { name: label })).toHaveClass("h-8", "shrink-0", "whitespace-nowrap");
+    }
+    expect(screen.getByText("16개")).toHaveClass("h-8", "items-center", "whitespace-nowrap");
+  });
+
   it("restores multiple annotations in WSI image coordinates and keeps a separate annotation layer", async () => {
     const second = { ...baseAnnotation, id: "annotation-2", annotation_type: "TEXT" as const, annotation_data: { ...baseAnnotation.annotation_data, text: "tumor", tool_name: "WsiText" } };
     setup(vi.fn().mockResolvedValue(response([baseAnnotation, second])));

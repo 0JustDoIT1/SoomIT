@@ -128,8 +128,15 @@ html[data-theme="dark"] .clinical-app .text-slate-400 {
 html[data-theme="dark"] .clinical-app :is(
   [class~="bg-white/70"],
   [class~="bg-white/80"],
+  [class~="bg-white/88"],
   [class~="bg-white/90"],
+  [class~="bg-white/92"],
   [class~="bg-white/95"],
+  [class~="bg-slate-50/40"],
+  [class~="bg-slate-50/50"],
+  [class~="bg-slate-50/60"],
+  [class~="bg-slate-50/70"],
+  [class~="bg-slate-50/80"],
   [class~="bg-slate-100"],
   [class~="bg-[#f3f7fd]"],
   [class~="bg-[#f8fafc]"],
@@ -148,6 +155,13 @@ html[data-theme="dark"] .clinical-app :is(
   [class~="bg-[#E8EDF2]"]
 ) {
   background-color: #111827 !important;
+}
+
+html[data-theme="dark"] .clinical-app :is(
+  [class~="bg-blue-50/60"],
+  [class~="bg-blue-50/80"]
+) {
+  background-color: #172554 !important;
 }
 
 html[data-theme="dark"] .clinical-app :is(

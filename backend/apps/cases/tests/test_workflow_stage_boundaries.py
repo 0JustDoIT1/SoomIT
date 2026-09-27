@@ -48,6 +48,27 @@ class WorkflowStageBoundaryTests(TestCase):
                     self.assertFalse(result.tnm_detail.stage_group)
                     result.delete()
 
+    def test_tnm_stage_candidate_can_be_calculated_before_category_confirmation(self):
+        self._stage(WorkflowStage.PET_CT_TNM)
+        result = self._tnm(confirmed=False)
+        candidate = {
+            "stage_group_status": "candidate_ready",
+            "stage_group_candidate": "IIB",
+            "warnings": [],
+        }
+
+        with patch("apps.clinical.views.request_tnm_stage", return_value=candidate):
+            response = self.client.post(reverse(
+                "doctor-tnm-stage",
+                kwargs={"case_id": self.case.id, "result_id": result.id},
+            ), {}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        result.refresh_from_db()
+        result.tnm_detail.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(result.tnm_detail.evidence["stage"], candidate)
+
     def test_ct_and_tnm_draft_writes_require_current_stage(self):
         for stage, analysis_type, endpoint, payload in (
             ("CT", "CT_ANALYSIS", "doctor-ct-result", {"overall_assessment": "NODULE_DETECTED"}),

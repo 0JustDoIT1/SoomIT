@@ -179,7 +179,15 @@ async def _mark_message_read(case_id: str, access_token: str, message_id: str) -
     )
 
 async def _store_global_message(access_token: str, payload: dict) -> httpx.Response:
-    return await http_client.post(f"{DJANGO_INTERNAL_BASE_URL}/api/chat/internal/global/messages/", headers=_django_headers(access_token), json={"client_message_id": payload["client_message_id"], "body": payload["body"]})
+    return await http_client.post(
+        f"{DJANGO_INTERNAL_BASE_URL}/api/chat/internal/global/messages/",
+        headers=_django_headers(access_token),
+        json={
+            "client_message_id": payload["client_message_id"],
+            "recipient_id": payload.get("recipient_id"),
+            "body": payload["body"],
+        },
+    )
 
 async def _mark_global_message_read(access_token: str, message_id: str) -> httpx.Response:
     return await http_client.post(f"{DJANGO_INTERNAL_BASE_URL}/api/chat/global/messages/read/", headers=_django_headers(access_token), json={"message_ids": [message_id]})
@@ -253,6 +261,9 @@ async def global_chat_endpoint(websocket: WebSocket):
                         await redis_client.publish(f"chat:{room}", json.dumps({"type": "chat.message.read", "read": read}))
                 continue
             if payload.get("type") != "chat.message.create" or not _canonical_uuid(payload.get("client_message_id")):
+                continue
+            if not _canonical_uuid(payload.get("recipient_id")):
+                await _send_error(websocket, "INVALID_RECIPIENT", "대화 상대를 다시 선택해 주세요.")
                 continue
             body = payload.get("body")
             if not isinstance(body, str) or not body.strip() or len(body.strip()) > 2000:

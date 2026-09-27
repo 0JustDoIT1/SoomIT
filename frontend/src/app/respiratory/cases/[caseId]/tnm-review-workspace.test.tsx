@@ -103,8 +103,8 @@ describe("TnmReviewWorkspace", () => {
     const ready = { stage_group_candidate: "IIA", stage_group_status: "candidate_ready" };
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response({ id: "draft-1" }))
-      .mockResolvedValueOnce(response({ id: "draft-1", result_status: "CONFIRMED" }))
       .mockResolvedValueOnce(response({ id: "draft-1", evidence: { stage: ready } }))
+      .mockResolvedValueOnce(response({ id: "draft-1", result_status: "CONFIRMED" }))
       .mockResolvedValueOnce(response({ id: "draft-1", stage_group: "IIA", evidence: { stage: ready } }))
       .mockResolvedValueOnce(response({ current_stage: "PATHOLOGY_GENE", case_status: "ACTIVE" }));
     const onStageAdvanced = vi.fn();
@@ -116,8 +116,8 @@ describe("TnmReviewWorkspace", () => {
 
     expect(authorizedFetch.mock.calls.map(([url]) => url)).toEqual([
       "http://test/api/doctor/cases/case-1/clinical-results/tnm/",
-      "http://test/api/doctor/cases/case-1/clinical-results/tnm/draft-1/confirm/",
       "http://test/api/doctor/cases/case-1/clinical-results/tnm/draft-1/stage/",
+      "http://test/api/doctor/cases/case-1/clinical-results/tnm/draft-1/confirm/",
       "http://test/api/doctor/cases/case-1/clinical-results/tnm/draft-1/stage/confirm/",
     ]);
     expect(JSON.parse(authorizedFetch.mock.calls[0][1].body)).toMatchObject({ t_category: "T1", n_category: "N0", m_category: "M0", reviewed_ai_result_id: "ai-1" });
@@ -139,7 +139,7 @@ describe("TnmReviewWorkspace", () => {
     render(<TnmReviewWorkspace {...apiProps} authorizedFetch={authorizedFetch} clinicalResultId="saved" clinicalResultStatus="DRAFT" clinicalTnm={{ t_category: "T1", n_category: "N0", m_category: "M0" }} />);
     fireEvent.change(screen.getByLabelText("최종 T 선택"), { target: { value: "T2" } });
     fireEvent.click(screen.getByRole("button", { name: finalizeLabel }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("TNM 결과 처리에 실패했습니다.");
+    expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
     expect(authorizedFetch).toHaveBeenCalledTimes(1);
     expect(authorizedFetch.mock.calls[0][0]).toBe("http://test/api/doctor/cases/case-1/clinical-results/tnm/");
   });
@@ -149,8 +149,8 @@ describe("TnmReviewWorkspace", () => {
     const ready = { stage_group_candidate: "IIA", stage_group_status: "candidate_ready" };
     const authorizedFetch = vi.fn()
       .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveSave = resolve; }))
-      .mockResolvedValueOnce(response({ id: "saved", result_status: "CONFIRMED" }))
       .mockResolvedValueOnce(response({ id: "saved", evidence: { stage: ready } }))
+      .mockResolvedValueOnce(response({ id: "saved", result_status: "CONFIRMED" }))
       .mockResolvedValueOnce(response({ id: "saved", stage_group: "IIA", evidence: { stage: ready } }));
     render(<TnmReviewWorkspace {...apiProps} authorizedFetch={authorizedFetch} clinicalResultId="saved" clinicalResultStatus="DRAFT" clinicalTnm={{ t_category: "T1", n_category: "N0", m_category: "M0" }} />);
     fireEvent.change(screen.getByLabelText("최종 T 선택"), { target: { value: "T2" } });
@@ -160,6 +160,28 @@ describe("TnmReviewWorkspace", () => {
     expect(button).toBeDisabled();
     await act(async () => resolveSave(response({ id: "saved" })));
     await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(4));
+  });
+
+  it("keeps an indeterminate M1 result editable and explains the required subtype", async () => {
+    const indeterminate = { stage_group_candidate: null, stage_group_status: "indeterminate", warnings: ["M subtype is required"] };
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response({ id: "draft-1" }))
+      .mockResolvedValueOnce(response({ id: "draft-1", evidence: { stage: indeterminate } }));
+    render(<TnmReviewWorkspace {...apiProps} authorizedFetch={authorizedFetch} />);
+
+    fireEvent.change(screen.getByLabelText("최종 T 선택"), { target: { value: "T1a" } });
+    fireEvent.click(screen.getByRole("tab", { name: /N 림프절/ }));
+    fireEvent.change(screen.getByLabelText("최종 N 선택"), { target: { value: "N1" } });
+    fireEvent.click(screen.getByRole("tab", { name: /M 원격 전이/ }));
+    fireEvent.change(screen.getByLabelText("최종 M 선택"), { target: { value: "M1" } });
+    fireEvent.click(screen.getByRole("button", { name: finalizeLabel }));
+
+    expect(await screen.findByText(/M1a, M1b, M1c1 또는 M1c2/)).toBeInTheDocument();
+    expect(screen.getByLabelText("최종 M 선택")).toBeEnabled();
+    expect(authorizedFetch.mock.calls.map(([url]) => url)).toEqual([
+      "http://test/api/doctor/cases/case-1/clinical-results/tnm/",
+      "http://test/api/doctor/cases/case-1/clinical-results/tnm/draft-1/stage/",
+    ]);
   });
 
   it("keeps the top action visible under the shared dark theme", () => {

@@ -108,8 +108,12 @@ class DoctorTnmDraftAPIView(APIView):
             )
             .first()
         )
-        if draft is not None and draft.result_status == ClinicalResult.ResultStatus.CONFIRMED:
-            return Response({"detail": "A confirmed TNM result cannot be modified."}, status=409)
+        if (
+            draft is not None
+            and draft.result_status == ClinicalResult.ResultStatus.CONFIRMED
+            and draft.tnm_detail.stage_group
+        ):
+            return Response({"detail": "A finalized TNM result cannot be modified."}, status=409)
         created = draft is None
         if created:
             from apps.ai_results.models import AiResult
@@ -125,8 +129,18 @@ class DoctorTnmDraftAPIView(APIView):
                 stage_group="", evidence=values.get("evidence"), note=values.get("note"),
             )
         else:
+            # A category-only confirmation may have been left incomplete by an
+            # indeterminate/failed Stage Group calculation. Reopen that result
+            # so the clinician can correct T/N/M and finalize it safely.
+            if draft.result_status == ClinicalResult.ResultStatus.CONFIRMED:
+                draft.result_status = ClinicalResult.ResultStatus.DRAFT
+                draft.confirmed_by_user = None
+                draft.confirmed_at = None
             draft.reviewed_ai_result_id = ai_result_id
-            draft.save(update_fields=["reviewed_ai_result", "updated_at"])
+            draft.save(update_fields=[
+                "reviewed_ai_result", "result_status", "confirmed_by_user",
+                "confirmed_at", "updated_at",
+            ])
             detail = draft.tnm_detail
             detail.t_category = values["t_category"]
             detail.n_category = values["n_category"]
@@ -397,7 +411,10 @@ class DoctorTnmStageAPIView(APIView):
         diagnosis = (
             ClinicalResult.objects.select_for_update(of=("self",))
             .filter(id=result_id, case=case, workflow_stage=WorkflowStage.PET_CT_TNM,
-                    result_status=ClinicalResult.ResultStatus.CONFIRMED,
+                    result_status__in=[
+                        ClinicalResult.ResultStatus.DRAFT,
+                        ClinicalResult.ResultStatus.CONFIRMED,
+                    ],
                     )
             .first()
         ) if case is not None else None

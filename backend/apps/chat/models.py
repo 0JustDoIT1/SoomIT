@@ -71,6 +71,13 @@ class CaseChatMessageReadReceipt(CreatedOnlyUUIDModel):
 class GlobalChatMessage(CreatedOnlyUUIDModel):
     hospital = models.ForeignKey(Hospital, on_delete=models.CASCADE, related_name="global_chat_messages")
     sender = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="global_chat_messages")
+    recipient = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="direct_chat_messages",
+    )
     client_message_id = models.UUIDField()
     body = models.CharField(max_length=2000)
 
@@ -78,7 +85,10 @@ class GlobalChatMessage(CreatedOnlyUUIDModel):
         db_table = "global_chat_messages"
         ordering = ["-created_at", "-id"]
         constraints = [models.UniqueConstraint(fields=["hospital", "sender", "client_message_id"], name="uq_global_chat_hospital_sender_client_msg")]
-        indexes = [models.Index(fields=["hospital", "-created_at", "-id"], name="idx_glob_chat_hosp_cur")]
+        indexes = [
+            models.Index(fields=["hospital", "-created_at", "-id"], name="idx_glob_chat_hosp_cur"),
+            models.Index(fields=["recipient", "-created_at"], name="idx_glob_chat_rec_cur"),
+        ]
 
 
 class GlobalChatMessageReadReceipt(CreatedOnlyUUIDModel):

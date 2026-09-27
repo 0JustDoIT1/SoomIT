@@ -271,12 +271,12 @@ export function WsiAnnotationLayer({
   }));
 
   const toolbar = toolbarElement ? createPortal(
-    <div className="flex min-w-0 items-center gap-1" aria-label="WSI Annotation 도구">
-      {TOOLS.map((tool) => <button key={tool.type} type="button" disabled={!canWrite && tool.type !== "PAN"} aria-pressed={activeTool === tool.type} onClick={() => { setActiveTool(tool.type); setDraftPoints([]); }} className={`rounded border px-2 py-1 text-[10px] font-semibold ${activeTool === tool.type ? "border-blue-500 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"} disabled:cursor-not-allowed disabled:opacity-40`}>{tool.label}</button>)}
-      {activeTool === "TEXT" && canWrite ? <input aria-label="Annotation text" value={text} onChange={(event) => setText(event.target.value)} placeholder="메모" className="w-28 rounded border border-slate-300 bg-white px-2 py-1 text-[10px] text-slate-800" /> : null}
-      {activeTool === "POLYGON" && draftPoints.length > 0 ? <button type="button" onClick={finishPolygon} disabled={draftPoints.length < 3 || saving} className="rounded bg-blue-600 px-2 py-1 text-[10px] font-semibold text-white disabled:opacity-40">완료</button> : null}
-      <button type="button" onClick={() => void deleteSelected()} disabled={!canWrite || loaded.identity !== identity || !selectedId || saving} className="rounded border border-rose-300 bg-white px-2 py-1 text-[10px] font-semibold text-rose-700 disabled:opacity-40">선택 삭제</button>
-      <span className="text-[10px] text-slate-500">{annotations.length}개</span>
+    <div className="flex w-max shrink-0 items-center gap-1" aria-label="WSI Annotation 도구">
+      {TOOLS.map((tool) => <button key={tool.type} type="button" disabled={!canWrite && tool.type !== "PAN"} aria-pressed={activeTool === tool.type} onClick={() => { setActiveTool(tool.type); setDraftPoints([]); }} className={`inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2.5 text-xs font-semibold leading-none ${activeTool === tool.type ? "border-blue-500 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"} disabled:cursor-not-allowed disabled:opacity-40`}>{tool.label}</button>)}
+      {activeTool === "TEXT" && canWrite ? <input aria-label="Annotation text" value={text} onChange={(event) => setText(event.target.value)} placeholder="메모" className="h-8 w-28 shrink-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800" /> : null}
+      {activeTool === "POLYGON" && draftPoints.length > 0 ? <button type="button" onClick={finishPolygon} disabled={draftPoints.length < 3 || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-blue-600 px-2.5 text-xs font-semibold leading-none text-white disabled:opacity-40">완료</button> : null}
+      <button type="button" onClick={() => void deleteSelected()} disabled={!canWrite || loaded.identity !== identity || !selectedId || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-rose-300 bg-white px-2.5 text-xs font-semibold leading-none text-rose-700 disabled:opacity-40">선택 삭제</button>
+      <span className="inline-flex h-8 shrink-0 items-center whitespace-nowrap px-1.5 text-xs font-medium tabular-nums text-slate-500">{annotations.length}개</span>
     </div>,
     toolbarElement,
   ) : null;

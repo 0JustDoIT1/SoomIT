@@ -69,15 +69,24 @@ class CaseChatMessageCreateSerializer(serializers.Serializer):
 
 class GlobalChatMessageSerializer(serializers.ModelSerializer):
     sender = serializers.SerializerMethodField()
+    recipient_id = serializers.UUIDField(read_only=True)
+    recipient_ids = serializers.SerializerMethodField()
+    is_private = serializers.SerializerMethodField()
     read_by = serializers.SerializerMethodField()
 
     class Meta:
         model = GlobalChatMessage
-        fields = ("id", "client_message_id", "sender", "body", "read_by", "created_at")
+        fields = ("id", "client_message_id", "sender", "recipient_id", "recipient_ids", "is_private", "body", "read_by", "created_at")
 
     def get_sender(self, obj):
         role = obj.sender.department_role
         return {"id": obj.sender_id, "name": obj.sender.name, "department": role.department.code, "role": role.role}
+
+    def get_recipient_ids(self, obj):
+        return [str(obj.recipient_id)] if obj.recipient_id else []
+
+    def get_is_private(self, obj):
+        return True
 
     def get_read_by(self, obj):
         request = self.context.get("request")
@@ -88,6 +97,7 @@ class GlobalChatMessageSerializer(serializers.ModelSerializer):
 
 class GlobalChatMessageCreateSerializer(serializers.Serializer):
     client_message_id = serializers.UUIDField()
+    recipient_id = serializers.UUIDField()
     body = serializers.CharField(max_length=2000, allow_blank=False, trim_whitespace=True)
 
     def validate_body(self, value):
