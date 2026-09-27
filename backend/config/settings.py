@@ -1,8 +1,10 @@
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from celery.schedules import crontab
+from django.core.exceptions import ImproperlyConfigured
 
 from dotenv import load_dotenv
 
@@ -24,6 +26,14 @@ DJANGO_ENV = os.environ.get("DJANGO_ENV", "development").strip().lower()
 IS_PRODUCTION = DJANGO_ENV in {"production", "prod"}
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
+if IS_PRODUCTION and (
+    not SECRET_KEY.strip()
+    or SECRET_KEY.strip() == "dev-only-change-me"
+    or SECRET_KEY.strip().startswith("django-insecure-")
+):
+    raise ImproperlyConfigured(
+        "DJANGO_SECRET_KEY must be configured with a non-development secret in production."
+    )
 # DEBUG is opt-in for local development and is always disabled in production.
 DEBUG = False if IS_PRODUCTION else env_flag("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = [
@@ -204,6 +214,10 @@ PATIENT_JWT_SIGNING_KEY = os.environ.get(
     "PATIENT_JWT_SIGNING_KEY",
     "",
 )
+if IS_PRODUCTION and not PATIENT_JWT_SIGNING_KEY.strip():
+    raise ImproperlyConfigured(
+        "PATIENT_JWT_SIGNING_KEY must be configured in production."
+    )
 PATIENT_JWT_ALGORITHM = "HS256"
 PATIENT_JWT_ISSUER = "soom-it-patient-api"
 PATIENT_JWT_AUDIENCE = "soom-it-patient-app"
@@ -375,8 +389,30 @@ GENKIT_SERVICE_USE_ID_TOKEN = os.environ.get("GENKIT_SERVICE_USE_ID_TOKEN", "0")
 # Leave unset to fall back to the default application credentials.
 GENKIT_SERVICE_ACCOUNT_FILE = os.environ.get("GENKIT_SERVICE_ACCOUNT_FILE", "")
 
-#CORS_ALLOWED_ORIGINS = [
-#    "http://localhost:3000",
-#]
-# Flutter Web 로컬 개발용
-CORS_ALLOW_ALL_ORIGINS = True
+# Reuse the configured browser origins unless a separate CORS list is supplied.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "DJANGO_CORS_ALLOWED_ORIGINS", ",".join(CSRF_TRUSTED_ORIGINS)
+    ).split(",")
+    if origin.strip()
+]
+CORS_ALLOW_ALL_ORIGINS = not IS_PRODUCTION
+if IS_PRODUCTION and not CORS_ALLOWED_ORIGINS:
+    raise ImproperlyConfigured(
+        "Production requires DJANGO_CORS_ALLOWED_ORIGINS or DJANGO_CSRF_TRUSTED_ORIGINS."
+    )
+if IS_PRODUCTION:
+    for origin in CORS_ALLOWED_ORIGINS:
+        parsed_origin = urlsplit(origin)
+        if (
+            parsed_origin.scheme not in {"http", "https"}
+            or not parsed_origin.netloc
+            or "*" in origin
+            or parsed_origin.username is not None
+            or parsed_origin.password is not None
+            or parsed_origin.path
+            or parsed_origin.query
+            or parsed_origin.fragment
+        ):
+            raise ImproperlyConfigured("Production CORS requires explicit HTTP(S) origins without wildcards or paths.")
