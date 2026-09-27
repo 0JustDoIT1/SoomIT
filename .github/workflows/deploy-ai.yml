@@ -63,6 +63,19 @@ jobs:
           def add(service, context, config='', dockerfile='Dockerfile'):
               services[service] = {'service': service, 'context': context, 'config': config, 'dockerfile': dockerfile}
 
+          def add_all_services():
+              add('xray-serve', 'ai-services/xray')
+              add('ct-analysis-phase1-serve', 'ai-services/ct-analysis', 'cloudbuild-phase1.yaml', 'Dockerfile.phase1')
+              add('ct-analysis-phase2-serve', 'ai-services/ct-analysis', 'cloudbuild-phase2.yaml', 'Dockerfile.phase2')
+              add('tnm-serve', 'ai-services/tnm', 'cloudbuild-core.yaml', 'Dockerfile.core')
+              add('tnm-t-serve', 'ai-services/tnm', 'cloudbuild-t.yaml', 'Dockerfile.t')
+              add('tnm-m-serve', 'ai-services/tnm', 'cloudbuild-m.yaml', 'Dockerfile.m')
+              add('pathology-analysis-serve', 'ai-services/pathology-analysis', 'cloudbuild.yaml')
+              add('pdl1-serve', 'ai-services/pd-l1', 'cloudbuild.yaml')
+              add('embedding-serve', 'ai-services/embedding')
+              add('medgemma-serve', 'ai-services/medgemma', 'cloudbuild.yaml')
+              add('genkit-serve', 'ai-services/genkit')
+
           if paths and paths[0].startswith('manual:'):
               selected = paths[0].split(':', 1)[1]
               mapping = {
@@ -79,6 +92,8 @@ jobs:
               if selected == 'pathology-analysis-serve': context = 'ai-services/pathology-analysis'
               add(selected, context, config, dockerfile)
           else:
+              if 'ai-services/.redeploy-all' in paths:
+                  add_all_services()
               for path in paths:
                   direct = {
                       'xray-serve': ('ai-services/xray/', {'Dockerfile','requirements.txt','server.py','inference.py','artifact.py','.dockerignore','.gcloudignore'}, ()),
@@ -125,6 +140,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix: ${{ fromJson(needs.changes.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4

@@ -54,6 +54,22 @@ jobs:
           def add(name, context, dockerfile):
               services[name] = {'service': name, 'context': context, 'dockerfile': dockerfile}
 
+          def add_all_services():
+              add('xray-serve', 'ai-services/xray', 'Dockerfile')
+              add('ct-analysis-phase1-serve', 'ai-services/ct-analysis', 'Dockerfile.phase1')
+              add('ct-analysis-phase2-serve', 'ai-services/ct-analysis', 'Dockerfile.phase2')
+              add('tnm-serve', 'ai-services/tnm', 'Dockerfile.core')
+              add('tnm-t-serve', 'ai-services/tnm', 'Dockerfile.t')
+              add('tnm-m-serve', 'ai-services/tnm', 'Dockerfile.m')
+              add('pathology-analysis-serve', 'ai-services/pathology-analysis', 'Dockerfile')
+              add('pdl1-serve', 'ai-services/pd-l1', 'Dockerfile')
+              add('embedding-serve', 'ai-services/embedding', 'Dockerfile')
+              add('medgemma-serve', 'ai-services/medgemma', 'Dockerfile')
+              add('genkit-serve', 'ai-services/genkit', 'Dockerfile')
+
+          if 'ai-services/.redeploy-all' in paths:
+              add_all_services()
+
           for path in paths:
               if path.startswith('ai-services/xray/'):
                   add('xray-serve', 'ai-services/xray', 'Dockerfile')
