@@ -57,6 +57,14 @@ pip install -r requirements.txt
 
 `config/settings.py`가 `backend/.env`를 읽습니다. `POSTGRES_*`는 해당 환경의 DB 연결 값을 사용하고, `ORTHANC_BASE_URL`은 로컬 주소 또는 SSH 터널 주소로 지정합니다. Compose에서는 Redis와 Orthanc 주소만 Docker 내부 서비스 이름으로 덮어씁니다.
 
+GCS 인증은 Google Application Default Credentials(ADC)를 사용합니다. 로컬에서는
+`gcloud auth application-default login`으로 ADC를 준비하고
+`GOOGLE_APPLICATION_CREDENTIALS`는 비워 둡니다. 저장소 밖의 별도 credential 파일을
+사용해야 하는 환경에서만 그 외부 경로를 설정합니다. GCE/Cloud Run 배포에서는 JSON
+키를 컨테이너에 넣지 않고 runtime service account에 대상 bucket의 object read 권한을
+부여합니다. 존재하지 않는 파일 경로가 설정된 경우 Django는 경로를 로그에 노출하지
+않고 해당 값을 제거한 뒤 ADC discovery를 시도합니다.
+
 ### 4. 관리자 계정 생성 (선택)
 
 ```bash

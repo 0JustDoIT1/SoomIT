@@ -12,6 +12,7 @@ from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.ai_results.models import AiAnalysis, AiResult, CtAiResult, ModelVersion
 from apps.cases.models import CaseImageAsset, ExaminationOrder, LungCancerCase, WorkflowStage
 from apps.patients.models import Patient
+from apps.radiology.services.ct_cornerstone_storage import CtCornerstoneStorageError
 
 
 SEGMENTATION = {
@@ -79,6 +80,36 @@ class DoctorCtSegmentationAPITests(TestCase):
         self.assertEqual(response.content, download.return_value)
         self.assertEqual(response["Content-Type"], "application/octet-stream")
         download.assert_called_once_with(SEGMENTATION["labelmap_uri"])
+
+    @patch("apps.cases.views.download_ct_cornerstone_object")
+    def test_reports_missing_credentials_without_exposing_a_credential_path(self, download):
+        download.side_effect = CtCornerstoneStorageError("GCS credentials are unavailable.")
+
+        with self.assertLogs("apps.cases.views", level="WARNING") as captured:
+            response = self.client.get(self.segmentation_url)
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(
+            response.data["detail"],
+            "Segmentation artifact storage is temporarily unavailable.",
+        )
+        self.assertIn("category=credentials_unavailable", " ".join(captured.output))
+        self.assertNotIn(".json", " ".join(captured.output))
+
+    @patch("apps.cases.views.download_ct_cornerstone_object")
+    def test_distinguishes_missing_object_and_invalid_geometry(self, download):
+        download.side_effect = CtCornerstoneStorageError(
+            "CT Cornerstone segmentation object was not found."
+        )
+        missing = self.client.get(self.segmentation_url)
+        self.assertEqual(missing.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(missing.data["detail"], "Segmentation artifact was not found.")
+
+        download.side_effect = None
+        download.return_value = b"not-json"
+        invalid = self.client.get(self.segmentation_url)
+        self.assertEqual(invalid.status_code, status.HTTP_502_BAD_GATEWAY)
+        self.assertEqual(invalid.data["detail"], "Segmentation geometry is invalid.")
 
     @patch("apps.cases.views.download_ct_visualization")
     def test_returns_3d_layer_proxy_without_private_mesh_uri(self, download):

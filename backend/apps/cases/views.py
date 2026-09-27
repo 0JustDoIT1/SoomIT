@@ -1,4 +1,5 @@
 import json
+import logging
 
 from django.db import transaction
 from django.db.models import Q
@@ -92,6 +93,9 @@ from .services.pathology_orders import (
     has_active_pathology_order,
     has_pathology_gene_review_completed,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 # 원무과 - Case 목록 조회
@@ -475,6 +479,32 @@ class DoctorCaseCtAnalysisMixin:
         )
 
 
+def _ct_segmentation_storage_error_response(error):
+    message = str(error).lower()
+    if "credentials" in message:
+        category = "credentials_unavailable"
+        response_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        detail = "Segmentation artifact storage is temporarily unavailable."
+    elif "denied" in message:
+        category = "permission_denied"
+        response_status = status.HTTP_503_SERVICE_UNAVAILABLE
+        detail = "Segmentation artifact storage is temporarily unavailable."
+    elif "not found" in message:
+        category = "object_not_found"
+        response_status = status.HTTP_404_NOT_FOUND
+        detail = "Segmentation artifact was not found."
+    elif "invalid" in message:
+        category = "uri_configuration_error"
+        response_status = status.HTTP_502_BAD_GATEWAY
+        detail = "Segmentation artifact configuration is invalid."
+    else:
+        category = "storage_unavailable"
+        response_status = status.HTTP_502_BAD_GATEWAY
+        detail = "Segmentation artifact storage is temporarily unavailable."
+    logger.warning("CT segmentation artifact load failed category=%s", category)
+    return Response({"detail": detail}, status=response_status)
+
+
 class DoctorCaseCtSegmentationAPIView(DoctorCaseCtAnalysisMixin, APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
@@ -487,8 +517,14 @@ class DoctorCaseCtSegmentationAPIView(DoctorCaseCtAnalysisMixin, APIView):
             return Response({"detail": "CT 분할 결과가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
         try:
             geometry = json.loads(download_ct_cornerstone_object(segmentation["geometry_uri"]).decode("utf-8"))
-        except (CtCornerstoneStorageError, ValueError, UnicodeDecodeError):
-            return Response({"detail": "CT 분할 geometry를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        except CtCornerstoneStorageError as exc:
+            return _ct_segmentation_storage_error_response(exc)
+        except (ValueError, UnicodeDecodeError):
+            logger.warning("CT segmentation artifact load failed category=invalid_geometry")
+            return Response(
+                {"detail": "Segmentation geometry is invalid."},
+                status=status.HTTP_502_BAD_GATEWAY,
+            )
         return Response({
             "schema_version": segmentation.get("schema_version"),
             "scalar_type": segmentation.get("scalar_type"),
@@ -512,8 +548,8 @@ class DoctorCaseCtSegmentationLabelmapAPIView(DoctorCaseCtAnalysisMixin, APIView
             return Response({"detail": "CT 분할 결과가 없습니다."}, status=status.HTTP_404_NOT_FOUND)
         try:
             content = download_ct_cornerstone_object(segmentation["labelmap_uri"])
-        except CtCornerstoneStorageError:
-            return Response({"detail": "CT 분할 labelmap을 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        except CtCornerstoneStorageError as exc:
+            return _ct_segmentation_storage_error_response(exc)
         response = HttpResponse(content, content_type="application/octet-stream")
         response["Cache-Control"] = "private, max-age=3600"
         return response

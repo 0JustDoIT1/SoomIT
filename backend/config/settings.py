@@ -6,8 +6,11 @@ from celery.schedules import crontab
 
 from dotenv import load_dotenv
 
+from apps.common.gcp_credentials import configure_google_application_credentials
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 load_dotenv(BASE_DIR / ".env")
+GOOGLE_CREDENTIAL_SOURCE = configure_google_application_credentials(base_dir=BASE_DIR)
 
 
 def env_flag(name, default=False):

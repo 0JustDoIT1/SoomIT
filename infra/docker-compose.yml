@@ -8,7 +8,8 @@ x-django-base: &django-base
   environment:
     CELERY_BROKER_URL: redis://redis:6379/0
     CELERY_RESULT_BACKEND: redis://redis:6379/1
-    GOOGLE_APPLICATION_CREDENTIALS: /app/gcs-key.json
+    # GCS uses Google ADC. On GCE this resolves to the VM runtime service
+    # account through the metadata server; do not mount JSON service keys.
     # Same commit SHA already used as this deploy's Docker image tag (see
     # .github/workflows/deploy-vm.yml) - surfaced here so the system-admin
     # monitoring dashboard can show it without a separate version system.
@@ -24,7 +25,6 @@ services:
   celery_worker:
     <<: *django-base
     volumes:
-      - ../backend/gcs-key.json:/app/gcs-key.json:ro
       - ../backend/soomit-patient-firebase-admin.json:/app/soomit-patient-firebase-admin.json:ro
       - wsi_dicomizer_staging:/wsi-staging
     depends_on:
@@ -62,7 +62,6 @@ services:
     build:
       context: ../backend
     volumes:
-      - ../backend/gcs-key.json:/app/gcs-key.json:ro
       - ../backend/soomit-patient-firebase-admin.json:/app/soomit-patient-firebase-admin.json:ro
     command:
       [
