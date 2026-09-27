@@ -39,12 +39,31 @@ export default function TreatmentPreviewV2Page() {
     }
   }, [authorizedFetch, caseId]);
 
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    if (!caseId) return;
+    let cancelled = false;
+    void loadPreview(authorizedFetch, API_BASE_URL, caseId).then((next) => {
+      if (cancelled) return;
+      setError("");
+      setData(next);
+      setCandidate((current) => current ?? next.candidates.find((item) => item.regimen_detail.id === next.decision?.selected_regimen) ?? null);
+      setMethod((current) => current || next.decision?.treatment_type || "");
+    }).catch((loadError: unknown) => {
+      if (!cancelled) setError(loadError instanceof Error ? loadError.message : "Preview 데이터를 불러오지 못했습니다.");
+    });
+    return () => { cancelled = true; };
+  }, [authorizedFetch, caseId]);
 
   const visibleCandidate = useMemo(() => candidate ?? data?.candidates.find((item) => item.treatment_type === method) ?? null, [candidate, data?.candidates, method]);
   const confirmed = data?.decision?.decision_status === "CONFIRMED";
-  const safetyResults = data?.prescriptions[0]?.safety_check_results ?? [];
   const selectedRegimen = visibleCandidate?.regimen_detail.id ?? data?.decision?.selected_regimen ?? null;
+
+  const handleSnapshotChange = useCallback((next: InputSnapshot) => {
+    setSnapshot(next);
+    void previewCandidates(authorizedFetch, API_BASE_URL, caseId, next)
+      .then((candidates) => setData((current) => current ? { ...current, candidates } : current))
+      .catch(() => undefined);
+  }, [authorizedFetch, caseId]);
 
   const saveDecision = async (body: Record<string, unknown>) => {
     setBusy(true); setError("");
@@ -65,7 +84,7 @@ export default function TreatmentPreviewV2Page() {
   return <main className="h-full min-h-0 overflow-y-auto overflow-x-hidden"><div className="mx-auto max-w-6xl space-y-5 p-6">
     <header className="rounded-xl border border-blue-100 bg-blue-50 p-5"><p className="text-xs font-semibold text-blue-700">PREVIEW V2 · INTEGRATION TEST</p><h1 className="mt-1 text-xl font-bold text-slate-900">치료 방법부터 MedGemma까지</h1><p className="mt-2 break-all font-mono text-xs text-slate-500">caseId: {caseId}</p></header>
     {error && <p role="alert" className="rounded-lg bg-rose-50 p-3 text-sm text-rose-700">{error}</p>}
-    <PreviewClinicalSummary data={data} onSnapshotChange={(next) => { setSnapshot(next); void previewCandidates(authorizedFetch, API_BASE_URL, caseId, next).then((candidates) => setData(current => current ? { ...current, candidates } : current)).catch(() => undefined); }} />
+    <PreviewClinicalSummary data={data} onSnapshotChange={handleSnapshotChange} />
     <PreviewTreatmentSelector candidates={data.candidates} value={method} onChange={(value) => { setMethod(value); setCandidate(null); }} />
     <PreviewRegimenCandidates candidates={data.candidates} treatmentType={method} selected={selectedRegimen ?? ""} onSelect={setCandidate} />
     <PreviewTreatmentDecision candidate={visibleCandidate} decision={data.decision} confirmed={Boolean(confirmed)} busy={busy} inputSnapshot={snapshot} onSave={saveDecision} onConfirm={() => void confirmDecision()} />

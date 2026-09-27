@@ -85,7 +85,8 @@ class TreatmentDecisionCandidateTests(SimpleTestCase):
     def prepare_confirmation(self, regimen="R1", treatment_type="TARGETED_THERAPY"):
         clinical = MagicMock(result_status="DRAFT")
         decision = NS(clinical_result=clinical, treatment_type=treatment_type,
-                      selected_regimen=NS(pk=regimen) if regimen else None)
+                      selected_regimen=NS(pk=regimen) if regimen else None,
+                      input_snapshot=None)
         self.confirmation_decision = decision
         self.results.select_for_update.return_value.filter.return_value.first.return_value = clinical
         self.decisions.select_related.return_value.filter.return_value.first.return_value = decision
