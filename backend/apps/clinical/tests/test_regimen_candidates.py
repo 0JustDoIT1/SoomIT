@@ -10,7 +10,11 @@ from django.test import SimpleTestCase
 
 from apps.clinical.gene_alterations import CANONICAL_ALTERATIONS
 from apps.clinical.models import GeneFinding, TreatmentRule
-from apps.clinical.serializers import DoctorClinicalResultSerializer, TreatmentRuleCandidateSerializer
+from apps.clinical.serializers import (
+    DoctorClinicalResultSerializer,
+    TreatmentRuleCandidateSerializer,
+    validate_input_snapshot,
+)
 from apps.clinical.views import DoctorRegimenCandidateListAPIView as View
 
 
@@ -46,6 +50,96 @@ class RegimenCandidateTests(SimpleTestCase):
             with self.subTest(code=code):
                 self.data["findings"] = [self.finding(gene, code)]
                 self.assertIsNotNone(self.view._match_rule(self.rule(rule_code=rule), self.data))
+
+    def test_multiple_actionable_drivers_keep_existing_rule_matches(self):
+        self.data["findings"] = [
+            self.finding("EGFR", "EGFR_EX19_DEL"),
+            self.finding("BRAF", "BRAF_V600E"),
+            self.finding("MET", "MET_EXON14_SKIPPING"),
+        ]
+
+        for rule_code in ("TR01", "TR04", "TR05"):
+            with self.subTest(rule_code=rule_code):
+                self.assertIsNotNone(
+                    self.view._match_rule(self.rule(rule_code=rule_code), self.data)
+                )
+
+    def test_indeterminate_driver_does_not_hide_valid_actionable_driver(self):
+        self.data["findings"] = [
+            self.finding("EGFR", "EGFR_EX19_DEL"),
+            self.finding("BRAF", None, "INDETERMINATE"),
+        ]
+
+        reasons = self.view._match_rule(self.rule(rule_code="TR01"), self.data)
+
+        self.assertIsNotNone(reasons)
+        self.assertIn("바이오마커 일치: EGFR / EGFR_EX19_DEL", reasons)
+        self.assertIsNone(self.view._match_rule(self.rule(rule_code="TR04"), self.data))
+
+    def test_multi_driver_policy_keeps_all_and_only_matching_regimens(self):
+        rules = [
+            ("R1", self.rule(rule_code="TR01", priority=1)),
+            ("R2", self.rule(rule_code="TR01", priority=2)),
+            ("R5", self.rule(rule_code="TR04", priority=1)),
+            ("R6", self.rule(rule_code="TR05", priority=1)),
+        ]
+        cases = [
+            ([("EGFR", "EGFR_EX19_DEL", "LIKELY_POSITIVE")], {"R1", "R2"}),
+            ([("BRAF", "BRAF_V600E", "LIKELY_POSITIVE")], {"R5"}),
+            ([("MET", "MET_EXON14_SKIPPING", "LIKELY_POSITIVE")], {"R6"}),
+            ([
+                ("EGFR", "EGFR_EX19_DEL", "LIKELY_POSITIVE"),
+                ("BRAF", "BRAF_V600E", "LIKELY_POSITIVE"),
+            ], {"R1", "R2", "R5"}),
+            ([
+                ("EGFR", "EGFR_L858R", "LIKELY_POSITIVE"),
+                ("MET", "MET_EXON14_SKIPPING", "LIKELY_POSITIVE"),
+            ], {"R1", "R2", "R6"}),
+            ([
+                ("EGFR", "EGFR_EX19_DEL", "LIKELY_POSITIVE"),
+                ("BRAF", "BRAF_V600E", "LIKELY_POSITIVE"),
+                ("MET", "MET_EXON14_SKIPPING", "LIKELY_POSITIVE"),
+            ], {"R1", "R2", "R5", "R6"}),
+            ([
+                ("EGFR", "EGFR_EX19_DEL", "LIKELY_POSITIVE"),
+                ("BRAF", None, "INDETERMINATE"),
+            ], {"R1", "R2"}),
+        ]
+
+        for finding_values, expected in cases:
+            with self.subTest(findings=finding_values):
+                self.data["findings"] = [self.finding(*values) for values in finding_values]
+                actual = {
+                    regimen_code for regimen_code, rule in rules
+                    if self.view._match_rule(rule, self.data) is not None
+                }
+                self.assertEqual(actual, expected)
+
+    def test_input_snapshot_accepts_old_and_multi_gene_arrays(self):
+        base = {
+            "cancer_type": "NSCLC",
+            "histology": "LUAD",
+            "pdl1_category": "GE_50",
+        }
+        old_snapshot = {
+            **base,
+            "findings": [{
+                "gene_symbol": "EGFR",
+                "assessment": "LIKELY_POSITIVE",
+                "alteration_code": "EGFR_EX19_DEL",
+            }],
+        }
+        multi_snapshot = {
+            **base,
+            "findings": [
+                *old_snapshot["findings"],
+                {"gene_symbol": "BRAF", "assessment": "INDETERMINATE", "alteration_code": None},
+                {"gene_symbol": "MET", "assessment": "LIKELY_NEGATIVE", "alteration_code": None},
+            ],
+        }
+
+        self.assertIs(validate_input_snapshot(old_snapshot), old_snapshot)
+        self.assertIs(validate_input_snapshot(multi_snapshot), multi_snapshot)
 
     def test_missing_unsupported_wrong_gene_and_nonpositive(self):
         for rule, gene, code, assessment in [
@@ -174,6 +268,10 @@ class RegimenCandidateTests(SimpleTestCase):
             context={"match_reasons_by_id": {rule.id: reasons}},
         )
         self.assertEqual(serializer.get_match_reasons(rule), reasons)
+        self.assertEqual(serializer.get_matched_drivers(rule), [{
+            "gene_symbol": "EGFR",
+            "alteration_codes": ["EGFR_EX19_DEL"],
+        }])
         self.assertTrue(all("?" not in reason for reason in reasons))
 
     def test_bad_json_never_matches(self):
@@ -243,7 +341,9 @@ class RegimenCandidateTests(SimpleTestCase):
         reasons = self.view._match_rule(rule, self.data)
         serializer = TreatmentRuleCandidateSerializer(context={"match_reasons_by_id": {rule.id: reasons}})
         self.assertEqual(serializer.get_match_reasons(rule), reasons)
-        self.assertTrue({"id", "regimen", "regimen_detail", "priority", "match_reasons"}.issubset(serializer.fields))
+        self.assertTrue({
+            "id", "regimen", "regimen_detail", "priority", "match_reasons", "matched_drivers",
+        }.issubset(serializer.fields))
 
     @patch("apps.clinical.views.PDL1Result.objects")
     @patch("apps.clinical.views.ClinicalResult.objects")
