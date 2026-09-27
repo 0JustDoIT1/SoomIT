@@ -51,14 +51,32 @@ test(`synthetic CT, annotation persistence and cleanup with segmentation ${segme
   await page.mouse.up();
   await expect.poll(() => annotations.length).toBe(1);
   expect(annotations[0].annotation_type).toBe("LENGTH");
-  await page.screenshot({ path: `../reports/workflow-ct-synthetic-${segmentationAvailable}.png` });
+  await page.screenshot({ path: test.info().outputPath(`ct-synthetic-${segmentationAvailable}.png`) });
   await page.getByRole("button", { name: "Axial 확대", exact: true }).click();
   await expect(page.getByRole("button", { name: "전체 CT 보기", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "전체 CT 보기", exact: true }).click();
-  await page.getByRole("navigation", { name: "Case 진료 정보 메뉴" }).getByRole("button", { name: "흉부 X선", exact: true }).click();
-  await page.getByRole("navigation", { name: "Case 진료 정보 메뉴" }).getByRole("button", { name: "흉부 CT", exact: true }).click();
+  const menu = page.getByRole("navigation", { name: "Case 진료 정보 메뉴" });
+  await menu.getByRole("button", { name: "전체 요약", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "진료 요약", exact: true })).toBeVisible();
+  await expect(page.getByLabel("CT Axial viewer", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "CT Workstation", exact: true })).toHaveCount(0);
+  await menu.getByRole("button", { name: "흉부 X선", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "X-ray Viewer", exact: true })).toBeVisible();
+  await expect(page.getByLabel("CT Axial viewer", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "진료 요약", exact: true })).toHaveCount(0);
+  await menu.getByRole("button", { name: "전체 요약", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "진료 요약", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "X-ray Viewer", exact: true })).toHaveCount(0);
+  await menu.getByRole("button", { name: "흉부 CT", exact: true }).click();
   if (!segmentationAvailable) await expect(page.getByText(/CT 원본은 정상 표시 중입니다/)).toBeVisible();
   else await expect(page.getByLabel("CT Axial viewer", { exact: true }).locator("canvas")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "진료 요약", exact: true })).toHaveCount(0);
+  expect(annotations).toHaveLength(1);
+  await expect(page.getByRole("button", { name: "길이 1", exact: true })).toBeVisible();
+  if (segmentationAvailable) await expect.poll(async () => page.getByLabel("CT Axial viewer", { exact: true }).locator("..").locator("canvas.pointer-events-none").evaluate((canvas: HTMLCanvasElement) => {
+    const data = canvas.getContext("2d")?.getImageData(0, 0, canvas.width, canvas.height).data;
+    return data ? Array.from(data).some((value, index) => index % 4 === 3 && value > 0) : false;
+  })).toBe(true);
   expect(errors).toEqual([]);
 });
 }

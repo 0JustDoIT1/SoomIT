@@ -21,14 +21,18 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
   const [ctEvidenceInfo, setCtEvidenceInfo] = useState<CtEvidenceInfo>({});
   const [selectedCtNoduleId, setSelectedCtNoduleId] = useState<string | null>(null);
   const onCtEvidenceInfoChange = useCallback((info: CtEvidenceInfo) => setCtEvidenceInfo((current) => ({ ...current, ...info })), []);
-  const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail);
+  const clinicalConfirmed = clinicalResult?.result_status === "CONFIRMED";
+  const specialistValues = getSpecialistValues(stage, clinicalResult?.result_detail, clinicalConfirmed);
   const aiValues = getAiValues(stage, aiResult?.result_detail);
   const ctDetail = stage === "CT" ? asRecord(asRecord(aiResult?.result_detail)?.ct) : null;
   const ctNodules = Array.isArray(ctDetail?.nodules) ? ctDetail.nodules : [];
   const hasCtAiData = ctDetail !== null;
   const config = STAGE_CONFIG[stage] ?? { title: "검사·결과", description: "의료진 판독 결과와 AI 분석 후보를 구분해 확인합니다.", department: "담당 진료과" };
   const imaging = stage === "XRAY" || stage === "CT";
-  const clinicalRole = imaging || stage === "PET_CT_TNM" ? "호흡기내과 최종 판단" : "병리과 판독";
+  const clinicalDepartment = imaging || stage === "PET_CT_TNM" ? "호흡기내과" : "병리과";
+  const clinicalRole = clinicalConfirmed
+    ? `${clinicalDepartment} ${imaging || stage === "PET_CT_TNM" ? "최종 판단" : "판독"}`
+    : `${clinicalDepartment} ${clinicalResult?.result_status === "DRAFT" ? "판독 초안" : "검토 중"}`;
   const isImageWorkspace = showEvidence && (stage === "XRAY" || stage === "CT");
   return (
     <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex h-full min-h-0 min-w-0 flex-1 flex-col" : ""}`}>
@@ -327,25 +331,25 @@ function buildWorkflowSteps({ stage, aiStatus, clinicalStatus, hasSourceAsset, t
   if (stage === "XRAY") return [
     sourceStep("영상 등록", Boolean(hasSourceAsset), hasAiStatus),
     ai,
-    { label: "호흡기내과 최종 판단", status: confirmed ? "확정 완료" : ai.state === "completed" ? "판단 대기" : "결과 대기", state: confirmed ? "completed" : ai.state === "completed" ? "active" : "pending" },
+    { label: confirmed ? "호흡기내과 최종 판단" : "호흡기내과 검토", status: confirmed ? "확정 완료" : ai.state === "completed" ? "판단 대기" : "결과 대기", state: confirmed ? "completed" : ai.state === "completed" ? "active" : "pending" },
   ];
   if (stage === "CT") return [
     sourceStep("CT 영상 등록", Boolean(hasSourceAsset), hasAiStatus),
     ai,
-    { label: "호흡기내과 최종 판단", status: confirmed ? "확정 완료" : ai.state === "completed" ? "판단 대기" : "결과 대기", state: confirmed ? "completed" : ai.state === "completed" ? "active" : "pending" },
+    { label: confirmed ? "호흡기내과 최종 판단" : "호흡기내과 검토", status: confirmed ? "확정 완료" : ai.state === "completed" ? "판단 대기" : "결과 대기", state: confirmed ? "completed" : ai.state === "completed" ? "active" : "pending" },
   ];
   if (stage === "PET_CT_TNM") return [
     sourceStep("CT·PET 영상 준비", Boolean(hasSourceAsset), hasAiStatus),
     { label: "T/N/M 분석", status: resultStatusLabel(aiStatus), state: aiFlowState(aiStatus) },
     { label: "TNM 검토", status: confirmed ? "검토 완료" : clinicalStatus === "DRAFT" ? "검토 중" : ai.state === "completed" ? "검토 대기" : "분석 대기", state: confirmed ? "completed" : clinicalStatus === "DRAFT" || ai.state === "completed" ? "active" : "pending" },
-    { label: "호흡기내과 최종 확정", status: confirmed ? "확정 완료" : submitted ? "확정 대기" : "검토 대기", state: confirmed ? "completed" : submitted ? "active" : "pending" },
+    { label: confirmed ? "호흡기내과 최종 확정" : "호흡기내과 검토", status: confirmed ? "확정 완료" : submitted ? "확정 대기" : "검토 대기", state: confirmed ? "completed" : submitted ? "active" : "pending" },
   ];
   if (stage === "PATHOLOGY_GENE" || stage === "PDL1") {
     const registrationLabel = stage === "PATHOLOGY_GENE" ? "검체·WSI 등록" : "WSI/데이터 등록";
     return [
       sourceStep(registrationLabel, Boolean(hasSourceAsset), hasAiStatus),
       ai,
-      { label: stage === "PATHOLOGY_GENE" ? "호흡기내과 확인" : "호흡기내과 확정", status: confirmed ? "확정 완료" : submitted ? "확인 대기" : "제출 대기", state: confirmed ? "completed" : submitted ? "active" : "pending" },
+      { label: stage === "PATHOLOGY_GENE" ? "호흡기내과 확인" : confirmed ? "호흡기내과 확정" : "호흡기내과 검토", status: confirmed ? "확정 완료" : submitted ? "확인 대기" : "제출 대기", state: confirmed ? "completed" : submitted ? "active" : "pending" },
     ];
   }
   if (stage === "TREATMENT") return [
@@ -419,7 +423,7 @@ function StatusBadge({ label, value, status, tone }: { label: string; value?: st
   const failed = status === "FAILED" || status === "ERROR";
   const inProgress = status === "PENDING" || status === "QUEUED" || status === "RUNNING" || status === "REQUESTED";
   const colors = failed ? "border-rose-200 bg-rose-50 text-rose-700" : inProgress ? "border-amber-200 bg-amber-50 text-amber-700" : value ? (tone === "specialist" ? "border-emerald-200 bg-emerald-50 text-emerald-700" : "border-blue-200 bg-blue-50 text-blue-700") : "border-slate-200 bg-slate-50 text-slate-400";
-  return <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold ${colors}`}>{label} · {resultStatusLabel(status ?? value)}</span>;
+  return <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold ${colors}`}>{label} · {resultStatusLabel(tone === "specialist" ? status : status ?? value)}</span>;
 }
 
 function ResultValues({ values, accent, compact = false }: { values: [string, string][]; accent: "specialist" | "ai"; compact?: boolean }) {
@@ -428,7 +432,7 @@ function ResultValues({ values, accent, compact = false }: { values: [string, st
 function EmptyResult({ title, text, nextAction }: { title: string; text: string; nextAction?: string }) { return <div className="px-4 py-4 text-center"><div><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 max-w-md text-[11px] leading-4 text-slate-500">{text}</p>{nextAction && <p className="mt-2 max-w-md rounded-md bg-slate-50 px-2 py-1.5 text-[10px] leading-4 text-slate-600">{nextAction}</p>}</div></div>; }
 function PanelError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry?: () => void }) { return <div role="alert" className="flex min-h-[190px] items-center justify-center bg-rose-50/50 px-5"><div className="text-center"><p className="text-xs text-rose-700">{message}</p>{onRetry && <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-700 disabled:opacity-50">{retrying ? "재시도 중" : "이 결과 다시 시도"}</button>}</div></div>; }
 
-function getSpecialistValues(stage: string, detail: unknown): [string, string][] {
+function getSpecialistValues(stage: string, detail: unknown, confirmed: boolean): [string, string][] {
   const root = asRecord(detail); if (!root) return [];
   if (stage === "PATHOLOGY_GENE") {
     const pathology = asRecord(root.pathology);
@@ -438,14 +442,14 @@ function getSpecialistValues(stage: string, detail: unknown): [string, string][]
   }
   if (stage === "PDL1") {
     const pdl1 = asRecord(root.pdl1);
-    return pdl1 ? pickValues(pdl1, [["확정 PD-L1 TPS", "tps_percent"], ["PD-L1 판정", "interpretation"], ["PD-L1 소견", "note"]]) : [];
+    return pdl1 ? pickValues(pdl1, [[confirmed ? "확정 PD-L1 TPS" : "PD-L1 TPS", "tps_percent"], ["PD-L1 판정", "interpretation"], ["PD-L1 소견", "note"]]) : [];
   }
   const sectionKey = stage === "XRAY" ? "xray" : stage === "CT" ? "ct" : stage === "PET_CT_TNM" ? "tnm" : "";
   const section = asRecord(root[sectionKey]); if (!section) return [];
   const fields: Record<string, [string, string][]> = {
     XRAY: [["판정", "assessment_label"], ["의사 소견", "finding_summary"], ["권고", "recommended_action"]],
     CT: [["종합 판정", "overall_assessment_label"], ["악성 위험도", "overall_malignancy_risk"], ["의사 소견", "finding_summary"]],
-    PET_CT_TNM: [["확정 T", "t_category"], ["확정 N", "n_category"], ["확정 M", "m_category"], ["확정 Stage Group", "stage_group"], ["의사 소견", "note"]],
+    PET_CT_TNM: [[confirmed ? "확정 T" : "T", "t_category"], [confirmed ? "확정 N" : "N", "n_category"], [confirmed ? "확정 M" : "M", "m_category"], [confirmed ? "확정 Stage Group" : "Stage Group", "stage_group"], ["의사 소견", "note"]],
   };
   return pickValues(section, fields[stage] ?? []);
 }

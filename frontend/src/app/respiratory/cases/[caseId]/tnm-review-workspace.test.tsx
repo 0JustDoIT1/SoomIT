@@ -18,6 +18,24 @@ async function enterTnm() {
 }
 
 describe("TnmReviewWorkspace", () => {
+  it.each([
+    ["DRAFT", "판독 초안", "초안 결과"],
+    ["IN_REVIEW", "의료진 검토", "검토 결과"],
+    ["CONFIRMED", "의료진 확정", "확정 결과"],
+    [undefined, "의료진 검토", "검토 결과"],
+  ] as const)("labels the clinical result using status %s", (status, source, resultLabel) => {
+    render(<TnmReviewWorkspace clinicalResultStatus={status} clinicalTnm={{ t_category: "T2" }} aiTnm={{ predicted_t: "T1" }} />);
+    expect(screen.getByText(source)).toBeInTheDocument();
+    expect(screen.getByText(resultLabel)).toBeInTheDocument();
+    expect(screen.getByText("AI 분석 후보")).toBeInTheDocument();
+    if (status !== "CONFIRMED") {
+      expect(screen.queryByText("의료진 확정")).not.toBeInTheDocument();
+      expect(screen.queryByText("확정 결과")).not.toBeInTheDocument();
+      expect(screen.queryByText("최종 진료 판단")).not.toBeInTheDocument();
+      expect(screen.getByText("호흡기내과 검토 중")).toBeInTheDocument();
+    }
+  });
+
   it("keeps Stage warnings while placing the single final action in the top header", () => {
     render(<TnmReviewWorkspace clinicalTnm={{ evidence: { stage: { warnings: ["검토 필요"] } } }} />);
     const workspace = screen.getByRole("region", { name: "TNM 작업공간" });

@@ -119,7 +119,7 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
       <label className="mt-3 flex min-h-0 flex-1 flex-col text-xs font-semibold text-slate-700"><span className="sr-only">호흡기내과 소견</span><textarea value={currentPhysicianOpinion} onChange={(event) => setPhysicianOpinion(event.target.value)} disabled={readOnly || loadingPhysicianOpinion || saving} placeholder={loadingPhysicianOpinion ? "소견을 불러오는 중입니다." : "치료에 대한 의료진 소견을 입력하세요."} rows={7} className="min-h-[132px] flex-1 resize-none rounded-md border border-slate-300 bg-white p-3 text-sm font-normal leading-6 text-slate-800 disabled:bg-slate-100" /></label>
       {!loadingPhysicianOpinion && !physicianError && !currentPhysicianOpinion && <p className="mt-2 text-xs text-slate-500">작성된 호흡기내과 소견이 없습니다.</p>}
       {physicianError && <p role="alert" className="mt-2 text-xs text-rose-600">{physicianError}</p>}
-      {!readOnly && <button type="button" onClick={() => void savePhysicianOpinion()} disabled={loadingPhysicianOpinion || saving} className="mt-3 self-end rounded-md bg-blue-600 px-4 py-2 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300">{saving ? "저장 중..." : "의료진 소견 저장"}</button>}
+      {!readOnly && <button type="button" onClick={() => void savePhysicianOpinion()} disabled={loadingPhysicianOpinion || saving} className="mt-3 self-end rounded-md border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">{saving ? "저장 중..." : "의료진 소견 저장"}</button>}
     </article>
   </section>;
 }

@@ -25,7 +25,7 @@ it("shows the simplified PD-L1 flow", () => {
   render(<ResultReviewPanel stage="PDL1" showEvidence={false} clinicalResult={{ workflow_stage: "PDL1", result_status: "DRAFT" }} aiResult={{ analysis_type: "PDL1_ANALYSIS", status: "SUCCEEDED" }} />);
   expect(screen.getByText("WSI/데이터 등록")).toBeTruthy();
   expect(screen.getAllByText("AI 분석")).toHaveLength(2);
-  expect(screen.getByText("호흡기내과 확정")).toBeTruthy();
+  expect(screen.getByText("호흡기내과 검토")).toBeTruthy();
   expect(screen.queryByText("병리과 검토")).toBeNull();
   expect(screen.queryByText("호흡기내과에 제출")).toBeNull();
 });
@@ -43,6 +43,26 @@ it("uses analysis and sync details instead of the duplicate CT review-status car
 });
 
 describe("ResultReviewPanel", () => {
+  describe.each(["XRAY", "CT", "PET_CT_TNM", "PDL1", "PATHOLOGY_GENE"])("%s clinical status labels", (stage) => {
+    it.each(["DRAFT", "IN_REVIEW", "CONFIRMED", undefined])("uses the backend status %s while keeping AI a candidate", (status) => {
+      const confirmed = status === "CONFIRMED";
+      const department = stage === "PDL1" || stage === "PATHOLOGY_GENE" ? "병리과" : "호흡기내과";
+      const suffix = confirmed ? department === "병리과" ? "판독" : "최종 판단" : status === "DRAFT" ? "판독 초안" : "검토 중";
+      render(<ResultReviewPanel stage={stage} showEvidence={false} clinicalResult={{
+        workflow_stage: stage, result_status: status, result_status_label: "확정",
+        result_detail: { ct: { finding_summary: "임상 소견" }, xray: { finding_summary: "임상 소견" }, tnm: { t_category: "T2" }, pdl1: { tps_percent: 30 }, pathology: { diagnosis_summary: "임상 소견" } },
+      }} aiResult={{ analysis_type: stage, status: "SUCCEEDED" }} />);
+      expect(screen.getByRole("heading", { name: `${department} ${suffix}` })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "AI 분석 후보" })).toBeInTheDocument();
+      if (stage === "PDL1") expect(screen.getByText(confirmed ? "확정 PD-L1 TPS" : "PD-L1 TPS", { exact: true })).toBeInTheDocument();
+      if (stage === "PET_CT_TNM") expect(screen.getByText(confirmed ? "확정 T" : "T", { exact: true })).toBeInTheDocument();
+      if (!confirmed) {
+        expect(screen.queryByText(/^(호흡기내과 최종 판단|호흡기내과 최종 확정|확정 T|확정 PD-L1 TPS)$/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/ · 확정$/)).not.toBeInTheDocument();
+      }
+    });
+  });
+
   it.each(["XRAY", "CT"])("sizes %s to its parent instead of a second viewport calculation", (stage) => {
     const { container } = render(<ResultReviewPanel stage={stage} />);
     expect(container.firstElementChild).toHaveClass("flex-1", "min-h-0", "h-full");
@@ -64,7 +84,7 @@ describe("ResultReviewPanel", () => {
     expect(screen.getByText(/확인 가능한 확정 결과가 없습니다/)).toBeTruthy();
     expect(screen.getByText("현재 검사에 연결된 AI 분석 후보가 없습니다.")).toBeTruthy();
     expect(screen.getByText(/원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요/)).toBeTruthy();
-    expect(screen.getByText(/호흡기내과 최종 판단 결과 대기/)).toBeTruthy();
+    expect(screen.getByText(/호흡기내과 검토 중 결과 대기/)).toBeTruthy();
     expect(screen.queryByText("Annotation API 연동 대기")).toBeNull();
     expect(screen.getByText("표시 가능한 원본 영상이 없습니다.")).toBeTruthy();
   });
@@ -175,7 +195,7 @@ describe("ResultReviewPanel", () => {
     render(<ResultReviewPanel stage={stage} />);
     if (imageWorkspace) {
       expect(screen.queryByRole("heading", { name: heading })).toBeNull();
-      expect(screen.getByRole("heading", { name: "호흡기내과 최종 판단" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: "호흡기내과 검토 중" })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "AI 분석 후보" })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "X-ray Viewer" })).toBeTruthy();
     } else {

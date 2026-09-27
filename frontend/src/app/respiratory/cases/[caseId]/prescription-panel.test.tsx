@@ -11,7 +11,7 @@ const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen:
 const base = { id: "rx-1", cycle_number: 1, regimen_detail: { regimen_name: "Test regimen", regimen_code: "TEST" }, items: [{ id: "item-1", drug_name: "Test drug", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "Day 1" }] };
 const mockFetch = (status: string, results: object[] = [], safetyFreshness = status === "DRAFT" ? (results.length ? "CURRENT" : "NOT_RUN") : "CURRENT") => vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ ...base, prescription_status: status, safety_freshness: safetyFreshness, safety_check_results: results }])));
 
-it.each(["create", "update", "finalize"])("never reports successful %s for rejected or failed requests", async action => {
+it.each(["create", "update", "safety", "finalize"])("never reports successful %s for rejected or failed requests", async action => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   vi.spyOn(console, "error").mockImplementation(() => {});
   for (const failure of ["field400", "html502", "network", "unknown"]) {
@@ -34,12 +34,20 @@ it.each(["create", "update", "finalize"])("never reports successful %s for rejec
       const button = await screen.findByRole("button", { name: "수정 저장" });
       fireEvent.change(screen.getByLabelText("Test drug 최종 용량"), { target: { value: "75" } });
       fireEvent.click(button);
+    } else if (action === "safety") {
+      fireEvent.click(await screen.findByRole("button", { name: "안전성 검사 실행" }));
     } else {
       fireEvent.click(await screen.findByRole("button", { name: "처방 최종 확정" }));
     }
-    await waitFor(() => expect(showToast.error).toHaveBeenCalled());
+    if (action === "safety") await screen.findByRole("alert");
+    else await waitFor(() => expect(showToast.error).toHaveBeenCalled());
     expect(showToast.success).not.toHaveBeenCalled();
     expect(changed).not.toHaveBeenCalled();
+    if (action === "safety") {
+      expect(screen.queryByText("안전성 검사가 완료되었습니다.")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "처방 최종 확정" })).not.toBeInTheDocument();
+      expect(screen.getByText(/현재 상태: DRAFT/)).toBeInTheDocument();
+    }
     expect(screen.queryByText(/처방 DRAFT가 생성되었습니다|처방 약물 정보가 수정되었습니다|처방이 최종 확정되었습니다/)).not.toBeInTheDocument();
     if (failure === "field400") expect(screen.getByText("용량을 확인해 주세요.")).toBeInTheDocument();
     if (action === "create") expect(screen.getByLabelText("Cycle 시작일")).toHaveValue("2026-09-27");
@@ -47,6 +55,34 @@ it.each(["create", "update", "finalize"])("never reports successful %s for rejec
     vi.mocked(showToast.error).mockClear();
     unmount();
   }
+});
+
+it.each([
+  ["DRAFT", "NOT_RUN", "미실행", "Safety Check를 먼저 실행해주세요."],
+  ["VALIDATED", "RECHECK_REQUIRED", "RECHECK_REQUIRED · 재검사 필요", "검사 결과가 변경되어 Safety Check를 다시 실행해야 합니다."],
+  ["VALIDATED", "CURRENT", "PASS", "안전성 검토가 완료되었습니다."],
+  ["FINAL", "CURRENT", "PASS", "FINAL · 조회 전용입니다."],
+])("explains %s / %s without changing its safety gate", async (status, freshness, safetyLabel, guidance) => {
+  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch(status, freshness === "NOT_RUN" ? [] : [{ id: "safe", check_type_label: "DUR", result: "PASS", message: "통과" }], freshness)} />);
+  expect(await screen.findByText("선택 Regimen: TEST · Test regimen")).toBeInTheDocument();
+  expect(screen.getByLabelText("처방 진행 상태")).toHaveTextContent(/DRAFT.*Safety Check.*VALIDATED.*FINAL/);
+  expect(screen.getByRole("heading", { name: `Safety Check · ${safetyLabel}` })).toBeInTheDocument();
+  expect(screen.getByText(guidance, { exact: false })).toBeInTheDocument();
+  expect(screen.getByText(/계산 용량: 80mg · 최종 용량: 80mg · 투여 경로: INTRAVENOUS/)).toBeInTheDocument();
+  if (status === "FINAL") expect(screen.queryByLabelText("Test drug 최종 용량")).not.toBeInTheDocument();
+});
+
+it("shows a pending safety request as checking without announcing validation", async () => {
+  let finish!: (value: Response) => void;
+  const fetch = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify([{ ...base, prescription_status: "DRAFT", safety_freshness: "NOT_RUN", safety_check_results: [] }])))
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { finish = resolve; }))
+    .mockResolvedValueOnce(new Response(JSON.stringify([{ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", safety_check_results: [{ id: "safe", check_type_label: "DUR", result: "PASS", message: "통과" }] }])));
+  render(<PrescriptionPanel {...props} authorizedFetch={fetch} />);
+  fireEvent.click(await screen.findByRole("button", { name: "안전성 검사 실행" }));
+  expect(screen.getByRole("heading", { name: "Safety Check · 검사 중" })).toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "처방 최종 확정" })).not.toBeInTheDocument();
+  await act(async () => finish(new Response("{}")));
+  expect(await screen.findByRole("button", { name: "처방 최종 확정" })).toBeEnabled();
 });
 
 it("distinguishes an accepted write from a failed refresh without announcing completion", async () => {
@@ -176,7 +212,7 @@ it("keeps unresolved safety warnings in the recheck path", async () => {
 it("does not offer another Safety Check after validation", async () => {
   render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("VALIDATED")} />);
 
-  expect(await screen.findByText(/Safety Check/)).toBeInTheDocument();
+  expect(await screen.findByRole("heading", { name: /Safety Check/ })).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: /안전성 검사/ })).not.toBeInTheDocument();
 });
 

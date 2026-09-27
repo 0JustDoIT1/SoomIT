@@ -147,11 +147,12 @@ it("applies the CT confirmation response stage and keeps it after refetch", asyn
   const originalCtPanel = screen.getByTestId("result-panel-CT");
   await userEvent.click(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" }));
   expect(within(navigation).getByRole("button", { name: "PET-CT / TNM 병기" })).toHaveAttribute("aria-current", "page");
-  expect(originalCtPanel).toBeInTheDocument();
+  expect(originalCtPanel).not.toBeInTheDocument();
+  expect(screen.queryByTestId("result-panel-CT")).not.toBeInTheDocument();
 
   await userEvent.click(within(navigation).getByRole("button", { name: "흉부 CT" }));
   expect(within(navigation).getByRole("button", { name: "흉부 CT" })).toHaveAttribute("aria-current", "page");
-  expect(screen.getByTestId("result-panel-CT")).toBe(originalCtPanel);
+  expect(screen.getByTestId("result-panel-CT")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "결과 입력 및 처리" })).not.toBeInTheDocument();
 });
 
