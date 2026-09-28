@@ -13,7 +13,6 @@ const navigation: RailItem[] = [
 
 export function HospitalAdminShell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [userName, setUserName] = useState("병원 관리자");
   const [hospitalName, setHospitalName] = useState("");
   const [ready, setReady] = useState(false);
@@ -30,5 +29,5 @@ export function HospitalAdminShell({ children }: { children: ReactNode }) {
 
   function logout() { clearHospitalAdminSession(); router.replace("/admin"); }
   if (!ready) return <div className="min-h-screen bg-[#F7F8FC]" />;
-  return <div className="flex min-h-screen bg-[#F7F8FC] text-slate-900"><ExpandableRail items={navigation} brand="SoomIT" userName={userName} userRole="병원 관리자" onLogout={logout} mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} /><div className="flex min-w-0 flex-1 flex-col"><header className="flex min-h-20 items-center border-b border-blue-100 bg-white px-4 py-4 sm:px-6"><button type="button" onClick={() => setMobileOpen(true)} aria-label="메뉴 열기" className="mr-3 rounded-md border border-slate-200 p-2 lg:hidden">☰</button><div><p className="text-sm font-semibold">병원 관리 콘솔</p><p className="text-xs text-slate-500">{hospitalName}</p></div><p className="ml-auto text-sm font-medium text-slate-700">{userName}</p></header><main className="mx-auto w-full min-w-0 max-w-[1760px] flex-1 px-4 py-4 sm:px-6 sm:py-5">{children}</main></div></div>;
+  return <div className="flex min-h-screen bg-[#F7F8FC] text-slate-900"><ExpandableRail items={navigation} brand="SoomIT" userName={userName} userRole="병원 관리자" onLogout={logout} /><div className="flex min-w-0 flex-1 flex-col"><header className="flex min-h-20 items-center border-b border-blue-100 bg-white px-4 py-4 sm:px-6"><div><p className="text-sm font-semibold">병원 관리 콘솔</p><p className="text-xs text-slate-500">{hospitalName}</p></div><p className="ml-auto text-sm font-medium text-slate-700">{userName}</p></header><main className="mx-auto w-full min-w-0 max-w-[1760px] flex-1 px-4 py-4 sm:px-6 sm:py-5">{children}</main></div></div>;
 }

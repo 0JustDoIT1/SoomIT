@@ -14,7 +14,6 @@ const navigation: RailItem[] = [
 
 export function SystemAdminShell({ children }: { children: ReactNode }) {
   const router = useRouter();
-  const [mobileOpen, setMobileOpen] = useState(false);
   const [userName, setUserName] = useState("시스템 관리자");
   const [ready, setReady] = useState(false);
 
@@ -36,10 +35,9 @@ export function SystemAdminShell({ children }: { children: ReactNode }) {
   if (!ready) return <div className="min-h-screen bg-[#F7F8FC]" />;
   return (
     <div className="flex min-h-screen bg-[#F7F8FC] text-slate-900">
-      <ExpandableRail items={navigation} brand="SoomIT" userName={userName} userRole="시스템 관리자" onLogout={logout} mobileOpen={mobileOpen} onMobileClose={() => setMobileOpen(false)} />
+      <ExpandableRail items={navigation} brand="SoomIT" userName={userName} userRole="시스템 관리자" onLogout={logout} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="flex min-h-20 items-center border-b border-blue-100 bg-white px-4 py-4 sm:px-6">
-          <button type="button" onClick={() => setMobileOpen(true)} aria-label="메뉴 열기" className="mr-3 rounded-md border border-slate-200 p-2 lg:hidden">☰</button>
           <div><p className="text-sm font-semibold">시스템 관리 콘솔</p><p className="text-xs text-slate-500">병원 및 관리자 계정 관리</p></div>
           <p className="ml-auto text-sm font-medium text-slate-700">{userName}</p>
         </header>

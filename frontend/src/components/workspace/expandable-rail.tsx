@@ -18,8 +18,6 @@ type ExpandableRailProps = {
   userName: string;
   userRole: string;
   onLogout: () => void;
-  mobileOpen: boolean;
-  onMobileClose: () => void;
 };
 
 export function ExpandableRail({
@@ -28,8 +26,6 @@ export function ExpandableRail({
   userName,
   userRole,
   onLogout,
-  mobileOpen,
-  onMobileClose,
 }: ExpandableRailProps) {
   const pathname = usePathname();
 
@@ -74,7 +70,6 @@ export function ExpandableRail({
               href={item.href}
               title={item.label}
               aria-label={item.label}
-              onClick={onMobileClose}
               className={`group relative flex min-h-[58px] w-14 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5 text-[11px] font-medium transition-all duration-150 ${
                 active
                   ? "bg-[#14b8a6] font-semibold text-white shadow-[0_5px_14px_rgba(3,25,31,0.24)]"
@@ -120,15 +115,5 @@ export function ExpandableRail({
     </div>
   );
 
-  return (
-    <>
-      <aside className="sticky top-0 hidden h-screen w-[76px] shrink-0 lg:block">{rail}</aside>
-      {mobileOpen ? (
-        <div className="fixed inset-0 z-50 lg:hidden">
-          <button type="button" aria-label="메뉴 닫기" onClick={onMobileClose} className="absolute inset-0 bg-slate-950/45" />
-          <aside className="relative h-full w-[76px] shadow-2xl">{rail}</aside>
-        </div>
-      ) : null}
-    </>
-  );
+  return <aside className="sticky top-0 h-screen w-[76px] shrink-0">{rail}</aside>;
 }
