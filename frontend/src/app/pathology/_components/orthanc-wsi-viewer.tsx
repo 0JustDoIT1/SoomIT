@@ -64,7 +64,7 @@ export function OrthancWsiViewer({ slide, caseId, fillHeight = false }: { slide:
     };
   }, [ownerKey, slide.id]);
 
-  return <div className={`flex flex-col overflow-hidden bg-slate-950 ${fillHeight ? "h-full min-h-0" : "min-h-[420px]"}`}>
+  return <div className={`flex w-full flex-col overflow-hidden bg-slate-950 ${fillHeight ? "h-full min-h-0" : "min-h-[420px]"}`}>
     <div className="flex min-h-9 shrink-0 items-center border-b border-slate-700 bg-slate-900 px-2"><span className="text-[10px] font-semibold text-slate-300">WSI</span></div>
     <div className="relative min-h-0 flex-1" data-wsi-layer="image">
     <div ref={containerRef} className="absolute inset-0" aria-label={`${slide.slide_code} WSI 뷰어`} />

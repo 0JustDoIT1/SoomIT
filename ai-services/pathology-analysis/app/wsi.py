@@ -59,6 +59,14 @@ def heatmap_tissue_mask(
     """Build the HSV tissue mask used only by the visualization pass."""
     thumbnail = slide.get_thumbnail((thumbnail_size, thumbnail_size)).convert("RGB")
     rgb = np.asarray(thumbnail, dtype=np.uint8)
+    return _heatmap_tissue_mask_from_rgb(rgb, min_area_ratio), thumbnail.size
+
+
+def _heatmap_tissue_mask_from_rgb(
+    rgb: np.ndarray,
+    min_area_ratio: float = 0.001,
+) -> np.ndarray:
+    """Keep stained tissue while excluding the bright slide background."""
     saturation = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[..., 1]
     saturation = cv2.medianBlur(saturation, 7)
     _, mask = cv2.threshold(
@@ -76,7 +84,7 @@ def heatmap_tissue_mask(
     component_count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
     keep = np.zeros(component_count, dtype=bool)
     keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= mask.size * min_area_ratio
-    return np.where(keep[labels], 1.0, 0.0).astype(np.float32), thumbnail.size
+    return np.where(keep[labels], 1.0, 0.0).astype(np.float32)
 
 
 def create_preview(slide_path: Path, max_size: int = 1200) -> bytes:
@@ -99,13 +107,15 @@ def create_tissue_attention_heatmap(
     tile_size: int,
     max_size: int = 1200,
 ) -> bytes:
-    """Render the overlap-patch CLAM heatmap while preserving the JPEG contract."""
+    """Render a tissue-only CLAM heatmap while preserving the JPEG contract."""
     if len(coordinates) != len(attention) or not coordinates:
         raise ValueError("attention and patch coordinates must have equal nonzero lengths")
 
     slide = openslide.OpenSlide(str(slide_path))
     try:
         preview = slide.get_thumbnail((max_size, max_size)).convert("RGB")
+        preview_rgb = np.asarray(preview, dtype=np.uint8)
+        tissue = _heatmap_tissue_mask_from_rgb(preview_rgb) > 0
         preview_width, preview_height = preview.size
         scores = np.asarray(attention, dtype=np.float32)
         if not np.all(np.isfinite(scores)):
@@ -134,12 +144,14 @@ def create_tissue_attention_heatmap(
                 score_sum[y1:y2, x1:x2] += float(score)
                 score_count[y1:y2, x1:x2] += 1.0
 
-        no_data = score_count <= 0
-        if np.all(no_data):
+        if np.all(score_count <= 0):
             raise ValueError("attention patches do not overlap the WSI preview")
 
-        sigma_x = max(1.0, patch_width * 0.5)
-        sigma_y = max(1.0, patch_height * 0.5)
+        # Smooth both accumulated attention and sampling density before division.
+        # This removes rectangular patch edges without allowing sparse sampling
+        # density to change the displayed attention value.
+        sigma_x = max(1.0, patch_width)
+        sigma_y = max(1.0, patch_height)
         score_sum = cv2.GaussianBlur(
             score_sum,
             (0, 0),
@@ -156,10 +168,11 @@ def create_tissue_attention_heatmap(
         )
         with np.errstate(invalid="ignore", divide="ignore"):
             blended = np.where(score_count > 1e-9, score_sum / score_count, np.nan)
-        blended[no_data] = np.nan
 
-        visible_scores = blended[~np.isnan(blended)]
-        display_low, display_high = np.percentile(visible_scores, (1, 99))
+        visible_scores = blended[tissue & np.isfinite(blended)]
+        if visible_scores.size == 0:
+            raise ValueError("attention does not overlap the detected tissue")
+        display_low, display_high = np.percentile(visible_scores, (20, 99))
         if display_high <= display_low:
             relative_attention = np.zeros_like(blended)
         else:
@@ -168,24 +181,30 @@ def create_tissue_attention_heatmap(
                 0.0,
                 1.0,
             ).astype(np.float32)
+        relative_attention = np.power(
+            np.nan_to_num(relative_attention, nan=0.0),
+            1.35,
+        )
         heat_u8 = (
-            np.nan_to_num(relative_attention, nan=0.0) * 255
+            relative_attention * 255
         ).clip(0, 255).astype(np.uint8)
         colors = cv2.cvtColor(
             cv2.applyColorMap(heat_u8, cv2.COLORMAP_TURBO),
             cv2.COLOR_BGR2RGB,
         )
-        alpha = np.where(no_data, 0.0, 0.5).astype(np.float32)[..., None]
-        preview_rgb = np.asarray(preview, dtype=np.float32)
-        composed = (
-            preview_rgb * (1.0 - alpha) + colors.astype(np.float32) * alpha
-        ).clip(0, 255).astype(np.uint8)
+        # Present the result as a diagnostic attention map: white outside the
+        # specimen, dark low-attention tissue, and Turbo colors for hotspots.
+        # Keeping the H&E texture out of this artifact prevents tile seams and
+        # compression noise from being mistaken for model attention.
+        composed = np.full_like(colors, 255)
+        composed[tissue] = colors[tissue]
         output = BytesIO()
         Image.fromarray(composed).save(
             output,
             format="JPEG",
-            quality=88,
+            quality=95,
             optimize=True,
+            subsampling=0,
         )
         return output.getvalue()
     finally:
@@ -253,8 +272,9 @@ def heatmap_patch_coordinates(
     target_mpp: float,
     max_patches: int,
     overlap_ratio: float,
+    seed: int,
 ) -> tuple[list[tuple[int, int, int]], int]:
-    """Select overlapping heatmap patches and cap them uniformly in slide order."""
+    """Select overlapping patches without introducing a periodic grid pattern."""
     if not 0.0 <= overlap_ratio < 1.0:
         raise ValueError("overlap_ratio must be at least 0 and less than 1")
     level, downsample = select_level(slide, target_mpp)
@@ -287,7 +307,7 @@ def heatmap_patch_coordinates(
                 coordinates.append((base_x, base_y, level))
 
     if len(coordinates) > max_patches:
-        indices = np.linspace(0, len(coordinates) - 1, max_patches).round().astype(int)
+        indices = sorted(random.Random(seed).sample(range(len(coordinates)), max_patches))
         coordinates = [coordinates[index] for index in indices]
     return coordinates, level
 
@@ -343,6 +363,7 @@ class Uni2hEmbedder:
                     target_mpp=target_mpp,
                     max_patches=max_patches,
                     overlap_ratio=overlap_ratio,
+                    seed=seed,
                 )
             else:
                 mask, thumb_size = tissue_mask(slide, thumbnail_size)

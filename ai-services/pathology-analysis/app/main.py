@@ -136,7 +136,7 @@ def predict(body: PredictRequest) -> dict:
                             coordinates,
                             tissue_attention,
                             tile_size=256,
-                            max_size=1200,
+                            max_size=1600,
                         ),
                     )
                 except Exception:
