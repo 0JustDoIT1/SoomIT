@@ -6,33 +6,25 @@ class KakaoAuthService {
 
   Future<OAuthToken> login() async {
     try {
-      final token =
-          await UserApi.instance.loginWithKakaoAccount();
+      final token = await UserApi.instance.loginWithKakaoAccount();
 
       debugPrint('카카오계정 로그인 성공');
-      debugPrint(
-        'accessToken 존재: ${token.accessToken.isNotEmpty}',
-      );
+      debugPrint('accessToken 존재: ${token.accessToken.isNotEmpty}');
 
       return token;
     } catch (e, stackTrace) {
       debugPrint('카카오계정 로그인 실패: $e');
 
-      debugPrintStack(
-        stackTrace: stackTrace,
-      );
+      debugPrintStack(stackTrace: stackTrace);
 
       rethrow;
     }
   }
 
   Future<User> getCurrentUser() async {
-    final user =
-        await UserApi.instance.me();
+    final user = await UserApi.instance.me();
 
-    debugPrint(
-      '카카오 사용자 ID: ${user.id}',
-    );
+    debugPrint('카카오 사용자 ID: ${user.id}');
 
     return user;
   }

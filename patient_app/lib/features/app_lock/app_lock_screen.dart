@@ -8,10 +8,7 @@ import 'services/biometric_auth_service.dart';
 class AppLockScreen extends StatefulWidget {
   final VoidCallback onUnlocked;
 
-  const AppLockScreen({
-    super.key,
-    required this.onUnlocked,
-  });
+  const AppLockScreen({super.key, required this.onUnlocked});
 
   @override
   State<AppLockScreen> createState() => _AppLockScreenState();
@@ -20,8 +17,7 @@ class AppLockScreen extends StatefulWidget {
 class _AppLockScreenState extends State<AppLockScreen> {
   final AppLockService _appLockService = AppLockService.instance;
 
-  final BiometricAuthService _biometricService =
-      BiometricAuthService.instance;
+  final BiometricAuthService _biometricService = BiometricAuthService.instance;
 
   String _pin = '';
 
@@ -78,18 +74,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   // 숫자만 랜덤 변경
   // =========================================================
   List<String> _createRandomKeypad() {
-    final numbers = <String>[
-      '0',
-      '1',
-      '2',
-      '3',
-      '4',
-      '5',
-      '6',
-      '7',
-      '8',
-      '9',
-    ];
+    final numbers = <String>['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
 
     numbers.shuffle();
 
@@ -133,10 +118,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     }
 
     setState(() {
-      _pin = _pin.substring(
-        0,
-        _pin.length - 1,
-      );
+      _pin = _pin.substring(0, _pin.length - 1);
 
       _errorMessage = null;
     });
@@ -158,8 +140,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     });
 
     try {
-      final verified =
-          await _appLockService.verifyPin(pinToVerify);
+      final verified = await _appLockService.verifyPin(pinToVerify);
 
       if (!mounted) {
         return;
@@ -188,8 +169,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
           _keypadNumbers = _createRandomKeypad();
 
-          _errorMessage =
-              'PIN을 $_maxFailedAttempts회 잘못 입력했습니다.';
+          _errorMessage = 'PIN을 $_maxFailedAttempts회 잘못 입력했습니다.';
         });
 
         _startPinLock();
@@ -197,8 +177,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         return;
       }
 
-      final remainingAttempts =
-          _maxFailedAttempts - nextFailedAttempts;
+      final remainingAttempts = _maxFailedAttempts - nextFailedAttempts;
 
       setState(() {
         _checking = false;
@@ -226,8 +205,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
         _keypadNumbers = _createRandomKeypad();
 
-        _errorMessage =
-            'PIN을 확인하는 중 문제가 발생했습니다. 다시 시도해주세요.';
+        _errorMessage = 'PIN을 확인하는 중 문제가 발생했습니다. 다시 시도해주세요.';
       });
     }
   }
@@ -244,57 +222,51 @@ class _AppLockScreenState extends State<AppLockScreen> {
       _pin = '';
     });
 
-    _lockTimer = Timer.periodic(
-      const Duration(seconds: 1),
-      (timer) {
-        if (!mounted) {
-          timer.cancel();
+    _lockTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
 
-          return;
-        }
+        return;
+      }
 
-        if (_remainingLockSeconds <= 1) {
-          timer.cancel();
-
-          setState(() {
-            _remainingLockSeconds = 0;
-
-            _failedAttempts = 0;
-
-            _pin = '';
-
-            _keypadNumbers = _createRandomKeypad();
-
-            _errorMessage = null;
-          });
-
-          return;
-        }
+      if (_remainingLockSeconds <= 1) {
+        timer.cancel();
 
         setState(() {
-          _remainingLockSeconds--;
+          _remainingLockSeconds = 0;
+
+          _failedAttempts = 0;
+
+          _pin = '';
+
+          _keypadNumbers = _createRandomKeypad();
+
+          _errorMessage = null;
         });
-      },
-    );
+
+        return;
+      }
+
+      setState(() {
+        _remainingLockSeconds--;
+      });
+    });
   }
 
   // =========================================================
   // 지문 초기화
   // =========================================================
   Future<void> _initializeBiometric() async {
-    final biometricEnabled =
-        await _appLockService.isBiometricEnabled();
+    final biometricEnabled = await _appLockService.isBiometricEnabled();
 
-    final biometricAvailable =
-        await _biometricService.isAvailable();
+    final biometricAvailable = await _biometricService.isAvailable();
 
     if (!mounted) {
       return;
     }
 
     setState(() {
-      _biometricEnabled =
-          biometricEnabled && biometricAvailable;
+      _biometricEnabled = biometricEnabled && biometricAvailable;
     });
 
     if (_biometricEnabled) {
@@ -315,8 +287,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       _errorMessage = null;
     });
 
-    final authenticated =
-        await _biometricService.authenticate();
+    final authenticated = await _biometricService.authenticate();
 
     if (!mounted) {
       return;
@@ -359,57 +330,41 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
         body: SafeArea(
           child: LayoutBuilder(
-            builder: (
-              context,
-              constraints,
-            ) {
-              final bool compact =
-                  constraints.maxHeight < 730;
+            builder: (context, constraints) {
+              final bool compact = constraints.maxHeight < 730;
 
               // ===========================================
               // 핵심
               //
               // 전체 UI를 이전보다 아래로 내림.
               // ===========================================
-              final double topSpace =
-                  compact ? 46 : 86;
+              final double topSpace = compact ? 46 : 86;
 
               // 숫자 버튼 크게
-              final double buttonSize =
-                  compact ? 70 : 82;
+              final double buttonSize = compact ? 70 : 82;
 
-              final double horizontalGap =
-                  compact ? 18 : 22;
+              final double horizontalGap = compact ? 18 : 22;
 
-              final double verticalGap =
-                  compact ? 9 : 12;
+              final double verticalGap = compact ? 9 : 12;
 
-              final double keypadHeight =
-                  (buttonSize * 4) +
-                      (verticalGap * 3);
+              final double keypadHeight = (buttonSize * 4) + (verticalGap * 3);
 
               return SizedBox.expand(
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 24,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
                   child: Column(
                     children: [
                       // =====================================
                       // 위 공간
                       // =====================================
-                      SizedBox(
-                        height: topSpace,
-                      ),
+                      SizedBox(height: topSpace),
 
                       // =====================================
                       // 제목
                       // =====================================
                       _buildHeader(compact),
 
-                      SizedBox(
-                        height: compact ? 20 : 24,
-                      ),
+                      SizedBox(height: compact ? 20 : 24),
 
                       // =====================================
                       // PIN 점
@@ -428,17 +383,13 @@ class _AppLockScreenState extends State<AppLockScreen> {
                         height: compact ? 46 : 52,
                         child: Center(
                           child: AnimatedSwitcher(
-                            duration: const Duration(
-                              milliseconds: 180,
-                            ),
+                            duration: const Duration(milliseconds: 180),
                             child: _buildStatusArea(),
                           ),
                         ),
                       ),
 
-                      SizedBox(
-                        height: compact ? 8 : 12,
-                      ),
+                      SizedBox(height: compact ? 8 : 12),
 
                       // =====================================
                       // 키패드
@@ -449,17 +400,12 @@ class _AppLockScreenState extends State<AppLockScreen> {
                       SizedBox(
                         height: keypadHeight,
                         child: AnimatedOpacity(
-                          duration: const Duration(
-                            milliseconds: 180,
-                          ),
-                          opacity:
-                              _canUseKeypad ? 1 : 0.42,
+                          duration: const Duration(milliseconds: 180),
+                          opacity: _canUseKeypad ? 1 : 0.42,
                           child: _buildFixedKeypad(
                             buttonSize: buttonSize,
-                            horizontalGap:
-                                horizontalGap,
-                            verticalGap:
-                                verticalGap,
+                            horizontalGap: horizontalGap,
+                            verticalGap: verticalGap,
                           ),
                         ),
                       ),
@@ -482,9 +428,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
                             : const SizedBox(),
                       ),
 
-                      SizedBox(
-                        height: compact ? 10 : 18,
-                      ),
+                      SizedBox(height: compact ? 10 : 18),
                     ],
                   ),
                 ),
@@ -517,9 +461,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
           ),
         ),
 
-        SizedBox(
-          height: compact ? 13 : 15,
-        ),
+        SizedBox(height: compact ? 13 : 15),
 
         Text(
           'PIN 번호를 입력해주세요',
@@ -553,35 +495,24 @@ class _AppLockScreenState extends State<AppLockScreen> {
   Widget _buildPinDots() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
-      children: List.generate(
-        6,
-        (index) {
-          final filled = index < _pin.length;
+      children: List.generate(6, (index) {
+        final filled = index < _pin.length;
 
-          return AnimatedContainer(
-            duration: const Duration(
-              milliseconds: 120,
+        return AnimatedContainer(
+          duration: const Duration(milliseconds: 120),
+          width: 15,
+          height: 15,
+          margin: const EdgeInsets.symmetric(horizontal: 7),
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: filled ? _primaryBlue : Colors.transparent,
+            border: Border.all(
+              color: filled ? _primaryBlue : const Color(0xFFD8E0EA),
+              width: 2,
             ),
-            width: 15,
-            height: 15,
-            margin: const EdgeInsets.symmetric(
-              horizontal: 7,
-            ),
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: filled
-                  ? _primaryBlue
-                  : Colors.transparent,
-              border: Border.all(
-                color: filled
-                    ? _primaryBlue
-                    : const Color(0xFFD8E0EA),
-                width: 2,
-              ),
-            ),
-          );
-        },
-      ),
+          ),
+        );
+      }),
     );
   }
 
@@ -594,38 +525,24 @@ class _AppLockScreenState extends State<AppLockScreen> {
         key: ValueKey('checking'),
         width: 22,
         height: 22,
-        child: CircularProgressIndicator(
-          strokeWidth: 2.2,
-          color: _primaryBlue,
-        ),
+        child: CircularProgressIndicator(strokeWidth: 2.2, color: _primaryBlue),
       );
     }
 
     if (_isPinLocked) {
       return Container(
         key: const ValueKey('locked'),
-        constraints: const BoxConstraints(
-          maxWidth: 340,
-        ),
-        padding: const EdgeInsets.symmetric(
-          horizontal: 12,
-          vertical: 7,
-        ),
+        constraints: const BoxConstraints(maxWidth: 340),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           color: const Color(0xFFFFF3F2),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: const Color(0xFFFFD7D4),
-          ),
+          border: Border.all(color: const Color(0xFFFFD7D4)),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.timer_outlined,
-              color: _errorColor,
-              size: 18,
-            ),
+            const Icon(Icons.timer_outlined, color: _errorColor, size: 18),
 
             const SizedBox(width: 7),
 
@@ -650,9 +567,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
     if (_errorMessage != null) {
       return Container(
         key: ValueKey(_errorMessage),
-        constraints: const BoxConstraints(
-          maxWidth: 350,
-        ),
+        constraints: const BoxConstraints(maxWidth: 350),
         alignment: Alignment.center,
         child: Text(
           _errorMessage!,
@@ -669,9 +584,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
       );
     }
 
-    return const SizedBox(
-      key: ValueKey('normal'),
-    );
+    return const SizedBox(key: ValueKey('normal'));
   }
 
   // =========================================================
@@ -687,72 +600,45 @@ class _AppLockScreenState extends State<AppLockScreen> {
         mainAxisSize: MainAxisSize.min,
         children: [
           _buildKeypadRow(
-            numbers: [
-              _keypadNumbers[0],
-              _keypadNumbers[1],
-              _keypadNumbers[2],
-            ],
+            numbers: [_keypadNumbers[0], _keypadNumbers[1], _keypadNumbers[2]],
             buttonSize: buttonSize,
             gap: horizontalGap,
           ),
 
-          SizedBox(
-            height: verticalGap,
-          ),
+          SizedBox(height: verticalGap),
 
           _buildKeypadRow(
-            numbers: [
-              _keypadNumbers[3],
-              _keypadNumbers[4],
-              _keypadNumbers[5],
-            ],
+            numbers: [_keypadNumbers[3], _keypadNumbers[4], _keypadNumbers[5]],
             buttonSize: buttonSize,
             gap: horizontalGap,
           ),
 
-          SizedBox(
-            height: verticalGap,
-          ),
+          SizedBox(height: verticalGap),
 
           _buildKeypadRow(
-            numbers: [
-              _keypadNumbers[6],
-              _keypadNumbers[7],
-              _keypadNumbers[8],
-            ],
+            numbers: [_keypadNumbers[6], _keypadNumbers[7], _keypadNumbers[8]],
             buttonSize: buttonSize,
             gap: horizontalGap,
           ),
 
-          SizedBox(
-            height: verticalGap,
-          ),
+          SizedBox(height: verticalGap),
 
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               // 왼쪽 빈칸 고정
-              SizedBox(
-                width: buttonSize,
-                height: buttonSize,
-              ),
+              SizedBox(width: buttonSize, height: buttonSize),
 
-              SizedBox(
-                width: horizontalGap,
-              ),
+              SizedBox(width: horizontalGap),
 
               // 마지막 숫자
               SizedBox(
                 width: buttonSize,
                 height: buttonSize,
-                child: _buildNumberButton(
-                  _keypadNumbers[9],
-                ),
+                child: _buildNumberButton(_keypadNumbers[9]),
               ),
 
-              SizedBox(
-                width: horizontalGap,
-              ),
+              SizedBox(width: horizontalGap),
 
               // 삭제 고정
               SizedBox(
@@ -781,9 +667,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         SizedBox(
           width: buttonSize,
           height: buttonSize,
-          child: _buildNumberButton(
-            numbers[0],
-          ),
+          child: _buildNumberButton(numbers[0]),
         ),
 
         SizedBox(width: gap),
@@ -791,9 +675,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         SizedBox(
           width: buttonSize,
           height: buttonSize,
-          child: _buildNumberButton(
-            numbers[1],
-          ),
+          child: _buildNumberButton(numbers[1]),
         ),
 
         SizedBox(width: gap),
@@ -801,9 +683,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
         SizedBox(
           width: buttonSize,
           height: buttonSize,
-          child: _buildNumberButton(
-            numbers[2],
-          ),
+          child: _buildNumberButton(numbers[2]),
         ),
       ],
     );
@@ -812,9 +692,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
   // =========================================================
   // 숫자 버튼
   // =========================================================
-  Widget _buildNumberButton(
-    String number,
-  ) {
+  Widget _buildNumberButton(String number) {
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -829,31 +707,18 @@ class _AppLockScreenState extends State<AppLockScreen> {
         // 출렁이는 느낌 제거
         splashFactory: NoSplash.splashFactory,
 
-        highlightColor:
-            _primaryBlue.withValues(
-          alpha: 0.07,
-        ),
+        highlightColor: _primaryBlue.withValues(alpha: 0.07),
 
         child: Ink(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             color: Colors.white,
-            border: Border.all(
-              color: _borderColor,
-              width: 1.2,
-            ),
+            border: Border.all(color: _borderColor, width: 1.2),
             boxShadow: [
               BoxShadow(
-                color:
-                    const Color(0xFF1D4D7A)
-                        .withValues(
-                  alpha: 0.045,
-                ),
+                color: const Color(0xFF1D4D7A).withValues(alpha: 0.045),
                 blurRadius: 12,
-                offset: const Offset(
-                  0,
-                  4,
-                ),
+                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -879,25 +744,19 @@ class _AppLockScreenState extends State<AppLockScreen> {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap:
-            _canUseKeypad ? _deleteDigit : null,
+        onTap: _canUseKeypad ? _deleteDigit : null,
 
         customBorder: const CircleBorder(),
 
         splashFactory: NoSplash.splashFactory,
 
-        highlightColor:
-            _primaryBlue.withValues(
-          alpha: 0.05,
-        ),
+        highlightColor: _primaryBlue.withValues(alpha: 0.05),
 
         child: Center(
           child: Icon(
             Icons.backspace_outlined,
             size: 29,
-            color: _canUseKeypad
-                ? _textPrimary
-                : const Color(0xFFB7C0CB),
+            color: _canUseKeypad ? _textPrimary : const Color(0xFFB7C0CB),
           ),
         ),
       ),
@@ -912,37 +771,26 @@ class _AppLockScreenState extends State<AppLockScreen> {
       width: 310,
       height: 54,
       child: OutlinedButton.icon(
-        onPressed:
-            _checking ? null : _unlockWithBiometric,
+        onPressed: _checking ? null : _unlockWithBiometric,
 
-        icon: const Icon(
-          Icons.fingerprint_rounded,
-          size: 26,
-        ),
+        icon: const Icon(Icons.fingerprint_rounded, size: 26),
 
         label: const Text(
           '지문으로 잠금 해제',
-          style: TextStyle(
-            fontSize: 15,
-            fontWeight: FontWeight.w700,
-          ),
+          style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
         ),
 
         style: OutlinedButton.styleFrom(
-          backgroundColor:
-              const Color(0xFFF1F7FF),
+          backgroundColor: const Color(0xFFF1F7FF),
 
           foregroundColor: _strongBlue,
 
-          disabledForegroundColor:
-              const Color(0xFF9FB9D0),
+          disabledForegroundColor: const Color(0xFF9FB9D0),
 
           side: BorderSide.none,
 
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(
-              16,
-            ),
+            borderRadius: BorderRadius.circular(16),
           ),
         ),
       ),

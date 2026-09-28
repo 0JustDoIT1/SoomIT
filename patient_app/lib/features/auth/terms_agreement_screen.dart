@@ -34,10 +34,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
       _termsAgreed && _privacyAgreed && _sensitiveAgreed;
 
   bool get _allAgreed =>
-      _termsAgreed &&
-      _privacyAgreed &&
-      _sensitiveAgreed &&
-      _pushAgreed;
+      _termsAgreed && _privacyAgreed && _sensitiveAgreed && _pushAgreed;
 
   void _toggleAll(bool value) {
     setState(() {
@@ -99,10 +96,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
         ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
-          child: Divider(
-            height: 1,
-            color: Color(0xFFE8EEF4),
-          ),
+          child: Divider(height: 1, color: Color(0xFFE8EEF4)),
         ),
       ),
       body: SafeArea(
@@ -134,9 +128,8 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                                   _termsAgreed = value;
                                 });
                               },
-                              onOpen: () => _openDocument(
-                                AgreementDocumentType.terms,
-                              ),
+                              onOpen: () =>
+                                  _openDocument(AgreementDocumentType.terms),
                             ),
                             const _AgreementDivider(),
                             _AgreementRow(
@@ -149,9 +142,8 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                                   _privacyAgreed = value;
                                 });
                               },
-                              onOpen: () => _openDocument(
-                                AgreementDocumentType.privacy,
-                              ),
+                              onOpen: () =>
+                                  _openDocument(AgreementDocumentType.privacy),
                             ),
                             const _AgreementDivider(),
                             _AgreementRow(
@@ -185,9 +177,8 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                                   _pushAgreed = value;
                                 });
                               },
-                              onOpen: () => _openDocument(
-                                AgreementDocumentType.push,
-                              ),
+                              onOpen: () =>
+                                  _openDocument(AgreementDocumentType.push),
                             ),
                           ],
                         ),
@@ -215,14 +206,9 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
         gradient: const LinearGradient(
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
-          colors: [
-            Color(0xFFEAF7FF),
-            Color(0xFFDDF2FF),
-          ],
+          colors: [Color(0xFFEAF7FF), Color(0xFFDDF2FF)],
         ),
-        border: Border.all(
-          color: const Color(0xFFDDEFFC),
-        ),
+        border: Border.all(color: const Color(0xFFDDEFFC)),
       ),
       child: Stack(
         children: [
@@ -287,10 +273,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
               height: 145,
               fit: BoxFit.contain,
               errorBuilder: (context, error, stackTrace) {
-                return const SizedBox(
-                  width: 132,
-                  height: 132,
-                );
+                return const SizedBox(width: 132, height: 132);
               },
             ),
           ),
@@ -323,9 +306,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
     );
   }
 
-  Widget _buildAgreementGroup({
-    required List<Widget> children,
-  }) {
+  Widget _buildAgreementGroup({required List<Widget> children}) {
     return Container(
       decoration: BoxDecoration(
         color: _surface,
@@ -356,9 +337,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: _allAgreed
-                  ? const Color(0xFFB7D7FF)
-                  : _border,
+              color: _allAgreed ? const Color(0xFFB7D7FF) : _border,
             ),
           ),
           child: Row(
@@ -434,10 +413,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                 ),
                 child: const Text(
                   '동의하고 계속하기',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                 ),
               ),
             ),
@@ -545,10 +521,7 @@ class _AgreementCheckbox extends StatelessWidget {
   final bool checked;
   final VoidCallback onTap;
 
-  const _AgreementCheckbox({
-    required this.checked,
-    required this.onTap,
-  });
+  const _AgreementCheckbox({required this.checked, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -563,9 +536,7 @@ class _AgreementCheckbox extends StatelessWidget {
           width: 27,
           height: 27,
           decoration: BoxDecoration(
-            color: checked
-                ? const Color(0xFF2F80ED)
-                : Colors.white,
+            color: checked ? const Color(0xFF2F80ED) : Colors.white,
             borderRadius: BorderRadius.circular(7),
             border: Border.all(
               color: checked
@@ -575,11 +546,7 @@ class _AgreementCheckbox extends StatelessWidget {
             ),
           ),
           child: checked
-              ? const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 19,
-                )
+              ? const Icon(Icons.check_rounded, color: Colors.white, size: 19)
               : null,
         ),
       ),
@@ -601,20 +568,12 @@ class _AgreementDivider extends StatelessWidget {
   }
 }
 
-enum AgreementDocumentType {
-  terms,
-  privacy,
-  sensitive,
-  push,
-}
+enum AgreementDocumentType { terms, privacy, sensitive, push }
 
 class AgreementDocumentScreen extends StatelessWidget {
   final AgreementDocumentType type;
 
-  const AgreementDocumentScreen({
-    super.key,
-    required this.type,
-  });
+  const AgreementDocumentScreen({super.key, required this.type});
 
   String get _title {
     switch (type) {
@@ -684,13 +643,11 @@ class AgreementDocumentScreen extends StatelessWidget {
           ),
           _AgreementSection(
             title: '7. 개인정보 보호',
-            body:
-                '서비스 이용 과정에서 처리되는 개인정보와 건강 관련 정보는 개인정보 처리방침에 따라 관리합니다.',
+            body: '서비스 이용 과정에서 처리되는 개인정보와 건강 관련 정보는 개인정보 처리방침에 따라 관리합니다.',
           ),
           _AgreementSection(
             title: '8. 약관의 변경',
-            body:
-                '약관 내용이 변경되는 경우 변경 사유와 적용일을 서비스 내 공지 등 적절한 방법으로 안내합니다.',
+            body: '약관 내용이 변경되는 경우 변경 사유와 적용일을 서비스 내 공지 등 적절한 방법으로 안내합니다.',
           ),
         ];
 
@@ -761,8 +718,7 @@ class AgreementDocumentScreen extends StatelessWidget {
           ),
           _AgreementSection(
             title: '4. 동의 안내',
-            body:
-                '건강정보 등 민감정보 처리는 환자 연결 및 건강관리 기능 제공을 위해 필요한 항목입니다.',
+            body: '건강정보 등 민감정보 처리는 환자 연결 및 건강관리 기능 제공을 위해 필요한 항목입니다.',
           ),
         ];
 
@@ -770,8 +726,7 @@ class AgreementDocumentScreen extends StatelessWidget {
         return const [
           _AgreementSection(
             title: '1. 수신 항목',
-            body:
-                '예약, 복약, 검사결과 등 숨-잇 서비스 이용에 도움이 되는 주요 푸시 알림을 받을 수 있습니다.',
+            body: '예약, 복약, 검사결과 등 숨-잇 서비스 이용에 도움이 되는 주요 푸시 알림을 받을 수 있습니다.',
           ),
           _AgreementSection(
             title: '2. 선택 동의 안내',
@@ -780,8 +735,7 @@ class AgreementDocumentScreen extends StatelessWidget {
           ),
           _AgreementSection(
             title: '3. 변경',
-            body:
-                '가입 후에도 마이페이지의 알림 설정에서 수신 여부를 변경할 수 있도록 구성합니다.',
+            body: '가입 후에도 마이페이지의 알림 설정에서 수신 여부를 변경할 수 있도록 구성합니다.',
           ),
         ];
     }
@@ -808,10 +762,7 @@ class AgreementDocumentScreen extends StatelessWidget {
         ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
-          child: Divider(
-            height: 1,
-            color: Color(0xFFE8EEF4),
-          ),
+          child: Divider(height: 1, color: Color(0xFFE8EEF4)),
         ),
       ),
       body: Column(
@@ -825,9 +776,7 @@ class AgreementDocumentScreen extends StatelessWidget {
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(18),
-                    border: Border.all(
-                      color: const Color(0xFFE3EBF3),
-                    ),
+                    border: Border.all(color: const Color(0xFFE3EBF3)),
                   ),
                   child: Row(
                     children: [
@@ -879,9 +828,7 @@ class AgreementDocumentScreen extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(18),
-                      border: Border.all(
-                        color: const Color(0xFFE3EBF3),
-                      ),
+                      border: Border.all(color: const Color(0xFFE3EBF3)),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -930,10 +877,7 @@ class AgreementDocumentScreen extends StatelessWidget {
                   ),
                   child: const Text(
                     '확인하고 돌아가기',
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),
@@ -949,8 +893,5 @@ class _AgreementSection {
   final String title;
   final String body;
 
-  const _AgreementSection({
-    required this.title,
-    required this.body,
-  });
+  const _AgreementSection({required this.title, required this.body});
 }
