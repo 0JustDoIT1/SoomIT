@@ -55,7 +55,7 @@ test("physician selects a regimen, confirms treatment, and opens prescription st
 
   await expect(page.getByText("치료계획 확정 완료", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "확정된 치료계획 보기", exact: true }).click();
-  await expect(page.getByRole("dialog", { name: "치료 결정 조회" })).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "진료 종합 소견 조회" })).toBeVisible();
   await expect(page.getByRole("dialog").getByLabel("치료 유형")).toHaveCount(0);
   await page.getByRole("button", { name: "닫기" }).click();
 

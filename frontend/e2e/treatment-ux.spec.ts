@@ -44,7 +44,7 @@ test("candidates precede planning and saved R1 leads to confirmation then prescr
   await dialog.locator("summary").click();
   await expect(dialog.getByRole("textbox", { name: "결정 근거 (선택)", exact: true })).toHaveValue("QA saved rationale");
   await dialog.getByRole("button", { name: "저장하고 다음 단계", exact: true }).click();
-  await expect(dialog.getByRole("heading", { name: "AI 치료 소견" })).toBeVisible();
+  await expect(dialog.getByRole("heading", { name: "진료 종합 소견 및 최종 확정" })).toBeVisible();
   await expect(dialog.locator("button.bg-blue-600")).toHaveCount(1);
   await expect(dialog.getByRole("button", { name: "의료진 소견 저장", exact: true })).toHaveClass(/bg-white/);
   await dialog.getByRole("button", { name: "치료계획 확정", exact: true }).click();
@@ -54,7 +54,7 @@ test("candidates precede planning and saved R1 leads to confirmation then prescr
   await page.getByRole("button", { name: "확정된 치료계획 보기" }).click();
   await expect(dialog.getByRole("textbox", { name: "치료 계획", exact: true })).toHaveCount(0);
   await expect(dialog.getByRole("button", { name: "치료계획 확정", exact: true })).toHaveCount(0);
-  await expect(dialog.getByRole("textbox", { name: "호흡기내과 소견", exact: true })).toBeDisabled();
+  await expect(dialog.getByRole("textbox", { name: "호흡기내과 최종 종합 소견", exact: true })).toBeDisabled();
   await dialog.getByRole("button", { name: "닫기", exact: true }).click();
   await page.getByRole("button", { name: "처방 작성으로 이동 →" }).click();
   await expect(page.getByRole("button", { name: "처방 · 안전성", exact: true })).toHaveAttribute("aria-pressed", "true");
