@@ -213,9 +213,8 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
           </div>
         </section>
       ) : (
-        <button type="button" onClick={() => setOpen(true)} aria-label="숨챗 열기" className="relative rounded-full transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
-          <Image src="/images/AIchat숨이.png" alt="" width={92} height={92} className="h-[5.75rem] w-[5.75rem] object-contain drop-shadow-[0_5px_10px_rgba(76,65,150,0.32)]" />
-          <span className="absolute bottom-16 left-10 whitespace-nowrap rounded-full border border-violet-300 bg-white px-3 py-2 text-sm font-bold leading-none text-violet-600 shadow-sm">숨챗</span>
+        <button type="button" onClick={() => setOpen(true)} aria-label="숨챗 열기" className="relative h-[8.25rem] w-[8.25rem] overflow-hidden rounded-full bg-transparent transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+          <Image src="/images/soomchat.png" alt="" width={132} height={132} className="h-full w-full scale-[1.2] object-contain" />
           {unread > 0 && <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-rose-500 px-1.5 text-center text-[10px] leading-5 text-white">{unread > 99 ? "99+" : unread}</span>}
         </button>
       )}
