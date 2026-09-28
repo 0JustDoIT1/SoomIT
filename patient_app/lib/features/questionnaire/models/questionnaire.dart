@@ -21,48 +21,26 @@ class Questionnaire {
     required this.updatedAt,
   });
 
-  factory Questionnaire.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory Questionnaire.fromJson(Map<String, dynamic> json) {
     return Questionnaire(
       id: json['id'] as String,
-      questionnaireType:
-          json['questionnaire_type'] as String,
-      questionnaireVersion:
-          json['questionnaire_version'] as String,
-      responses: _parseResponses(
-        json['responses'],
-      ),
-      isCompleted:
-          json['is_completed'] as bool? ?? false,
-      completedAt:
-          _parseDateTime(
-        json['completed_at'],
-      ),
-      createdAt:
-          _parseDateTime(
-            json['created_at'],
-          ) ??
-          DateTime.now(),
-      updatedAt:
-          _parseDateTime(
-            json['updated_at'],
-          ) ??
-          DateTime.now(),
+      questionnaireType: json['questionnaire_type'] as String,
+      questionnaireVersion: json['questionnaire_version'] as String,
+      responses: _parseResponses(json['responses']),
+      isCompleted: json['is_completed'] as bool? ?? false,
+      completedAt: _parseDateTime(json['completed_at']),
+      createdAt: _parseDateTime(json['created_at']) ?? DateTime.now(),
+      updatedAt: _parseDateTime(json['updated_at']) ?? DateTime.now(),
     );
   }
 
-  static Map<String, dynamic> _parseResponses(
-    dynamic value,
-  ) {
+  static Map<String, dynamic> _parseResponses(dynamic value) {
     if (value == null) {
       return {};
     }
 
     if (value is Map) {
-      return Map<String, dynamic>.from(
-        value,
-      );
+      return Map<String, dynamic>.from(value);
     }
 
     if (value is String) {
@@ -74,9 +52,7 @@ class Questionnaire {
         final decoded = jsonDecode(value);
 
         if (decoded is Map) {
-          return Map<String, dynamic>.from(
-            decoded,
-          );
+          return Map<String, dynamic>.from(decoded);
         }
       } catch (_) {
         return {};
@@ -86,20 +62,15 @@ class Questionnaire {
     return {};
   }
 
-  static DateTime? _parseDateTime(
-    dynamic value,
-  ) {
+  static DateTime? _parseDateTime(dynamic value) {
     if (value == null) {
       return null;
     }
 
-    if (value is! String ||
-        value.isEmpty) {
+    if (value is! String || value.isEmpty) {
       return null;
     }
 
-    return DateTime.tryParse(
-      value,
-    )?.toLocal();
+    return DateTime.tryParse(value)?.toLocal();
   }
 }
