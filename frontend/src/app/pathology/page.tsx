@@ -1918,6 +1918,9 @@ export default function PathologyDashboardPage() {
       return;
     }
 
+    setDetailLoading(true);
+    setSelectedWorkflow(null);
+
     const controller = new AbortController();
     const detailTimeout = window.setTimeout(() => {
       setDetailError("병리 검사 상세 조회가 시간 초과되었습니다. 다시 선택해 주세요.");
@@ -2397,7 +2400,7 @@ export default function PathologyDashboardPage() {
               {currentWorkflowOrder ? (
                 <div className="mt-5">
                   <WorkArea
-                    key={currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}
+                    key={`${selectedId}:${currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}`}
                     item={currentWorkflowOrder}
                     sectionNumber={1}
                     onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
