@@ -16,6 +16,7 @@ type Props = {
 
 export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, readOnly = false, selectedRegimenId, treatmentType = "", treatmentPlan = "" }: Props) {
   const [aiOpinion, setAiOpinion] = useState<TreatmentOpinionResponse | null>(null);
+  const [loadedAiCaseId, setLoadedAiCaseId] = useState<string | null>(null);
   const [physicianOpinion, setPhysicianOpinion] = useState("");
   const [loadedPhysicianCaseId, setLoadedPhysicianCaseId] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
@@ -25,6 +26,8 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
   const generatingRef = useRef(false);
   const savingRef = useRef(false);
   const loadingPhysicianOpinion = loadedPhysicianCaseId !== caseId;
+  const loadingAiOpinion = loadedAiCaseId !== caseId;
+  const currentAiOpinion = loadingAiOpinion ? null : aiOpinion;
   const currentPhysicianOpinion = loadingPhysicianOpinion ? "" : physicianOpinion;
   const canGenerate = Boolean(selectedRegimenId);
 
@@ -47,8 +50,27 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
     return () => { active = false; };
   }, [apiBaseUrl, authorizedFetch, caseId]);
 
+  useEffect(() => {
+    let active = true;
+    void authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-opinion/`)
+      .then(async (response) => {
+        const body = await response.json().catch(() => ({})) as TreatmentOpinionResponse & { detail?: string };
+        if (!response.ok) throw new Error(body.detail || "AI 치료 소견을 불러오지 못했습니다.");
+        if (active) {
+          setAiOpinion(body.status === "NOT_GENERATED" || !body.opinion ? null : body);
+          setAiError("");
+        }
+      })
+      .catch((caught) => {
+        console.error(caught);
+        if (active) setAiError("AI 치료 소견을 불러오지 못했습니다.");
+      })
+      .finally(() => { if (active) setLoadedAiCaseId(caseId); });
+    return () => { active = false; };
+  }, [apiBaseUrl, authorizedFetch, caseId]);
+
   const generate = async () => {
-    if (readOnly || !selectedRegimenId || generatingRef.current) return;
+    if (!selectedRegimenId || generatingRef.current || loadingAiOpinion) return;
     const toastId = `case-treatment-ai-${caseId}`;
     generatingRef.current = true;
     setGenerating(true);
@@ -67,6 +89,7 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
       const body = await response.json().catch(() => ({})) as TreatmentOpinionResponse & { detail?: string };
       if (!response.ok) throw new Error(body.detail || body.status || "Treatment opinion request failed.");
       setAiOpinion(body);
+      setLoadedAiCaseId(caseId);
       showToast.success("치료 소견 생성이 완료되었습니다.", { id: toastId });
     } catch (caught) {
       console.error(caught);
@@ -106,12 +129,12 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
     }
   };
 
-  return <section className="grid gap-3 lg:grid-cols-2" aria-label="치료 소견 비교">
-    <article className="flex min-h-[220px] flex-col rounded-lg border border-violet-200 bg-violet-50/40 p-3">
-      <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold text-violet-600">MEDGEMMA · 참고용</p><h3 className="text-sm font-bold text-slate-900">AI 치료 소견</h3></div>{!readOnly && <button type="button" onClick={() => void generate()} disabled={generating || !canGenerate} className="shrink-0 rounded border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{generating ? "치료 소견 생성 중..." : aiOpinion ? "치료 소견 다시 생성" : "치료 소견 생성"}</button>}</div>
+  return <section className="grid min-w-0 gap-3 lg:grid-cols-2" aria-label="치료 소견 비교">
+    <article className="flex min-h-[220px] min-w-0 flex-col overflow-hidden rounded-lg border border-violet-200 bg-violet-50/40 p-3">
+      <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold text-violet-600">MEDGEMMA · 참고용</p><h3 className="text-sm font-bold text-slate-900">AI 치료 소견</h3></div>{(!readOnly || (!loadingAiOpinion && !currentAiOpinion)) && <button type="button" onClick={() => void generate()} disabled={generating || loadingAiOpinion || !canGenerate} className="shrink-0 rounded border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{generating ? "치료 소견 생성 중..." : readOnly ? "확정 계획으로 소견 생성" : currentAiOpinion ? "치료 소견 다시 생성" : "치료 소견 생성"}</button>}</div>
       {aiError && <p role="alert" className="mt-3 text-xs text-rose-600">{aiError}</p>}
       {!readOnly && !canGenerate && <p className="mt-2 text-xs text-amber-700">Regimen을 선택하면 현재 치료계획을 기준으로 치료 소견을 생성할 수 있습니다.</p>}
-      <div className="mt-3 min-h-0 flex-1 overflow-y-auto rounded-md bg-white p-3 text-sm leading-6 text-slate-700" aria-label="AI 치료 소견 내용">{aiOpinion ? <><p className="whitespace-pre-wrap">{aiOpinion.opinion ?? "소견 없음"}</p><p className="mt-3 text-[11px] text-slate-400">상태 {aiOpinion.status} · Safety {aiOpinion.safety_status ?? "-"} · 의료진 검토 필요</p></> : <p className="text-xs text-slate-500">생성된 AI 치료 소견이 없습니다. AI 소견은 참고자료이며 의료진 소견과 별도로 관리됩니다.</p>}</div>
+      <div className="mt-3 max-h-80 min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-md bg-white p-3 text-sm leading-6 text-slate-700" aria-label="AI 치료 소견 내용">{loadingAiOpinion ? <p className="text-xs text-slate-500">저장된 AI 치료 소견을 불러오는 중입니다.</p> : currentAiOpinion ? <><OpinionContent opinion={currentAiOpinion.opinion} /><p className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-400">상태 {currentAiOpinion.status} · Safety {currentAiOpinion.safety_status || "-"} · 저장된 참고 소견 · 의료진 검토 필요</p></> : <p className="text-xs text-slate-500">생성된 AI 치료 소견이 없습니다. AI 소견은 참고자료이며 의료진 소견과 별도로 관리됩니다.</p>}</div>
     </article>
 
     <article className="flex min-h-[220px] flex-col rounded-lg border border-blue-200 bg-blue-50/30 p-3">
@@ -122,4 +145,30 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
       {!readOnly && <button type="button" onClick={() => void savePhysicianOpinion()} disabled={loadingPhysicianOpinion || saving} className="mt-3 self-end rounded-md border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">{saving ? "저장 중..." : "의료진 소견 저장"}</button>}
     </article>
   </section>;
+}
+
+const OPINION_LABELS: Record<string, string> = {
+  clinical_summary: "임상 요약",
+  treatment_summary: "치료 요약",
+  evidence_summary: "근거 요약",
+  safety_summary: "안전성 요약",
+  cautions: "주의사항",
+};
+
+function OpinionContent({ opinion }: { opinion?: string | null }) {
+  if (!opinion) return <p>소견 없음</p>;
+  const parsed = parseStructuredOpinion(opinion);
+  if (parsed) return <dl className="space-y-3">{parsed.map(({ key, label, value }) => <div key={key} className="min-w-0"><dt className="text-xs font-bold text-violet-700">{label}</dt><dd className="mt-1 whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{value}</dd></div>)}</dl>;
+  return <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{opinion}</p>;
+}
+
+function parseStructuredOpinion(opinion: string) {
+  const normalized = opinion.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(normalized) as Record<string, unknown>;
+    const entries = Object.entries(OPINION_LABELS).filter(([key]) => typeof parsed[key] === "string" && String(parsed[key]).trim());
+    return entries.length ? entries.map(([key, label]) => ({ key, label, value: String(parsed[key]) })) : null;
+  } catch {
+    return null;
+  }
 }

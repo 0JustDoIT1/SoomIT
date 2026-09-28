@@ -200,7 +200,7 @@ it("distinguishes an accepted write from a failed refresh without announcing com
 it("keeps oral schedule fields visible and hides new prescription creation while validated", async () => {
   const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", patient_account_linked: true, items: [{ ...base.items[0], route: "ORAL" }], safety_check_results: [] }])));
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
-  const input = await screen.findByLabelText("복용 시각 시");
+  const input = await screen.findByLabelText("복용 시각");
   const fields = input.closest("form")?.querySelector("div.grid");
   expect(fields).toHaveClass("overflow-y-auto");
   expect(fields).not.toContainElement(screen.getByRole("button", { name: "처방 확정 및 복약 일정 생성" }));
@@ -257,6 +257,40 @@ it("retains finalization and allows reviewing previous prescriptions without a w
   expect(screen.getByRole("combobox", { name: "처방 선택" })).toBeInTheDocument();
 });
 
+it("opens the final care summary after confirmed finalization and allows reopening it", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  let finalized = false;
+  const pass = [{ id: "safety", result: "PASS", check_type_label: "DUR", message: "통과" }];
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/finalize/") && init?.method === "POST") {
+      finalized = true;
+      return new Response("{}");
+    }
+    if (url.endsWith("/prescriptions/")) return new Response(JSON.stringify([{ ...base, prescription_status: finalized ? "FINAL" : "VALIDATED", safety_freshness: "CURRENT", finalized_at: finalized ? "2026-09-28T09:00:00Z" : null, safety_check_results: pass }]));
+    if (url.endsWith("/clinical-results/")) return new Response(JSON.stringify([
+      { workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED", result_detail: { tnm: { t_category: "T2", n_category: "N1", m_category: "M0", stage_group: "IIB" } } },
+      { workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pathology: { histologic_type: "Adenocarcinoma", subtype: "Acinar" } } },
+      { workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: null, interpretation: "AI predicted TPS range: <1%" } } },
+    ]));
+    if (url.endsWith("/treatment-decision/")) return new Response(JSON.stringify({ treatment_type_label: "항암화학요법", treatment_plan: "확정 치료계획" }));
+    return new Response(JSON.stringify({ patient_name: "테스트 환자", patient_code: "P-001", case_code: "CASE-001", primary_doctor_name: "김태윤" }));
+  });
+
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+  fireEvent.click(await screen.findByRole("button", { name: "처방 최종 확정" }));
+
+  expect(await screen.findByRole("dialog", { name: "최종 진료 요약" })).toBeInTheDocument();
+  expect(await screen.findByText("테스트 환자")).toBeInTheDocument();
+  expect(screen.getByText("T2 / N1 / M0 · Stage IIB")).toBeInTheDocument();
+  expect(screen.getByText("확정 TPS 미입력 · AI 예측 TPS <1%")).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "확인하고 닫기" }));
+  expect(screen.queryByRole("dialog", { name: "최종 진료 요약" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "최종 진료 요약 보기" }));
+  expect(screen.getByRole("dialog", { name: "최종 진료 요약" })).toBeInTheDocument();
+});
+
 it("does not show a final banner when the refreshed backend status remains validated", async () => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
   const authorizedFetch = mockFetch("VALIDATED", [{ id: "safety", result: "PASS", check_type_label: "DUR", message: "통과" }]);
@@ -280,6 +314,9 @@ it("creates the first draft once and requires a cycle start date", async () => {
     return Promise.resolve(new Response(JSON.stringify([])));
   });
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+  expect(await screen.findByRole("heading", { name: "첫 처방을 생성하세요" })).toBeInTheDocument();
+  expect(screen.getByText(/처방은 자동 생성되지 않으며/)).toBeInTheDocument();
+  expect(screen.queryByText("등록된 처방이 없습니다.")).not.toBeInTheDocument();
   const create = await screen.findByRole("button", { name: "임시 처방 생성" });
   expect(create).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-24" } });

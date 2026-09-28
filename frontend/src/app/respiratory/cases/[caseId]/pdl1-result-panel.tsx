@@ -34,6 +34,7 @@ type Pdl1ClinicalResult = {
     pdl1?: {
       tps_percent?: number | string | null;
       interpretation: string | null;
+      indeterminate_reason?: string | null;
       note: string | null;
     };
   };
@@ -72,6 +73,8 @@ export function Pdl1ResultPanel({
   const isAiGeneratedClinicalNote = /^Generated from PD-L1 AI result:/i.test(clinicalNote ?? "");
   const clinicalTps = clinical?.tps_percent;
   const hasClinicalTps = hasTpsValue(clinicalTps);
+  const indeterminateReason = clinical?.indeterminate_reason?.trim() || "";
+  const legacyConfirmationNeedsSupplement = clinicalConfirmed && !hasClinicalTps && !indeterminateReason;
   const clinicalInterpretation = isAiGeneratedClinicalNote
     ? "병리과 최종 해석 미입력"
     : clinical?.interpretation ?? (clinicalConfirmed ? "확정 결과 없음" : "병리과 검토 결과 없음");
@@ -111,9 +114,12 @@ export function Pdl1ResultPanel({
 
         <div className="mt-4 grid grid-cols-2 gap-2.5">
           {hasClinicalTps && <ResultCard className="col-span-2" source={clinicalSource} label={clinicalTpsLabel} value={formatClinicalTps(clinicalTps)} tone="emerald" />}
+          {indeterminateReason && <ResultCard className="col-span-2" source={clinicalSource} label="PD-L1 판정 불가" value={indeterminateReason} tone="emerald" />}
           <ResultCard source="PD-L1 AI 분석 후보" label="예측 TPS 구간" value={ai?.predicted_tps_range_label ?? "AI 결과 없음"} tone="blue" />
           <ResultCard source="PD-L1 AI 분석 후보" label="분석 신뢰도" value={confidence !== null ? `${confidence.toFixed(2)}%` : "-"} tone="blue" />
         </div>
+
+        {legacyConfirmationNeedsSupplement && <p role="alert" className="mt-3 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-semibold text-amber-800">기존 확정 결과에 최종 TPS 또는 판정 불가 사유가 없습니다. AI 예측 구간은 확정 TPS가 아니므로 결과 보완이 필요합니다.</p>}
 
         {probabilities && (
           <div className="mt-3 grid grid-cols-3 gap-2 rounded-xl border border-slate-100 p-3">

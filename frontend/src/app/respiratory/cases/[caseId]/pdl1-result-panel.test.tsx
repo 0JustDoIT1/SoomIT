@@ -46,7 +46,7 @@ describe("Pdl1ResultPanel", () => {
     expect(screen.getByText("AI 결과는 TPS 예측 구간이며 병리과 TPS 결과는 실제 TPS 값입니다. 호흡기내과 확정 후 최종 TPS로 표시됩니다.")).toBeTruthy();
   });
 
-  it.each([null, undefined, ""])("does not render a clinical TPS card when TPS is %p", (tpsPercent) => {
+  it.each([null, undefined, ""])("marks a legacy confirmed result for supplementation when TPS is %p", (tpsPercent) => {
     render(
       <Pdl1ResultPanel
         aiResult={{
@@ -60,9 +60,27 @@ describe("Pdl1ResultPanel", () => {
       />,
     );
 
-    expect(screen.queryByText("TPS 미입력")).toBeNull();
     expect(screen.queryByText("최종 TPS")).toBeNull();
     expect(screen.getByText("≥50%")).toBeTruthy();
+    expect(screen.getByRole("alert")).toHaveTextContent("결과 보완이 필요합니다");
+  });
+
+  it("shows an explicit indeterminate reason without presenting the AI range as final TPS", () => {
+    render(
+      <Pdl1ResultPanel
+        aiResult={{ result_detail: { pdl1: { predicted_tps_range_label: "1–49%" } } }}
+        clinicalResult={{
+          result_status: "CONFIRMED",
+          result_date: null,
+          result_detail: { pdl1: { tps_percent: null, interpretation: "AI predicted TPS range: 1–49%", indeterminate_reason: "검체 부족", note: null } },
+        }}
+      />,
+    );
+
+    expect(screen.getByText("PD-L1 판정 불가")).toBeInTheDocument();
+    expect(screen.getByText("검체 부족")).toBeInTheDocument();
+    expect(screen.queryByText("최종 TPS")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it.each([

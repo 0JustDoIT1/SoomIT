@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 from django.db import transaction
 from django.db.models import Q
@@ -14,6 +15,8 @@ from rest_framework.negotiation import BaseContentNegotiation
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from django.utils import timezone
+from django.utils.decorators import method_decorator
+from django.views.decorators.gzip import gzip_page
 
 from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaff, get_token_hospital_id
 from apps.accounts.models import User
@@ -35,7 +38,7 @@ from apps.knowledge.services.medgemma_client import MedgemmaServiceError
 from apps.knowledge.services.medgemma_client import request_chat_completion
 from apps.clinical.models import ClinicalResult, GeneFinding, Prescription, TreatmentDecision, XrayResult
 from apps.clinical.gene_alterations import CANONICAL_ALTERATIONS
-from apps.clinical.serializers import DoctorClinicalResultSerializer, DoctorPathologyGeneReviewSerializer
+from apps.clinical.serializers import DoctorClinicalResultSerializer, DoctorPathologyGeneReviewSerializer, DoctorPdl1ReviewSerializer
 from apps.radiology.models import RadiologyReview
 from apps.clinical.views import DoctorTreatmentEvidenceAPIView
 from apps.radiology.services.xray_storage import XrayStorageError, download_xray_image_bytes
@@ -46,9 +49,11 @@ from apps.radiology.services.orthanc_dicomweb import (
     get_series_metadata,
     list_series_instances,
     retrieve_instance,
+    retrieve_instance_frame,
+    retrieve_series,
 )
 
-from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, DoctorDashboardMemo, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
+from .models import CaseConsultationRequest, CaseImageAsset, ClinicianDecision, DoctorDashboardMemo, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, TreatmentAIOpinion, WorkflowStage
 from apps.ai_results.models import AiAnalysis, AnalysisType
 from .serializers import (
     DoctorCaseImageAssetSerializer,
@@ -59,6 +64,7 @@ from .serializers import (
     MedicalOpinionRequestSerializer,
     MedicalOpinionResponseSerializer,
     TreatmentOpinionRequestSerializer,
+    TreatmentAIOpinionSerializer,
     PhysicianTreatmentOpinionSerializer,
     PhysicianTreatmentOpinionWriteSerializer,
     FollowUpPathologyOrderCreateSerializer,
@@ -78,6 +84,14 @@ from .services.examination_orders import (
     create_examination_order,
     update_examination_order,
 )
+
+
+class _BinaryPassthroughContentNegotiation(BaseContentNegotiation):
+    def select_parser(self, request, parsers):
+        return parsers[0] if parsers else None
+
+    def select_renderer(self, request, renderers, format_suffix):
+        return renderers[0], renderers[0].media_type
 from .services.medical_opinion import NoConfirmedClinicalResults, generate_medical_opinion
 from .services.case_assistant import (
     CaseAssistantNotConfigured,
@@ -203,6 +217,7 @@ class DoctorCaseImageAssetListAPIView(APIView):
 class DoctorCaseImageAssetPreviewAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _BinaryPassthroughContentNegotiation
 
     def get(self, request, case_id, asset_id):
         case = get_object_or_404(
@@ -399,6 +414,7 @@ class DoctorSlideTissueHeatmapAPIView(APIView):
 
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _BinaryPassthroughContentNegotiation
 
     def get(self, request, slide_id):
         slide = _doctor_slide_or_404(request, slide_id)
@@ -458,6 +474,7 @@ def _doctor_dicom_asset_or_404(request, case_id, asset_id):
     )
 
 
+@method_decorator(gzip_page, name="dispatch")
 class DoctorCaseDicomWebMetadataAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
@@ -471,7 +488,9 @@ class DoctorCaseDicomWebMetadataAPIView(APIView):
             result = get_series_metadata(asset.study_instance_uid, asset.series_instance_uid)
         except OrthancDicomWebError:
             return Response({"detail": "DICOM Series metadata를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
-        return HttpResponse(result.content, content_type=result.content_type)
+        response = HttpResponse(result.content, content_type=result.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
 
 
 class DoctorCaseDicomWebInstancesAPIView(APIView):
@@ -503,6 +522,47 @@ class DoctorCaseDicomWebInstanceAPIView(APIView):
             result = retrieve_instance(asset.study_instance_uid, asset.series_instance_uid, sop_instance_uid)
         except OrthancDicomWebError:
             return Response({"detail": "DICOM instance를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(result.content, content_type=result.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class DoctorCaseDicomWebFrameAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _DicomPassthroughContentNegotiation
+
+    def get(self, request, case_id, asset_id, sop_instance_uid, frame_number):
+        asset = _doctor_dicom_asset_or_404(request, case_id, asset_id)
+        if not asset.study_instance_uid or not asset.series_instance_uid:
+            return Response({"detail": "DICOM Series metadata is not ready."}, status=status.HTTP_409_CONFLICT)
+        try:
+            result = retrieve_instance_frame(
+                asset.study_instance_uid,
+                asset.series_instance_uid,
+                sop_instance_uid,
+                frame_number,
+            )
+        except OrthancDicomWebError:
+            return Response({"detail": "DICOM frame could not be loaded."}, status=status.HTTP_502_BAD_GATEWAY)
+        response = HttpResponse(result.content, content_type=result.content_type)
+        response["Cache-Control"] = "private, max-age=3600"
+        return response
+
+
+class DoctorCaseDicomWebSeriesAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _DicomPassthroughContentNegotiation
+
+    def get(self, request, case_id, asset_id):
+        asset = _doctor_dicom_asset_or_404(request, case_id, asset_id)
+        if not asset.study_instance_uid or not asset.series_instance_uid:
+            return Response({"detail": "DICOM Series metadata is not ready."}, status=status.HTTP_409_CONFLICT)
+        try:
+            result = retrieve_series(asset.study_instance_uid, asset.series_instance_uid)
+        except OrthancDicomWebError:
+            return Response({"detail": "CT Series를 불러오지 못했습니다."}, status=status.HTTP_502_BAD_GATEWAY)
         response = HttpResponse(result.content, content_type=result.content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response
@@ -580,6 +640,7 @@ class DoctorCaseCtSegmentationAPIView(DoctorCaseCtAnalysisMixin, APIView):
 class DoctorCaseCtSegmentationLabelmapAPIView(DoctorCaseCtAnalysisMixin, APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _DicomPassthroughContentNegotiation
 
     def get(self, request, case_id, analysis_id):
         analysis = self.get_ct_analysis(request, case_id, analysis_id)
@@ -760,8 +821,46 @@ class DoctorTreatmentOpinionAPIView(APIView):
         "Draft a concise clinician-review treatment opinion using only supplied confirmed context, "
         "selected regimen, Treatment Rule, NCI evidence, prescription and safety data. "
         "Do not invent biomarkers, recommend a new regimen, alter doses, or change safety results. "
-        "Return JSON with clinical_summary, treatment_summary, evidence_summary, safety_summary, cautions."
+        "Write every value in Korean. Return valid JSON only, without Markdown fences or commentary. "
+        "Use exactly these keys: clinical_summary, treatment_summary, evidence_summary, safety_summary, cautions. "
+        "Keep each value concise and suitable for a compact clinician review panel."
     )
+    KOREAN_REPAIR_PROMPT = (
+        "아래 치료 소견의 모든 자연어 내용을 간결한 한국어로 변환하세요. "
+        "의학적 의미와 수치, 약물명은 바꾸지 마세요. "
+        "clinical_summary, treatment_summary, evidence_summary, safety_summary, cautions 키를 사용하는 "
+        "유효한 JSON만 반환하고 Markdown 코드블록이나 부가 설명은 쓰지 마세요."
+    )
+
+    @staticmethod
+    def _is_korean_opinion(opinion):
+        return isinstance(opinion, str) and re.search(r"[가-힣]", opinion) is not None
+
+    @staticmethod
+    def _case(request, case_id):
+        return LungCancerCase.objects.filter(
+            id=case_id,
+            primary_doctor=request.user,
+            case_status=LungCancerCase.CaseStatus.ACTIVE,
+        ).first()
+
+    def get(self, request, case_id):
+        case = self._case(request, case_id)
+        if case is None:
+            return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        opinion = TreatmentAIOpinion.objects.filter(case=case).first()
+        if opinion is None or not self._is_korean_opinion(opinion.opinion):
+            return Response({
+                "case_id": str(case.id),
+                "status": "NOT_GENERATED",
+                "opinion": None,
+                "sources": [],
+                "safety_status": "",
+                "review_required": True,
+                "created_at": None,
+                "updated_at": None,
+            })
+        return Response(TreatmentAIOpinionSerializer(opinion).data)
 
     def post(self, request, case_id):
         request_serializer = TreatmentOpinionRequestSerializer(data=request.data or {})
@@ -771,15 +870,23 @@ class DoctorTreatmentOpinionAPIView(APIView):
             request,
             case_id,
             selected_regimen_id=draft_context.get("selected_regimen"),
+            generate_summary=False,
         )
         if evidence_response.status_code != status.HTTP_200_OK:
             return evidence_response
         evidence = evidence_response.data
         if evidence.get("status") != "AVAILABLE":
             return Response(evidence, status=status.HTTP_400_BAD_REQUEST)
-        case = LungCancerCase.objects.filter(id=case_id, primary_doctor=request.user, case_status="ACTIVE").first()
+        case = self._case(request, case_id)
         if case is None:
             return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
+        existing_opinion = TreatmentAIOpinion.objects.filter(case=case).first()
+        confirmed_decision = TreatmentDecision.objects.filter(
+            clinical_result__case=case,
+            clinical_result__result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).exists()
+        if confirmed_decision and existing_opinion is not None and self._is_korean_opinion(existing_opinion.opinion):
+            return Response(TreatmentAIOpinionSerializer(existing_opinion).data)
         prescription = Prescription.objects.filter(case=case).prefetch_related("items", "safety_check_results").order_by("-created_at").first()
         prescription_data = {"prescription_available": prescription is not None}
         safety_data = {"safety_status": "safety_not_run", "results": []}
@@ -805,11 +912,31 @@ class DoctorTreatmentOpinionAPIView(APIView):
         try:
             opinion = request_chat_completion([{"role": "system", "content": self.SYSTEM_PROMPT},
                 {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str)}], max_tokens=600, temperature=0)
+            if not self._is_korean_opinion(opinion):
+                opinion = request_chat_completion([
+                    {"role": "system", "content": self.KOREAN_REPAIR_PROMPT},
+                    {"role": "user", "content": opinion},
+                ], max_tokens=600, temperature=0)
         except MedgemmaServiceError:
             return Response({"status": "MEDGEMMA_ERROR", "review_required": True}, status=502)
-        return Response({"status": "AVAILABLE", "case_id": str(case_id), "regimen": evidence["regimen"],
-            "treatment_rule": evidence["treatment_rule"], "opinion": opinion, "sources": evidence["evidence"]["sources"],
-            "safety_status": safety_data["safety_status"], "review_required": True})
+        if not self._is_korean_opinion(opinion):
+            return Response({"status": "MEDGEMMA_LANGUAGE_ERROR", "review_required": True}, status=502)
+        saved_opinion, _ = TreatmentAIOpinion.objects.update_or_create(
+            case=case,
+            defaults={
+                "status": "AVAILABLE",
+                "opinion": opinion,
+                "sources": evidence["evidence"]["sources"],
+                "safety_status": safety_data["safety_status"],
+                "review_required": True,
+                "selected_regimen_id": draft_context.get("selected_regimen"),
+                "treatment_type": draft_context.get("treatment_type", ""),
+                "treatment_plan": draft_context.get("treatment_plan", ""),
+            },
+        )
+        response_data = TreatmentAIOpinionSerializer(saved_opinion).data
+        response_data.update({"regimen": evidence["regimen"], "treatment_rule": evidence["treatment_rule"]})
+        return Response(response_data)
 
 
 class DoctorPhysicianTreatmentOpinionAPIView(APIView):
@@ -972,6 +1099,16 @@ def _confirm_submitted_pathology_result(*, case, result, confirming_user):
                 raise SubmittedPathologyResultConfirmationError(
                     f"{gene_symbol} 양성 결과는 구체적인 변이 유형을 확정해야 합니다."
                 )
+
+    if result.workflow_stage == WorkflowStage.PDL1:
+        pdl1_detail = getattr(result, "pdl1_detail", None)
+        if pdl1_detail is None or (
+            pdl1_detail.tps_percent is None
+            and not (pdl1_detail.indeterminate_reason or "").strip()
+        ):
+            raise SubmittedPathologyResultConfirmationError(
+                "PD-L1 최종 TPS를 입력하거나 판정 불가 사유를 기록해야 합니다."
+            )
 
     review = (
         PathologyWorkItem.objects.select_for_update()
@@ -1245,7 +1382,7 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
             return case, None
 
         result = ClinicalResult.objects.select_related(
-            "gene_detail", "reviewed_ai_result"
+            "gene_detail", "pdl1_detail", "reviewed_ai_result"
         ).prefetch_related(
             "reviewed_ai_result__gene_ai_results",
         ).get(pk=locked_result.pk)
@@ -1309,6 +1446,18 @@ class DoctorSubmittedPathologyResultConfirmAPIView(APIView):
             )
         if result.workflow_stage == WorkflowStage.PATHOLOGY_GENE and "gene_findings" in request.data:
             self._update_gene_findings(result, request.data)
+        if result.workflow_stage == WorkflowStage.PDL1:
+            detail = getattr(result, "pdl1_detail", None)
+            if detail is None:
+                return Response(
+                    {"detail": "PD-L1 임상 결과가 없습니다."},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            serializer = DoctorPdl1ReviewSerializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            detail.tps_percent = serializer.validated_data.get("tps_percent")
+            detail.indeterminate_reason = serializer.validated_data.get("indeterminate_reason")
+            detail.save(update_fields=["tps_percent", "indeterminate_reason"])
         try:
             _confirm_submitted_pathology_result(
                 case=case,

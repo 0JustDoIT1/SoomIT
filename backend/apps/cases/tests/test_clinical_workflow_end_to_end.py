@@ -70,7 +70,7 @@ class ClinicalWorkflowEndToEndTests(TestCase):
         self.stage("PDL1")
         pdl1 = self.submitted("PDL1")
         PDL1Result.objects.create(clinical_result=pdl1, tps_percent=60)
-        self.post("doctor-submitted-pathology-result-confirm", result_id=pdl1.id)
+        self.post("doctor-submitted-pathology-result-confirm", {"tps_percent": 60, "indeterminate_reason": ""}, result_id=pdl1.id)
         self.post("doctor-case-workflow-decision", {"action": "PROCEED_NEXT_STAGE", "source_clinical_result_id": str(pdl1.id), "target_stage": "TREATMENT"})
         self.stage("TREATMENT")
         regimen = Regimen.objects.create(regimen_code="R1", regimen_name="QA R1", cancer_type="NSCLC")

@@ -7,7 +7,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.cases.models import ExaminationOrder, LungCancerCase, WorkflowStage
-from apps.clinical.models import ClinicalResult, GeneFinding, GeneResult, PathologyResult
+from apps.clinical.models import ClinicalResult, GeneFinding, GeneResult, PathologyResult, PDL1Result
 from apps.pathology.models import PathologyWorkItem
 from apps.patients.models import Patient
 
@@ -439,6 +439,10 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
             workflow_stage=WorkflowStage.PDL1,
             result_status=ClinicalResult.ResultStatus.DRAFT,
         )
+        detail = PDL1Result.objects.create(
+            clinical_result=result,
+            interpretation="AI predicted TPS range: <1%",
+        )
         review = PathologyWorkItem.objects.create(
             case=self.case,
             examination_order=order,
@@ -453,12 +457,16 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
                 "doctor-submitted-pathology-result-confirm",
                 kwargs={"case_id": self.case.id, "result_id": result.id},
             ),
+            {"tps_percent": "12.50", "indeterminate_reason": ""},
             format="json",
         )
         self.assertEqual(confirm.status_code, 200)
         result.refresh_from_db()
+        detail.refresh_from_db()
         review.refresh_from_db()
         self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertEqual(str(detail.tps_percent), "12.50")
+        self.assertIsNone(detail.indeterminate_reason)
         self.assertEqual(review.status, PathologyWorkItem.Status.COMPLETED)
 
         advance = self.client.post(
@@ -473,3 +481,52 @@ class DoctorPathologySubmissionConfirmationTests(TestCase):
         self.assertEqual(advance.status_code, 200)
         self.case.refresh_from_db()
         self.assertEqual(self.case.current_stage, WorkflowStage.TREATMENT)
+
+    def test_submitted_pdl1_requires_tps_or_an_indeterminate_reason(self):
+        order = ExaminationOrder.objects.create(
+            case=self.case,
+            order_type=ExaminationOrder.OrderType.PDL1,
+            requesting_doctor=self.doctor,
+            purpose="PD-L1 review",
+        )
+        result = ClinicalResult.objects.create(
+            case=self.case,
+            examination_order=order,
+            workflow_stage=WorkflowStage.PDL1,
+            result_status=ClinicalResult.ResultStatus.DRAFT,
+        )
+        detail = PDL1Result.objects.create(
+            clinical_result=result,
+            interpretation="AI predicted TPS range: 1-49%",
+        )
+        review = PathologyWorkItem.objects.create(
+            case=self.case,
+            examination_order=order,
+            task_type=PathologyWorkItem.TaskType.DIAGNOSTIC_REVIEW,
+            status=PathologyWorkItem.Status.PENDING,
+        )
+        self.case.current_stage = WorkflowStage.PDL1
+        self.case.save(update_fields=["current_stage", "updated_at"])
+        url = reverse(
+            "doctor-submitted-pathology-result-confirm",
+            kwargs={"case_id": self.case.id, "result_id": result.id},
+        )
+
+        missing = self.client.post(url, {}, format="json")
+        self.assertEqual(missing.status_code, 400)
+        result.refresh_from_db()
+        review.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.DRAFT)
+        self.assertEqual(review.status, PathologyWorkItem.Status.PENDING)
+
+        confirmed = self.client.post(
+            url,
+            {"tps_percent": None, "indeterminate_reason": "검체 종양세포가 부족하여 판정할 수 없음"},
+            format="json",
+        )
+        self.assertEqual(confirmed.status_code, 200)
+        result.refresh_from_db()
+        detail.refresh_from_db()
+        self.assertEqual(result.result_status, ClinicalResult.ResultStatus.CONFIRMED)
+        self.assertIsNone(detail.tps_percent)
+        self.assertEqual(detail.indeterminate_reason, "검체 종양세포가 부족하여 판정할 수 없음")

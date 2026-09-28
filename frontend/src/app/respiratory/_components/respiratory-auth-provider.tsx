@@ -117,10 +117,12 @@ export function RespiratoryAuthProvider({
             init.headers,
           );
 
-        headers.set(
-          "Accept",
-          "application/json",
-        );
+        if (!headers.has("Accept")) {
+          headers.set(
+            "Accept",
+            "application/json",
+          );
+        }
 
         return staffAuthenticatedFetch(
           input,

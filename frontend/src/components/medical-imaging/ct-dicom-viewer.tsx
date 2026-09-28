@@ -285,8 +285,19 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     setFocusedView((current) => current ? null : selectedView);
   };
 
+  const resizeViewportsAfterLayout = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      window.requestAnimationFrame(() => {
+        const renderingEngine = renderingEngineRef.current;
+        renderingEngine?.resize(true, true);
+        renderingEngine?.render();
+      });
+    });
+  }, []);
+
   const requestFullscreen = () => {
-    void workspaceRef.current?.requestFullscreen?.();
+    const request = workspaceRef.current?.requestFullscreen?.();
+    if (request) void request.finally(resizeViewportsAfterLayout);
   };
 
   const onWorkspaceKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -524,17 +535,18 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
       removeProgressListener = () => core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
 
-      // `wadouri:fileManager` IDs only expose their DICOM metadata after the
-      // file has been decoded once.  The streaming volume loader reads image
-      // plane metadata while constructing the volume, so creating it first
-      // leaves pixelRepresentation undefined for locally managed files.
-      let loadedImageCount = 0;
-      await runWithConcurrency(imageIds, 6, async (imageId) => {
-        await core.imageLoader.loadAndCacheImage(imageId);
-        loadedImageCount += 1;
-        if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
-      });
-      if (disposed) return;
+      // `wadors:` metadata was registered up front, so the volume can render
+      // while frames stream in. Local `wadouri:fileManager` fallbacks still
+      // need one decode pass before their image-plane metadata is available.
+      if (!imageIds.every((imageId) => imageId.startsWith("wadors:"))) {
+        let loadedImageCount = 0;
+        await runWithConcurrency(imageIds, 8, async (imageId) => {
+          await core.imageLoader.loadAndCacheImage(imageId);
+          loadedImageCount += 1;
+          if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
+        });
+        if (disposed) return;
+      }
 
       const volume = await core.volumeLoader.createAndCacheVolume(volumeId, { imageIds, progressiveRendering: true });
       if (disposed) return;
@@ -653,7 +665,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         }
       }
 
-      resizeObserver = new ResizeObserver(() => renderingEngine?.resize());
+      resizeObserver = new ResizeObserver(() => {
+        renderingEngine?.resize(true, true);
+        renderingEngine?.render();
+      });
       [axialRef.current, coronalRef.current, sagittalRef.current, volume3dRef.current]
         .filter((element): element is HTMLDivElement => Boolean(element))
         .forEach((element) => resizeObserver?.observe(element));
@@ -697,8 +712,18 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
   // anything - the already-built viewports just need a resize once their
   // container's on-screen size changes (they had zero size while hidden).
   useEffect(() => {
-    renderingEngineRef.current?.resize(true, true);
-  }, [focusedView]);
+    resizeViewportsAfterLayout();
+  }, [focusedView, resizeViewportsAfterLayout]);
+
+  useEffect(() => {
+    const handleLayoutChange = () => resizeViewportsAfterLayout();
+    document.addEventListener("fullscreenchange", handleLayoutChange);
+    window.addEventListener("resize", handleLayoutChange);
+    return () => {
+      document.removeEventListener("fullscreenchange", handleLayoutChange);
+      window.removeEventListener("resize", handleLayoutChange);
+    };
+  }, [resizeViewportsAfterLayout]);
 
   // Segmentation cache is only cleared when the series/analysis actually
   // changes or the viewer unmounts - it's a plain JS object (metadata + a
@@ -745,7 +770,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       ref={workspaceRef}
       tabIndex={0}
       onKeyDown={onWorkspaceKeyDown}
-      className="relative grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500"
+      className="relative grid h-full min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)] overflow-hidden bg-[#03060d] outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500 fullscreen:h-screen fullscreen:w-screen"
       aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동"
     >
       {/* PACS toolbar */}

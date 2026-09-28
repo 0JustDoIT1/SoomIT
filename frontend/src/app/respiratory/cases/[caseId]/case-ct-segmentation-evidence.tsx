@@ -15,6 +15,7 @@ import {
   loadImageAnnotations,
   shouldNotifyImageAnnotationLoadFailure,
 } from "./image-annotation-request";
+import { parseDicomMultipart, sopUidFromContentLocation } from "./dicom-multipart";
 
 type AuthorizedFetch = (
   input: RequestInfo | URL,
@@ -79,6 +80,22 @@ function sopUid(row: DicomRow) {
   return typeof value === "string" ? value : null;
 }
 
+function tagNumber(row: DicomRow, tag: string) {
+  const value = row[tag]?.Value?.[0];
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
+}
+
+function tagNumbers(row: DicomRow, tag: string) {
+  const value = row[tag]?.Value;
+  if (!Array.isArray(value) || !value.every((item): item is number => typeof item === "number")) return null;
+  return value;
+}
+
 function detail(body: unknown, fallback: string) {
   return body &&
     typeof body === "object" &&
@@ -86,6 +103,18 @@ function detail(body: unknown, fallback: string) {
     typeof body.detail === "string"
     ? body.detail
     : fallback;
+}
+
+async function fetchWithTransientRetry(
+  fetcher: AuthorizedFetch,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+) {
+  let response = await fetcher(input, init);
+  if (![502, 503, 504].includes(response.status)) return response;
+  await new Promise((resolve) => window.setTimeout(resolve, 500));
+  response = await fetcher(input, init);
+  return response;
 }
 
 export function CaseCtSegmentationEvidence({
@@ -120,6 +149,11 @@ export function CaseCtSegmentationEvidence({
   const mountedRef = useRef(true);
   const assetCaseIdRef = useRef("");
   const annotationRequestRef = useRef("");
+  const onEvidenceInfoChangeRef = useRef(onEvidenceInfoChange);
+
+  useEffect(() => {
+    onEvidenceInfoChangeRef.current = onEvidenceInfoChange;
+  }, [onEvidenceInfoChange]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -167,7 +201,7 @@ export function CaseCtSegmentationEvidence({
         if (!controller.signal.aborted) {
           assetCaseIdRef.current = caseId;
           setAsset(selected);
-          onEvidenceInfoChange?.({
+          onEvidenceInfoChangeRef.current?.({
             seriesInstanceUid: selected.series_instance_uid,
           });
         }
@@ -192,16 +226,70 @@ export function CaseCtSegmentationEvidence({
     authorizedFetch,
     caseId,
     analysisId,
-    onEvidenceInfoChange,
   ]);
 
   const loadSeries = useCallback(
     async (_orderId: string, assetId: string) => {
-      const cacheKey = `${caseId}:${assetId}:${asset?.series_instance_uid ?? ""}`;
+      const cacheKey = `frame-probe-v1:${caseId}:${assetId}:${asset?.series_instance_uid ?? ""}`;
       const series = await cachedRequest(seriesRequestCache, cacheKey, async () => {
-        const instancesResponse = await authorizedFetch(
-        `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/`,
-        );
+        const metadataUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/metadata/`;
+        const instancesUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/`;
+        const bulkUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/series/`;
+        const { dicomImageLoader } = await ensureCornerstoneInitialized();
+
+        // Metadata is small and lets Cornerstone request/decode frames only as
+        // they are needed. This avoids blocking first paint on the entire CT
+        // Series download (often tens of megabytes).
+        const metadataResponse = await authorizedFetch(metadataUrl, {
+          headers: { Accept: "application/dicom+json" },
+        }).catch(() => null);
+        if (metadataResponse?.ok) {
+          const metadataBody: unknown = await metadataResponse.json().catch(() => null);
+          if (Array.isArray(metadataBody)) {
+            const ordered = metadataBody
+              .map((dataset) => ({
+                dataset: dataset as DicomRow,
+                uid: sopUid(dataset as DicomRow),
+                instanceNumber: tagNumber(dataset as DicomRow, "00200013"),
+                position: tagNumbers(dataset as DicomRow, "00200032"),
+              }))
+              .filter((item): item is typeof item & { uid: string } => Boolean(item.uid))
+              .sort((a, b) =>
+                a.position && b.position
+                  ? (a.position[2] ?? 0) - (b.position[2] ?? 0)
+                  : a.instanceNumber - b.instanceNumber,
+              );
+            if (ordered.length) {
+              const firstFrameUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/${encodeURIComponent(ordered[0].uid)}/frames/1/`;
+              const frameProbe = await authorizedFetch(firstFrameUrl, {
+                method: "HEAD",
+                headers: { Accept: 'multipart/related; type="application/octet-stream"' },
+              }).catch(() => null);
+              if (!frameProbe?.ok) {
+                console.warn("[ct-series] frame streaming endpoint unavailable; using DICOM instance fallback");
+              } else {
+                const imageIds = ordered.map(({ dataset, uid }) => {
+                  const frameUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/${encodeURIComponent(uid)}/frames/1/`;
+                  const imageId = `wadors:${frameUrl}`;
+                  dicomImageLoader.wadors.metaDataManager.add(
+                    imageId,
+                    dataset as Parameters<typeof dicomImageLoader.wadors.metaDataManager.add>[1],
+                  );
+                  return imageId;
+                });
+                return { imageIds, sopInstanceUids: ordered.map(({ uid }) => uid) };
+              }
+            }
+          }
+        }
+
+        // Compatibility fallback for incomplete DICOMweb metadata. It is not
+        // started in parallel, so a healthy lazy path never downloads 70MB in
+        // the background unnecessarily.
+        const [instancesResponse, bulkResponse] = await Promise.all([
+          authorizedFetch(instancesUrl),
+          authorizedFetch(bulkUrl, { headers: { Accept: 'multipart/related; type="application/dicom"' } }).catch(() => null),
+        ]);
 
       const instanceBody: unknown = await instancesResponse
         .json()
@@ -224,13 +312,25 @@ export function CaseCtSegmentationEvidence({
         throw new Error("CT DICOM instance가 없습니다.");
       }
 
-      const { dicomImageLoader } =
-        await ensureCornerstoneInitialized();
+      let filesByUid: Map<string, Uint8Array> | null = null;
+      if (bulkResponse?.ok) {
+        try {
+          const contentType = bulkResponse.headers.get("Content-Type") ?? "";
+          const parts = parseDicomMultipart(await bulkResponse.arrayBuffer(), contentType);
+          const located = new Map(parts.map((part) => [sopUidFromContentLocation(part.contentLocation), part.bytes]));
+          filesByUid = new Map(uids.map((uid, index) => [uid, located.get(uid) ?? parts[index]?.bytes]).filter((entry): entry is [string, Uint8Array] => Boolean(entry[1])));
+          if (filesByUid.size !== uids.length) filesByUid = null;
+        } catch (reason) {
+          console.warn("[ct-series] bulk multipart parsing failed; using per-instance fallback", reason);
+        }
+      }
 
-      const imageIds = await mapWithConcurrency(
-        uids,
-        6,
-        async (uid) => {
+      const imageIds = filesByUid
+        ? uids.map((uid) => dicomImageLoader.wadouri.fileManager.add(new File([Uint8Array.from(filesByUid!.get(uid)!).buffer], `${uid}.dcm`, { type: "application/dicom" })))
+        : await mapWithConcurrency(
+          uids,
+          10,
+          async (uid) => {
           const response = await authorizedFetch(
             `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/${uid}/`,
             {
@@ -251,14 +351,14 @@ export function CaseCtSegmentationEvidence({
               type: "application/dicom",
             }),
           );
-        },
-      );
+          },
+        );
 
       return { imageIds, sopInstanceUids: uids };
       });
       if (mountedRef.current) {
         setImageCount(series.sopInstanceUids.length);
-        onEvidenceInfoChange?.({ imageCount: series.sopInstanceUids.length });
+        onEvidenceInfoChangeRef.current?.({ imageCount: series.sopInstanceUids.length });
       }
       return series;
     },
@@ -267,7 +367,6 @@ export function CaseCtSegmentationEvidence({
       asset?.series_instance_uid,
       authorizedFetch,
       caseId,
-      onEvidenceInfoChange,
     ],
   );
 
@@ -396,10 +495,12 @@ export function CaseCtSegmentationEvidence({
         async () => {
       const [metadataResponse, labelmapResponse] =
         await Promise.all([
-          authorizedFetch(
+          fetchWithTransientRetry(
+            authorizedFetch,
             `${apiBaseUrl}/api/doctor/cases/${caseId}/ct-analyses/${id}/segmentation/`,
           ),
-          authorizedFetch(
+          fetchWithTransientRetry(
+            authorizedFetch,
             `${apiBaseUrl}/api/doctor/cases/${caseId}/ct-analyses/${id}/segmentation/labelmap/`,
             {
               headers: {
@@ -423,7 +524,8 @@ export function CaseCtSegmentationEvidence({
       }
 
       if (!labelmapResponse.ok) {
-        throw new Error("CT 분할 labelmap을 불러오지 못했습니다.");
+        const labelmapError: unknown = await labelmapResponse.json().catch(() => ({}));
+        throw new Error(detail(labelmapError, "CT 분할 labelmap을 불러오지 못했습니다."));
       }
 
       if (
@@ -468,7 +570,7 @@ export function CaseCtSegmentationEvidence({
       );
       if (mountedRef.current) {
         setSegmentationAvailable(true);
-        onEvidenceInfoChange?.({ segmentationAvailable: true });
+        onEvidenceInfoChangeRef.current?.({ segmentationAvailable: true });
       }
       return segmentation;
     },
@@ -478,9 +580,15 @@ export function CaseCtSegmentationEvidence({
       asset?.series_instance_uid,
       authorizedFetch,
       caseId,
-      onEvidenceInfoChange,
     ],
   );
+
+  useEffect(() => {
+    if (!asset?.id || !analysisId) return;
+    // Start the labelmap request while the DICOM series is being prepared.
+    // The shared promise cache means the viewer consumes this same request later.
+    void loadSegmentation(analysisId).catch(() => undefined);
+  }, [analysisId, asset?.id, loadSegmentation]);
 
   if (loading) {
     return (

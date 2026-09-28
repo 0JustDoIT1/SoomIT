@@ -106,7 +106,10 @@ class DoctorCaseImageAssetAPITests(TestCase):
 
     @patch("apps.cases.views.download_xray_image_bytes", return_value=b"image")
     def test_preview_returns_xray_bytes_and_checks_case_asset_relation(self, download):
-        response = self.client.get(self.preview_url)
+        response = self.client.get(
+            self.preview_url,
+            HTTP_ACCEPT="image/png,image/jpeg",
+        )
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Type"], "image/png")

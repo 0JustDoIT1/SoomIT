@@ -544,6 +544,7 @@ class PDL1Result(models.Model):
         blank=True,
     )
     interpretation = models.TextField(null=True, blank=True)
+    indeterminate_reason = models.TextField(null=True, blank=True)
     source_wsi = models.ForeignKey(
         "pathology.WholeSlideImage",
         on_delete=models.PROTECT,

@@ -35,6 +35,7 @@ import { CaseWorkflowDecision, type WorkflowDecisionCompletion } from "./case-wo
 import { XrayWorkflowDecision } from "./xray-workflow-decision";
 import { CtWorkflowDecision } from "./ct-workflow-decision";
 import { StageExaminationOrder } from "./stage-examination-order";
+import { Pdl1ConfirmationButton } from "./pdl1-confirmation-button";
 import { CaseConsultationRequest } from "./case-consultation-request";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
@@ -190,6 +191,7 @@ type GeneClinicalResult = {
     pdl1?: {
       tps_percent: number | string | null;
       interpretation: string | null;
+      indeterminate_reason?: string | null;
       note: string | null;
     };
   };
@@ -204,6 +206,7 @@ type Pdl1ClinicalResult = {
     pdl1?: {
       tps_percent: number | string | null;
       interpretation: string | null;
+      indeterminate_reason?: string | null;
       note: string | null;
     };
   };
@@ -485,7 +488,6 @@ export default function RespiratoryCaseDetailPage() {
   const [resultsSyncing, setResultsSyncing] = useState(false);
   const [resultSyncNotice, setResultSyncNotice] = useState("");
   const [stageOrderNotice, setStageOrderNotice] = useState("");
-  const [confirmingPathologyResult, setConfirmingPathologyResult] = useState(false);
 
   const [searchText, setSearchText] = useState("");
   const deferredSearchText = useDeferredValue(searchText);
@@ -1356,34 +1358,6 @@ export default function RespiratoryCaseDetailPage() {
     selectedAiType,
   ) as TnmAnalysisResult | undefined;
 
-  const confirmSubmittedPathologyResult = async () => {
-    if (!submittedPathologyResult?.id || confirmingPathologyResult) return;
-    const toastId = `case-pathology-confirm-${caseId}-${submittedPathologyResult.id}`;
-    setConfirmingPathologyResult(true);
-    try {
-      const response = await authorizedFetch(
-        `${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/pathology/${submittedPathologyResult.id}/confirm/`,
-        { method: "POST" },
-      );
-      const body = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(typeof body.detail === "string" ? body.detail : "결과 확정에 실패했습니다.");
-      }
-      showToast.success(
-        submittedPathologyResult.workflow_stage === "PDL1"
-          ? "PD-L1 결과가 확정되었습니다."
-          : "병리 결과가 확정되었습니다.",
-        { id: toastId },
-      );
-      await refreshCaseResults();
-    } catch (error) {
-      console.error(error);
-      showToast.error("결과 확정에 실패했습니다.", { id: toastId });
-    } finally {
-      setConfirmingPathologyResult(false);
-    }
-  };
-
   const handleCaseTreatmentDraftSave = async () => {
     if (!caseId) return;
 
@@ -2033,14 +2007,7 @@ export default function RespiratoryCaseDetailPage() {
           <div className="flex shrink-0 flex-wrap items-center gap-2">
             {stageOrderNotice && <span role="status" className="hidden rounded-md bg-emerald-50 px-2 py-1 text-[10px] font-semibold text-emerald-700 lg:inline">{stageOrderNotice}</span>}
             {selectedCase?.case_status === "ACTIVE" && selectedInfoMenu === "PDL1" && selectedInfoMenu === selectedCase.current_stage && submittedPathologyResult?.workflow_stage === "PDL1" && (
-              <button
-                type="button"
-                disabled={confirmingPathologyResult}
-                onClick={() => { void confirmSubmittedPathologyResult(); }}
-                className="rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:cursor-not-allowed disabled:bg-slate-300"
-              >
-                {confirmingPathologyResult ? "확정 중" : "결과 확인 및 확정"}
-              </button>
+              <Pdl1ConfirmationButton caseId={caseId} resultId={submittedPathologyResult.id!} aiRange={latestPdl1Result?.result_detail?.pdl1?.predicted_tps_range_label} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} onConfirmed={refreshCaseResults} />
             )}
             {selectedCase?.case_status === "ACTIVE" && canAdvancePathologyToPdl1 && selectedInfoMenu === "PATHOLOGY_GENE" && (
               <CaseWorkflowDecision caseId={caseId} currentStage="PATHOLOGY_GENE" directProceed triggerLabel="PD-L1 검사 오더" confirmedResultId={pathologyResultForPdl1?.id} authorizedFetch={authorizedFetch} onCompleted={handleWorkflowDecisionCompleted} />

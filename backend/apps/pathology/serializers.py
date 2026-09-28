@@ -157,6 +157,7 @@ class PDL1ClinicalResultSerializer(serializers.ModelSerializer):
         return {
             "tps_percent": detail.tps_percent,
             "interpretation": detail.interpretation,
+            "indeterminate_reason": detail.indeterminate_reason,
             "note": detail.note,
             "source_wsi_id": str(detail.source_wsi_id) if detail.source_wsi_id else None,
         }

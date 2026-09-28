@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import CaseImageAsset, ClinicianDecision, DoctorDashboardMemo, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, WorkflowStage
+from .models import CaseImageAsset, ClinicianDecision, DoctorDashboardMemo, ExaminationOrder, LungCancerCase, PhysicianTreatmentOpinion, TreatmentAIOpinion, WorkflowStage
 
 
 class DoctorCaseImageAssetSerializer(serializers.ModelSerializer):
@@ -191,6 +191,28 @@ class TreatmentOpinionRequestSerializer(serializers.Serializer):
     selected_regimen = serializers.UUIDField(required=False, allow_null=True)
     treatment_type = serializers.CharField(required=False, allow_blank=True, max_length=20)
     treatment_plan = serializers.CharField(required=False, allow_blank=True, max_length=20000)
+
+
+class TreatmentAIOpinionSerializer(serializers.ModelSerializer):
+    case_id = serializers.UUIDField(read_only=True)
+
+    class Meta:
+        model = TreatmentAIOpinion
+        fields = [
+            "id",
+            "case_id",
+            "status",
+            "opinion",
+            "sources",
+            "safety_status",
+            "review_required",
+            "selected_regimen_id",
+            "treatment_type",
+            "treatment_plan",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
 
 
 class PhysicianTreatmentOpinionWriteSerializer(serializers.Serializer):

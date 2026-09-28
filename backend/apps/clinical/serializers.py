@@ -534,6 +534,37 @@ class DoctorPathologyGeneReviewSerializer(serializers.Serializer):
         return value
 
 
+class DoctorPdl1ReviewSerializer(serializers.Serializer):
+    tps_percent = serializers.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        min_value=Decimal("0"),
+        max_value=Decimal("100"),
+        required=False,
+        allow_null=True,
+    )
+    indeterminate_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        trim_whitespace=True,
+        max_length=500,
+    )
+
+    def validate(self, attrs):
+        tps_percent = attrs.get("tps_percent")
+        indeterminate_reason = attrs.get("indeterminate_reason", "").strip()
+        if tps_percent is None and not indeterminate_reason:
+            raise serializers.ValidationError(
+                "최종 TPS를 입력하거나 판정 불가 사유를 기록해야 합니다."
+            )
+        if tps_percent is not None and indeterminate_reason:
+            raise serializers.ValidationError(
+                "최종 TPS와 판정 불가 사유는 동시에 입력할 수 없습니다."
+            )
+        attrs["indeterminate_reason"] = indeterminate_reason or None
+        return attrs
+
+
 # 호흡기내과 - Case 검사 결과 상세 조회용
 class DoctorClinicalResultSerializer(serializers.ModelSerializer):
     workflow_stage = serializers.CharField(read_only=True)
@@ -683,6 +714,7 @@ class DoctorClinicalResultSerializer(serializers.ModelSerializer):
             detail["pdl1"] = {
                 "tps_percent": pdl1.tps_percent,
                 "interpretation": pdl1.interpretation,
+                "indeterminate_reason": pdl1.indeterminate_reason,
                 "note": pdl1.note,
             }
 

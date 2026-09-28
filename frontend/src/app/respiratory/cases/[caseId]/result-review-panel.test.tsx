@@ -160,6 +160,28 @@ describe("ResultReviewPanel", () => {
     expect(nodule.getByText("0 mm³")).toBeTruthy();
   });
 
+  it("renders object-shaped morphology values as absent instead of object text", () => {
+    render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{
+      analysis_type: "CT_ANALYSIS",
+      status: "SUCCEEDED",
+      result_detail: { ct: { nodules: [{
+        nodule_no: 1,
+        finding_payload: {
+          morphology: {
+            prediction: {
+              spiculation: { prediction: "NEGATIVE", probability: 0.8 },
+              lobulation: { prediction: "POSITIVE", probability: 0.8 },
+            },
+          },
+        },
+      }] } },
+    }} />);
+
+    const nodule = within(screen.getByTestId("ct-nodule-1"));
+    expect(nodule.getAllByText("없음")).toHaveLength(2);
+    expect(nodule.queryByText("[object Object]")).toBeNull();
+  });
+
   it("distinguishes a successful zero-nodule CT result from an AI loading error", () => {
     render(<ResultReviewPanel stage="CT" showEvidence={false} aiResult={{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: null, nodules: [] } } }} />);
 

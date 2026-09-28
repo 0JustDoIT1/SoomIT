@@ -105,7 +105,10 @@ export default function RespiratoryCasesPage() {
 
   const snapshotVersionsRef =
     useRef<Record<string, string>>({});
+  const snapshotRetryAttemptRef =
+    useRef(0);
   const pendingNotificationReadsRef = useRef(new Set<string>());
+  const [snapshotRetryNonce, setSnapshotRetryNonce] = useState(0);
 
   /* ---------------------------------------------------------------------- */
   /* Case navigation                                                        */
@@ -549,6 +552,7 @@ export default function RespiratoryCasesPage() {
 
     const controller =
       new AbortController();
+    let retryTimer: number | null = null;
 
     const timer =
       window.setTimeout(
@@ -673,6 +677,24 @@ export default function RespiratoryCasesPage() {
               return next;
             },
           );
+
+          const hasIncompleteSnapshot = results.some(
+            (result) => result === null,
+          );
+
+          if (hasIncompleteSnapshot) {
+            const delay = Math.min(
+              1_000 * 2 ** snapshotRetryAttemptRef.current,
+              8_000,
+            );
+            snapshotRetryAttemptRef.current += 1;
+            retryTimer = window.setTimeout(
+              () => setSnapshotRetryNonce((current) => current + 1),
+              delay,
+            );
+          } else {
+            snapshotRetryAttemptRef.current = 0;
+          }
         },
         0,
       );
@@ -682,11 +704,16 @@ export default function RespiratoryCasesPage() {
         timer,
       );
 
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+      }
+
       controller.abort();
     };
   }, [
     authorizedFetch,
     cases,
+    snapshotRetryNonce,
   ]);
 
   /* ---------------------------------------------------------------------- */
@@ -803,11 +830,11 @@ export default function RespiratoryCasesPage() {
       <div className="mx-auto max-w-[1600px]">
         {/* Header */}
 
-        <header className="mb-4 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
-          <div className="h-0.5 bg-blue-600" />
-          <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-4">
-            <div className="flex min-w-0 items-center gap-4">
-              <div className="hidden h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-blue-100 bg-blue-50 text-blue-600 sm:flex" aria-hidden="true">
+        <header className="mb-4 overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-[0_10px_30px_rgba(15,23,42,0.05)]">
+          <div className="h-[3px] bg-gradient-to-r from-blue-700 via-blue-500 to-cyan-400" />
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-gradient-to-r from-white via-white to-blue-50/60 px-5 py-3.5 xl:px-6">
+            <div className="flex min-w-0 items-center gap-3.5">
+              <div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-700 to-cyan-500 text-white shadow-sm sm:flex" aria-hidden="true">
                 <svg width="25" height="25" viewBox="0 0 24 24" fill="none">
                   <path d="M12 3v18M12 6C8.2 2.8 4.5 4.7 4.5 9.6c0 4.7 2.3 8.4 5.6 8.4 1.1 0 1.9-.5 1.9-1.3M12 6c3.8-3.2 7.5-1.3 7.5 3.6 0 4.7-2.3 8.4-5.6 8.4-1.1 0-1.9-.5-1.9-1.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
                   <path d="M12 9 8.5 12m3.5 1-3 2.5m3-6.5 3.5 3m-3.5 1 3 2.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
@@ -815,17 +842,17 @@ export default function RespiratoryCasesPage() {
               </div>
 
               <div className="min-w-0">
-                <p className="text-xs font-medium text-slate-500">오늘의 진료 브리핑</p>
-                <h1 className="mt-0.5 text-xl font-bold tracking-tight text-slate-900">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-blue-600">오늘의 진료 브리핑</p>
+                <h1 className="mt-0.5 text-lg font-bold tracking-tight text-slate-900">
                   {user?.name ?? "호흡기내과 의료진"}
                   <span className="ml-1.5 font-semibold text-slate-700">선생님</span>
                 </h1>
-                <p className="mt-1 text-sm text-slate-600">담당 Case의 진행 현황과 우선 처리 업무를 확인합니다.</p>
+                <p className="mt-0.5 text-xs text-slate-500">담당 Case의 진행 현황과 우선 처리 업무를 확인합니다.</p>
               </div>
             </div>
 
-            <div className="flex shrink-0 items-center gap-3">
-              <span className="hidden text-xs text-slate-500 md:block">
+            <div className="flex shrink-0 items-center gap-2 rounded-xl border border-white/80 bg-white/75 p-1.5 shadow-sm backdrop-blur-sm">
+              <span className="hidden px-2 text-[11px] font-medium text-slate-500 md:block">
                 {casesSyncing
                   ? "업무함을 갱신하는 중입니다."
                   : lastCasesSyncAt
@@ -836,14 +863,18 @@ export default function RespiratoryCasesPage() {
                 type="button"
                 onClick={() => void fetchCases(undefined, true)}
                 disabled={casesSyncing}
-                className="inline-flex h-9 items-center justify-center rounded-lg border border-blue-200 bg-white px-3.5 text-xs font-semibold text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="inline-flex h-8 items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-300 disabled:shadow-none"
               >
+                <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" className={`h-3.5 w-3.5 ${casesSyncing ? "animate-spin" : ""}`}>
+                  <path d="M15.6 6.2A6 6 0 1 0 16 13" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+                  <path d="M15.7 2.8v3.7h-3.8" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
                 {casesSyncing ? "갱신 중" : "업무 새로고침"}
               </button>
             </div>
           </div>
 
-          <div className="border-t border-slate-100 px-5 py-4 xl:px-6">
+          <div className="border-t border-slate-100 bg-slate-50/40 px-4 py-3 xl:px-5">
             <DashboardAssistant
               cases={cases}
               authorizedFetch={authorizedFetch}
@@ -851,8 +882,8 @@ export default function RespiratoryCasesPage() {
             />
           </div>
 
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-slate-100 bg-slate-50/70 px-6 py-2.5 text-xs text-slate-500">
-            <span className="font-semibold text-blue-700">호흡기내과</span>
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 border-t border-slate-100 bg-white px-5 py-2 text-[11px] text-slate-400 xl:px-6">
+            <span className="font-bold text-blue-700">호흡기내과</span>
             <span className="h-3 w-px bg-slate-200" />
             <span>Respiratory Medicine</span>
             <span className="h-3 w-px bg-slate-200" />
@@ -912,6 +943,7 @@ export default function RespiratoryCasesPage() {
               notifications={
                 notifications.results
               }
+              todoOwnerId={user?.id}
               unreadNotificationCount={
                 notifications.unread_count
               }

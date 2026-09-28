@@ -9,6 +9,7 @@ from apps.cases.views import (
     DoctorSlideTileAPIView,
     DoctorSlideTissueHeatmapAPIView,
     DoctorSlideViewerAPIView,
+    _BinaryPassthroughContentNegotiation,
 )
 from apps.pathology.services.orthanc import OrthancBinaryResponse, OrthancError
 from apps.pathology.services.pathology_storage import PathologyStorageError
@@ -23,6 +24,12 @@ class DoctorWsiViewerMetadataTests(SimpleTestCase):
         "TileWidth": 512,
         "TileHeight": 512,
     }
+
+    def test_heatmap_accepts_image_binary_content_negotiation(self):
+        self.assertIs(
+            DoctorSlideTissueHeatmapAPIView.content_negotiation_class,
+            _BinaryPassthroughContentNegotiation,
+        )
 
     @patch("apps.cases.views.get_wsi_pyramid")
     @patch("apps.cases.views._doctor_slide_or_404")

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import { FormEvent, PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import Image from "next/image";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
@@ -38,6 +38,10 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   const reconnect = useRef<number | null>(null);
   const disposed = useRef(false);
   const selectedIdRef = useRef(selectedId);
+  const dragState = useRef<{ pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null);
+  const suppressLauncherClick = useRef(false);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [dragging, setDragging] = useState(false);
 
   const unread = participants.reduce((total, participant) => total + participant.unread_count, 0);
   const selected = participants.find((participant) => participant.id === selectedId);
@@ -167,8 +171,46 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
     setBody("");
   }
 
+  function startLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    if (event.button !== 0) return;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    dragState.current = { pointerX: event.clientX, pointerY: event.clientY, x: position.x, y: position.y, moved: false };
+  }
+
+  function moveLauncher(event: ReactPointerEvent<HTMLButtonElement>) {
+    const drag = dragState.current;
+    if (!drag) return;
+    const deltaX = event.clientX - drag.pointerX;
+    const deltaY = event.clientY - drag.pointerY;
+    if (Math.abs(deltaX) > 3 || Math.abs(deltaY) > 3) drag.moved = true;
+    const buttonSize = 80;
+    const baseOffset = 20;
+    const safeMargin = 12;
+    setDragging(drag.moved);
+    setPosition({
+      x: Math.min(baseOffset - safeMargin, Math.max(baseOffset + buttonSize + safeMargin - window.innerWidth, drag.x + deltaX)),
+      y: Math.min(baseOffset - safeMargin, Math.max(baseOffset + buttonSize + safeMargin - window.innerHeight, drag.y + deltaY)),
+    });
+  }
+
+  function endLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>) {
+    const moved = dragState.current?.moved ?? false;
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) event.currentTarget.releasePointerCapture?.(event.pointerId);
+    dragState.current = null;
+    setDragging(false);
+    if (moved) suppressLauncherClick.current = true;
+  }
+
+  function openChat() {
+    if (suppressLauncherClick.current) {
+      suppressLauncherClick.current = false;
+      return;
+    }
+    setOpen(true);
+  }
+
   return (
-    <div className="fixed bottom-8 right-8 z-50" data-chat-no-drag="true">
+    <div className="fixed bottom-5 right-5 z-50" style={{ transform: `translate3d(${position.x}px, ${position.y}px, 0)` }} data-chat-no-drag="true">
       {open ? (
         <section className="flex h-[min(620px,calc(100vh-40px))] w-[min(620px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-2xl" aria-label="숨챗">
           <header className="flex h-14 shrink-0 items-center justify-between bg-gradient-to-r from-blue-700 to-blue-500 px-4 text-white">
@@ -213,8 +255,8 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
           </div>
         </section>
       ) : (
-        <button type="button" onClick={() => setOpen(true)} aria-label="숨챗 열기" className="relative h-[8.25rem] w-[8.25rem] overflow-hidden rounded-full bg-transparent transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
-          <Image src="/images/soomchat.png" alt="" width={132} height={132} className="h-full w-full scale-[1.2] object-contain" />
+        <button type="button" onPointerDown={startLauncherDrag} onPointerMove={moveLauncher} onPointerUp={endLauncherDrag} onPointerCancel={endLauncherDrag} onClick={openChat} aria-label="숨챗 열기" title="클릭하여 열기 · 드래그하여 이동" className={`relative h-20 w-20 touch-none select-none overflow-hidden rounded-full bg-transparent transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${dragging ? "cursor-grabbing" : "cursor-grab"}`}>
+          <Image src="/images/soomchat.png" alt="" width={80} height={80} className="h-full w-full scale-[1.16] object-contain" />
           {unread > 0 && <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-rose-500 px-1.5 text-center text-[10px] leading-5 text-white">{unread > 99 ? "99+" : unread}</span>}
         </button>
       )}

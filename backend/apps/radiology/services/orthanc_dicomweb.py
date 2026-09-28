@@ -110,6 +110,19 @@ def retrieve_instance(study_instance_uid, series_instance_uid, sop_instance_uid)
     return DicomWebResponse(content=dicom_bytes, content_type="application/dicom")
 
 
+def retrieve_series(study_instance_uid, series_instance_uid):
+    """WADO-RS: retrieve every Instance in a Series in one multipart response."""
+    if not is_valid_dicom_uid(study_instance_uid) or not is_valid_dicom_uid(series_instance_uid):
+        raise OrthancDicomWebError("Invalid Study/Series UID.")
+    content, content_type_header = _request(
+        f"/dicom-web/studies/{study_instance_uid}/series/{series_instance_uid}",
+        accept='multipart/related; type="application/dicom"',
+    )
+    if "multipart/related" not in content_type_header.lower() or "boundary=" not in content_type_header.lower():
+        raise OrthancDicomWebError("Orthanc DICOMweb Series response is not multipart.")
+    return DicomWebResponse(content=content, content_type=content_type_header)
+
+
 def retrieve_instance_frame(study_instance_uid, series_instance_uid, sop_instance_uid, frame_number=1):
     """WADO-RS frame retrieval for Cornerstone's ``wadors:`` image loader.
 

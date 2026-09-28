@@ -1,10 +1,18 @@
 "use client";
 
 import { type FormEvent, type ReactNode, useCallback, useEffect, useRef, useState } from "react";
+import { DayPicker } from "react-day-picker";
+import { ko } from "react-day-picker/locale";
 
 import { useRespiratoryAuth } from "../_components/respiratory-auth-provider";
 import { createUnavailableSchedule, createWeeklyAvailability, deleteUnavailableSchedule, deleteWeeklyAvailability, fetchDoctorAppointments, fetchUnavailableSchedules, fetchWeeklyAvailability, type DoctorAppointment, type DoctorAvailability, type DoctorUnavailableSchedule, updateUnavailableSchedule, updateWeeklyAvailability } from "./schedule-api";
 import { ScheduleMonthCalendar } from "./schedule-month-calendar";
+
+const CLINIC_TIME_OPTIONS = Array.from({ length: 48 }, (_, index) => {
+  const hours = Math.floor(index / 2);
+  const minutes = index % 2 === 0 ? "00" : "30";
+  return `${String(hours).padStart(2, "0")}:${minutes}`;
+});
 
 const WEEKDAYS = ["월요일", "화요일", "수요일", "목요일", "금요일", "토요일", "일요일"];
 
@@ -222,15 +230,15 @@ export function DoctorScheduleWorkspace() {
       {showAvailabilityForm && <Modal title={editingAvailability ? "기본 진료시간 수정" : "기본 진료시간 입력"} onClose={() => { setShowAvailabilityForm(false); setEditingAvailability(null); }}>
         <form key={editingAvailability?.id ?? "new"} onSubmit={submitAvailability} className="space-y-4">
           {editingAvailability ? <Field label="요일"><select name="weekday" required defaultValue={editingAvailability.weekday}>{WEEKDAYS.map((label, index) => <option key={label} value={index}>{label}</option>)}</select></Field> : <AvailabilityWeekdaySelector availability={availability} startTime={availabilityStartTime} endTime={availabilityEndTime} />}
-          <div className="grid grid-cols-2 gap-3"><Field label="시작 시간"><input name="startTime" type="time" required value={availabilityStartTime} onChange={(event) => setAvailabilityStartTime(event.target.value)} /></Field><Field label="종료 시간"><input name="endTime" type="time" required value={availabilityEndTime} onChange={(event) => setAvailabilityEndTime(event.target.value)} /></Field></div>
+          <div className="grid grid-cols-2 gap-3"><Field label="시작 시간"><ClinicTimeSelect name="startTime" value={availabilityStartTime} onChange={setAvailabilityStartTime} /></Field><Field label="종료 시간"><ClinicTimeSelect name="endTime" value={availabilityEndTime} onChange={setAvailabilityEndTime} /></Field></div>
           <div className="rounded-lg bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-500">진료시간 단위 <strong className="ml-1 text-slate-800">30분</strong></span></div>
           <div className="flex justify-end gap-2"><button type="button" onClick={() => { setShowAvailabilityForm(false); setEditingAvailability(null); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">취소</button><button disabled={saving} className="button-primary">{saving ? "저장 중" : editingAvailability ? "수정 저장" : "저장"}</button></div>
         </form>
       </Modal>}
       {showUnavailableForm && <Modal title={editingUnavailable ? "휴진 일정 수정" : "휴진 일정 입력"} onClose={() => { setShowUnavailableForm(false); setEditingUnavailable(null); }}>
         <form key={editingUnavailable?.id ?? "new"} onSubmit={submitUnavailable} className="space-y-4">
-          <Field label="진료 불가 시작"><input name="startAt" type="datetime-local" required defaultValue={editingUnavailable ? toLocalDateTimeInput(editingUnavailable.start_at) : ""} /></Field>
-          <Field label="진료 불가 종료"><input name="endAt" type="datetime-local" required defaultValue={editingUnavailable ? toLocalDateTimeInput(editingUnavailable.end_at) : ""} /></Field>
+          <Field label="진료 불가 시작"><ClinicDateTimePicker name="startAt" label="진료 불가 시작" defaultValue={editingUnavailable ? toLocalDateTimeInput(editingUnavailable.start_at) : ""} /></Field>
+          <Field label="진료 불가 종료"><ClinicDateTimePicker name="endAt" label="진료 불가 종료" defaultValue={editingUnavailable ? toLocalDateTimeInput(editingUnavailable.end_at) : ""} /></Field>
           <Field label="사유"><textarea name="reason" rows={3} defaultValue={editingUnavailable?.reason ?? ""} placeholder="휴진 또는 진료 불가 사유" /></Field>
           <div className="flex justify-end gap-2"><button type="button" onClick={() => { setShowUnavailableForm(false); setEditingUnavailable(null); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm">취소</button><button disabled={saving} className="button-primary">{saving ? "저장 중" : editingUnavailable ? "수정 저장" : "저장"}</button></div>
         </form>
@@ -238,6 +246,59 @@ export function DoctorScheduleWorkspace() {
       {message && <div role="alert" className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-lg bg-slate-800 px-4 py-3 text-sm text-white shadow-lg">{message}<button type="button" onClick={() => setMessage(null)} className="ml-3 text-slate-300">닫기</button></div>}
     </div>
   );
+}
+
+function ClinicDateTimePicker({ name, label, defaultValue }: { name: string; label: string; defaultValue: string }) {
+  const [value, setValue] = useState(defaultValue);
+  const [open, setOpen] = useState(false);
+  const selected = parseLocalDateTime(value);
+  const time = value.slice(11) || "09:00";
+  const updateDate = (date?: Date) => {
+    if (!date) return;
+    setValue(`${formatLocalDate(date)}T${time}`);
+    setOpen(false);
+  };
+
+  return <div className="relative">
+    <input type="hidden" name={name} value={value} />
+    <button type="button" aria-label={`${label} 날짜 선택`} aria-expanded={open} onClick={() => setOpen((current) => !current)} className="flex h-11 w-full items-center justify-between rounded-lg border border-slate-200 bg-white px-3 text-left text-sm font-semibold text-slate-800 shadow-sm transition hover:border-blue-300 focus:outline-none focus:ring-4 focus:ring-blue-100">
+      <span>{selected ? `${formatLocalDate(selected)} · ${formatClinicTime(time)}` : "날짜와 시간 선택"}</span><span aria-hidden="true" className="text-blue-600">⌄</span>
+    </button>
+    {open && <div className="absolute z-20 mt-2 w-[296px] rounded-xl border border-slate-200 bg-white p-3 shadow-xl">
+      <DayPicker mode="single" locale={ko} selected={selected} onSelect={updateDate} defaultMonth={selected} className="text-sm" classNames={{ months: "flex", month: "w-full", month_caption: "mb-3 text-center font-bold text-slate-800", nav: "flex items-center justify-between", button_previous: "rounded p-1 text-slate-600 hover:bg-slate-100", button_next: "rounded p-1 text-slate-600 hover:bg-slate-100", month_grid: "w-full border-collapse", weekdays: "border-b border-slate-100", weekday: "h-8 text-center text-[11px] font-medium text-slate-400", week: "h-9", day: "p-0 text-center", day_button: "h-8 w-8 rounded-md text-sm hover:bg-blue-50 focus:outline-none focus:ring-2 focus:ring-blue-300", selected: "bg-blue-600 text-white hover:bg-blue-600", today: "font-bold text-blue-700" }} />
+      <div className="mt-3 border-t border-slate-100 pt-3"><span className="mb-1.5 block text-[11px] font-semibold text-slate-500">시간</span><ClinicTimeSelect value={time} onChange={(nextTime) => setValue(`${selected ? formatLocalDate(selected) : formatLocalDate(new Date())}T${nextTime}`)} /></div>
+    </div>}
+  </div>;
+}
+
+function ClinicTimeSelect({ name, value, onChange }: { name?: string; value: string; onChange: (value: string) => void }) {
+  return <select name={name} required value={value} onChange={(event) => onChange(event.target.value)} className="h-11 w-full rounded-lg border border-slate-200 bg-white px-3 pr-9 text-sm font-semibold text-slate-800 shadow-sm outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-100">
+    <option value="" disabled>시간 선택</option>
+    {CLINIC_TIME_OPTIONS.map((time) => <option key={time} value={time}>{formatClinicTime(time)}</option>)}
+  </select>;
+}
+
+function formatClinicTime(value: string) {
+  const [hours, minutes] = value.split(":").map(Number);
+  const period = hours < 12 ? "오전" : "오후";
+  const displayHour = hours % 12 || 12;
+  return `${period} ${displayHour}:${String(minutes).padStart(2, "0")}`;
+}
+
+function parseLocalDateTime(value: string) {
+  const [date, time] = value.split("T");
+  if (!date || !time) return undefined;
+  const [year, month, day] = date.split("-").map(Number);
+  const [hours, minutes] = time.split(":").map(Number);
+  if (![year, month, day, hours, minutes].every(Number.isFinite)) return undefined;
+  return new Date(year, month - 1, day, hours, minutes);
+}
+
+function formatLocalDate(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {

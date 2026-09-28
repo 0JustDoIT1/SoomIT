@@ -7,6 +7,7 @@ from apps.radiology.services.orthanc_dicomweb import (
     is_valid_dicom_uid,
     retrieve_instance,
     retrieve_instance_frame,
+    retrieve_series,
 )
 
 
@@ -100,3 +101,17 @@ class RetrieveInstanceMultipartTests(SimpleTestCase):
     def test_frame_rejects_invalid_frame_number(self):
         with self.assertRaises(OrthancDicomWebError):
             retrieve_instance_frame(self.STUDY_UID, self.SERIES_UID, self.INSTANCE_UID, 0)
+
+    @patch("apps.radiology.services.orthanc_dicomweb._request")
+    def test_retrieves_a_series_in_one_multipart_request(self, request):
+        content_type_header, body = _multipart_dicom_body(b"SERIES-DICOM")
+        request.return_value = (body, content_type_header)
+
+        result = retrieve_series(self.STUDY_UID, self.SERIES_UID)
+
+        request.assert_called_once_with(
+            f"/dicom-web/studies/{self.STUDY_UID}/series/{self.SERIES_UID}",
+            accept='multipart/related; type="application/dicom"',
+        )
+        self.assertEqual(result.content, body)
+        self.assertEqual(result.content_type, content_type_header)

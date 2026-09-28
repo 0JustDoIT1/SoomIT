@@ -46,6 +46,27 @@ describe("DoctorScheduleWorkspace", () => {
     expect(screen.getByText("입력한 시간과 겹치는 요일은 선택할 수 없습니다.")).toBeTruthy();
   });
 
+  it("uses 30-minute clinic-time selects instead of the browser time picker", async () => {
+    const user = userEvent.setup();
+    render(<DoctorScheduleWorkspace />);
+    await user.click(screen.getByRole("button", { name: "시간 입력" }));
+
+    expect(screen.getByLabelText("시작 시간")).toHaveProperty("tagName", "SELECT");
+    expect(screen.getByLabelText("종료 시간")).toHaveProperty("tagName", "SELECT");
+    expect(screen.getAllByRole("option", { name: "오전 9:00" })).toHaveLength(2);
+    expect(screen.getAllByRole("option", { name: "오후 11:30" })).toHaveLength(2);
+  });
+
+  it("uses the in-app calendar popover for unavailable schedules", async () => {
+    const user = userEvent.setup();
+    render(<DoctorScheduleWorkspace />);
+    await user.click(screen.getByRole("button", { name: "휴진 일정 입력" }));
+    await user.click(screen.getByRole("button", { name: "진료 불가 시작 날짜 선택" }));
+
+    expect(screen.getByRole("grid")).toBeInTheDocument();
+    expect(document.querySelector('input[type="datetime-local"]')).toBeNull();
+  });
+
   it.each([["12:00", "13:00"], ["08:00", "09:00"]])("allows adjacent %s–%s hours through selection and submission", async (start, end) => {
     render(<DoctorScheduleWorkspace />);
     await screen.findByText("09:00 – 12:00");

@@ -87,6 +87,39 @@ it("opens the current evidence workspace from Dashboard without changing the sta
   expect(mocks.authorizedFetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
 
+it("keeps the rendered Case visible while a same-Case workflow refresh is pending", async () => {
+  let stage = "TREATMENT";
+  let holdCaseRefresh = false;
+  const pendingCaseResponses: Array<(value: Response) => void> = [];
+  mocks.authorizedFetch.mockImplementation((input: string) => {
+    const url = new URL(input).pathname;
+    if (holdCaseRefresh && (url === "/api/doctor/cases/" || url === "/api/doctor/cases/case-1/")) {
+      return new Promise<Response>(resolve => { pendingCaseResponses.push(resolve); });
+    }
+    if (url === "/api/doctor/cases/") return Promise.resolve(response([baseCase(stage)]));
+    if (url === "/api/doctor/cases/case-1/") return Promise.resolve(response(baseCase(stage)));
+    if (url.endsWith("/clinical-results/") || url.endsWith("/orders/") || url.endsWith("/ai-results/") || url.endsWith("/prescriptions/") || url.endsWith("/regimen-candidates/")) return Promise.resolve(response([]));
+    if (url.endsWith("/treatment-decision/")) return Promise.resolve(response({}, 404));
+    return Promise.resolve(response([]));
+  });
+  render(<Page />);
+
+  await openCaseWorkspace("치료계획·처방");
+  expect(await screen.findByTestId("treatment-final-plan")).toBeInTheDocument();
+  holdCaseRefresh = true;
+  stage = "PRESCRIPTION";
+  await userEvent.click(screen.getByRole("button", { name: "치료계획 확정 테스트" }));
+  await waitFor(() => expect(pendingCaseResponses).toHaveLength(2));
+
+  expect(screen.queryByText("담당 환자 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
+  expect(screen.getByTestId("treatment-final-plan")).toBeInTheDocument();
+  expect(screen.getAllByText("환자").length).toBeGreaterThan(0);
+
+  pendingCaseResponses[0](response([baseCase(stage)]));
+  pendingCaseResponses[1](response(baseCase(stage)));
+  await waitFor(() => expect(screen.getByText("현재 Case 단계 · 처방")).toBeInTheDocument());
+});
+
 it("keeps the Case action outside the constrained stage body when switching imaging workspaces", async () => {
   installCaseResponses({ stage: "CT", aiResults: [{ id: "analysis-1", analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_assessment: "NODULE_DETECTED" } } }] });
   const { container } = render(<Page />);

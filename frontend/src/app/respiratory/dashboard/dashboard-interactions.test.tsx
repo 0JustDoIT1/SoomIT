@@ -11,7 +11,7 @@ function setup(empty = false) {
   const props = {
     cases: empty ? [] : cases, snapshots: {}, consultations: [],
     notifications: empty ? [] : [{ id: "notice", title: "검사 결과 도착", message: "결과를 확인하세요", case_id: "a", case_code: "CASE-A", read_at: null, notification_type: "RESULT", created_at: new Date().toISOString(), payload: {} }],
-    unreadNotificationCount: empty ? 0 : 1, selectedCaseId: empty ? null : "a", ...callbacks,
+    todoOwnerId: "doctor-1", unreadNotificationCount: empty ? 0 : 1, selectedCaseId: empty ? null : "a", ...callbacks,
   };
   return { ...render(<DashboardWorkQueues {...props} />), callbacks, props };
 }
@@ -36,11 +36,19 @@ describe("Dashboard full-page interactions", () => {
   });
 
   it("keeps memo add, complete, persistence and delete usable", () => {
-    setup();
-    fireEvent.change(screen.getByRole("textbox", { name: "개인 할 일" }), { target: { value: "검사 기록 확인" } });
+    const view = setup();
+    fireEvent.change(screen.getByRole("textbox", { name: "오늘 할 일 입력" }), { target: { value: "검사 기록 확인" } });
     fireEvent.click(screen.getByRole("button", { name: "추가" }));
     fireEvent.click(screen.getByRole("checkbox", { name: "검사 기록 확인 완료" }));
-    expect(JSON.parse(localStorage.getItem("respiratory-dashboard-todos:a")!)[0].completed).toBe(true);
+    const storageKey = Object.keys(localStorage).find((key) =>
+      key.startsWith("respiratory-dashboard-doctor-todos:doctor-1:"),
+    );
+    expect(storageKey).toBeDefined();
+    expect(JSON.parse(localStorage.getItem(storageKey!)!)[0].completed).toBe(true);
+
+    view.rerender(<DashboardWorkQueues {...view.props} selectedCaseId="b" />);
+    expect(screen.getByRole("checkbox", { name: "검사 기록 확인 완료" })).toBeChecked();
+
     fireEvent.click(screen.getByRole("button", { name: "검사 기록 확인 삭제" }));
     expect(screen.queryByRole("checkbox")).not.toBeInTheDocument();
   });
@@ -55,5 +63,6 @@ describe("Dashboard full-page interactions", () => {
     expect(screen.getByRole("heading", { name: `${now.getFullYear()}년 ${now.getMonth() + 1}월` })).toBeInTheDocument();
     expect(screen.getByText("표시할 알림이 없습니다.")).toBeInTheDocument();
     expect(screen.queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "오늘 할 일 입력" })).toBeInTheDocument();
   });
 });

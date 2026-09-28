@@ -203,6 +203,8 @@ describe("CaseWsiEvidence", () => {
     expect(screen.getByRole("button", { name: "Point" })).toBeEnabled();
     toggle.click();
     expect(await screen.findByLabelText("Heatmap 투명도")).toHaveValue("65");
+    expect(toggle).toHaveAttribute("aria-pressed", "true");
+    expect(toggle).toHaveClass("border-violet-600", "bg-violet-600", "text-white");
     expect(createObjectUrl).toHaveBeenCalled();
   });
 

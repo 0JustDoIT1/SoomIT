@@ -45,7 +45,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from apps.knowledge.models import KnowledgeDocument
 from apps.knowledge.services.embedding_client import EmbeddingServiceError
 from apps.knowledge.services.medgemma_client import MedgemmaServiceError
-from apps.knowledge.services.rag import answer_with_rag
+from apps.knowledge.services.rag import answer_with_rag, retrieve_evidence
 
 
 UNRESOLVED_SAFETY_SOURCE_CODES = {
@@ -2514,7 +2514,7 @@ class DoctorTreatmentEvidenceAPIView(APIView):
     permission_classes = [IsAuthenticated]
     NCI_PDQ_URI = "gs://soomit-bucket/knowledge/lung-cancer/nsclc-treatment-pdq/nci-nsclc-pdq.pdf"
 
-    def build_response(self, request, case_id, *, selected_regimen_id=None):
+    def build_response(self, request, case_id, *, selected_regimen_id=None, generate_summary=True):
         candidate_view = DoctorRegimenCandidateListAPIView()
         candidate_view.request = request
         candidate_view.kwargs = {"case_id": case_id}
@@ -2552,10 +2552,15 @@ class DoctorTreatmentEvidenceAPIView(APIView):
             "stage": data["stage_group"], "confirmed_gene_findings": confirmed_findings,
             "pdl1_tps": data["pdl1_tps"], "ecog": data["ecog"],
         }
+        alteration_labels = [
+            finding["alteration_code"]
+            or (f"{finding['gene']} likely positive" if finding["gene"] else "unspecified likely-positive finding")
+            for finding in confirmed_findings
+        ]
         query = (
             f"{context['cancer_type'] or ''} {context['histology'] or ''}, "
             f"stage {context['stage'] or ''}, "
-            f"confirmed alterations {', '.join(finding['alteration_code'] for finding in confirmed_findings)}, "
+            f"confirmed alterations {', '.join(alteration_labels)}, "
             f"selected regimen {regimen.regimen_code} {regimen.regimen_name}, "
             f"drugs {', '.join(drug_names)}. Summarize NCI PDQ evidence relevant to this selected regimen."
         ).strip()
@@ -2563,7 +2568,11 @@ class DoctorTreatmentEvidenceAPIView(APIView):
         if document is None:
             return Response({"status": "NO_EVIDENCE", "case_id": str(case_id)})
         try:
-            evidence = answer_with_rag(query, document_ids=[document.id])
+            evidence = (
+                answer_with_rag(query, document_ids=[document.id])
+                if generate_summary
+                else retrieve_evidence(query, document_ids=[document.id])
+            )
         except (EmbeddingServiceError, MedgemmaServiceError, KeyError, TypeError, ValueError):
             return Response({"status": "RAG_ERROR", "case_id": str(case_id)}, status=502)
         if not evidence["sources"]:

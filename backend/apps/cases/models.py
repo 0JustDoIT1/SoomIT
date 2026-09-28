@@ -58,6 +58,27 @@ class PhysicianTreatmentOpinion(TimestampedUUIDModel):
         db_table = "physician_treatment_opinions"
 
 
+class TreatmentAIOpinion(TimestampedUUIDModel):
+    """Persisted MedGemma treatment opinion and the inputs used to generate it."""
+
+    case = models.OneToOneField(
+        LungCancerCase,
+        on_delete=models.CASCADE,
+        related_name="treatment_ai_opinion",
+    )
+    opinion = models.TextField()
+    status = models.CharField(max_length=30, default="AVAILABLE")
+    safety_status = models.CharField(max_length=30, blank=True, default="")
+    selected_regimen_id = models.UUIDField(null=True, blank=True)
+    treatment_type = models.CharField(max_length=20, blank=True, default="")
+    treatment_plan = models.TextField(blank=True, default="")
+    sources = models.JSONField(default=list, blank=True)
+    review_required = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "treatment_ai_opinions"
+
+
 class DoctorDashboardMemo(TimestampedUUIDModel):
     """A private Dashboard memo owned by one doctor for one Case."""
 

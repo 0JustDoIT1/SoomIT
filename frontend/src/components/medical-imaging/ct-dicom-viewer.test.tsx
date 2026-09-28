@@ -67,6 +67,18 @@ describe("CtDicomViewer toolbar", () => {
     expect(screen.getByRole("button", { name: "2×2" })).toHaveAttribute("aria-pressed", "true");
   });
 
+  it("uses a viewport-sized fullscreen workspace", () => {
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, "requestFullscreen", { configurable: true, value: requestFullscreen });
+    render(<CtDicomViewer orderId="order-fullscreen" assetId="asset-fullscreen" loadSeries={() => new Promise(() => undefined)} />);
+
+    const button = screen.getByTitle("전체화면 (F)");
+    const workspace = button.closest("div[tabindex='0']");
+    expect(workspace).toHaveClass("fullscreen:h-screen", "fullscreen:w-screen");
+    fireEvent.click(button);
+    expect(requestFullscreen).toHaveBeenCalledOnce();
+  });
+
   it("selects the first real nodule and allows switching the requested focus", () => {
     const onFocusedNoduleChange = vi.fn();
     render(

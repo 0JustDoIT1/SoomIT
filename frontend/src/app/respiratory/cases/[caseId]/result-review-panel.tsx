@@ -229,6 +229,10 @@ function formatTexture(value: unknown) {
 
 function formatPresence(value: unknown) {
   if (value === null || value === undefined || value === "") return "-";
+  // Phase-1 morphology payloads can contain the full model result object
+  // ({ prediction, probability, threshold }) instead of a presence flag.
+  // This clinical summary must never expose it as "[object Object]".
+  if (typeof value === "object") return "없음";
   if (typeof value === "boolean") return value ? "있음" : "없음";
   const normalized = String(value).trim().toUpperCase();
   if (["POSITIVE", "PRESENT", "TRUE", "YES"].includes(normalized)) return "있음";

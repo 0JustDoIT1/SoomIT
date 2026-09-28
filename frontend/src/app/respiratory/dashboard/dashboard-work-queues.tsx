@@ -880,6 +880,7 @@ export function DashboardWorkQueues({
   notifications,
   patientAppointments = [],
   authorizedFetch,
+  todoOwnerId = "current-doctor",
   unreadNotificationCount,
   selectedCaseId,
   onSelectCase,
@@ -894,6 +895,7 @@ export function DashboardWorkQueues({
   notifications: DashboardNotification[];
   patientAppointments?: DashboardPatientAppointment[];
   authorizedFetch?: DashboardFetch;
+  todoOwnerId?: string;
   unreadNotificationCount: number;
 
   /*
@@ -1697,8 +1699,9 @@ export function DashboardWorkQueues({
             </section>
 
             <PersonalMemoEditor
-              key={selectedCase?.id ?? "none"}
-              selectedCase={selectedCase}
+              key={`${todoOwnerId}:${todayKey}`}
+              ownerId={todoOwnerId}
+              dateKey={todayKey}
             />
           </div>
         </aside>
@@ -1943,14 +1946,15 @@ function SummaryMetric({
 
 
 function PersonalMemoEditor({
-  selectedCase,
+  ownerId,
+  dateKey,
 }: {
-  selectedCase?: DashboardCase;
+  ownerId: string;
+  dateKey: string;
 }) {
-  const caseId = selectedCase?.id ?? "";
-  const storageKey = caseId ? `respiratory-dashboard-todos:${caseId}` : "";
+  const storageKey = `respiratory-dashboard-doctor-todos:${ownerId}:${dateKey}`;
   const [todos, setTodos] = useState<Array<{ id: string; text: string; completed: boolean }>>(() => {
-    if (!storageKey || typeof window === "undefined") return [];
+    if (typeof window === "undefined") return [];
     try {
       const value: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? "[]");
       return Array.isArray(value)
@@ -1961,10 +1965,11 @@ function PersonalMemoEditor({
     }
   });
   const [todoInput, setTodoInput] = useState("");
+  const incompleteCount = todos.filter((item) => !item.completed).length;
+  const completedCount = todos.length - incompleteCount;
 
   const updateTodos = (next: Array<{ id: string; text: string; completed: boolean }>) => {
     setTodos(next);
-    if (!storageKey) return;
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(next));
     } catch {
@@ -1980,54 +1985,60 @@ function PersonalMemoEditor({
   };
 
   return (
-    <section className="mt-3 border-t border-slate-100 pt-3">
-      <div className="flex items-center justify-between gap-3">
-        <div>
-          <h3 className="text-xs font-bold text-slate-800">내 할 일</h3>
-          <p className="mt-0.5 text-xs text-slate-500">
-            Case별 개인 To-do · 이 브라우저에 저장
-          </p>
+    <section className="mt-3 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-[0_8px_24px_rgba(15,23,42,0.05)]">
+      <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-gradient-to-r from-blue-50/90 to-white px-3.5 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-sm" aria-hidden="true">
+            <svg viewBox="0 0 20 20" fill="none" className="h-4 w-4">
+              <path d="M6.5 3.5h7A1.5 1.5 0 0 1 15 5v11H5V5a1.5 1.5 0 0 1 1.5-1.5Z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+              <path d="m7.5 9 1.3 1.3L12.5 7M7.5 13h5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </span>
+          <div className="min-w-0">
+            <h3 className="text-sm font-bold text-slate-900">내 할 일</h3>
+            <p className="truncate text-[11px] text-slate-500">오늘의 개인 업무</p>
+          </div>
         </div>
-        <span className="rounded-full bg-blue-50 px-2 py-1 text-xs font-semibold text-blue-700">
-          미완료 {todos.filter((item) => !item.completed).length}
-        </span>
+        <div className="flex shrink-0 items-center gap-1.5">
+          {completedCount > 0 && (
+            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[10px] font-bold text-emerald-700">완료 {completedCount}</span>
+          )}
+          <span className={`rounded-full px-2 py-1 text-[10px] font-bold ${incompleteCount ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+            남은 업무 {incompleteCount}
+          </span>
+        </div>
       </div>
 
-      {selectedCase ? (
-        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50/60 p-2.5">
-          <div className="mb-2 flex items-center justify-between gap-2">
-            <p className="min-w-0 truncate text-xs font-semibold text-slate-600">
-              {selectedCase.patient_name ||
-                selectedCase.patient_code}
-              {" · "}
-              {selectedCase.case_code}
-            </p>
-
-            <span className="shrink-0 text-xs text-slate-500">
-              {todos.length}/12
-            </span>
-          </div>
-
-          <div className="max-h-28 space-y-1 overflow-y-auto">
-            {todos.length ? todos.map((todo) => (
-              <div key={todo.id} className="flex items-center gap-2 rounded-lg bg-white px-2 py-1.5">
-                <input type="checkbox" aria-label={`${todo.text} \uc644\ub8cc`} checked={todo.completed} onChange={() => updateTodos(todos.map((item) => item.id === todo.id ? { ...item, completed: !item.completed } : item))} className="h-3.5 w-3.5 accent-blue-600" />
-                <span className={`min-w-0 flex-1 truncate text-xs ${todo.completed ? "text-slate-500 line-through" : "text-slate-700"}`}>{todo.text}</span>
-                <button type="button" onClick={() => updateTodos(todos.filter((item) => item.id !== todo.id))} className="text-xs font-semibold text-slate-500 hover:text-rose-600" aria-label={`${todo.text} 삭제`}>×</button>
-              </div>
-            )) : <p className="py-2 text-center text-xs text-slate-500">추가한 할 일이 없습니다.</p>}
-          </div>
-
-          <form onSubmit={(event) => { event.preventDefault(); addTodo(); }} className="mt-2 flex gap-1.5 border-t border-slate-200 pt-2">
-            <input aria-label={"\uac1c\uc778 \ud560 \uc77c"} value={todoInput} onChange={(event) => setTodoInput(event.target.value.slice(0, 120))} placeholder="할 일을 입력하세요" className="min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-500" />
-            <button type="submit" disabled={!todoInput.trim() || todos.length >= 12} className="h-7 rounded-lg bg-blue-600 px-2.5 text-xs font-semibold text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200">추가</button>
-          </form>
+      <div className="p-3">
+        <div className="mb-2.5 flex items-center justify-between gap-2 px-0.5">
+          <p className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600">
+            <span className="h-1.5 w-1.5 rounded-full bg-blue-500" />
+            {dateKey.replaceAll("-", ".")}
+          </p>
+          <span className="text-[10px] font-medium text-slate-400">{todos.length} / 12</span>
         </div>
-      ) : (
-        <p className="mt-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-xs text-slate-500">
-          Case를 선택하면 개인 메모를 작성할 수 있습니다.
-        </p>
-      )}
+
+        <div className="max-h-32 space-y-1.5 overflow-y-auto pr-0.5">
+          {todos.length ? todos.map((todo) => (
+            <div key={todo.id} className={`group flex items-center gap-2 rounded-xl border px-2.5 py-2 transition ${todo.completed ? "border-slate-100 bg-slate-50/80" : "border-slate-200 bg-white hover:border-blue-200 hover:bg-blue-50/30"}`}>
+              <input type="checkbox" aria-label={`${todo.text} \uc644\ub8cc`} checked={todo.completed} onChange={() => updateTodos(todos.map((item) => item.id === todo.id ? { ...item, completed: !item.completed } : item))} className="h-4 w-4 shrink-0 cursor-pointer accent-blue-600" />
+              <span className={`min-w-0 flex-1 truncate text-xs font-medium ${todo.completed ? "text-slate-400 line-through" : "text-slate-700"}`}>{todo.text}</span>
+              <button type="button" onClick={() => updateTodos(todos.filter((item) => item.id !== todo.id))} className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg text-sm font-semibold text-slate-300 transition hover:bg-rose-50 hover:text-rose-600" aria-label={`${todo.text} 삭제`}>×</button>
+            </div>
+          )) : (
+            <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/50 px-3 py-4 text-center">
+              <p className="text-xs font-medium text-slate-500">아직 등록된 업무가 없습니다.</p>
+              <p className="mt-0.5 text-[10px] text-slate-400">오늘 꼭 처리할 일을 아래에 적어보세요.</p>
+            </div>
+          )}
+        </div>
+
+        <form onSubmit={(event) => { event.preventDefault(); addTodo(); }} className="mt-2.5 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/70 p-1.5 transition focus-within:border-blue-400 focus-within:bg-white focus-within:ring-2 focus-within:ring-blue-100">
+          <span className="pl-1.5 text-base font-light text-blue-500" aria-hidden="true">+</span>
+          <input aria-label="오늘 할 일 입력" value={todoInput} onChange={(event) => setTodoInput(event.target.value.slice(0, 120))} placeholder="오늘 처리할 일을 입력하세요" className="h-7 min-w-0 flex-1 bg-transparent text-xs text-slate-700 outline-none placeholder:text-slate-400" />
+          <button type="submit" disabled={!todoInput.trim() || todos.length >= 12} className="h-7 shrink-0 rounded-lg bg-blue-600 px-3 text-[11px] font-bold text-white shadow-sm transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-400 disabled:shadow-none">추가</button>
+        </form>
+      </div>
     </section>
   );
 }

@@ -38,11 +38,11 @@ export async function ensureCornerstoneInitialized(): Promise<CornerstoneModules
     modules.tools.init();
     modules.core.imageLoadPoolManager.setMaxSimultaneousRequests(
       modules.core.Enums.RequestType.Interaction,
-      6,
+      8,
     );
     modules.core.imageLoadPoolManager.setMaxSimultaneousRequests(
       modules.core.Enums.RequestType.Prefetch,
-      4,
+      8,
     );
   }
   return modules;
