@@ -5,11 +5,7 @@ import '../models/air_quality_guidance.dart';
 import '../services/air_quality_service.dart';
 
 class AirQualityCard extends StatefulWidget {
-  const AirQualityCard({
-    super.key,
-    this.compact = false,
-    this.onTap,
-  });
+  const AirQualityCard({super.key, this.compact = false, this.onTap});
 
   final bool compact;
   final VoidCallback? onTap;
@@ -175,11 +171,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
                   color: Colors.white.withValues(alpha: 0.88),
                   borderRadius: BorderRadius.circular(14),
                 ),
-                child: Icon(
-                  style.icon,
-                  color: style.accentColor,
-                  size: 24,
-                ),
+                child: Icon(style.icon, color: style.accentColor, size: 24),
               ),
               const SizedBox(width: 11),
               Expanded(
@@ -221,10 +213,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
               ),
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 5,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.9),
                   borderRadius: BorderRadius.circular(99),
