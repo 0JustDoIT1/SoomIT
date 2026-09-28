@@ -134,8 +134,9 @@ it("keeps Step 1 values when returning from Step 2", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
-  await screen.findByText("2. 치료 소견 및 확정");
-  fireEvent.click(screen.getByRole("button", { name: "이전" }));
+  const previousButton = await screen.findByRole("button", { name: "이전" });
+  await waitFor(() => expect(previousButton).toBeEnabled());
+  fireEvent.click(previousButton);
   expect(screen.getByLabelText("치료 계획")).toHaveValue("EGFR 치료계획");
   expect(screen.getByRole("button", { name: /Osimertinib \(R1\)/ })).toBeInTheDocument();
 });
@@ -166,8 +167,9 @@ it("confirms through the existing API after Step 2", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
-  await screen.findByText("2. 치료 소견 및 확정");
-  fireEvent.click(screen.getByRole("button", { name: "치료계획 확정" }));
+  const confirmButton = await screen.findByRole("button", { name: "치료계획 확정" });
+  await waitFor(() => expect(confirmButton).toBeEnabled());
+  fireEvent.click(confirmButton);
   await waitFor(() => expect(onTreatmentConfirmed).toHaveBeenCalledWith(expect.objectContaining({ decision_status: "CONFIRMED" })));
   expect(fetch.mock.calls[5][0]).toBe("http://test/api/doctor/cases/case-1/treatment-decision/confirm/");
 });
