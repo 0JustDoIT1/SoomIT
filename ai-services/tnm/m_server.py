@@ -228,19 +228,24 @@ def analyze(body: MAnalyzeRequest) -> dict:
             root = Path(temporary)
             input_dir, prediction_dir, anatomy_dir = root / "input", root / "prediction", root / "anatomy"
             stage_started = time.perf_counter()
+            detail_started = time.perf_counter()
             ct_path = download_file(body.ct_gcs_uri, input_dir / f"{body.case_id}_0000.nii.gz")
+            log_latency("ct_download", detail_started)
             pet_path = input_dir / f"{body.case_id}_0001.nii.gz"
             if bool(body.pet_suvbw_gcs_uri) == bool(body.pet_dicom_gcs_prefix):
                 raise ValueError("Provide exactly one of pet_suvbw_gcs_uri or pet_dicom_gcs_prefix")
             if body.pet_suvbw_gcs_uri:
+                detail_started = time.perf_counter()
                 download_file(body.pet_suvbw_gcs_uri, pet_path)
                 pet_conversion = {"source": "SUVBW_NIFTI"}
             else:
+                detail_started = time.perf_counter()
                 dicom_dir = download_prefix(body.pet_dicom_gcs_prefix, root / "pet_dicom")
                 pet_conversion = convert_pet_dicom_to_ct_grid(
                     dicom_dir, ct_path, pet_path,
                     body.pet_series_instance_uid, body.patient_weight_kg, body.injected_dose_bq,
                 )
+            log_latency("pet_download_and_preprocessing", detail_started)
             log_latency("download_and_pet_preprocessing", stage_started)
             stage_started = time.perf_counter()
             ct_image, ct = load_scalar_image(ct_path)
@@ -252,21 +257,30 @@ def analyze(body: MAnalyzeRequest) -> dict:
             mask_path = run_m_segmentation(input_dir, prediction_dir, body.case_id)
             log_latency("inference", stage_started)
             stage_started = time.perf_counter()
+            detail_started = time.perf_counter()
             kept_count = filter_small_components(mask_path)
+            log_latency("mask_filtering", detail_started)
+            detail_started = time.perf_counter()
             mask_image, mask = load_scalar_image(mask_path)
             if mask_image.shape != ct_image.shape or not np.allclose(mask_image.affine, ct_image.affine, atol=1e-4):
                 raise ValueError("M prediction geometry does not match the CT grid")
             labels, component_count = component_labels(mask)
             if component_count != kept_count:
                 raise RuntimeError("Filtered lesion component count is inconsistent")
+            log_latency("mask_reload_and_components", detail_started)
 
             groups = anatomy_contract["overlap_groups"]
             required_structures = sorted({name for names in groups.values() for name in names})
+            detail_started = time.perf_counter()
             run_totalsegmentator(ct_path, anatomy_dir, required_structures)
+            log_latency("totalsegmentator", detail_started)
             log_latency("mask_postprocessing_and_anatomy", stage_started)
             stage_started = time.perf_counter()
+            detail_started = time.perf_counter()
             structures, group_masks = load_anatomy_masks(anatomy_dir, groups, ct_image)
+            log_latency("anatomy_load", detail_started)
 
+            detail_started = time.perf_counter()
             spacing = np.asarray(nib.affines.voxel_sizes(ct_image.affine), dtype=float)
             lesions = [
                 extract_lesion_features(body.case_id, patient_id, labels, component, ct, pet, spacing)
@@ -276,6 +290,8 @@ def analyze(body: MAnalyzeRequest) -> dict:
             add_anatomy_context(lesions, labels, structures, group_masks)
             feature_order = contract.get("feature_order") or contract.get("features")
             features = aggregate_patient_features(lesions, feature_order)
+            log_latency("lesion_feature_extraction", detail_started)
+            detail_started = time.perf_counter()
             probability = float(catboost_model.predict_proba(pd.DataFrame([features], columns=feature_order))[0, 1])
             threshold = float(contract.get("candidate_threshold", contract.get("model_threshold", 0.33)))
             model_support = {
@@ -289,6 +305,7 @@ def analyze(body: MAnalyzeRequest) -> dict:
                 "model_support": model_support,
                 "imaging_evidence": imaging_evidence,
             })
+            log_latency("model_and_rule_inference", detail_started)
             log_latency("feature_extraction", stage_started)
             stage_started = time.perf_counter()
             lesion_json, feature_json = root / "lesions.json", root / "patient_features.json"

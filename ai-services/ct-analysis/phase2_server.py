@@ -41,6 +41,11 @@ CANONICAL_MASKS = (
     "vertebral_body_proxy.nii.gz",
     "chest_wall_proxy.nii.gz",
 )
+PHASE2_STAGE_BY_SCRIPT = {
+    "extract_tumor_features.py": "tumor_feature",
+    "extract_anatomy_features.py": "anatomy_feature",
+    "build_n_payload.py": "n_input_generation",
+}
 
 
 def log_latency(stage: str, started: float) -> None:
@@ -77,6 +82,20 @@ def load_orchestrator():
         raise RuntimeError("could not load CT analysis orchestrator")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
+    original_run = module.run
+
+    def timed_phase2_run(command, env=None):
+        script_name = Path(str(command[1])).name if len(command) > 1 else ""
+        stage = PHASE2_STAGE_BY_SCRIPT.get(script_name)
+        if stage is None:
+            return original_run(command, env=env)
+        started = time.perf_counter()
+        try:
+            return original_run(command, env=env)
+        finally:
+            log_latency(stage, started)
+
+    module.run = timed_phase2_run
     return module
 
 

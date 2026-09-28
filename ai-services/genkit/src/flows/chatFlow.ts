@@ -1,6 +1,7 @@
 import { z } from 'genkit';
 
 import { ai } from '../index.js';
+import { logLatency, startedAt } from '../latency.js';
 import {
   getMedicalKnowledgeMcpTools,
   MEDICAL_KNOWLEDGE_MCP_TOOL,
@@ -45,25 +46,36 @@ export const chatFlow = ai.defineFlow(
     outputSchema: ChatOutputSchema,
   },
   async ({ message, history, patientAccessToken }) => {
+    const totalStarted = startedAt();
     const transcript = history
       .map((item) => `${item.role}: ${item.content}`)
       .join('\n');
+    const mcpStarted = startedAt();
     const [knowledgeTools, patientBridge] = await Promise.all([
       getMedicalKnowledgeMcpTools(),
       createPatientDataMcpBridge(patientAccessToken),
     ]);
+    logLatency('patient_mcp_prepare', mcpStarted);
 
     try {
-      const { text } = await ai.generate({
-        system: SYSTEM_PROMPT,
-        prompt: `${transcript ? `이전 대화:\n${transcript}\n\n` : ''}사용자: ${message}`,
-        tools: [...knowledgeTools, ...patientBridge.tools],
-        maxTurns: 6,
-        config: { temperature: 0.2 },
-      });
-      return { answer: text };
+      const generateStarted = startedAt();
+      try {
+        const { text } = await ai.generate({
+          system: SYSTEM_PROMPT,
+          prompt: `${transcript ? `이전 대화:\n${transcript}\n\n` : ''}사용자: ${message}`,
+          tools: [...knowledgeTools, ...patientBridge.tools],
+          maxTurns: 6,
+          config: { temperature: 0.2 },
+        });
+        return { answer: text };
+      } finally {
+        logLatency('patient_gemini_generate', generateStarted);
+      }
     } finally {
+      const closeStarted = startedAt();
       await patientBridge.close();
+      logLatency('patient_mcp_close', closeStarted);
+      logLatency('patient_chat_total', totalStarted);
     }
   },
 );

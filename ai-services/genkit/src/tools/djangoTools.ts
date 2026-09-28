@@ -1,5 +1,6 @@
 import { config } from '../config.js';
 import { fetchJson } from '../http.js';
+import { logLatency, startedAt } from '../latency.js';
 
 export interface MedicalKnowledgeSearchInput {
   question: string;
@@ -25,33 +26,43 @@ export async function searchMedicalKnowledge({
   question,
   topK,
 }: MedicalKnowledgeSearchInput): Promise<unknown> {
-  return fetchJson(
-    'Django knowledge search',
-    `${config.djangoApiUrl}/api/ai/knowledge/search/`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${config.djangoServiceToken}`,
-        'Content-Type': 'application/json',
+  const started = startedAt();
+  try {
+    return await fetchJson(
+      'Django knowledge search',
+      `${config.djangoApiUrl}/api/ai/knowledge/search/`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${config.djangoServiceToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ query: question, top_k: topK }),
       },
-      body: JSON.stringify({ query: question, top_k: topK }),
-    },
-  );
+    );
+  } finally {
+    logLatency('backend_knowledge_search', started);
+  }
 }
 
 export async function getPatientData(
   resource: PatientDataResource,
   patientAccessToken: string,
 ): Promise<unknown> {
-  return fetchJson(
-    `Django patient ${resource}`,
-    `${config.djangoApiUrl}/api/ai/patient/${resource}/`,
-    {
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${config.djangoServiceToken}`,
-        'X-Patient-Access-Token': patientAccessToken,
+  const started = startedAt();
+  try {
+    return await fetchJson(
+      `Django patient ${resource}`,
+      `${config.djangoApiUrl}/api/ai/patient/${resource}/`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${config.djangoServiceToken}`,
+          'X-Patient-Access-Token': patientAccessToken,
+        },
       },
-    },
-  );
+    );
+  } finally {
+    logLatency(`backend_patient_${resource.replaceAll('-', '_')}`, started);
+  }
 }
