@@ -46,7 +46,7 @@
         android:id="@+id/widgetStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="7dp"
+        android:layout_marginTop="5dp"
         android:text="●  복약 예정"
         android:textColor="#3478F6"
         android:textSize="11sp"
@@ -62,7 +62,7 @@
         android:maxLines="1"
         android:text="Osimertinib 80mg"
         android:textColor="#202A35"
-        android:textSize="20sp"
+        android:textSize="15sp"
         android:textStyle="bold" />
 
     <!-- 예정 시간 -->
@@ -86,7 +86,7 @@
         android:maxLines="1"
         android:text="01:20 일정 복용을 완료했어요"
         android:textColor="#5F6C79"
-        android:textSize="16sp"
+        android:textSize="10sp"
         android:visibility="gone" />
 
     <!-- 고정 여백 -->
@@ -103,7 +103,7 @@
         android:layout_marginTop="1dp"
         android:text="오늘 1/1회 복용"
         android:textColor="#8995A1"
-        android:textSize="13sp" />
+        android:textSize="10sp" />
 
     <!-- Kotlin 호환용, 항상 숨김 -->
     <TextView

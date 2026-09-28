@@ -790,4 +790,4 @@ class MedicationWidgetProvider : HomeWidgetProvider() {
             pendingIntent.cancel()
         }
     }
-}git status
+}
