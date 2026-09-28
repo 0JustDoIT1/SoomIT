@@ -72,8 +72,15 @@ export function ExaminerCaseChatPanel({ caseId, authorizedFetch }: { caseId?: st
   useEffect(() => {
     if (!caseId) return;
     void Promise.resolve().then(() => refreshUnread()).catch(() => undefined);
-    const timer = window.setInterval(() => void refreshUnread().catch(() => undefined), 30000);
-    return () => window.clearInterval(timer);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void refreshUnread().catch(() => undefined);
+    };
+    const timer = window.setInterval(refreshVisible, 30000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [caseId, refreshUnread]);
 
   useEffect(() => {

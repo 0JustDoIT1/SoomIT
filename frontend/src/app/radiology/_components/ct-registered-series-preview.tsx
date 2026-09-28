@@ -12,10 +12,31 @@ export function CtRegisteredSeriesPreview({ orderId, assetId }: { orderId: strin
 function CtRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: string; assetId: string }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const reactId = useId();
+  const [isVisible, setIsVisible] = useState(false);
   const [imageId, setImageId] = useState<string | null>(null);
-  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
+  const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+
+  // Each Cornerstone rendering engine owns WebGL contexts. Completed-exam
+  // history can contain many closed CT records; mounting every preview at once
+  // exhausts the browser's context limit and blanks the active workstation.
+  // Only the preview currently near the viewport is allowed to allocate one.
+  useEffect(() => {
+    const element = elementRef.current;
+    if (!element) return;
+    if (!("IntersectionObserver" in window)) {
+      queueMicrotask(() => setIsVisible(true));
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setIsVisible(entry.isIntersecting),
+      { rootMargin: "160px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
+    if (!isVisible || imageId) return;
     let cancelled = false;
     void loadCtDicomWebSeries(orderId, assetId)
       .then(({ imageIds }) => {
@@ -29,11 +50,11 @@ function CtRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: strin
         if (!cancelled) setStatus("error");
       });
     return () => { cancelled = true; };
-  }, [assetId, orderId]);
+  }, [assetId, imageId, isVisible, orderId]);
 
   useEffect(() => {
     const element = elementRef.current;
-    if (!imageId || !element) return;
+    if (!isVisible || !imageId || !element) return;
     let cancelled = false;
     let renderingEngine: import("@cornerstonejs/core").RenderingEngine | null = null;
     void ensureCornerstoneInitialized()
@@ -55,7 +76,7 @@ function CtRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: strin
       cancelled = true;
       renderingEngine?.destroy();
     };
-  }, [imageId, reactId]);
+  }, [imageId, isVisible, reactId]);
 
   return (
     <div className="mt-3 space-y-2">

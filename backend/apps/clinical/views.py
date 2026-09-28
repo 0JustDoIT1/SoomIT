@@ -2590,4 +2590,9 @@ class DoctorTreatmentEvidenceAPIView(APIView):
         })
 
     def get(self, request, case_id):
-        return self.build_response(request, case_id)
+        # The decision-support panel renders retrieved NCI PDQ passages.  Do
+        # not hold the clinician UI open for an additional LLM generation on
+        # every refresh; an explicit `mode=summary` remains available for
+        # callers that genuinely need a generated narrative.
+        generate_summary = request.query_params.get("mode") == "summary"
+        return self.build_response(request, case_id, generate_summary=generate_summary)

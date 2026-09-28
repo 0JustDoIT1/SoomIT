@@ -21,7 +21,7 @@ vi.mock("@/app/radiology/_lib/cornerstone-init", () => ({
 }));
 
 vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
-  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange }: {
+  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAnnotationUpdated }: {
     orderId: string;
     assetId: string;
     loadSeries: (orderId: string, assetId: string) => Promise<unknown>;
@@ -29,10 +29,14 @@ vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
     annotations?: Array<{ id: string }>;
     focusedNoduleId?: string | null;
     onFocusedNoduleChange?: (noduleId: string) => void;
+    onAnnotationDeleted?: (annotationId: string) => Promise<boolean> | boolean;
+    onAnnotationUpdated?: (annotationId: string, annotation: { annotation_type: "LENGTH"; annotation_data: Record<string, unknown> }) => Promise<boolean> | boolean | void;
   }) => <div data-testid="ct-viewer">
     <button type="button" onClick={() => void loadSeries(orderId, assetId)}>load-series</button>
     <button type="button" onClick={() => void loadSegmentation("analysis-cache")}>load-segmentation</button>
     <span data-testid="annotation-ids">{annotations.map(({ id }) => id).join(",")}</span>
+    <button type="button" onClick={() => void onAnnotationDeleted?.(annotations[0]?.id ?? "")}>delete-annotation</button>
+    <button type="button" onClick={() => void onAnnotationUpdated?.(annotations[0]?.id ?? "", { annotation_type: "LENGTH", annotation_data: {} })}>update-annotation</button>
     <span data-testid="focused-nodule">{focusedNoduleId}</span>
     <button type="button" onClick={() => onFocusedNoduleChange?.("2")}>focus-nodule-2</button>
   </div>,
@@ -206,6 +210,51 @@ it("passes successful annotations to the CT overlay without affecting segmentati
   fireEvent.click(screen.getByRole("button", { name: "분할 / 3D" }));
   expect(screen.getByTestId("ct-viewer")).toBeInTheDocument();
   expect(screen.getByText("3D visualization")).toBeInTheDocument();
+});
+
+it("removes a deleted CT annotation and sends only one delete request for repeated events", async () => {
+  let deleted = false;
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/image-assets/")) return json([{ id: "asset-delete", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-delete" }]);
+    if (url.includes("/image-annotations/")) {
+      if (init?.method === "DELETE") {
+        const status = deleted ? 404 : 204;
+        deleted = true;
+        return new Response(null, { status });
+      }
+      return json(deleted ? [] : [{ id: "annotation-delete", annotation_type: "LENGTH", annotation_data: {} }]);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-delete" />);
+
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("annotation-delete"));
+  fireEvent.click(screen.getByRole("button", { name: "delete-annotation" }));
+  fireEvent.click(screen.getByRole("button", { name: "delete-annotation" }));
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toBeEmptyDOMElement());
+  expect(authorizedFetch.mock.calls.filter(([, init]) => init?.method === "DELETE")).toHaveLength(1);
+  expect(toastError).not.toHaveBeenCalled();
+});
+
+it("reconciles a late annotation update after deletion without showing an error", async () => {
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/image-assets/")) return json([{ id: "asset-stale-update", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-stale-update" }]);
+    if (url.includes("/image-annotations/")) {
+      if (init?.method === "PATCH") return json({ detail: "Not found." }, 404);
+      return json([{ id: "annotation-stale-update", annotation_type: "LENGTH", annotation_data: {} }]);
+    }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-stale-update" />);
+
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("annotation-stale-update"));
+  fireEvent.click(screen.getByRole("button", { name: "update-annotation" }));
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toBeEmptyDOMElement());
+  expect(toastError).not.toHaveBeenCalled();
 });
 
 it("keeps the CT viewer usable and reports one toast for a repeated failed request", async () => {

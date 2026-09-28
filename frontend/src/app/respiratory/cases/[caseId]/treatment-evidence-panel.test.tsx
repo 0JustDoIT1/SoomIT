@@ -25,5 +25,5 @@ it("shows actual rule summary before optionally loading NCI PDQ detail", async (
 
   fireEvent.click(screen.getByRole("button", { name: "상세 근거 보기" }));
   expect(await screen.findByText("NCI PDQ Evidence 상세")).toBeInTheDocument();
-  expect(authorizedFetch).toHaveBeenCalledWith("http://test/api/doctor/cases/case-1/treatment-evidence/");
+  expect(authorizedFetch).toHaveBeenCalledWith("http://test/api/doctor/cases/case-1/treatment-evidence/?mode=retrieve");
 });

@@ -93,8 +93,15 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
 
   useEffect(() => {
     void Promise.resolve().then(() => loadParticipants()).catch(() => undefined);
-    const timer = window.setInterval(() => void loadParticipants().catch(() => undefined), 30000);
-    return () => window.clearInterval(timer);
+    const refreshVisible = () => {
+      if (document.visibilityState === "visible") void loadParticipants().catch(() => undefined);
+    };
+    const timer = window.setInterval(refreshVisible, 30000);
+    document.addEventListener("visibilitychange", refreshVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshVisible);
+    };
   }, [loadParticipants]);
 
   useEffect(() => {

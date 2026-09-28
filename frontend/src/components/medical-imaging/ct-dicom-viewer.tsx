@@ -21,9 +21,9 @@ type CtDicomViewerProps = {
   loadSegmentation?: (analysisId: string) => Promise<CtCornerstoneSegmentation>;
   seriesInstanceUid?: string | null;
   annotations?: ClinicianImageAnnotation[];
-  onAnnotationCreated?: (annotation: PendingImageAnnotation) => void;
-  onAnnotationUpdated?: (annotationId: string, annotation: PendingImageAnnotation) => void;
-  onAnnotationDeleted?: (annotationId: string) => void;
+  onAnnotationCreated?: (annotation: PendingImageAnnotation) => Promise<boolean | void> | boolean | void;
+  onAnnotationUpdated?: (annotationId: string, annotation: PendingImageAnnotation) => Promise<boolean> | boolean | void;
+  onAnnotationDeleted?: (annotationId: string) => Promise<boolean> | boolean;
 };
 
 export type ClinicianImageAnnotation = {
@@ -83,6 +83,37 @@ const SAGITTAL_VIEWPORT_ID = "ct-dicom-viewer-sagittal";
 const VOLUME3D_VIEWPORT_ID = "ct-dicom-viewer-volume3d";
 const MPR_VIEWPORT_IDS = [AXIAL_VIEWPORT_ID, CORONAL_VIEWPORT_ID, SAGITTAL_VIEWPORT_ID];
 const VOLUME3D_PRESET = "CT-Lung";
+
+// Cornerstone's defaults were designed for a full-size viewport: 14px yellow
+// statistics with no background become hard to read and spill across a 2x2
+// MPR layout.  Keep the clinically useful length/ROI statistics, but make
+// their presentation compact and distinguish the two annotation types.
+const MPR_ANNOTATION_STYLES = {
+  Length: {
+    color: "rgb(56, 189, 248)",
+    lineWidth: "1.5",
+    textBoxFontSize: "11px",
+    textBoxColor: "rgb(186, 230, 253)",
+    textBoxBackground: "rgba(8, 15, 30, 0.82)",
+    textBoxMargin: "4",
+    textBoxBorderRadius: "3",
+    textBoxLinkLineColor: "rgb(56, 189, 248)",
+    textBoxLinkLineDash: "2,2",
+  },
+  RectangleROI: {
+    color: "rgb(250, 204, 21)",
+    lineWidth: "1.5",
+    fillColor: "rgb(250, 204, 21)",
+    fillOpacity: "0.08",
+    textBoxFontSize: "11px",
+    textBoxColor: "rgb(254, 240, 138)",
+    textBoxBackground: "rgba(8, 15, 30, 0.88)",
+    textBoxMargin: "4",
+    textBoxBorderRadius: "3",
+    textBoxLinkLineColor: "rgb(250, 204, 21)",
+    textBoxLinkLineDash: "2,2",
+  },
+};
 
 const VIEW_LABELS: Record<ViewKey, string> = {
   axial: "Axial",
@@ -168,6 +199,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
   const sopInstanceUidsRef = useRef<string[]>([]);
   const onAnnotationCreatedRef = useRef(onAnnotationCreated);
   const onAnnotationUpdatedRef = useRef(onAnnotationUpdated);
+  const clinicianAnnotationIdsRef = useRef(new Set(annotations.map((annotation) => annotation.id)));
+  const pendingAnnotationUpdatesRef = useRef(new Set<string>());
+  const removeCornerstoneAnnotationRef = useRef<((annotationId: string) => void) | null>(null);
+  const annotationsRef = useRef(annotations);
+  const syncClinicianAnnotationsRef = useRef<(() => void) | null>(null);
   const annotationTextRef = useRef("");
   const onFocusedNoduleChangeRef = useRef(onFocusedNoduleChange);
   const noduleFociRef = useRef<NoduleFocus[]>(currentNoduleFoci);
@@ -198,6 +234,18 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
   useEffect(() => {
     onAnnotationUpdatedRef.current = onAnnotationUpdated;
   }, [onAnnotationUpdated]);
+
+  useEffect(() => {
+    clinicianAnnotationIdsRef.current = new Set(annotations.map((annotation) => annotation.id));
+  }, [annotations]);
+
+  useEffect(() => {
+    annotationsRef.current = annotations;
+    // Saving/loading an annotation must update only the overlay. Rebuilding
+    // the MPR volume here drops the active WebGL image context and leaves the
+    // CT pixels grey while annotation SVG/canvas elements still remain.
+    syncClinicianAnnotationsRef.current?.();
+  }, [annotations]);
 
   useEffect(() => {
     annotationTextRef.current = annotationText;
@@ -355,10 +403,17 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     let cleanupCornerstoneState: (() => void) | null = null;
     let removeDevListeners: (() => void) | null = null;
     const overlayCleanups: Array<() => void> = [];
+    const ownedAnnotationUids = new Set<string>();
+    const generation = crypto.randomUUID();
+    const volumeId = `cornerstoneStreamingImageVolume:${assetId}:${generation}`;
+    let releaseVolume: (() => void) | undefined;
 
     void (async () => {
       const { core, tools } = await ensureCornerstoneInitialized();
       if (disposed) return;
+      releaseVolume = () => {
+        if (core.cache.getVolume(volumeId)) core.cache.removeVolumeLoadObject(volumeId);
+      };
       if (!axialRef.current || !coronalRef.current || !sagittalRef.current || !volume3dRef.current) return;
       setBuilding(true);
       setViewerError("");
@@ -401,6 +456,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       const volume3dToolGroup = tools.ToolGroupManager.createToolGroup(volume3dToolGroupId);
       if (!toolGroup || !volume3dToolGroup) return;
       cleanupCornerstoneState = () => {
+        ownedAnnotationUids.forEach((uid) => tools.annotation.state.removeAnnotation(uid));
         mprToolGroupRef.current = null;
         mprToolBindingsRef.current = null;
         tools.ToolGroupManager.destroyToolGroup(toolGroupId);
@@ -412,6 +468,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool].forEach((ToolClass) =>
         toolGroup.addTool(ToolClass.toolName),
       );
+      tools.annotation.config.style.setToolGroupToolStyles(toolGroupId, {
+        [tools.LengthTool.toolName]: MPR_ANNOTATION_STYLES.Length,
+        [tools.RectangleROITool.toolName]: MPR_ANNOTATION_STYLES.RectangleROI,
+      });
       mprToolGroupRef.current = toolGroup;
       mprToolBindingsRef.current = {
         primary: tools.Enums.MouseBindings.Primary,
@@ -447,6 +507,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         const points = (data?.handles as { points?: unknown } | undefined)?.points;
         if (!annotationType || !Array.isArray(points) || points.length === 0) return;
         const referencedImageId = typeof metadata?.referencedImageId === "string" ? metadata.referencedImageId : "";
+        if (!imageIds.includes(referencedImageId)) return;
+        if (typeof annotation.annotationUID === "string") ownedAnnotationUids.add(annotation.annotationUID);
         const imageIndex = imageIds.indexOf(referencedImageId);
         const sopInstanceUid = sopInstanceUidsRef.current[imageIndex] ?? sopInstanceUidsRef.current[0];
         if (!sopInstanceUid) return;
@@ -471,9 +533,27 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           },
         };
         if (annotationId) {
-          onAnnotationUpdatedRef.current?.(annotationId, payload);
+          // A deleted annotation can briefly remain in Cornerstone's global
+          // annotation state while React reconciles the persisted list. Do not
+          // send PATCH requests for that stale ID, and coalesce noisy drag
+          // events into one in-flight update per annotation.
+          if (!clinicianAnnotationIdsRef.current.has(annotationId) || pendingAnnotationUpdatesRef.current.has(annotationId)) return;
+          const persistedAnnotationId = annotationId;
+          pendingAnnotationUpdatesRef.current.add(persistedAnnotationId);
+          void Promise.resolve(onAnnotationUpdatedRef.current?.(persistedAnnotationId, payload)).catch(() => {
+            // The owner reports persistence errors. This event listener must
+            // still release its in-flight marker for a later user edit.
+          }).finally(() => {
+            pendingAnnotationUpdatesRef.current.delete(persistedAnnotationId);
+          });
         } else if (completed) {
-          onAnnotationCreatedRef.current?.(payload);
+          const uid = annotation.annotationUID;
+          void Promise.resolve(onAnnotationCreatedRef.current?.(payload)).then((saved) => {
+            if (saved !== true || typeof uid !== "string") return;
+            tools.annotation.state.removeAnnotation(uid);
+            ownedAnnotationUids.delete(uid);
+            if (!disposed) tools.utilities.triggerAnnotationRenderForViewportIds([...MPR_VIEWPORT_IDS]);
+          });
         }
       };
       if (annotationEventName) {
@@ -526,7 +606,6 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       MPR_VIEWPORT_IDS.forEach((viewportId) => toolGroup.addViewport(viewportId, renderingEngine!.id));
       volume3dToolGroup.addViewport(VOLUME3D_VIEWPORT_ID, renderingEngine.id);
 
-      const volumeId = `cornerstoneStreamingImageVolume:${orderId}:${assetId}`;
       const handleVolumeProgress = (event: Event) => {
         const detail = (event as CustomEvent<{ volumeId?: string; framesProcessed?: number; numberOfFrames?: number }>).detail;
         if (detail?.volumeId !== volumeId) return;
@@ -535,34 +614,54 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
       removeProgressListener = () => core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
 
-      // `wadors:` metadata was registered up front, so the volume can render
-      // while frames stream in. Local `wadouri:fileManager` fallbacks still
-      // need one decode pass before their image-plane metadata is available.
-      if (!imageIds.every((imageId) => imageId.startsWith("wadors:"))) {
-        let loadedImageCount = 0;
-        await runWithConcurrency(imageIds, 8, async (imageId) => {
-          await core.imageLoader.loadAndCacheImage(imageId);
-          loadedImageCount += 1;
-          if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
-        });
-        if (disposed) return;
-      }
+      // Explicitly decode the source frames before creating the MPR volume.
+      // In this case-scoped WADO-RS route, metadata-only lazy loading can stop
+      // after the successful HEAD probe: the viewports and SEG overlay appear,
+      // but no pixel data reaches the volume. Preloading with bounded
+      // concurrency gives the volume decoded pixels and a reliable first draw.
+      let loadedImageCount = 0;
+      await runWithConcurrency(imageIds, 8, async (imageId) => {
+        await core.imageLoader.loadAndCacheImage(imageId);
+        loadedImageCount += 1;
+        if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
+      });
+      if (disposed) return;
 
       const volume = await core.volumeLoader.createAndCacheVolume(volumeId, { imageIds, progressiveRendering: true });
-      if (disposed) return;
+      if (disposed) { releaseVolume?.(); return; }
       const allViewportIds = [...MPR_VIEWPORT_IDS, VOLUME3D_VIEWPORT_ID];
       await core.setVolumesForViewports(renderingEngine, [{ volumeId }], allViewportIds);
+      if (disposed) return;
 
       // Clinician annotations are kept separate from the AI labelmap.  The
       // persisted world coordinates let Cornerstone place the same annotation
       // in an MPR viewport after the Case is reopened.
       const annotationState = (tools as unknown as {
-        annotation?: { state?: { addAnnotation?: (annotation: Record<string, unknown>, element: HTMLDivElement) => void } };
+        annotation?: { state?: {
+          addAnnotation?: (annotation: Record<string, unknown>, element: HTMLDivElement) => void;
+          removeAnnotation?: (annotationUID: string) => void;
+          getAllAnnotations?: () => Array<{ annotationUID?: unknown }>;
+        } };
       }).annotation?.state;
-      if (annotationState?.addAnnotation) {
+      const restoredClinicianAnnotationUids = new Set<string>();
+      removeCornerstoneAnnotationRef.current = (annotationId) => {
+        annotationState?.removeAnnotation?.(`clinician-${annotationId}`);
+        restoredClinicianAnnotationUids.delete(`clinician-${annotationId}`);
+        tools.utilities.triggerAnnotationRenderForViewportIds([...MPR_VIEWPORT_IDS]);
+      };
+      const syncClinicianAnnotations = () => {
+        // Cornerstone stores annotations globally, rather than in a rendering
+        // engine. Remove persisted clinician overlays left by an earlier Case
+        // before restoring this Case; otherwise they can be drawn over a
+        // different patient's CT after navigation or Fast Refresh.
+        restoredClinicianAnnotationUids.forEach((uid) => annotationState?.removeAnnotation?.(uid));
+        restoredClinicianAnnotationUids.clear();
+        if (!annotationState?.addAnnotation) return;
         const addAnnotation = annotationState.addAnnotation;
-        annotations.forEach((saved) => {
+        annotationsRef.current.forEach((saved) => {
           const data = saved.annotation_data;
+          if (data.series_instance_uid !== seriesInstanceUid) return;
+          if (!sopInstanceUidsRef.current.includes(String(data.sop_instance_uid))) return;
           const points = data.world_points;
           if (!Array.isArray(points) || points.length === 0) return;
           const toolName = saved.annotation_type === "LENGTH"
@@ -573,8 +672,9 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           const viewportName = typeof data.viewport === "string" ? data.viewport : "axial";
           const target = ({ axial: axialRef.current, coronal: coronalRef.current, sagittal: sagittalRef.current } as Record<string, HTMLDivElement | null>)[viewportName] ?? axialRef.current;
           if (!target) return;
+          const annotationUID = `clinician-${saved.id}`;
           addAnnotation({
-            annotationUID: `clinician-${saved.id}`,
+            annotationUID,
             highlighted: false,
             invalidated: false,
             isLocked: false,
@@ -590,8 +690,24 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               label: typeof data.text === "string" ? data.text : undefined,
             },
           }, target);
+          restoredClinicianAnnotationUids.add(annotationUID);
+          ownedAnnotationUids.add(annotationUID);
         });
-      }
+        renderingEngine?.render();
+        tools.utilities.triggerAnnotationRenderForViewportIds([...MPR_VIEWPORT_IDS]);
+      };
+      syncClinicianAnnotationsRef.current = syncClinicianAnnotations;
+      syncClinicianAnnotations();
+      const previousAnnotationCleanup = cleanupCornerstoneState;
+      cleanupCornerstoneState = () => {
+        // Remove event listeners/tool groups first so teardown itself never
+        // emits a PATCH for an annotation that is being discarded.
+        previousAnnotationCleanup?.();
+        restoredClinicianAnnotationUids.forEach((annotationUID) => annotationState?.removeAnnotation?.(annotationUID));
+        if (syncClinicianAnnotationsRef.current === syncClinicianAnnotations) {
+          syncClinicianAnnotationsRef.current = null;
+        }
+      };
 
       const volume3dViewport = renderingEngine.getViewport(VOLUME3D_VIEWPORT_ID) as InstanceType<typeof core.VolumeViewport3D>;
       const preset = core.CONSTANTS.VIEWPORT_PRESETS.find((item) => item.name === VOLUME3D_PRESET);
@@ -703,10 +819,12 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       removeDevListeners?.();
       overlayCleanups.forEach((cleanup) => cleanup());
       cleanupCornerstoneState?.();
+      removeCornerstoneAnnotationRef.current = null;
       renderingEngine?.destroy();
+      releaseVolume?.();
       renderingEngineRef.current = null;
     };
-  }, [loading, error, analysisId, orderId, assetId, annotations, loadSegmentation, resolvedCacheKey, setMprToolMode, seriesInstanceUid]);
+  }, [loading, error, analysisId, orderId, assetId, loadSegmentation, resolvedCacheKey, setMprToolMode, seriesInstanceUid]);
 
   // Pure layout switch: maximizing/restoring a view never re-fetches or rebuilds
   // anything - the already-built viewports just need a resize once their
@@ -861,7 +979,26 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
             type="button"
             disabled={!selectedAnnotationId}
             onClick={() => {
-              if (selectedAnnotationId) onAnnotationDeleted?.(selectedAnnotationId);
+              const annotationId = selectedAnnotationId;
+              if (!annotationId || !onAnnotationDeleted) return;
+              // Block ANNOTATION_MODIFIED events immediately.  Otherwise a
+              // drag event already queued by Cornerstone can PATCH an ID just
+              // deleted by this click and produce a 404.
+              clinicianAnnotationIdsRef.current.delete(annotationId);
+              pendingAnnotationUpdatesRef.current.delete(annotationId);
+              // This is an optimistic visual delete: do not leave the ROI on
+              // the CT while waiting for the network round trip.
+              removeCornerstoneAnnotationRef.current?.(annotationId);
+              setSelectedAnnotationId(null);
+              void Promise.resolve(onAnnotationDeleted(annotationId)).then((deleted) => {
+                if (!deleted) {
+                  clinicianAnnotationIdsRef.current.add(annotationId);
+                  syncClinicianAnnotationsRef.current?.();
+                }
+              }).catch(() => {
+                clinicianAnnotationIdsRef.current.add(annotationId);
+                syncClinicianAnnotationsRef.current?.();
+              });
             }}
             title="마지막으로 저장한 의료진 주석 삭제"
             className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-35"
@@ -1075,7 +1212,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         )}
 
         {!loading && !error && !viewerError && segmentationState === "ERROR" && (
-          <div role="status" className="absolute bottom-2 left-2 z-50 rounded-md border border-amber-700/60 bg-amber-950/90 px-3 py-2 text-[9px] text-amber-100 shadow-lg">
+          <div role="status" className="pointer-events-none absolute bottom-2 right-2 z-50 max-w-[55%] rounded-md border border-amber-700/60 bg-amber-950/90 px-3 py-2 text-[9px] text-amber-100 shadow-lg">
             CT 원본은 정상 표시 중입니다. Segmentation을 사용할 수 없습니다{segmentationError ? `: ${segmentationError}` : "."}
           </div>
         )}

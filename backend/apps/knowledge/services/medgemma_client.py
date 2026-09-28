@@ -14,11 +14,15 @@ class MedgemmaServiceError(RuntimeError):
 def _fetch_id_token():
     # Cloud Run은 IAM으로 보호되므로, 서비스 URL을 audience로 하는 구글 ID 토큰이 필요하다.
     # 로컬 uvicorn처럼 인증이 없는 환경에서는 MEDGEMMA_SERVICE_USE_ID_TOKEN=0으로 끈다.
+    import google.auth.exceptions
     import google.auth.transport.requests
     import google.oauth2.id_token
 
     request = google.auth.transport.requests.Request()
-    return google.oauth2.id_token.fetch_id_token(request, settings.MEDGEMMA_SERVICE_URL)
+    try:
+        return google.oauth2.id_token.fetch_id_token(request, settings.MEDGEMMA_SERVICE_URL)
+    except google.auth.exceptions.GoogleAuthError as exc:
+        raise MedgemmaServiceError("medgemma 서비스 인증을 사용할 수 없습니다.") from exc
 
 
 def request_chat_completion(messages, max_tokens=300, temperature=0):
@@ -45,6 +49,9 @@ def request_chat_completion(messages, max_tokens=300, temperature=0):
         raise MedgemmaServiceError("medgemma 서비스 응답이 올바른 JSON이 아닙니다.") from exc
 
     try:
-        return payload["choices"][0]["message"]["content"]
+        content = payload["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:
         raise MedgemmaServiceError("medgemma 서비스 응답 형식이 예상과 다릅니다.") from exc
+    if not isinstance(content, str) or not content.strip():
+        raise MedgemmaServiceError("medgemma 서비스가 유효한 답변을 반환하지 않았습니다.")
+    return content

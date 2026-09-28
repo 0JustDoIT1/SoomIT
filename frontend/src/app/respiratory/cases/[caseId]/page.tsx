@@ -2,6 +2,7 @@
 
 import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
+import dynamic from "next/dynamic";
 import { useRespiratoryAuth } from "../../_components/respiratory-auth-provider";
 import { showToast } from "@/components/ui/toast/toast";
 import { LoadingIndicator } from "@/components/common/loading-indicator";
@@ -11,13 +12,10 @@ import { CaseWorkspaceEmpty } from "./case-workspace-empty";
 import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { ResultReviewPanel, WorkflowStatusFlow } from "./result-review-panel";
 import workspaceStyles from "./workspace.module.css";
-import { PathologyGeneImagingWorkspace } from "./pathology-gene-imaging-workstation";
-import { TnmReviewWorkspace } from "./tnm-review-workspace";
 import { CASE_WORKFLOW_STAGES, CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
 import { CasePatientSidebar } from "./case-patient-sidebar";
 import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
-import { Pdl1ResultPanel } from "./pdl1-imaging-workstation";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
 import { getAiResultHttpError, getAiResultNetworkError } from "./ai-result-errors";
 import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./clinical-result-errors";
@@ -25,10 +23,7 @@ import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview
 import { TreatmentDecisionPanel } from "./treatment-decision-panel";
 import { PrescriptionPanel } from "./prescription-panel";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
-import { CaseDicomEvidence } from "./case-dicom-evidence";
-import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
 import { CaseImageEvidence } from "./case-image-evidence";
-import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { CaseWorkflowDecision, type WorkflowDecisionCompletion } from "./case-workflow-decision";
@@ -44,6 +39,35 @@ import { formatPrescriptionDose } from "./prescription-dose-format";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
 import { applyCaseResponse, canApplyCaseResponse } from "../../_lib/case-request-guard";
 import { CASE_NAVIGATION_REQUEST_EVENT, getRequestedCaseId } from "../../_lib/case-navigation-guard";
+
+// Each imaging workspace is loaded when its workflow stage is first opened.
+// Keep both the standalone viewers and their parent workspaces behind this
+// boundary so an eager import cannot pull the same viewer into the page bundle.
+const imagingLoading = () => <LoadingIndicator label="영상 화면을 불러오는 중입니다." />;
+const PathologyGeneImagingWorkspace = dynamic(
+  () => import("./pathology-gene-imaging-workstation").then((module) => module.PathologyGeneImagingWorkspace),
+  { loading: imagingLoading },
+);
+const TnmReviewWorkspace = dynamic(
+  () => import("./tnm-review-workspace").then((module) => module.TnmReviewWorkspace),
+  { loading: imagingLoading },
+);
+const Pdl1ResultPanel = dynamic(
+  () => import("./pdl1-imaging-workstation").then((module) => module.Pdl1ResultPanel),
+  { loading: imagingLoading },
+);
+const CaseDicomEvidence = dynamic(
+  () => import("./case-dicom-evidence").then((module) => module.CaseDicomEvidence),
+  { loading: imagingLoading },
+);
+const CaseCtSegmentationEvidence = dynamic(
+  () => import("./case-ct-segmentation-evidence").then((module) => module.CaseCtSegmentationEvidence),
+  { loading: imagingLoading },
+);
+const CaseWsiEvidence = dynamic(
+  () => import("./case-wsi-evidence").then((module) => module.CaseWsiEvidence),
+  { loading: imagingLoading },
+);
 
 type CaseItem = {
   id: string;
@@ -733,6 +757,17 @@ export default function RespiratoryCaseDetailPage() {
           setPrescriptionLoadError("");
         }
 
+        // Start independent clinical reads immediately, rather than adding
+        // their latency after the case header/list round trip. allSettled
+        // attaches rejection handlers even if the header request fails.
+        const clinicalRequests = Promise.allSettled([
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal }),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal }),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal }),
+          authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`, { signal: controller.signal }),
+        ]);
         const [caseListResponse, caseDetailResponse] =
           await Promise.all([
             authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`, { signal: controller.signal }),
@@ -766,14 +801,7 @@ export default function RespiratoryCaseDetailPage() {
         }
 
         const [tnmAnalysisRequest, tnmClinicalRequest, regimenCandidateRequest, treatmentDecisionRequest, prescriptionRequest, ordersRequest] =
-          await Promise.allSettled([
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal }),
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal }),
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal }),
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`, { signal: controller.signal }),
-          ]);
+          await clinicalRequests;
 
         // Effect cleanup intentionally aborts every in-flight request. Do not
         // turn that lifecycle cancellation into panel errors, toasts, or noisy

@@ -26,7 +26,17 @@ export async function ensureCornerstoneInitialized(): Promise<CornerstoneModules
   const modules = await modulesPromise;
   if (!initialized) {
     initialized = true;
-    await modules.core.init();
+    // Cornerstone's default ContextPool allocates seven WebGL contexts for
+    // every RenderingEngine. The CT workstation, history previews, and other
+    // image views can then exceed the browser context limit and blank every
+    // viewport. A single shared context supports our MPR/3D viewports while
+    // keeping the application safely below that limit.
+    await modules.core.init({
+      rendering: {
+        webGlContextCount: 1,
+      },
+      debug: {},
+    });
     modules.dicomImageLoader.init({
       beforeSend: (_xhr, _imageId, defaultHeaders) => {
         const accessToken = sessionStorage.getItem("accessToken");

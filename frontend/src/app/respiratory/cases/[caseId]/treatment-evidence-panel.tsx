@@ -25,7 +25,10 @@ export function TreatmentEvidencePanel({ caseId, apiBaseUrl, authorizedFetch, ca
     setLoading(true);
     setError("");
     try {
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-evidence/`);
+      // The panel shows source passages directly.  Retrieval avoids a slow
+      // second LLM generation step and keeps this optional reference action
+      // responsive.
+      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-evidence/?mode=retrieve`);
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || "Treatment evidence request failed.");
       setData(body);

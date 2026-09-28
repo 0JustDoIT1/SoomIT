@@ -149,6 +149,10 @@ export function CaseCtSegmentationEvidence({
   const mountedRef = useRef(true);
   const assetCaseIdRef = useRef("");
   const annotationRequestRef = useRef("");
+  // A Cornerstone toolbar event can be delivered more than once while React is
+  // reconciling the overlay. Keep completed deletes locally so a repeated
+  // click/event never reaches the protected detail endpoint as a 404.
+  const deletedAnnotationIdsRef = useRef(new Set<string>());
   const onEvidenceInfoChangeRef = useRef(onEvidenceInfoChange);
 
   useEffect(() => {
@@ -445,43 +449,75 @@ export function CaseCtSegmentationEvidence({
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       }
       showToast.success("영상 주석을 저장했습니다.");
+      return true;
     } catch (error) {
       console.error(error);
       showToast.error("영상 주석 저장에 실패했습니다.");
+      return false;
     }
   }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 
-  const deleteAnnotation = useCallback(async (annotationId: string) => {
+  const deleteAnnotation = useCallback(async (annotationId: string): Promise<boolean> => {
+    if (deletedAnnotationIdsRef.current.has(annotationId)) return true;
+    deletedAnnotationIdsRef.current.add(annotationId);
     try {
       const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`, { method: "DELETE" });
-      if (!response.ok) throw new Error("annotation delete failed");
+      // A selected annotation can already have been removed in another tab or
+      // after Fast Refresh. Reconcile a 404 as an idempotent delete instead of
+      // leaving a stale selection that repeatedly fails.
+      if (!response.ok && response.status !== 404) {
+        const body: unknown = await response.json().catch(() => null);
+        const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+          ? `: ${body.detail}`
+          : "";
+        throw new Error(`annotation delete failed (${response.status})${detail}`);
+      }
       setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
       if (asset?.series_instance_uid) {
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       }
       showToast.success("영상 주석을 삭제했습니다.");
+      return true;
     } catch (error) {
+      deletedAnnotationIdsRef.current.delete(annotationId);
       console.error(error);
       showToast.error("영상 주석 삭제에 실패했습니다.");
+      return false;
     }
   }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 
-  const updateAnnotation = useCallback(async (annotationId: string, pending: PendingImageAnnotation) => {
+  const updateAnnotation = useCallback(async (annotationId: string, pending: PendingImageAnnotation): Promise<boolean> => {
     try {
       const response = await authorizedFetch(
         `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`,
         { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pending) },
       );
-      const body: unknown = await response.json().catch(() => ({}));
-      if (!response.ok || !body || typeof body !== "object") throw new Error("annotation update failed");
+      const body: unknown = await response.json().catch(() => null);
+      // A delete and a Cornerstone ANNOTATION_MODIFIED event can cross in
+      // flight. A missing annotation is already reconciled, not a user-facing
+      // failure: remove the stale local item and stop any later updates.
+      if (response.status === 404) {
+        setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
+        if (asset?.series_instance_uid) {
+          invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+        }
+        return true;
+      }
+      if (!response.ok || !body || typeof body !== "object") {
+        const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
+          ? `: ${body.detail}`
+          : "";
+        throw new Error(`annotation update failed (${response.status})${detail}`);
+      }
       setAnnotations((current) => current.map((annotation) => annotation.id === annotationId ? body as ClinicianImageAnnotation : annotation));
       if (asset?.series_instance_uid) {
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       }
-      showToast.success("영상 주석을 수정했습니다.");
+      return true;
     } catch (error) {
       console.error(error);
       showToast.error("영상 주석 수정에 실패했습니다.");
+      return false;
     }
   }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 

@@ -50,10 +50,14 @@ it("treats effect cleanup aborts as normal cancellation without errors or toasts
   }));
 
   const view = render(<Page />);
-  await waitFor(() => expect(mocks.authorizedFetch).toHaveBeenCalledTimes(2));
+  // All eight reads must start even while the case header is still pending.
+  await waitFor(() => expect(mocks.authorizedFetch).toHaveBeenCalledTimes(8));
   view.unmount();
   await new Promise((resolve) => setTimeout(resolve, 0));
 
+  for (const [, init] of mocks.authorizedFetch.mock.calls) {
+    expect(init.signal.aborted).toBe(true);
+  }
   expect(consoleError).not.toHaveBeenCalled();
   expect(mocks.showToast.error).not.toHaveBeenCalled();
   consoleError.mockRestore();
