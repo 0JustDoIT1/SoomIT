@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis, AnalysisType
+from apps.patients.models import PatientAccount
 
 from .models import (
     ClinicalResult,
@@ -798,6 +799,26 @@ def validate_input_snapshot(value):
 
 
 class PrescriptionItemSerializer(serializers.ModelSerializer):
+    standard_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("standard_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("standard_dose").decimal_places,
+        normalize_output=True,
+        read_only=True,
+    )
+    calculated_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("calculated_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("calculated_dose").decimal_places,
+        normalize_output=True,
+        read_only=True,
+        allow_null=True,
+    )
+    final_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("final_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("final_dose").decimal_places,
+        normalize_output=True,
+        read_only=True,
+        allow_null=True,
+    )
     drug_name = serializers.CharField(
         source="drug.drug_name",
         read_only=True,
@@ -894,6 +915,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
     )
     safety_check_results = serializers.SerializerMethodField()
     safety_freshness = serializers.SerializerMethodField()
+    patient_account_linked = serializers.SerializerMethodField()
 
     def get_safety_check_results(self, obj):
         results = [
@@ -905,6 +927,11 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
 
     def get_safety_freshness(self, obj):
         return evaluate_prescription_safety_freshness(obj).status
+
+    def get_patient_account_linked(self, obj):
+        return obj.case.patient.accounts.filter(
+            link_status=PatientAccount.LinkStatus.LINKED,
+        ).exists()
 
     class Meta:
         model = Prescription
@@ -927,6 +954,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
             "items",
             "safety_check_results",
             "safety_freshness",
+            "patient_account_linked",
             "created_at",
             "updated_at",
         ]

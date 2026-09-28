@@ -30,7 +30,6 @@ import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
 import { CaseImageEvidence } from "./case-image-evidence";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
-import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { CaseWorkflowDecision, type WorkflowDecisionCompletion } from "./case-workflow-decision";
 import { XrayWorkflowDecision } from "./xray-workflow-decision";
@@ -40,6 +39,7 @@ import { CaseConsultationRequest } from "./case-consultation-request";
 import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
 import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
+import { formatPrescriptionDose } from "./prescription-dose-format";
 import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
 import { applyCaseResponse, canApplyCaseResponse } from "../../_lib/case-request-guard";
 import { CASE_NAVIGATION_REQUEST_EVENT, getRequestedCaseId } from "../../_lib/case-navigation-guard";
@@ -300,6 +300,7 @@ type CasePrescription = {
   cycle_start_date: string;
   prescription_status: string;
   prescription_status_label: string;
+  patient_account_linked?: boolean;
   items: CasePrescriptionItem[];
   safety_check_results: CaseSafetyResult[];
   created_at: string;
@@ -333,7 +334,6 @@ type TreatmentSubMenu =
 
 type PrescriptionSubMenu =
   | "PRESCRIPTION_LIST"
-  | "SAFETY_CHECK"
   | "FINAL_PRESCRIPTION";
 
 const mainMenus: {
@@ -442,10 +442,6 @@ const prescriptionSubMenus: {
     label: "처방 목록",
   },
   {
-    key: "SAFETY_CHECK",
-    label: "안전성 검사",
-  },
-  {
     key: "FINAL_PRESCRIPTION",
     label: "최종 처방",
   },
@@ -467,7 +463,7 @@ const workspaceTreatmentSubMenus: typeof treatmentSubMenus = [
   { key: "AI_RECOMMENDATION", label: "AI 치료 추천" }, { key: "REGIMEN", label: "치료요법 후보" }, { key: "FINAL_PLAN", label: "최종 치료계획" },
 ];
 const workspacePrescriptionSubMenus: typeof prescriptionSubMenus = [
-  { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "SAFETY_CHECK", label: "안전성 검사" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
+  { key: "PRESCRIPTION_LIST", label: "처방 목록" }, { key: "FINAL_PRESCRIPTION", label: "최종 처방" },
 ];
 // 기존 메뉴 상수는 기존 화면 동작과 타입 호환성을 위해 보존합니다.
 void [mainMenus, resultSubMenus, aiSubMenus, treatmentSubMenus, prescriptionSubMenus];
@@ -568,6 +564,7 @@ export default function RespiratoryCaseDetailPage() {
   const [prescriptionLoadError, setPrescriptionLoadError] = useState("");
   const [panelRetrying, setPanelRetrying] = useState<"AI" | "CLINICAL" | "REGIMEN" | "TREATMENT" | "PRESCRIPTION" | null>(null);
   const activeCaseIdRef = useRef(caseId);
+  const loadedPageCaseIdRef = useRef<string | null>(null);
   const regimenRequestVersionRef = useRef(0);
   const resultSignatureRef = useRef("");
   const resultRefreshRequestRef = useRef(0);
@@ -706,30 +703,33 @@ export default function RespiratoryCaseDetailPage() {
       && canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)
     );
     const fetchData = async () => {
+      const isInitialCaseLoad = loadedPageCaseIdRef.current !== caseId;
       try {
-        setLoading(true);
+        if (isInitialCaseLoad) setLoading(true);
         setError("");
-        setCaseTreatmentConfirmed(false);
-        setCasePrescriptionError("");
-        setCasePrescriptionMessage("");
-        setCasePrescriptions([]);
-        setTnmAnalysisResults([]);
-        setTnmClinicalResults([]);
-        setResultSyncNotice("");
-        setRegimenCandidates([]);
-        setRegimenCandidatesLoading(true);
-        setCaseTreatmentDecision(null);
-        setCaseOrders([]);
-        setOrdersLoaded(false);
-        setPrescriptionItemDirty({});
-        setCasePrescriptionCycleNumber("1");
-        setCasePrescriptionPhase("INDUCTION");
-        setCasePrescriptionCycleStartDate("");
-        setClinicalResultError("");
-        setAiResultError("");
-        setRegimenLoadError("");
-        setTreatmentLoadError("");
-        setPrescriptionLoadError("");
+        if (isInitialCaseLoad) {
+          setCaseTreatmentConfirmed(false);
+          setCasePrescriptionError("");
+          setCasePrescriptionMessage("");
+          setCasePrescriptions([]);
+          setTnmAnalysisResults([]);
+          setTnmClinicalResults([]);
+          setResultSyncNotice("");
+          setRegimenCandidates([]);
+          setRegimenCandidatesLoading(true);
+          setCaseTreatmentDecision(null);
+          setCaseOrders([]);
+          setOrdersLoaded(false);
+          setPrescriptionItemDirty({});
+          setCasePrescriptionCycleNumber("1");
+          setCasePrescriptionPhase("INDUCTION");
+          setCasePrescriptionCycleStartDate("");
+          setClinicalResultError("");
+          setAiResultError("");
+          setRegimenLoadError("");
+          setTreatmentLoadError("");
+          setPrescriptionLoadError("");
+        }
 
         const [caseListResponse, caseDetailResponse] =
           await Promise.all([
@@ -756,6 +756,7 @@ export default function RespiratoryCaseDetailPage() {
           await caseDetailResponse.json();
 
         if (canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)) {
+          loadedPageCaseIdRef.current = caseId;
           setCases(caseListData);
           setSelectedCase(caseDetailData);
           setLoading(false);
@@ -2393,7 +2394,7 @@ export default function RespiratoryCaseDetailPage() {
 
                     {prescription.prescription_status === "VALIDATED" && !prescription.safety_check_results.some((result) => result.result === "BLOCK" || (result.result === "WARNING" && !result.acknowledged_at)) && (
                       <div className="mt-3">
-                        <PrescriptionFinalizeScheduleForm items={prescription.items} working={casePrescriptionWorking} onFinalize={async (schedules) => handleCasePrescriptionFinalize(prescription.id, schedules)} />
+                        <PrescriptionFinalizeScheduleForm items={prescription.items} working={casePrescriptionWorking} patientAccountLinked={prescription.patient_account_linked === true} onFinalize={async (schedules) => handleCasePrescriptionFinalize(prescription.id, schedules)} />
                       </div>
                     )}
 
@@ -2500,8 +2501,6 @@ export default function RespiratoryCaseDetailPage() {
               </div>}
             </section>
           </PrescriptionSection></fieldset>
-        ) : selectedMainMenu === "PRESCRIPTION" && selectedPrescriptionMenu === "SAFETY_CHECK" ? (
-          <fieldset disabled={selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION"} className="contents"><PatientSafetyDataPanel key={caseId} caseId={caseId} apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} /></fieldset>
         ) : false ? (
           <TreatmentSection className="grid grid-cols-[minmax(280px,0.75fr)_minmax(0,1.25fr)] items-start gap-3">
             <section className="rounded-lg border border-emerald-100 bg-white p-4 shadow-sm">
@@ -3233,7 +3232,7 @@ function CasePrescriptionItemRow({
   onDirtyChange: (dirty: boolean) => void;
 }) {
   const [finalDose, setFinalDose] = useState(
-    item.final_dose !== null ? String(item.final_dose) : ""
+    formatPrescriptionDose(item.final_dose)
   );
   const [instructions, setInstructions] = useState(
     item.instructions ?? ""
@@ -3257,7 +3256,7 @@ function CasePrescriptionItemRow({
           )}
         </span>
         <span className="text-slate-500">
-          계산 {item.calculated_dose ?? "-"}{item.unit ?? ""}
+          계산 {formatPrescriptionDose(item.calculated_dose) || "-"}{item.unit ?? ""}
         </span>
         <span className="text-slate-500">
           {item.route_label || "-"} · {item.frequency || "-"}
@@ -3425,13 +3424,6 @@ function getDetailTitle(
     return "처방 목록";
   }
 
-  if (
-    prescriptionMenu ===
-    "SAFETY_CHECK"
-  ) {
-    return "안전성 검사";
-  }
-
   return "최종 처방";
 }
 
@@ -3468,13 +3460,6 @@ function getDetailDescription(
     "PRESCRIPTION_LIST"
   ) {
     return "환자의 Cycle별 처방 내용을 확인하고 관리합니다.";
-  }
-
-  if (
-    prescriptionMenu ===
-    "SAFETY_CHECK"
-  ) {
-    return "처방약의 안전성 검사 결과를 확인합니다.";
   }
 
   return "안전성 검사가 완료된 최종 처방 내용을 확인합니다.";

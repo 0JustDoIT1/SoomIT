@@ -25,7 +25,7 @@ from .models import (
 class PatientAllergyProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = PatientHealthProfile
-        fields = ["allergy_status", "allergies"]
+        fields = ["allergy_status", "allergies", "height_cm", "weight_kg"]
 
     def validate_allergies(self, value):
         if not isinstance(value, list):
@@ -856,6 +856,7 @@ class CurrentMedicationSerializer(serializers.ModelSerializer):
             "drug_name",
             "medication_name",
             "ingredient_name",
+            "mfds_item_seq",
             "dose",
             "dose_unit",
             "frequency",

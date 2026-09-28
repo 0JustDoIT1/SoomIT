@@ -10,7 +10,7 @@ import { PreviewClinicalSummary } from "./preview-clinical-summary";
 import { PreviewTreatmentSelector } from "./preview-treatment-selector";
 import { PreviewRegimenCandidates } from "./preview-regimen-candidates";
 import { PreviewTreatmentDecision } from "./preview-treatment-decision";
-import { PreviewPrescription } from "./preview-prescription";
+import { PreviewPrescription, type PreviewDoseInputs } from "./preview-prescription";
 import { PreviewSafetyPanel } from "./preview-safety-panel";
 import { PreviewEvidencePanel } from "./preview-evidence-panel";
 import { PreviewOpinionPanel } from "./preview-opinion-panel";
@@ -25,6 +25,7 @@ export default function TreatmentPreviewV2Page() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [snapshot, setSnapshot] = useState<InputSnapshot | null>(null);
+  const [doseInputs, setDoseInputs] = useState<PreviewDoseInputs>({ height: "", weight: "", egfr: "" });
 
   const refresh = useCallback(async () => {
     if (!caseId) return;
@@ -93,8 +94,8 @@ export default function TreatmentPreviewV2Page() {
     <PreviewTreatmentSelector candidates={data.candidates} value={method} onChange={(value) => { setMethod(value); setCandidate(null); }} />
     <PreviewRegimenCandidates candidates={data.candidates} treatmentType={method} selected={selectedRegimen ?? ""} findings={snapshot?.findings ?? []} onSelect={setCandidate} />
     <PreviewTreatmentDecision candidate={visibleCandidate} decision={data.decision} confirmed={Boolean(confirmed)} busy={busy} inputSnapshot={snapshot} onSave={saveDecision} onConfirm={() => void confirmDecision()} />
-    <PreviewPrescription caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} prescriptions={data.prescriptions} selectedRegimen={selectedRegimen} onRefresh={() => void refresh()} />
-    <PreviewSafetyPanel caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} prescription={data.prescriptions[0]} onRefresh={() => void refresh()} />
+    <PreviewPrescription caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} prescriptions={data.prescriptions} selectedRegimen={selectedRegimen} doseInputs={doseInputs} onDoseInputsChange={setDoseInputs} onRefresh={() => void refresh()} />
+    <PreviewSafetyPanel caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} prescription={data.prescriptions[0]} doseInputs={doseInputs} onRefresh={() => void refresh()} />
     <PreviewEvidencePanel caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} selectedRegimen={selectedRegimen} />
     <PreviewOpinionPanel caseId={caseId} base={API_BASE_URL} fetcher={authorizedFetch} selectedRegimen={selectedRegimen} treatmentType={method || data.decision?.treatment_type || ""} treatmentPlan={data.decision?.treatment_plan || ""} />
   </div></main>;

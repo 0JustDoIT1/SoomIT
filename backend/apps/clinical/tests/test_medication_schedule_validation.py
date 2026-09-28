@@ -13,6 +13,7 @@ from apps.accounts.models import Department, DepartmentRole, Hospital, User
 from apps.cases.models import LungCancerCase
 from apps.clinical.medication_schedule_serializers import DoctorMedicationScheduleSerializer
 from apps.clinical.models import ClinicalResult, Drug, Prescription, PrescriptionItem, Regimen, SafetyCheckResult, TreatmentDecision
+from apps.clinical.serializers import DoctorPrescriptionSerializer
 from apps.patients.models import MedicationSchedule, Patient, PatientAccount
 
 
@@ -68,6 +69,12 @@ class MedicationScheduleValidationTests(TestCase):
         self.assertEqual(schedule.patient_account_id, self.account.id)
         self.assertEqual(schedule.items.get().prescription_item_id, self.items["oral"].id)
 
+    def test_prescription_reports_only_a_linked_patient_app_account(self):
+        self.assertTrue(DoctorPrescriptionSerializer(self.prescription).data["patient_account_linked"])
+        self.account.link_status = PatientAccount.LinkStatus.UNLINKED
+        self.account.save(update_fields=["link_status"])
+        self.assertFalse(DoctorPrescriptionSerializer(self.prescription).data["patient_account_linked"])
+
     def test_api_rejects_invalid_create_without_writes(self):
         for item in ("foreign", "nonoral", "empty", "missing"):
             with self.subTest(item=item):
@@ -100,6 +107,32 @@ class MedicationScheduleValidationTests(TestCase):
         self.prescription.refresh_from_db()
         self.assertEqual(self.prescription.prescription_status, "FINAL")
         self.assertEqual(MedicationSchedule.objects.get().items.get().prescription_item_id, self.items["oral"].id)
+
+    def test_nested_finalize_without_patient_account_accepts_no_schedules(self):
+        self.account.delete()
+        self.prescription.prescription_status = "VALIDATED"
+        self.prescription.save(update_fields=["prescription_status"])
+        SafetyCheckResult.objects.create(
+            prescription=self.prescription,
+            check_type="DOSE",
+            result="PASS",
+            message="Synthetic",
+            checked_at=timezone.now(),
+        )
+        url = reverse(
+            "doctor-prescription-finalize",
+            kwargs={"case_id": self.case.id, "prescription_id": self.prescription.id},
+        )
+        with patch(
+            "apps.clinical.views.evaluate_prescription_safety_freshness",
+            return_value=SimpleNamespace(status="CURRENT"),
+        ):
+            response = self.client.post(url, {"medication_schedules": []}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.prescription.refresh_from_db()
+        self.assertEqual(self.prescription.prescription_status, "FINAL")
+        self.assertFalse(MedicationSchedule.objects.exists())
 
     def test_nested_finalize_rejects_invalid_items_without_finalizing(self):
         for item in ("foreign", "nonoral", "empty", "missing"):

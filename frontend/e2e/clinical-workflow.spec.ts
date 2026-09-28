@@ -1,6 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
-import { authenticateWithoutLogin, installClinicalApi } from "./fixtures/clinical-api";
+import { authenticateWithoutLogin, installClinicalApi, installPrescriptionWarningFlow } from "./fixtures/clinical-api";
 
 test.beforeEach(async ({ page }) => {
   await installClinicalApi(page);
@@ -67,6 +67,24 @@ test("physician selects a regimen, confirms treatment, and opens prescription st
   await expect(page.getByText(/Safety Check/).first()).toBeVisible();
 });
 
+test("general warning advances after acknowledgment while unresolved warning stays blocked", async ({ page }) => {
+  await installPrescriptionWarningFlow(page);
+  await authenticateWithoutLogin(page);
+  await page.goto("/respiratory/cases/case-prescription");
+  await page.getByRole("button", { name: "치료계획·처방" }).click();
+  await page.getByRole("button", { name: "처방 · 안전성", exact: true }).click();
+
+  await expect(page.getByRole("heading", { name: "Safety Check · WARNING · 의료진 확인 필요" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeVisible();
+  page.once("dialog", dialog => dialog.accept("담당의 검토"));
+  await page.getByRole("button", { name: "경고 확인 후 다음 단계" }).click();
+  await expect(page.getByText("현재 상태: VALIDATED · 확인 완료", { exact: true })).toBeVisible();
+
+  await page.getByLabel("처방 선택").selectOption("rx-unresolved");
+  await expect(page.getByText("입력 보완 후 Safety Check를 다시 실행해주세요.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "경고 확인 후 다음 단계" })).toHaveCount(0);
+});
+
 test("CT, WSI, and prescription safety viewers render deterministic empty or loaded states", async ({ page }) => {
   const fatalBrowserErrors: string[] = [];
   page.on("pageerror", (error) => fatalBrowserErrors.push(error.message));
@@ -91,6 +109,12 @@ test("CT, WSI, and prescription safety viewers render deterministic empty or loa
   await caseMenu.getByRole("button", { name: "치료계획·처방" }).click();
   await page.getByRole("button", { name: "처방 · 안전성", exact: true }).click();
   await expect(page.getByText(/Safety Check/).first()).toBeVisible();
+  const safetyInputs = page.getByRole("region", { name: "환자 안전성 정보" });
+  await expect(safetyInputs).toBeVisible();
+  await expect(page.getByRole("button", { name: "안전성 검사", exact: true })).toHaveCount(0);
+  for (const label of ["키 (cm)", "몸무게 (kg)", "Creatinine", "eGFR", "AST", "ALT", "Total Bilirubin", "알레르기 상태", "약품명", "성분명", "MFDS ITEM_SEQ"]) {
+    await expect(safetyInputs.getByLabel(label)).toBeVisible();
+  }
   expect(fatalBrowserErrors).toEqual([]);
 });
 

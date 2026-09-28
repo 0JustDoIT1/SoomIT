@@ -1157,6 +1157,56 @@ class DoctorPreviewPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView)
         return Response(DoctorPrescriptionSerializer(prescription).data, status=201)
 
 
+def _preview_safety_snapshot(payload, items):
+    """Return a stable snapshot for request-scoped Preview V2 safety inputs."""
+    allergies = sorted({
+        str(value).strip()
+        for value in (payload.get("allergies") or [])
+        if str(value).strip()
+    })
+    medications = []
+    for row in payload.get("current_medications") or []:
+        if not isinstance(row, dict):
+            continue
+        medications.append({
+            "medication_name": str(row.get("medication_name") or "").strip(),
+            "ingredient_name": str(row.get("ingredient_name") or "").strip(),
+            "mfds_item_seq": str(row.get("mfds_item_seq") or "").strip(),
+        })
+    medications.sort(key=lambda row: (
+        row["medication_name"], row["ingredient_name"], row["mfds_item_seq"],
+    ))
+
+    def value_or_none(field):
+        value = payload.get(field)
+        return None if value in (None, "") else str(value).strip()
+
+    return {
+        "allergy_status": payload.get("allergy_status", "UNCONFIRMED"),
+        "allergies": allergies,
+        "current_medications": medications,
+        "labs": {
+            field: value_or_none(field)
+            for field in ("creatinine", "egfr", "ast", "alt", "total_bilirubin")
+        },
+        "items": sorted([
+            {
+                "id": str(item.id),
+                "final_dose": str(item.final_dose),
+                "mfds_item_seq": _explicit_item_seq(item),
+            }
+            for item in items
+        ], key=lambda row: row["id"]),
+    }
+
+
+def _preview_missing_lab_inputs(payload):
+    return {
+        "renal": all(payload.get(field) in (None, "") for field in ("creatinine", "egfr")),
+        "hepatic": any(payload.get(field) in (None, "") for field in ("ast", "alt", "total_bilirubin")),
+    }
+
+
 class DoctorPreviewPrescriptionSafetyAPIView(PulmonologyWritePermissionMixin, APIView):
     """Run safety checks from preview payload without touching patient tables."""
 
@@ -1164,7 +1214,7 @@ class DoctorPreviewPrescriptionSafetyAPIView(PulmonologyWritePermissionMixin, AP
     def post(self, request, case_id, prescription_id):
         prescription = Prescription.objects.select_for_update().filter(
             id=prescription_id, case_id=case_id, case__primary_doctor=request.user,
-            case__case_status="ACTIVE", prescription_status="DRAFT",
+            case__case_status="ACTIVE", prescription_status__in=("DRAFT", "VALIDATED"),
         ).prefetch_related("items__drug").first()
         if prescription is None:
             return Response({"detail": "Preview prescription was not found."}, status=404)
@@ -1179,16 +1229,7 @@ class DoctorPreviewPrescriptionSafetyAPIView(PulmonologyWritePermissionMixin, AP
             return Response({"detail": "Invalid preview safety input."}, status=400)
         now = timezone.now()
         prescription.safety_check_results.all().delete()
-        preview_snapshot = {
-            "allergy_status": allergy_status,
-            "allergies": allergies,
-            "current_medications": medications,
-            "labs": {field: payload.get(field) for field in ("creatinine", "egfr", "ast", "alt", "total_bilirubin")},
-            "items": sorted([
-                {"id": str(item.id), "final_dose": str(item.final_dose), "mfds_item_seq": _explicit_item_seq(item)}
-                for item in items
-            ], key=lambda row: row["id"]),
-        }
+        preview_snapshot = _preview_safety_snapshot(payload, items)
         SafetyCheckResult.objects.create(
             prescription=prescription, prescription_item=None, check_type="INPUT_SNAPSHOT",
             result="PASS", message=json.dumps(preview_snapshot, sort_keys=True, default=str),
@@ -1216,6 +1257,16 @@ class DoctorPreviewPrescriptionSafetyAPIView(PulmonologyWritePermissionMixin, AP
             cache.setdefault((operation, seq), client.query(operation, seq))
             return cache[(operation, seq)]
         med_seqs = [(m, _explicit_item_seq(m)) for m in med_rows]
+        for medication, medication_item_seq in med_seqs:
+            if not medication_item_seq:
+                add(
+                    None,
+                    "DRUG_INTERACTION",
+                    "WARNING",
+                    f"현재 복용약 {getattr(medication, 'medication_name', '') or '정보'}의 MFDS ITEM_SEQ가 필요합니다.",
+                    "DUR_MAPPING_UNRESOLVED",
+                    "MFDS DUR",
+                )
         for item in items:
             item_seq = _explicit_item_seq(item)
             if not item_seq:
@@ -1238,13 +1289,18 @@ class DoctorPreviewPrescriptionSafetyAPIView(PulmonologyWritePermissionMixin, AP
                     add(item, "DRUG_INTERACTION", "WARNING", "MFDS DUR lookup failed.", "DUR_API_ERROR", "MFDS DUR")
                 for row in result.rows:
                     add(item, "DRUG_INTERACTION", "WARNING", _dur_message(operation, row), f"DUR_{operation}", "MFDS DUR")
-        lab_fields = ("creatinine", "egfr", "ast", "alt", "total_bilirubin")
-        missing_lab = any(payload.get(field) in (None, "") for field in lab_fields)
-        add(None, "RENAL_FUNCTION", "WARNING" if missing_lab else "PASS", "Creatinine/eGFR are required." if missing_lab else "Renal inputs received.", "LAB_MISSING" if missing_lab else "RENAL_DATA_CHECK")
-        hepatic_missing = any(payload.get(field) in (None, "") for field in ("ast", "alt", "total_bilirubin"))
-        add(None, "HEPATIC_FUNCTION", "WARNING" if hepatic_missing else "PASS", "AST/ALT/total bilirubin are required." if hepatic_missing else "Hepatic inputs received.", "LAB_MISSING" if hepatic_missing else "HEPATIC_DATA_CHECK")
-        if not prescription.safety_check_results.filter(result="BLOCK").exists() and not prescription.safety_check_results.filter(result="WARNING", source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES).exists():
+        missing_labs = _preview_missing_lab_inputs(payload)
+        renal_missing = missing_labs["renal"]
+        add(None, "RENAL_FUNCTION", "WARNING" if renal_missing else "PASS", "신장기능 정보가 필요합니다. Creatinine 또는 eGFR 값을 입력한 뒤 Safety Check를 다시 실행해주세요." if renal_missing else "신장기능 입력값을 확인했습니다.", "LAB_MISSING" if renal_missing else "RENAL_DATA_CHECK")
+        hepatic_missing = missing_labs["hepatic"]
+        add(None, "HEPATIC_FUNCTION", "WARNING" if hepatic_missing else "PASS", "간기능 검사값이 확인되지 않았습니다. AST, ALT, Total Bilirubin을 입력한 뒤 Safety Check를 다시 실행해주세요." if hepatic_missing else "간기능 입력값을 확인했습니다.", "LAB_MISSING" if hepatic_missing else "HEPATIC_DATA_CHECK")
+        has_block = prescription.safety_check_results.filter(result="BLOCK").exists()
+        has_warning = prescription.safety_check_results.filter(result="WARNING").exists()
+        if not has_block and not has_warning:
             prescription.prescription_status = "VALIDATED"
+            prescription.save(update_fields=["prescription_status", "updated_at"])
+        elif prescription.prescription_status != "DRAFT":
+            prescription.prescription_status = "DRAFT"
             prescription.save(update_fields=["prescription_status", "updated_at"])
         prescription = Prescription.objects.select_related("regimen", "treatment_decision").prefetch_related("items__drug", "safety_check_results").get(id=prescription.id)
         return Response(DoctorPrescriptionSerializer(prescription).data)
@@ -1255,19 +1311,42 @@ class DoctorPreviewPrescriptionWarningAcknowledgeAPIView(PulmonologyWritePermiss
     def post(self, request, case_id, prescription_id):
         prescription = Prescription.objects.select_for_update().filter(
             id=prescription_id, case_id=case_id, case__primary_doctor=request.user,
-            case__case_status="ACTIVE", prescription_status="DRAFT",
+            case__case_status="ACTIVE", prescription_status__in=("DRAFT", "VALIDATED"),
         ).first()
         if prescription is None:
             return Response({"detail": "Preview prescription was not found."}, status=404)
         note = str(request.data.get("acknowledgment_note", "")).strip()
         if not note:
             return Response({"detail": "Acknowledgment note is required."}, status=400)
+        items = list(prescription.items.all())
+        safety_input = request.data.get("safety_input")
+        if not isinstance(safety_input, dict):
+            return Response({"detail": "현재 Safety 입력값을 확인한 뒤 Safety Check를 다시 실행해주세요."}, status=400)
+        snapshot_result = prescription.safety_check_results.filter(
+            source_code="SAFETY_INPUT_SNAPSHOT",
+        ).order_by("-checked_at").first()
+        try:
+            saved_snapshot = json.loads(snapshot_result.message or "")
+        except (AttributeError, TypeError, ValueError):
+            return Response({"detail": "Safety Check를 다시 실행해야 합니다."}, status=400)
+        if saved_snapshot != _preview_safety_snapshot(safety_input, items):
+            return Response({"detail": "입력값이 변경되어 Safety Check를 다시 실행해야 합니다."}, status=400)
+        if evaluate_prescription_safety_freshness(prescription, items=items).status != SafetyFreshness.CURRENT:
+            return Response({"detail": "입력값이 변경되어 Safety Check를 다시 실행해야 합니다."}, status=400)
+        if prescription.safety_check_results.filter(result="BLOCK").exists():
+            return Response({"detail": "BLOCK 결과는 확인만으로 진행할 수 없습니다."}, status=400)
+        if prescription.safety_check_results.filter(
+            result="WARNING", source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
+        ).exists():
+            return Response({"detail": "미해결 WARNING은 입력 보완 후 Safety Check를 다시 실행해야 합니다."}, status=400)
         warnings = prescription.safety_check_results.filter(result="WARNING").exclude(
             source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES
         )
         if not warnings.exists():
             return Response({"detail": "No acknowledgeable warnings were found."}, status=400)
         warnings.update(acknowledged_by_user=request.user, acknowledged_at=timezone.now(), acknowledgment_note=note)
+        prescription.prescription_status = Prescription.PrescriptionStatus.VALIDATED
+        prescription.save(update_fields=["prescription_status", "updated_at"])
         prescription = Prescription.objects.select_related("regimen", "treatment_decision").prefetch_related("items__drug", "safety_check_results").get(id=prescription.id)
         return Response(DoctorPrescriptionSerializer(prescription).data)
 
@@ -1277,10 +1356,12 @@ class DoctorPreviewPrescriptionFinalizeAPIView(PulmonologyWritePermissionMixin, 
     def post(self, request, case_id, prescription_id):
         prescription = Prescription.objects.select_for_update().filter(
             id=prescription_id, case_id=case_id, case__primary_doctor=request.user,
-            case__case_status="ACTIVE", prescription_status="DRAFT",
+            case__case_status="ACTIVE", prescription_status__in=("DRAFT", "VALIDATED"),
         ).prefetch_related("items", "safety_check_results").first()
         if prescription is None:
             return Response({"detail": "Preview prescription was not found."}, status=404)
+        if prescription.prescription_status != Prescription.PrescriptionStatus.VALIDATED:
+            return Response({"detail": "VALIDATED 상태의 처방만 최종 확정할 수 있습니다."}, status=400)
         items = list(prescription.items.all())
         if not items or any(item.final_dose is None for item in items):
             return Response({"detail": "모든 최종 처방량을 입력하세요."}, status=400)
@@ -1291,12 +1372,12 @@ class DoctorPreviewPrescriptionFinalizeAPIView(PulmonologyWritePermissionMixin, 
             saved = json.loads(snapshot_result.message or "")
         except (TypeError, ValueError):
             return Response({"detail": "안전성 snapshot이 유효하지 않습니다."}, status=400)
-        current_items = sorted([
-            {"id": str(item.id), "final_dose": str(item.final_dose), "mfds_item_seq": _explicit_item_seq(item)}
-            for item in items
-        ], key=lambda row: row["id"])
-        if saved.get("items") != current_items:
-            return Response({"detail": "처방이 변경되어 안전성 재검사가 필요합니다."}, status=400)
+        safety_input = request.data.get("safety_input")
+        if not isinstance(safety_input, dict):
+            return Response({"detail": "현재 Safety 입력값을 확인한 뒤 안전성 검사를 다시 실행해주세요."}, status=400)
+        current_snapshot = _preview_safety_snapshot(safety_input, items)
+        if saved != current_snapshot:
+            return Response({"detail": "입력값이 변경되어 Safety Check를 다시 실행해야 합니다."}, status=400)
         results = prescription.safety_check_results.exclude(source_code="SAFETY_INPUT_SNAPSHOT")
         if not results.exists():
             return Response({"detail": "안전성 검사가 필요합니다."}, status=400)
@@ -1439,7 +1520,10 @@ class DoctorPrescriptionFinalizeAPIView(APIView):
         finalization_serializer.is_valid(raise_exception=True)
         schedule_payloads = finalization_serializer.validated_data.get("medication_schedules", [])
         if schedule_payloads:
-            patient_account = PatientAccount.objects.filter(patient=prescription.case.patient).first()
+            patient_account = PatientAccount.objects.filter(
+                patient=prescription.case.patient,
+                link_status=PatientAccount.LinkStatus.LINKED,
+            ).first()
             if patient_account is None:
                 return Response(
                     {"detail": "A linked patient account is required before creating medication schedules."},
@@ -1490,7 +1574,10 @@ class DoctorMedicationScheduleListCreateAPIView(PulmonologyWritePermissionMixin,
         prescription = self._prescription(request, case_id, prescription_id)
         if prescription is None:
             return Response({"detail": "A final prescription was not found."}, status=404)
-        patient_account = PatientAccount.objects.filter(patient=prescription.case.patient).first()
+        patient_account = PatientAccount.objects.filter(
+            patient=prescription.case.patient,
+            link_status=PatientAccount.LinkStatus.LINKED,
+        ).first()
         if patient_account is None:
             return Response({"detail": "A linked patient account is required."}, status=400)
         serializer = DoctorMedicationScheduleSerializer(
@@ -1581,9 +1668,45 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
                 status=400,
             )
 
-        if prescription.prescription_status != "VALIDATED":
+        if prescription.prescription_status not in {
+            Prescription.PrescriptionStatus.DRAFT,
+            Prescription.PrescriptionStatus.VALIDATED,
+        }:
             return Response(
-                {"detail": "VALIDATED 상태의 처방만 WARNING을 확인할 수 있습니다."},
+                {"detail": "DRAFT 또는 VALIDATED 상태의 처방만 WARNING을 확인할 수 있습니다."},
+                status=400,
+            )
+
+        note = str(request.data.get("acknowledgment_note", "")).strip()
+
+        if not note:
+            return Response(
+                {"detail": "WARNING 확인 사유를 입력해 주세요."},
+                status=400,
+            )
+
+        safety_freshness = evaluate_prescription_safety_freshness(
+            prescription,
+            items=list(prescription.items.all()),
+        )
+        if safety_freshness.status != SafetyFreshness.CURRENT:
+            return Response(
+                {"detail": "입력값이 변경되어 Safety Check를 다시 실행해야 합니다."},
+                status=400,
+            )
+
+        if prescription.safety_check_results.filter(result="BLOCK").exists():
+            return Response(
+                {"detail": "BLOCK 결과는 확인만으로 진행할 수 없습니다."},
+                status=400,
+            )
+
+        if prescription.safety_check_results.filter(
+            result="WARNING",
+            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
+        ).exists():
+            return Response(
+                {"detail": "미해결 WARNING은 입력 보완 후 Safety Check를 다시 실행해야 합니다."},
                 status=400,
             )
 
@@ -1594,14 +1717,6 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
         if not warning_results.exists():
             return Response(
                 {"detail": "확인할 WARNING Safety 결과가 없습니다."},
-                status=400,
-            )
-
-        note = request.data.get("acknowledgment_note", "").strip()
-
-        if not note:
-            return Response(
-                {"detail": "WARNING 확인 사유를 입력해 주세요."},
                 status=400,
             )
 
@@ -1620,6 +1735,9 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
             acknowledged_at=timezone.now(),
             acknowledgment_note=note,
         )
+
+        prescription.prescription_status = Prescription.PrescriptionStatus.VALIDATED
+        prescription.save(update_fields=["prescription_status", "updated_at"])
 
         prescription = (
             Prescription.objects
@@ -2100,9 +2218,14 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             result="WARNING",
             source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
         ).exists()
+        has_warning = prescription.safety_check_results.filter(
+            result="WARNING",
+        ).exists()
 
         prescription.prescription_status = (
-            "VALIDATED" if not has_block and not has_unresolved_warning else "DRAFT"
+            "VALIDATED"
+            if not has_block and not has_unresolved_warning and not has_warning
+            else "DRAFT"
         )
         prescription.save(update_fields=["prescription_status", "updated_at"])
 

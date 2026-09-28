@@ -45,6 +45,8 @@ class DoseRuleTests(SimpleTestCase):
         self.assertEqual(set(output), existing_fields | {"renal_value_type"})
         self.assertEqual(output["renal_value_type"], "BSA_ADJUSTED_EGFR")
         self.assertEqual(output["drug_name"], "Carboplatin")
+        self.assertEqual(output["standard_dose"], "5")
+        self.assertEqual(output["calculated_dose"], "500")
         self.assertEqual(Decimal(output["calculated_dose"]), Decimal(500))
         self.assertIsNone(output["final_dose"])
 

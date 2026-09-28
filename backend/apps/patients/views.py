@@ -445,20 +445,27 @@ class DoctorAllergyProfileAPIView(APIView):
             return Response({"detail": "Case not found."}, status=status.HTTP_404_NOT_FOUND)
         profile = PatientHealthProfile.objects.filter(patient=case.patient).first()
         if profile is None:
-            return Response({"detail": "Patient health profile not found."}, status=status.HTTP_404_NOT_FOUND)
+            return Response({
+                "allergy_status": PatientHealthProfile.AllergyStatus.UNCONFIRMED,
+                "allergies": [],
+                "height_cm": None,
+                "weight_kg": None,
+            })
         return Response(PatientAllergyProfileSerializer(profile).data)
 
+    @transaction.atomic
     def patch(self, request, case_id):
         case = self.get_case()
         if case is None:
             return Response({"detail": "Case not found."}, status=status.HTTP_404_NOT_FOUND)
         profile = PatientHealthProfile.objects.filter(patient=case.patient).first()
-        if profile is None:
-            return Response({"detail": "Patient health profile not found."}, status=status.HTTP_404_NOT_FOUND)
         serializer = PatientAllergyProfileSerializer(profile, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        return Response(serializer.data)
+        profile, _ = PatientHealthProfile.objects.update_or_create(
+            patient=case.patient,
+            defaults=dict(serializer.validated_data),
+        )
+        return Response(PatientAllergyProfileSerializer(profile).data)
 
 @extend_schema(tags=["호흡기내과-환자정보"])
 class DoctorLabResultListCreateAPIView(ListCreateAPIView):

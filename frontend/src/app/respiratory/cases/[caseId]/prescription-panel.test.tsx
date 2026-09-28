@@ -7,9 +7,30 @@ vi.mock("@/components/ui/toast/toast", () => ({ showToast: { info: vi.fn(), succ
 
 vi.mock("./mfds-product-selector", () => ({ MfdsProductSelector: () => null }));
 vi.mock("./medication-schedule-panel", () => ({ MedicationSchedulePanel: () => <p>복약 일정</p> }));
+vi.mock("./patient-safety-data-panel", () => ({ PatientSafetyDataPanel: ({ compact }: { compact?: boolean }) => compact ? <section aria-label="환자 안전성 정보">안전성 입력 폼</section> : null }));
 const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen: true };
 const base = { id: "rx-1", cycle_number: 1, regimen_detail: { regimen_name: "Test regimen", regimen_code: "TEST" }, items: [{ id: "item-1", drug_name: "Test drug", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "Day 1" }] };
 const mockFetch = (status: string, results: object[] = [], safetyFreshness = status === "DRAFT" ? (results.length ? "CURRENT" : "NOT_RUN") : "CURRENT") => vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ ...base, prescription_status: status, safety_freshness: safetyFreshness, safety_check_results: results }])));
+
+it("renders patient safety inputs in the left prescription workspace", async () => {
+  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT")} />);
+  expect(await screen.findByRole("region", { name: "환자 안전성 정보" })).toBeVisible();
+  expect(screen.getByText("안전성 입력 폼")).toBeVisible();
+});
+
+it("renders decimal doses without storage-only trailing zeroes", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{
+    ...base,
+    prescription_status: "FINAL",
+    safety_freshness: "CURRENT",
+    items: [{ ...base.items[0], calculated_dose: "80.000", final_dose: "3.000", unit: "mg" }],
+    safety_check_results: [],
+  }])));
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+
+  expect(await screen.findByText(/계산 용량: 80mg · 최종 용량: 3mg/)).toBeInTheDocument();
+  expect(screen.queryByText(/80\.000mg|3\.000mg/)).not.toBeInTheDocument();
+});
 
 it.each(["create", "update", "safety", "finalize"])("never reports successful %s for rejected or failed requests", async action => {
   vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -85,6 +106,80 @@ it("shows a pending safety request as checking without announcing validation", a
   expect(await screen.findByRole("button", { name: "처방 최종 확정" })).toBeEnabled();
 });
 
+it("keeps the prescription workspace mounted while a medication edit refreshes in the background", async () => {
+  const changed = vi.fn();
+  let resolveRefresh!: (value: Response) => void;
+  let listRequests = 0;
+  const authorizedFetch = vi.fn((_: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "PATCH") return Promise.resolve(new Response("{}"));
+    listRequests += 1;
+    if (listRequests === 1) return Promise.resolve(new Response(JSON.stringify([{ ...base, prescription_status: "DRAFT", safety_freshness: "NOT_RUN", safety_check_results: [] }])));
+    return new Promise<Response>(resolve => { resolveRefresh = resolve; });
+  });
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
+
+  fireEvent.change(await screen.findByLabelText("Test drug 최종 용량"), { target: { value: "75" } });
+  fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
+  await waitFor(() => expect(listRequests).toBe(2));
+
+  expect(screen.queryByText("처방 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
+  expect(screen.getByText("선택 Regimen: TEST · Test regimen")).toBeInTheDocument();
+  expect(screen.getByLabelText("Test drug 최종 용량")).toHaveValue(75);
+  expect(changed).not.toHaveBeenCalled();
+
+  await act(async () => resolveRefresh(new Response(JSON.stringify([{ ...base, prescription_status: "DRAFT", safety_freshness: "NOT_RUN", items: [{ ...base.items[0], final_dose: 75 }], safety_check_results: [] }]))));
+  expect(await screen.findByText("처방 약물 정보가 수정되었습니다.")).toBeInTheDocument();
+  expect(changed).not.toHaveBeenCalled();
+});
+
+it("keeps the prescription workspace mounted while Safety Check refreshes in the background", async () => {
+  const changed = vi.fn();
+  let resolveRefresh!: (value: Response) => void;
+  let listRequests = 0;
+  const authorizedFetch = vi.fn((_: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") return Promise.resolve(new Response("{}"));
+    listRequests += 1;
+    if (listRequests === 1) return Promise.resolve(new Response(JSON.stringify([{ ...base, prescription_status: "DRAFT", safety_freshness: "NOT_RUN", safety_check_results: [] }])));
+    return new Promise<Response>(resolve => { resolveRefresh = resolve; });
+  });
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
+
+  fireEvent.click(await screen.findByRole("button", { name: "안전성 검사 실행" }));
+  await waitFor(() => expect(listRequests).toBe(2));
+
+  expect(screen.queryByText("처방 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
+  expect(screen.getByText("선택 Regimen: TEST · Test regimen")).toBeInTheDocument();
+  expect(screen.getByRole("heading", { name: "Safety Check · 검사 중" })).toBeInTheDocument();
+  expect(changed).not.toHaveBeenCalled();
+
+  await act(async () => resolveRefresh(new Response(JSON.stringify([{ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", safety_check_results: [{ id: "safe", check_type_label: "DUR", result: "PASS", message: "통과" }] }]))));
+  expect(await screen.findByRole("button", { name: "처방 최종 확정" })).toBeEnabled();
+  expect(changed).not.toHaveBeenCalled();
+});
+
+it("keeps the current prescription visible when the parent refresh key changes for the same Case", async () => {
+  let resolveRefresh!: (value: Response) => void;
+  let listRequests = 0;
+  const payload = [{ ...base, prescription_status: "DRAFT", safety_freshness: "NOT_RUN", safety_check_results: [] }];
+  const authorizedFetch = vi.fn(() => {
+    listRequests += 1;
+    if (listRequests === 1) return Promise.resolve(new Response(JSON.stringify(payload)));
+    return new Promise<Response>(resolve => { resolveRefresh = resolve; });
+  });
+  const view = render(<PrescriptionPanel {...props} refreshKey={0} authorizedFetch={authorizedFetch} />);
+  expect(await screen.findByText("선택 Regimen: TEST · Test regimen")).toBeInTheDocument();
+
+  view.rerender(<PrescriptionPanel {...props} refreshKey={1} authorizedFetch={authorizedFetch} />);
+  await waitFor(() => expect(listRequests).toBe(2));
+
+  expect(screen.queryByText("처방 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
+  expect(screen.getByText("선택 Regimen: TEST · Test regimen")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "수정 저장" })).toBeEnabled();
+
+  await act(async () => resolveRefresh(new Response(JSON.stringify(payload))));
+  expect(screen.getByText("선택 Regimen: TEST · Test regimen")).toBeInTheDocument();
+});
+
 it("distinguishes an accepted write from a failed refresh without announcing completion", async () => {
   vi.mocked(showToast.success).mockClear();
   const changed = vi.fn();
@@ -102,14 +197,21 @@ it("distinguishes an accepted write from a failed refresh without announcing com
   expect(changed).not.toHaveBeenCalled();
 });
 
-it("keeps oral schedule fields separate from the final action and new prescription form", async () => {
-  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", items: [{ ...base.items[0], route: "ORAL" }], safety_check_results: [] }])));
+it("keeps oral schedule fields visible and hides new prescription creation while validated", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValue(new Response(JSON.stringify([{ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", patient_account_linked: true, items: [{ ...base.items[0], route: "ORAL" }], safety_check_results: [] }])));
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
-  const input = await screen.findByLabelText("복용 시각");
-  const fields = input.closest("div.grid");
+  const input = await screen.findByLabelText("복용 시각 시");
+  const fields = input.closest("form")?.querySelector("div.grid");
   expect(fields).toHaveClass("overflow-y-auto");
   expect(fields).not.toContainElement(screen.getByRole("button", { name: "처방 확정 및 복약 일정 생성" }));
-  expect(screen.getByRole("region", { name: "처방 약물 목록" })).toContainElement(screen.getByText("새 처방 생성 · 확정 치료결정 기반"));
+  expect(screen.queryByText("새 처방 생성 · 확정 치료결정 기반")).not.toBeInTheDocument();
+  expect(screen.queryByText("다음 Cycle 처방 생성")).not.toBeInTheDocument();
+});
+
+it("offers the next cycle only after existing prescriptions are final", async () => {
+  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("FINAL")} />);
+  expect(await screen.findByText("다음 Cycle 처방 생성", { selector: "summary" })).toBeInTheDocument();
+  expect(screen.queryByText("새 처방 생성 · 확정 치료결정 기반")).not.toBeInTheDocument();
 });
 
 it("keeps the safety action separate from the medication scroll and preserves its request", async () => {
@@ -126,17 +228,22 @@ it("keeps the safety action separate from the medication scroll and preserves it
 });
 
 it.each(["WARNING", "BLOCK"])("keeps %s visible and prevents final confirmation", async result => {
-  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("VALIDATED", [{ id: "safety", result, check_type_label: "DUR", message: "검토 필요" }])} />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(result);
+  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT", [{ id: "safety", result, check_type_label: "DUR", message: "검토 필요" }])} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent(result === "BLOCK" ? "BLOCK" : "의료진 확인");
   expect(screen.queryByRole("button", { name: "처방 최종 확정" })).not.toBeInTheDocument();
-  if (result === "WARNING") expect(screen.getByRole("button", { name: "WARNING 확인" })).toBeEnabled();
+  if (result === "WARNING") {
+    expect(screen.getByRole("heading", { name: "Safety Check · WARNING · 의료진 확인 필요" })).toBeInTheDocument();
+    expect(screen.getByText("안전성 경고가 확인되었습니다. 내용을 검토한 후 처방을 계속 진행할 수 있습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "경고 확인 후 다음 단계" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeEnabled();
+  }
 });
 
 it("sends the existing acknowledgment note contract", async () => {
   vi.spyOn(window, "prompt").mockReturnValue("담당의 검토");
-  const authorizedFetch = mockFetch("VALIDATED", [{ id: "safety", result: "WARNING", check_type_label: "DUR", message: "검토 필요" }]);
+  const authorizedFetch = mockFetch("DRAFT", [{ id: "safety", result: "WARNING", check_type_label: "DUR", message: "검토 필요" }]);
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
-  fireEvent.click(await screen.findByRole("button", { name: "WARNING 확인" }));
+  fireEvent.click(await screen.findByRole("button", { name: "경고 확인 후 다음 단계" }));
   await waitFor(() => expect(authorizedFetch).toHaveBeenCalledWith(expect.stringContaining("/warnings/acknowledge/"), expect.objectContaining({ body: JSON.stringify({ acknowledgment_note: "담당의 검토" }) })));
 });
 
@@ -206,7 +313,7 @@ it("keeps unresolved safety warnings in the recheck path", async () => {
   render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT", [{ id: "safety", result: "WARNING", check_type_label: "검사 데이터", source_code: "LAB_MISSING", message: "검사 필요" }])} />);
   expect(await screen.findByRole("alert")).toHaveTextContent("Safety Check를 다시 실행");
   expect(screen.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "WARNING 확인" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "경고 확인 후 다음 단계" })).not.toBeInTheDocument();
 });
 
 it("does not offer another Safety Check after validation", async () => {

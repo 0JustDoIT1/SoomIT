@@ -315,10 +315,16 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         warning_results.update.assert_not_called()
 
     def test_warning_acknowledgment_excludes_unresolved_recheck_warnings(self):
-        warning_results = self.prescription.safety_check_results.filter.return_value
+        self.prescription.prescription_status = "DRAFT"
+        warning_results = MagicMock()
         warning_results.exists.return_value = True
         acknowledgeable_results = warning_results.exclude.return_value
         acknowledgeable_results.exists.return_value = True
+        self.prescription.safety_check_results.filter.side_effect = lambda **kwargs: (
+            warning_results
+            if kwargs == {"result": "WARNING"}
+            else NS(exists=lambda: False)
+        )
         self.request.data = {"acknowledgment_note": "  reviewed  "}
 
         response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
@@ -329,3 +335,37 @@ class PrescriptionBoundaryTests(SimpleTestCase):
             acknowledgeable_results.update.call_args.kwargs["acknowledgment_note"],
             "reviewed",
         )
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
+        self.prescription.save.assert_called_once_with(
+            update_fields=["prescription_status", "updated_at"],
+        )
+
+    def test_warning_acknowledgment_rejects_block_unresolved_and_stale(self):
+        self.prescription.prescription_status = "DRAFT"
+        self.request.data = {"acknowledgment_note": "reviewed"}
+        warning_results = MagicMock()
+        warning_results.exists.return_value = True
+        acknowledgeable_results = warning_results.exclude.return_value
+        acknowledgeable_results.exists.return_value = True
+
+        for condition in ("BLOCK", "UNRESOLVED", "STALE"):
+            with self.subTest(condition=condition):
+                self.prescription.save.reset_mock()
+                acknowledgeable_results.update.reset_mock()
+                self.freshness.return_value = NS(
+                    status="RECHECK_REQUIRED" if condition == "STALE" else "CURRENT",
+                )
+
+                def safety_filter(**kwargs):
+                    if kwargs == {"result": "WARNING"}:
+                        return warning_results
+                    is_block = kwargs == {"result": "BLOCK"} and condition == "BLOCK"
+                    is_unresolved = kwargs.get("source_code__in") is not None and condition == "UNRESOLVED"
+                    return NS(exists=lambda: is_block or is_unresolved)
+
+                self.prescription.safety_check_results.filter.side_effect = safety_filter
+                response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
+
+                self.assertEqual(response.status_code, 400)
+                acknowledgeable_results.update.assert_not_called()
+                self.prescription.save.assert_not_called()
