@@ -4,10 +4,7 @@ import '../../../shared/base_card.dart';
 import '../../appointment/models/appointment.dart';
 
 class AppointmentCard extends StatelessWidget {
-  const AppointmentCard({
-    super.key,
-    required this.appointment,
-  });
+  const AppointmentCard({super.key, required this.appointment});
 
   final Appointment appointment;
 
@@ -52,36 +49,23 @@ class AppointmentCard extends StatelessWidget {
           Text(
             '${appointment.displayType} · '
             '${appointment.doctorName ?? '담당 의료진 미지정'}',
-            style: const TextStyle(
-              fontSize: 14,
-              color: Color(0xFF4E5968),
-            ),
+            style: const TextStyle(fontSize: 14, color: Color(0xFF4E5968)),
           ),
 
           const SizedBox(height: 4),
 
           Text(
             appointment.hospitalName,
-            style: const TextStyle(
-              fontSize: 12,
-              color: Color(0xFF8B95A1),
-            ),
+            style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A1)),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTag(
-    String text,
-    Color backgroundColor,
-    Color textColor,
-  ) {
+  Widget _buildTag(String text, Color backgroundColor, Color textColor) {
     return Container(
-      padding: const EdgeInsets.symmetric(
-        horizontal: 8,
-        vertical: 4,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: backgroundColor,
         borderRadius: BorderRadius.circular(6),
@@ -100,17 +84,9 @@ class AppointmentCard extends StatelessWidget {
   String _getDday(DateTime date) {
     final now = DateTime.now();
 
-    final today = DateTime(
-      now.year,
-      now.month,
-      now.day,
-    );
+    final today = DateTime(now.year, now.month, now.day);
 
-    final target = DateTime(
-      date.year,
-      date.month,
-      date.day,
-    );
+    final target = DateTime(date.year, date.month, date.day);
 
     final difference = target.difference(today).inDays;
 
@@ -133,8 +109,8 @@ class AppointmentCard extends StatelessWidget {
     final hour = local.hour == 0
         ? 12
         : local.hour > 12
-            ? local.hour - 12
-            : local.hour;
+        ? local.hour - 12
+        : local.hour;
 
     final minute = local.minute.toString().padLeft(2, '0');
 

@@ -11,30 +11,20 @@ class NotificationNavigationService {
 
   int? _pendingTabIndex;
 
-  Stream<int> get tabRequests =>
-      _tabRequestController.stream;
+  Stream<int> get tabRequests => _tabRequestController.stream;
 
   // =========================================================
   // 알림 / 홈 위젯 payload 처리
   // =========================================================
 
-  void handlePayload(
-    Map<String, dynamic> payload,
-  ) {
+  void handlePayload(Map<String, dynamic> payload) {
     final notificationType =
-        (
-          payload['notification_type'] ??
-              payload['type'] ??
-              ''
-        )
+        (payload['notification_type'] ?? payload['type'] ?? '')
             .toString()
             .trim()
             .toUpperCase();
 
-    final tabIndex =
-        _resolveTabIndex(
-      notificationType,
-    );
+    final tabIndex = _resolveTabIndex(notificationType);
 
     requestTab(tabIndex);
   }
@@ -43,9 +33,7 @@ class NotificationNavigationService {
   // 알림 종류 → 하단 탭 번호
   // =========================================================
 
-  int _resolveTabIndex(
-    String notificationType,
-  ) {
+  int _resolveTabIndex(String notificationType) {
     switch (notificationType) {
       // 예약
       case 'APPOINTMENT':
@@ -70,23 +58,17 @@ class NotificationNavigationService {
   // 탭 이동 요청
   // =========================================================
 
-  void requestTab(
-    int tabIndex,
-  ) {
-    if (tabIndex < 0 ||
-        tabIndex > 4) {
+  void requestTab(int tabIndex) {
+    if (tabIndex < 0 || tabIndex > 4) {
       return;
     }
 
     // 중요:
     // AppShell이 다시 생성되어도 같은 탭을 유지할 수 있도록
     // pending 값을 보관한다.
-    _pendingTabIndex =
-        tabIndex;
+    _pendingTabIndex = tabIndex;
 
-    _tabRequestController.add(
-      tabIndex,
-    );
+    _tabRequestController.add(tabIndex);
   }
 
   // =========================================================
@@ -106,16 +88,14 @@ class NotificationNavigationService {
   // 현재 pending 요청 확인
   // =========================================================
 
-  int? get pendingTabIndex =>
-      _pendingTabIndex;
+  int? get pendingTabIndex => _pendingTabIndex;
 
   // =========================================================
   // 외부 이동 요청 종료
   // =========================================================
 
   int? consumePendingRequest() {
-    final tabIndex =
-        _pendingTabIndex;
+    final tabIndex = _pendingTabIndex;
 
     _pendingTabIndex = null;
 
