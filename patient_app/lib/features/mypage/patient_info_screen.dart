@@ -50,20 +50,15 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
       body: FutureBuilder<PatientProfile>(
         future: _profileFuture,
         builder: (context, snapshot) {
-          if (snapshot.connectionState ==
-              ConnectionState.waiting) {
-            return const Center(
-              child: CircularProgressIndicator(),
-            );
+          if (snapshot.connectionState == ConnectionState.waiting) {
+            return const Center(child: CircularProgressIndicator());
           }
 
           if (snapshot.hasError) {
             return const Center(
               child: Text(
                 '환자 정보를 불러오지 못했습니다.',
-                style: TextStyle(
-                  color: Color(0xFF8B95A1),
-                ),
+                style: TextStyle(color: Color(0xFF8B95A1)),
               ),
             );
           }
@@ -71,11 +66,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
           final profile = snapshot.data;
 
           if (profile == null) {
-            return const Center(
-              child: Text(
-                '환자 정보가 없습니다.',
-              ),
-            );
+            return const Center(child: Text('환자 정보가 없습니다.'));
           }
 
           return SingleChildScrollView(
@@ -89,27 +80,16 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
 
                 _buildInfoCard(
                   children: [
-                    _buildInfoRow(
-                      label: '환자번호',
-                      value: profile.patientCode,
-                    ),
+                    _buildInfoRow(label: '환자번호', value: profile.patientCode),
                     _divider(),
-                    _buildInfoRow(
-                      label: '이름',
-                      value: profile.name,
-                    ),
+                    _buildInfoRow(label: '이름', value: profile.name),
                     _divider(),
                     _buildInfoRow(
                       label: '생년월일',
-                      value: _formatBirthDate(
-                        profile.birthDate,
-                      ),
+                      value: _formatBirthDate(profile.birthDate),
                     ),
                     _divider(),
-                    _buildInfoRow(
-                      label: '성별',
-                      value: profile.sexLabel,
-                    ),
+                    _buildInfoRow(label: '성별', value: profile.sexLabel),
                   ],
                 ),
 
@@ -122,10 +102,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
                       value: profile.phoneNumber ?? '-',
                     ),
                     _divider(),
-                    _buildInfoRow(
-                      label: '주소',
-                      value: profile.address ?? '-',
-                    ),
+                    _buildInfoRow(label: '주소', value: profile.address ?? '-'),
                     _divider(),
                     _buildInfoRow(
                       label: '등록 병원',
@@ -140,9 +117,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
                   children: [
                     _buildInfoRow(
                       label: '앱 연결 상태',
-                      value: _getLinkStatusLabel(
-                        profile.appLinkStatus,
-                      ),
+                      value: _getLinkStatusLabel(profile.appLinkStatus),
                     ),
                   ],
                 ),
@@ -154,9 +129,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
     );
   }
 
-  Widget _buildProfileHeader(
-    PatientProfile profile,
-  ) {
+  Widget _buildProfileHeader(PatientProfile profile) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -184,8 +157,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
 
           Expanded(
             child: Column(
-              crossAxisAlignment:
-                  CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   profile.name,
@@ -213,33 +185,21 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
     );
   }
 
-  Widget _buildInfoCard({
-    required List<Widget> children,
-  }) {
+  Widget _buildInfoCard({required List<Widget> children}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 18,
-        vertical: 4,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 4),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
       ),
-      child: Column(
-        children: children,
-      ),
+      child: Column(children: children),
     );
   }
 
-  Widget _buildInfoRow({
-    required String label,
-    required String value,
-  }) {
+  Widget _buildInfoRow({required String label, required String value}) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 15,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 15),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -247,10 +207,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
             width: 90,
             child: Text(
               label,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF8B95A1),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
             ),
           ),
 
@@ -273,15 +230,10 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
   }
 
   Widget _divider() {
-    return const Divider(
-      height: 1,
-      color: Color(0xFFEEF1F5),
-    );
+    return const Divider(height: 1, color: Color(0xFFEEF1F5));
   }
 
-  String _formatBirthDate(
-    DateTime? birthDate,
-  ) {
+  String _formatBirthDate(DateTime? birthDate) {
     if (birthDate == null) {
       return '-';
     }
@@ -291,9 +243,7 @@ class _PatientInfoScreenState extends State<PatientInfoScreen> {
         '${birthDate.day.toString().padLeft(2, '0')}';
   }
 
-  String _getLinkStatusLabel(
-    String status,
-  ) {
+  String _getLinkStatusLabel(String status) {
     switch (status) {
       case 'LINKED':
         return '연결됨';

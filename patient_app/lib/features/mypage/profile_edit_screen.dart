@@ -87,9 +87,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
       if (!mounted) return;
 
-      _phoneController.text = _onlyDigits(
-        profile.phoneNumber ?? '',
-      );
+      _phoneController.text = _onlyDigits(profile.phoneNumber ?? '');
 
       _postalCodeController.text = profile.postalCode ?? '';
       _addressController.text = profile.address ?? '';
@@ -123,9 +121,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
     // 수정 중 → 취소
     if (_isEditingContact) {
-      _phoneController.text = _onlyDigits(
-        _profile?.phoneNumber ?? '',
-      );
+      _phoneController.text = _onlyDigits(_profile?.phoneNumber ?? '');
 
       _phoneFocusNode.unfocus();
 
@@ -159,8 +155,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     if (_isEditingAddress) {
       _postalCodeController.text = _profile?.postalCode ?? '';
       _addressController.text = _profile?.address ?? '';
-      _addressDetailController.text =
-          _profile?.addressDetail ?? '';
+      _addressDetailController.text = _profile?.addressDetail ?? '';
 
       _addressDetailFocusNode.unfocus();
 
@@ -237,9 +232,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       return;
     }
 
-    final phoneNumber = _onlyDigits(
-      _phoneController.text.trim(),
-    );
+    final phoneNumber = _onlyDigits(_phoneController.text.trim());
 
     final postalCode = _postalCodeController.text.trim();
     final address = _addressController.text.trim();
@@ -274,8 +267,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         _isSaving = true;
       });
 
-      final updatedProfile =
-          await _profileService.updateProfile(
+      final updatedProfile = await _profileService.updateProfile(
         phoneNumber: phoneNumber,
         postalCode: postalCode,
         address: address,
@@ -287,18 +279,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
       setState(() {
         _profile = updatedProfile;
 
-        _phoneController.text = _onlyDigits(
-          updatedProfile.phoneNumber ?? '',
-        );
+        _phoneController.text = _onlyDigits(updatedProfile.phoneNumber ?? '');
 
-        _postalCodeController.text =
-            updatedProfile.postalCode ?? '';
+        _postalCodeController.text = updatedProfile.postalCode ?? '';
 
-        _addressController.text =
-            updatedProfile.address ?? '';
+        _addressController.text = updatedProfile.address ?? '';
 
-        _addressDetailController.text =
-            updatedProfile.addressDetail ?? '';
+        _addressDetailController.text = updatedProfile.addressDetail ?? '';
 
         _isEditingContact = false;
         _isEditingAddress = false;
@@ -324,9 +311,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         content: Text(message),
         behavior: SnackBarBehavior.floating,
         margin: const EdgeInsets.all(16),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(12),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       ),
     );
   }
@@ -370,18 +355,14 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   Widget _buildBody() {
     if (_isLoading) {
       return const Center(
-        child: CircularProgressIndicator(
-          color: _primaryColor,
-        ),
+        child: CircularProgressIndicator(color: _primaryColor),
       );
     }
 
     if (_errorMessage != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 32,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -394,10 +375,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: _textSecondary,
-                ),
+                style: const TextStyle(fontSize: 14, color: _textSecondary),
               ),
               const SizedBox(height: 12),
               TextButton(
@@ -426,20 +404,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     final profile = _profile;
 
     if (profile == null) {
-      return const Center(
-        child: Text('프로필 정보가 없습니다.'),
-      );
+      return const Center(child: Text('프로필 정보가 없습니다.'));
     }
 
     return SafeArea(
       top: false,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(
-          16,
-          18,
-          16,
-          32,
-        ),
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 32),
         child: Column(
           children: [
             // 기본 정보
@@ -463,16 +434,13 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               height: 54,
               child: FilledButton(
                 onPressed:
-                    (_isSaving ||
-                        (!_isEditingContact &&
-                            !_isEditingAddress))
+                    (_isSaving || (!_isEditingContact && !_isEditingAddress))
                     ? null
                     : _saveProfile,
                 style: FilledButton.styleFrom(
                   backgroundColor: _primaryColor,
                   foregroundColor: Colors.white,
-                  disabledBackgroundColor:
-                      const Color(0xFFD8DFEA),
+                  disabledBackgroundColor: const Color(0xFFD8DFEA),
                   disabledForegroundColor: Colors.white,
                   elevation: 0,
                   shape: RoundedRectangleBorder(
@@ -525,11 +493,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.person_rounded,
-                size: 20,
-                color: _primaryColor,
-              ),
+              const Icon(Icons.person_rounded, size: 20, color: _primaryColor),
 
               const SizedBox(width: 8),
 
@@ -545,10 +509,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               const Spacer(),
 
               Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 9,
-                  vertical: 7,
-                ),
+                padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
                 decoration: BoxDecoration(
                   color: _primarySoft,
                   borderRadius: BorderRadius.circular(10),
@@ -578,11 +539,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
           const SizedBox(height: 12),
 
-          _buildInfoRow(
-            label: '이름',
-            value: profile.name,
-            alignRight: true,
-          ),
+          _buildInfoRow(label: '이름', value: profile.name, alignRight: true),
 
           _divider(),
 
@@ -602,11 +559,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
           _divider(),
 
-          _buildInfoRow(
-            label: '성별',
-            value: profile.sexLabel,
-            alignRight: true,
-          ),
+          _buildInfoRow(label: '성별', value: profile.sexLabel, alignRight: true),
 
           _divider(),
 
@@ -630,11 +583,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.phone_rounded,
-                size: 20,
-                color: _primaryColor,
-              ),
+              const Icon(Icons.phone_rounded, size: 20, color: _primaryColor),
 
               const SizedBox(width: 8),
 
@@ -661,9 +610,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           if (!_isEditingContact)
             _buildInfoRow(
               label: '휴대폰 번호',
-              value: _formatPhone(
-                _phoneController.text,
-              ),
+              value: _formatPhone(_phoneController.text),
               showChevron: true,
             )
           else
@@ -689,9 +636,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   fontWeight: FontWeight.w600,
                   color: _textPrimary,
                 ),
-                decoration: _editInputDecoration(
-                  hintText: '01012345678',
-                ),
+                decoration: _editInputDecoration(hintText: '01012345678'),
               ),
             ),
         ],
@@ -740,7 +685,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           // ─────────────────────────────
           // 주소 조회 상태
           // ─────────────────────────────
-
           if (!_isEditingAddress) ...[
             _buildPostalViewRow(),
 
@@ -764,7 +708,6 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
               showChevron: true,
             ),
           ]
-
           // ─────────────────────────────
           // 주소 수정 상태
           // ─────────────────────────────
@@ -782,9 +725,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                         fontWeight: FontWeight.w600,
                         color: _textPrimary,
                       ),
-                      decoration: _editInputDecoration(
-                        hintText: '우편번호',
-                      ),
+                      decoration: _editInputDecoration(hintText: '우편번호'),
                     ),
                   ),
 
@@ -799,15 +740,10 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                       style: OutlinedButton.styleFrom(
                         foregroundColor: _primaryColor,
                         backgroundColor: Colors.white,
-                        side: const BorderSide(
-                          color: Color(0xFF8CABFF),
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 13,
-                        ),
+                        side: const BorderSide(color: Color(0xFF8CABFF)),
+                        padding: const EdgeInsets.symmetric(horizontal: 13),
                         shape: RoundedRectangleBorder(
-                          borderRadius:
-                              BorderRadius.circular(11),
+                          borderRadius: BorderRadius.circular(11),
                         ),
                       ),
                       child: const Text(
@@ -838,9 +774,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   fontWeight: FontWeight.w600,
                   color: _textPrimary,
                 ),
-                decoration: _editInputDecoration(
-                  hintText: '주소 검색을 이용해주세요.',
-                ),
+                decoration: _editInputDecoration(hintText: '주소 검색을 이용해주세요.'),
               ),
             ),
 
@@ -857,9 +791,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                   fontWeight: FontWeight.w600,
                   color: _textPrimary,
                 ),
-                decoration: _editInputDecoration(
-                  hintText: '동, 호수 등 상세주소',
-                ),
+                decoration: _editInputDecoration(hintText: '동, 호수 등 상세주소'),
               ),
             ),
           ],
@@ -874,9 +806,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
 
   Widget _buildPostalViewRow() {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 10,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
           const SizedBox(
@@ -908,32 +838,22 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           // 수정하기 전 주소검색
           // 보이지만 클릭은 불가능
           // ─────────────────────────────
-
           SizedBox(
             height: 36,
             child: OutlinedButton(
               onPressed: null,
               style: OutlinedButton.styleFrom(
-                disabledForegroundColor:
-                    const Color(0xFFAAB3C0),
-                disabledBackgroundColor:
-                    const Color(0xFFF7F8FA),
-                side: const BorderSide(
-                  color: Color(0xFFDDE2E8),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 13,
-                ),
+                disabledForegroundColor: const Color(0xFFAAB3C0),
+                disabledBackgroundColor: const Color(0xFFF7F8FA),
+                side: const BorderSide(color: Color(0xFFDDE2E8)),
+                padding: const EdgeInsets.symmetric(horizontal: 13),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(11),
                 ),
               ),
               child: const Text(
                 '주소 검색',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
               ),
             ),
           ),
@@ -957,17 +877,12 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         onTap: _isSaving ? null : onPressed,
         borderRadius: BorderRadius.circular(11),
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 11,
-            vertical: 8,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
-                isEditing
-                    ? Icons.close_rounded
-                    : Icons.edit_rounded,
+                isEditing ? Icons.close_rounded : Icons.edit_rounded,
                 size: 14,
                 color: _primaryColor,
               ),
@@ -1000,9 +915,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     bool alignRight = false,
   }) {
     return Padding(
-      padding: const EdgeInsets.symmetric(
-        vertical: 11,
-      ),
+      padding: const EdgeInsets.symmetric(vertical: 11),
       child: Row(
         children: [
           SizedBox(
@@ -1020,8 +933,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           Expanded(
             child: Text(
               value,
-              textAlign:
-                  alignRight ? TextAlign.right : TextAlign.left,
+              textAlign: alignRight ? TextAlign.right : TextAlign.left,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -1049,10 +961,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // 수정용 한 줄
   // ─────────────────────────────────────
 
-  Widget _buildEditRow({
-    required String label,
-    required Widget child,
-  }) {
+  Widget _buildEditRow({required String label, required Widget child}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
@@ -1068,9 +977,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           ),
         ),
 
-        Expanded(
-          child: child,
-        ),
+        Expanded(child: child),
       ],
     );
   }
@@ -1079,40 +986,25 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // 입력창
   // ─────────────────────────────────────
 
-  InputDecoration _editInputDecoration({
-    required String hintText,
-  }) {
+  InputDecoration _editInputDecoration({required String hintText}) {
     return InputDecoration(
       hintText: hintText,
-      hintStyle: const TextStyle(
-        fontSize: 13,
-        color: Color(0xFFAAB3C0),
-      ),
+      hintStyle: const TextStyle(fontSize: 13, color: Color(0xFFAAB3C0)),
       filled: true,
       fillColor: _fieldBackgroundColor,
       isDense: true,
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 12,
-        vertical: 13,
-      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 13),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: _fieldBorderColor,
-        ),
+        borderSide: const BorderSide(color: _fieldBorderColor),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: _primaryColor,
-          width: 1.4,
-        ),
+        borderSide: const BorderSide(color: _primaryColor, width: 1.4),
       ),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(10),
-        borderSide: const BorderSide(
-          color: _fieldBorderColor,
-        ),
+        borderSide: const BorderSide(color: _fieldBorderColor),
       ),
     );
   }
@@ -1121,28 +1013,17 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   // 공통 카드
   // ─────────────────────────────────────
 
-  Widget _buildCard({
-    required Widget child,
-  }) {
+  Widget _buildCard({required Widget child}) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(
-        17,
-        16,
-        17,
-        14,
-      ),
+      padding: const EdgeInsets.fromLTRB(17, 16, 17, 14),
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: const Color(0xFFF0F3F7),
-        ),
+        border: Border.all(color: const Color(0xFFF0F3F7)),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6B83A5).withValues(
-              alpha: 0.055,
-            ),
+            color: const Color(0xFF6B83A5).withValues(alpha: 0.055),
             blurRadius: 18,
             offset: const Offset(0, 5),
           ),
@@ -1153,11 +1034,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   Widget _divider() {
-    return const Divider(
-      height: 1,
-      thickness: 1,
-      color: _dividerColor,
-    );
+    return const Divider(height: 1, thickness: 1, color: _dividerColor);
   }
 
   // ─────────────────────────────────────

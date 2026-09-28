@@ -239,6 +239,10 @@ PATIENT_GOOGLE_CLIENT_ID = os.environ.get(
     "PATIENT_GOOGLE_CLIENT_ID",
     "",
 )
+PATIENT_KAKAO_APP_ID = os.environ.get(
+    "PATIENT_KAKAO_APP_ID",
+    "",
+).strip()
 
 PUBLIC_DATA_SERVICE_KEY = os.environ.get("PUBLIC_DATA_SERVICE_KEY", "")
 

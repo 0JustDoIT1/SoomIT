@@ -61,12 +61,14 @@ class NotificationCard extends StatelessWidget {
               ),
             )
           else
-            ...notifications.take(3).map(
-              (notification) => _NotificationItem(
-                notification: notification,
-                onTap: () => onNotificationTap?.call(notification),
-              ),
-            ),
+            ...notifications
+                .take(3)
+                .map(
+                  (notification) => _NotificationItem(
+                    notification: notification,
+                    onTap: () => onNotificationTap?.call(notification),
+                  ),
+                ),
         ],
       ),
     );
@@ -77,10 +79,7 @@ class _NotificationItem extends StatelessWidget {
   final PatientNotification notification;
   final VoidCallback? onTap;
 
-  const _NotificationItem({
-    required this.notification,
-    this.onTap,
-  });
+  const _NotificationItem({required this.notification, this.onTap});
 
   @override
   Widget build(BuildContext context) {

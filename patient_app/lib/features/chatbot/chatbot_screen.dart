@@ -256,10 +256,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     SizedBox(width: 6),
                     Text(
                       '무엇이든 편하게 물어보세요',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Color(0xFF8A97A8),
-                      ),
+                      style: TextStyle(fontSize: 12, color: Color(0xFF8A97A8)),
                     ),
                   ],
                 ),
@@ -499,10 +496,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
                     size: 19,
                   ),
                   hintText: '궁금한 내용을 입력해주세요.',
-                  hintStyle: TextStyle(
-                    color: Color(0xFF9AA8B7),
-                    fontSize: 14,
-                  ),
+                  hintStyle: TextStyle(color: Color(0xFF9AA8B7), fontSize: 14),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
@@ -603,8 +597,5 @@ class _ChatMessage {
   final String text;
   final bool isUser;
 
-  const _ChatMessage({
-    required this.text,
-    required this.isUser,
-  });
+  const _ChatMessage({required this.text, required this.isUser});
 }

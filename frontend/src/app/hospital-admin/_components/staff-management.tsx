@@ -129,8 +129,8 @@ export function StaffManagement() {
   }
 
   return (
-    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
-      <section className="min-w-0 border-y border-slate-200 bg-white">
+    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(320px,0.75fr)]">
+      <section className="min-w-0 rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 px-5 py-4">
           <h2 className="font-bold">직원 목록</h2>
           <p className="mt-1 text-xs text-slate-500">현재 병원에 소속된 직원만 표시됩니다.</p>
@@ -182,7 +182,7 @@ export function StaffManagement() {
         )}
       </section>
 
-      <form onSubmit={submit} className="h-fit border-y border-slate-200 bg-white p-5">
+      <form onSubmit={submit} className="h-fit rounded-xl border border-slate-200 bg-white shadow-sm p-5">
         <h2 className="font-bold">직원 생성</h2>
         <div className="mt-5 space-y-4">
           <label className="block text-sm font-semibold text-slate-700">

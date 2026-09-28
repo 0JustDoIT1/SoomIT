@@ -16,7 +16,7 @@ import { getSystemAdminAccessToken } from "../_lib/system-admin-session";
 const NUMBER_FORMAT = new Intl.NumberFormat("ko-KR");
 const TABS = ["error", "audit", "deploy"] as const;
 type Tab = (typeof TABS)[number];
-const TAB_LABEL: Record<Tab, string> = { error: "Error Log", audit: "Audit Log", deploy: "Deploy" };
+const TAB_LABEL: Record<Tab, string> = { error: "분석 실패", audit: "관리 활동", deploy: "배포 버전" };
 
 function formatSeconds(value: number | null): string {
   if (value === null || value === undefined) return "측정 데이터 없음";
@@ -43,7 +43,7 @@ function Kpi({ label, value, tone = "slate" }: { label: string; value: number; t
     red: "text-red-700",
   };
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="truncate text-xs font-medium text-slate-500">{label}</p>
       <p className={`mt-1.5 text-2xl font-bold ${toneStyles[tone]}`}>{NUMBER_FORMAT.format(value)}</p>
     </div>
@@ -52,8 +52,8 @@ function Kpi({ label, value, tone = "slate" }: { label: string; value: number; t
 
 function Section({ title, description, children, right }: { title: string; description?: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900">{title}</h2>
           {description && <p className="mt-1 text-xs text-slate-500">{description}</p>}
@@ -77,7 +77,7 @@ function ServiceStatusList({ items }: { items: Array<{ name: string; status: str
           <span className="text-sm font-medium text-slate-800">{item.name}</span>
           <div className="flex items-center gap-2">
             <span className="text-xs text-slate-500">{item.detail}</span>
-            <StatusBadge status={item.status} />
+            {item.status !== "UNKNOWN" && <StatusBadge status={item.status} label={item.status === "HEALTHY" ? "정상" : item.status === "WARNING" ? "확인 필요" : item.status} />}
           </div>
         </li>
       ))}
@@ -87,17 +87,15 @@ function ServiceStatusList({ items }: { items: Array<{ name: string; status: str
 
 function failureFields(row: RecentErrorRow): FailureDetailField[] {
   return [
-    { label: "Request ID", value: row.id },
+    { label: "요청 ID", value: row.id },
     { label: "Case ID", value: row.case_id },
-    { label: "Hospital", value: row.hospital_name },
-    { label: "Service", value: row.service },
-    { label: "Status", value: "FAILED" },
-    { label: "Queued At", value: formatDateTime(row.queued_at) },
-    { label: "Started At", value: formatDateTime(row.started_at) },
-    { label: "Failed At", value: formatDateTime(row.at) },
-    { label: "Elapsed", value: formatSeconds(row.elapsed_seconds) },
-    { label: "Retry Count", value: row.retry_count },
-    { label: "Cloud Run Service", value: row.cloud_run_service },
+    { label: "병원", value: row.hospital_name },
+    { label: "분석 유형", value: row.service },
+    { label: "상태", value: "실패" },
+    { label: "요청 시각", value: formatDateTime(row.queued_at) },
+    ...(row.started_at ? [{ label: "시작 시각", value: formatDateTime(row.started_at) }] : []),
+    { label: "종료 시각", value: formatDateTime(row.at) },
+    { label: "소요 시간", value: formatSeconds(row.elapsed_seconds) },
   ];
 }
 
@@ -143,13 +141,13 @@ export default function SystemAdminDashboardPage() {
     return <StateMessage variant="error" title="플랫폼 현황을 조회할 수 없습니다." description={error} />;
   }
 
-  const { kpi, hospitals_overview, ai_queue_by_type, ai_service_status, infra_status, cloud_run_status, cloud_run_note, recent_errors, audit_log, deploy_versions, model_versions } = snapshot;
+  const { kpi, hospitals_overview, ai_queue_by_type, ai_service_status, infra_status, recent_errors, audit_log, deploy_versions, model_versions } = snapshot;
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <div>
-        <p className="text-sm font-semibold text-blue-700">Platform Control</p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-900">플랫폼 대시보드</h1>
+        <p className="text-xs font-semibold text-teal-700">Platform Control</p>
+        <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900">플랫폼 대시보드</h1>
         <p className="mt-1 text-sm text-slate-500">SoomIT 전체 병원 및 AI 서비스 운영 상태입니다.</p>
       </div>
 
@@ -163,28 +161,22 @@ export default function SystemAdminDashboardPage() {
       </div>
 
       {/* B. System Health (Core Infra + AI Services + Cloud Run 통합) */}
-      <Section title="System Health" description="핵심 인프라, AI 서비스, Cloud Run 상태를 한 화면에서 확인합니다.">
-        <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <Section title="시스템 및 AI 처리 상태" description="서버·DB 응답 상태와 오늘 AI 요청 이력을 확인합니다. AI 처리 이력은 서비스의 실시간 가동 상태와 다릅니다.">
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
           <div>
-            <p className="text-xs font-semibold text-slate-500">Core</p>
-            <div className="mt-2"><ServiceStatusList items={infra_status} /></div>
+            <p className="text-xs font-semibold text-slate-500">서버·데이터베이스</p>
+            <div className="mt-2"><ServiceStatusList items={infra_status.filter((item) => item.detail !== "연결 필요")} /></div>
           </div>
           <div>
-            <p className="text-xs font-semibold text-slate-500">AI Services</p>
-            <div className="mt-2"><ServiceStatusList items={ai_service_status} /></div>
-          </div>
-          <div>
-            <p className="text-xs font-semibold text-slate-500">Cloud Run</p>
-            <div className="mt-2">
-              {cloud_run_status.length === 0 ? <EmptyRow>{cloud_run_note}</EmptyRow> : <ServiceStatusList items={cloud_run_status} />}
-            </div>
+            <p className="text-xs font-semibold text-slate-500">AI 요청 이력</p>
+            <div className="mt-2"><ServiceStatusList items={ai_service_status.filter((item) => item.detail !== "연결 필요")} /></div>
           </div>
         </div>
       </Section>
 
       {/* C. 전체 AI Queue */}
-      <Section title="전체 AI Queue" description="AI 유형별 오늘 처리 현황입니다.">
-        {ai_queue_by_type.every((row) => row.queue_depth + row.running + row.failed === 0) ? (
+      <Section title="AI 유형별 처리 현황" description="AI 유형별 오늘 처리 현황입니다.">
+        {kpi.ai_requests_today === 0 ? (
           <EmptyRow>오늘 접수된 AI 요청이 없습니다.</EmptyRow>
         ) : (
           <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -192,10 +184,10 @@ export default function SystemAdminDashboardPage() {
               <div key={row.analysis_type} className="rounded-xl border border-slate-100 bg-slate-50 p-3">
                 <div className="flex items-center justify-between">
                   <span className="text-sm font-medium text-slate-800">{row.analysis_type_display}</span>
-                  <span className="text-xs text-slate-500">평균 {formatSeconds(row.avg_duration_seconds)}</span>
+                  {row.avg_duration_seconds !== null && <span className="text-xs text-slate-500">평균 {formatSeconds(row.avg_duration_seconds)}</span>}
                 </div>
                 <div className="mt-1 flex gap-3 text-xs text-slate-500">
-                  <span>Queue {row.queue_depth}</span>
+                  <span>대기 {row.queue_depth}</span>
                   <span>실행중 {row.running}</span>
                   <span className={row.failed > 0 ? "font-semibold text-red-600" : ""}>실패 {row.failed}</span>
                 </div>
@@ -206,7 +198,7 @@ export default function SystemAdminDashboardPage() {
       </Section>
 
       {/* D. 병원 / 모델 현황 */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section
           title="전체 병원 현황"
           description="병원별 활성 사용자·오늘 요청량·실패 건수입니다."
@@ -217,13 +209,13 @@ export default function SystemAdminDashboardPage() {
           ) : (
             <div className="max-h-80 overflow-y-auto overflow-x-auto">
               <table className="w-full min-w-[560px] text-left text-sm">
-                <thead>
+                <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-xs text-slate-500">
                     <th className="py-2 font-medium">병원명</th>
                     <th className="py-2 font-medium">활성 사용자</th>
                     <th className="py-2 font-medium">오늘 요청</th>
                     <th className="py-2 font-medium">실패</th>
-                    <th className="py-2 font-medium">상태</th>
+
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -233,7 +225,7 @@ export default function SystemAdminDashboardPage() {
                       <td className="py-2.5 text-slate-600">{row.active_users}</td>
                       <td className="py-2.5 text-slate-600">{row.recent_requests}</td>
                       <td className="py-2.5 text-slate-600">{row.failed_count}</td>
-                      <td className="py-2.5"><StatusBadge status={row.status} /></td>
+
                     </tr>
                   ))}
                 </tbody>
@@ -242,7 +234,7 @@ export default function SystemAdminDashboardPage() {
           )}
         </Section>
 
-        <Section title="모델 버전 현황" description="현재 등록된 AI 모델 버전입니다.">
+        <Section title="모델 버전 현황" description="전체 병원에서 공통으로 사용하는 등록 AI 모델 버전입니다.">
           {model_versions.length === 0 ? (
             <EmptyRow>등록된 모델 버전이 없습니다.</EmptyRow>
           ) : (
@@ -252,7 +244,6 @@ export default function SystemAdminDashboardPage() {
                   <span className="min-w-0 truncate text-slate-700">
                     <span className="font-medium text-slate-900">{row.model_name}</span> v{row.version} · {row.analysis_type_display}
                   </span>
-                  <span className="shrink-0 pl-3 text-xs text-slate-400">{row.applied_scope}</span>
                 </li>
               ))}
             </ul>
@@ -262,7 +253,7 @@ export default function SystemAdminDashboardPage() {
 
       {/* E. Error / Audit / Deploy 탭 */}
       <Section
-        title="Error / Audit / Deploy"
+        title="운영 기록"
         description="오류 로그를 클릭하면 상세 원인을 확인할 수 있습니다."
         right={
           <div className="flex shrink-0 gap-1 rounded-full border border-slate-200 bg-slate-50 p-1 text-xs">
@@ -287,12 +278,12 @@ export default function SystemAdminDashboardPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full min-w-[720px] text-left text-sm">
-                <thead>
+                <thead className="bg-slate-50">
                   <tr className="border-b border-slate-200 text-xs text-slate-500">
                     <th className="py-2 font-medium">시간</th>
                     <th className="py-2 font-medium">병원</th>
                     <th className="py-2 font-medium">서비스</th>
-                    <th className="py-2 font-medium">메시지 요약</th>
+                    <th className="py-2 font-medium">상세</th>
                     <th className="py-2 font-medium">Case ID</th>
                   </tr>
                 </thead>
@@ -302,7 +293,7 @@ export default function SystemAdminDashboardPage() {
                       <td className="py-2.5 text-slate-500">{formatDateTime(row.at)}</td>
                       <td className="py-2.5 text-slate-600">{row.hospital_name}</td>
                       <td className="py-2.5 text-slate-600">{row.service}</td>
-                      <td className="max-w-[280px] truncate py-2.5 text-slate-500" title={row.message_summary}>{row.message_summary}</td>
+                      <td className="py-2.5"><button type="button" onClick={() => setSelectedError(row)} className="rounded-lg border border-blue-200 bg-white px-3 py-1.5 text-xs font-semibold text-blue-700 hover:bg-blue-50">실패 상세 보기</button></td>
                       <td className="py-2.5 font-mono text-xs text-slate-400">{row.case_id.slice(0, 8)}</td>
                     </tr>
                   ))}
@@ -335,9 +326,9 @@ export default function SystemAdminDashboardPage() {
               <li key={row.name} className="flex items-center justify-between py-2.5">
                 <span className="font-medium text-slate-800">{row.name}</span>
                 <div className="flex items-center gap-2">
-                  <span className="font-mono text-xs text-slate-500" title={row.full_commit_sha ?? undefined}>{row.commit_sha}</span>
-                  <span className="text-xs text-slate-400">{formatDateTime(row.deployed_at)}</span>
-                  <StatusBadge status={row.status} />
+                  <span className="font-mono text-xs text-slate-500" title={row.full_commit_sha ?? undefined}>{row.full_commit_sha ? row.commit_sha : "버전 정보 미수신"}</span>
+                  {row.deployed_at && <span className="text-xs text-slate-400">{formatDateTime(row.deployed_at)}</span>}
+                  <StatusBadge status={row.status} label={row.status === "HEALTHY" ? "응답 정상" : "응답 확인 필요"} />
                 </div>
               </li>
             ))}

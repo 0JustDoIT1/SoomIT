@@ -25,37 +25,22 @@ class MedicationIntakeLog {
     required this.updatedAt,
   });
 
-  factory MedicationIntakeLog.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory MedicationIntakeLog.fromJson(Map<String, dynamic> json) {
     return MedicationIntakeLog(
       id: json['id'] as String,
-      medicationScheduleId:
-          json['medication_schedule_id'] as String,
+      medicationScheduleId: json['medication_schedule_id'] as String,
       reminderTime: json['reminder_time'] as String,
-      scheduledAt: DateTime.parse(
-        json['scheduled_at'] as String,
-      ),
+      scheduledAt: DateTime.parse(json['scheduled_at'] as String),
       takenAt: json['taken_at'] == null
           ? null
-          : DateTime.parse(
-              json['taken_at'] as String,
-            ),
+          : DateTime.parse(json['taken_at'] as String),
       status: json['status'] as String,
       statusLabel: json['status_label'] as String,
       items: (json['items'] as List<dynamic>)
-          .map(
-            (item) => MedicationItem.fromJson(
-              item as Map<String, dynamic>,
-            ),
-          )
+          .map((item) => MedicationItem.fromJson(item as Map<String, dynamic>))
           .toList(),
-      createdAt: DateTime.parse(
-        json['created_at'] as String,
-      ),
-      updatedAt: DateTime.parse(
-        json['updated_at'] as String,
-      ),
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: DateTime.parse(json['updated_at'] as String),
     );
   }
 

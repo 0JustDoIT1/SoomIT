@@ -3,13 +3,9 @@ import '../models/patient_profile.dart';
 
 class ProfileService {
   Future<PatientProfile> getProfile() async {
-    final response = await DioClient.instance.get(
-      '/api/patients/profile/',
-    );
+    final response = await DioClient.instance.get('/api/patients/profile/');
 
-    return PatientProfile.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return PatientProfile.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<PatientProfile> updateProfile({
@@ -28,8 +24,6 @@ class ProfileService {
       },
     );
 
-    return PatientProfile.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return PatientProfile.fromJson(response.data as Map<String, dynamic>);
   }
 }

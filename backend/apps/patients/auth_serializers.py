@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from .models import Patient
 
+
 class GoogleSocialLoginSerializer(serializers.Serializer):
     id_token = serializers.CharField(
         required=True,
@@ -10,7 +11,17 @@ class GoogleSocialLoginSerializer(serializers.Serializer):
         trim_whitespace=False,
         max_length=10000,
     )
-    
+
+
+class KakaoSocialLoginSerializer(serializers.Serializer):
+    access_token = serializers.CharField(
+        required=True,
+        allow_blank=False,
+        trim_whitespace=False,
+        max_length=10000,
+    )
+
+
 class PatientRegistrationSerializer(
     serializers.Serializer
 ):
@@ -20,38 +31,46 @@ class PatientRegistrationSerializer(
         trim_whitespace=False,
         max_length=10000,
     )
+
     name = serializers.CharField(
         required=True,
         allow_blank=False,
         max_length=100,
     )
+
     birth_date = serializers.DateField(
         required=True,
     )
+
     sex = serializers.ChoiceField(
         required=True,
         choices=Patient.Sex.choices,
     )
+
     phone_number = serializers.CharField(
         required=True,
         allow_blank=False,
         max_length=20,
     )
+
     postal_code = serializers.CharField(
         required=True,
         allow_blank=False,
         max_length=10,
     )
+
     address = serializers.CharField(
         required=True,
         allow_blank=False,
         max_length=255,
     )
+
     address_detail = serializers.CharField(
         required=True,
         allow_blank=False,
         max_length=255,
     )
+
     patient_code = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -103,7 +122,8 @@ class PatientRegistrationSerializer(
         return normalized_postal_code
 
     def validate_patient_code(self, value):
-        return value.strip().upper()    
+        return value.strip().upper()
+
 
 class PatientTokenRefreshSerializer(
     serializers.Serializer
@@ -114,7 +134,8 @@ class PatientTokenRefreshSerializer(
         trim_whitespace=False,
         max_length=10000,
     )
-    
+
+
 class PatientLinkSerializer(
     serializers.Serializer
 ):

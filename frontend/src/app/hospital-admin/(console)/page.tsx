@@ -41,7 +41,7 @@ function Kpi({ label, value, tone = "slate" }: { label: string; value: number; t
     red: "text-red-700",
   };
   return (
-    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="min-w-0 rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
       <p className="truncate text-xs font-medium text-slate-500">{label}</p>
       <p className={`mt-1.5 text-2xl font-bold ${toneStyles[tone]}`}>{NUMBER_FORMAT.format(value)}</p>
     </div>
@@ -50,8 +50,8 @@ function Kpi({ label, value, tone = "slate" }: { label: string; value: number; t
 
 function Section({ title, description, children, right }: { title: string; description?: string; children: React.ReactNode; right?: React.ReactNode }) {
   return (
-    <section className="min-w-0 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
+    <section className="min-w-0 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-bold text-slate-900">{title}</h2>
           {description && <p className="mt-1 text-xs text-slate-500">{description}</p>}
@@ -69,16 +69,14 @@ function EmptyRow({ children }: { children: React.ReactNode }) {
 
 function failureFields(row: FailedRequestRow): FailureDetailField[] {
   return [
-    { label: "Request ID", value: row.id },
+    { label: "요청 ID", value: row.id },
     { label: "Case", value: row.case_code },
     { label: "AI 유형", value: row.analysis_type_display },
-    { label: "Status", value: "FAILED" },
-    { label: "Queued At", value: formatDateTime(row.queued_at) },
-    { label: "Started At", value: formatDateTime(row.started_at) },
-    { label: "Failed At", value: formatDateTime(row.failed_at) },
-    { label: "Elapsed", value: formatSeconds(row.elapsed_seconds) },
-    { label: "Retry Count", value: row.retry_count },
-    { label: "Cloud Run Service", value: row.cloud_run_service },
+    { label: "상태", value: "실패" },
+    { label: "요청 시각", value: formatDateTime(row.queued_at) },
+    ...(row.started_at ? [{ label: "시작 시각", value: formatDateTime(row.started_at) }] : []),
+    { label: "종료 시각", value: formatDateTime(row.failed_at) },
+    { label: "소요 시간", value: formatSeconds(row.elapsed_seconds) },
   ];
 }
 
@@ -133,11 +131,11 @@ export default function HospitalAdminDashboardPage() {
   const { hospital, kpi, ai_queue_summary, exam_summary, failed_requests, activity_log, staff_overview, staff, integrations, performance, recent_events } = snapshot;
 
   return (
-    <div className="max-w-[1760px] space-y-5">
+    <div className="space-y-4">
       <div>
-        <p className="text-sm font-semibold text-blue-700">Hospital Operations</p>
-        <h1 className="mt-1 text-2xl font-bold text-slate-900">운영 대시보드</h1>
-        <p className="mt-1 text-sm text-slate-500">{hospital.name} ({hospital.code}) 기준 실시간 운영 현황입니다.</p>
+        <p className="text-xs font-semibold text-teal-700">Hospital Operations</p>
+        <h1 className="mt-1 text-xl font-bold tracking-tight text-slate-900">운영 대시보드</h1>
+        <p className="mt-1 text-sm text-slate-500">{hospital.name} ({hospital.code}) 기준 조회 시점의 운영 현황입니다.</p>
       </div>
 
       {/* A. 운영 요약 KPI */}
@@ -174,24 +172,24 @@ export default function HospitalAdminDashboardPage() {
         <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
           {QUEUE_STATUSES.map((key) => (
             <div key={key} className="rounded-xl border border-slate-100 bg-slate-50 p-3 text-center">
-              <StatusBadge status={key} />
+              <StatusBadge status={key} label={{ PENDING: "대기", RUNNING: "실행 중", SUCCEEDED: "성공", FAILED: "실패" }[key]} />
               <p className="mt-2 text-xl font-bold text-slate-900">{NUMBER_FORMAT.format(ai_queue_summary[key] ?? 0)}</p>
             </div>
           ))}
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
+        {performance.sample_size > 0 && <div className="mt-3 flex flex-wrap gap-4 rounded-xl border border-slate-100 bg-slate-50 px-4 py-2.5 text-xs text-slate-600">
           <span>AI 평균 처리시간 <span className="font-semibold text-slate-900">{formatSeconds(performance.ai_avg_duration_seconds)}</span></span>
           <span>평균 대기시간 <span className="font-semibold text-slate-900">{formatSeconds(performance.ai_avg_wait_seconds)}</span></span>
           <span>샘플 {performance.sample_size}건 (최근 완료 요청 기준)</span>
-        </div>
+        </div>}
 
         <div className="mt-4 overflow-x-auto">
           {filteredRequests.length === 0 ? (
             <EmptyRow>{requestFilter === "FAILED" ? "실패한 요청이 없습니다." : "최근 AI 요청이 없습니다."}</EmptyRow>
           ) : (
             <table className="w-full min-w-[760px] text-left text-sm">
-              <thead>
+              <thead className="bg-slate-50">
                 <tr className="border-b border-slate-200 text-xs text-slate-500">
                   <th className="py-2 font-medium">Case</th>
                   <th className="py-2 font-medium">환자</th>
@@ -215,7 +213,7 @@ export default function HospitalAdminDashboardPage() {
                       <td className="py-2.5 text-slate-600">{row.patient_name}</td>
                       <td className="py-2.5 text-slate-600">{row.analysis_type_display}</td>
                       <td className="py-2.5 text-slate-500">{formatDateTime(row.requested_at)}</td>
-                      <td className="py-2.5"><StatusBadge status={row.status} /></td>
+                      <td className="py-2.5"><StatusBadge status={row.status} label={{ PENDING: "대기", RUNNING: "실행 중", SUCCEEDED: "성공", FAILED: "실패" }[row.status]} /></td>
                       <td className="py-2.5 text-slate-500">{formatSeconds(row.wait_seconds)}</td>
                       <td className="py-2.5 text-slate-500">{formatSeconds(row.duration_seconds)}</td>
                     </tr>
@@ -228,7 +226,7 @@ export default function HospitalAdminDashboardPage() {
       </Section>
 
       {/* C. 검사/사용자 현황 */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section title="검사 처리 현황" description="검사 유형별 진행 중/완료 건수입니다 (오늘 접수 기준).">
           {exam_summary.length === 0 ? (
             <EmptyRow>오늘 접수된 검사가 없습니다.</EmptyRow>
@@ -269,7 +267,7 @@ export default function HospitalAdminDashboardPage() {
             </div>
           </div>
           {staff.length === 0 ? (
-            <EmptyRow>등록된 활성 사용자가 없습니다.</EmptyRow>
+            <EmptyRow>등록된 사용자가 없습니다.</EmptyRow>
           ) : (
             <ul className="mt-3 max-h-56 divide-y divide-slate-100 overflow-y-auto">
               {staff.map((row) => (
@@ -284,7 +282,7 @@ export default function HospitalAdminDashboardPage() {
       </div>
 
       {/* D. 최근 활동 / 연동 상태 */}
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Section title="최근 활동" description="병원 내 주요 이벤트 및 시스템 이벤트입니다.">
           {activity_log.length === 0 && recent_events.length === 0 ? (
             <EmptyRow>최근 활동이 없습니다.</EmptyRow>
@@ -311,14 +309,14 @@ export default function HospitalAdminDashboardPage() {
           )}
         </Section>
 
-        <Section title="연동 상태" description="병원 운영과 직접 관련된 서비스 상태입니다.">
+        <Section title="서비스 처리 이력" description="병원 내 AI 요청과 알림 발송 결과입니다.">
           <ul className="divide-y divide-slate-100">
-            {integrations.map((item) => (
+            {integrations.filter((item) => item.detail !== "연결 필요").map((item) => (
               <li key={item.name} className="flex items-center justify-between py-2.5">
-                <span className="text-sm font-medium text-slate-800">{item.name}</span>
+                <span className="text-sm font-medium text-slate-800">{item.name === "AI Service" ? "AI 분석" : item.name === "Notification" ? "알림 발송" : item.name}</span>
                 <div className="flex items-center gap-2">
                   <span className="text-xs text-slate-500">{item.detail}</span>
-                  <StatusBadge status={item.status} />
+                  {item.status !== "UNKNOWN" && <StatusBadge status={item.status} label={item.status === "HEALTHY" ? "실패 없음" : "확인 필요"} />}
                 </div>
               </li>
             ))}

@@ -22,8 +22,7 @@ class ProfileRegistrationScreen extends StatefulWidget {
       _ProfileRegistrationScreenState();
 }
 
-class _ProfileRegistrationScreenState
-    extends State<ProfileRegistrationScreen> {
+class _ProfileRegistrationScreenState extends State<ProfileRegistrationScreen> {
   static const Color _background = Color(0xFFF4F8FC);
   static const Color _surface = Colors.white;
   static const Color _primary = Color(0xFF2F80ED);
@@ -52,9 +51,7 @@ class _ProfileRegistrationScreenState
   void initState() {
     super.initState();
 
-    _nameController = TextEditingController(
-      text: widget.initialName ?? '',
-    );
+    _nameController = TextEditingController(text: widget.initialName ?? '');
   }
 
   @override
@@ -81,10 +78,7 @@ class _ProfileRegistrationScreenState
     var selectedMonth = initialDate.month;
     var selectedDay = initialDate.day;
 
-    final years = List<int>.generate(
-      now.year - 1899,
-      (index) => 1900 + index,
-    );
+    final years = List<int>.generate(now.year - 1899, (index) => 1900 + index);
 
     final selected = await showModalBottomSheet<DateTime>(
       context: context,
@@ -94,10 +88,7 @@ class _ProfileRegistrationScreenState
       builder: (sheetContext) {
         return StatefulBuilder(
           builder: (context, setModalState) {
-            final maxDay = _daysInMonth(
-              selectedYear,
-              selectedMonth,
-            );
+            final maxDay = _daysInMonth(selectedYear, selectedMonth);
 
             if (selectedDay > maxDay) {
               selectedDay = maxDay;
@@ -106,17 +97,10 @@ class _ProfileRegistrationScreenState
             return SafeArea(
               top: false,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(
-                  18,
-                  10,
-                  18,
-                  18,
-                ),
+                padding: const EdgeInsets.fromLTRB(18, 10, 18, 18),
                 decoration: const BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(26),
-                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
                 ),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -225,19 +209,18 @@ class _ProfileRegistrationScreenState
                         children: [
                           Expanded(
                             child: CupertinoPicker(
-                              scrollController:
-                                  FixedExtentScrollController(
-                                initialItem:
-                                    years.indexOf(selectedYear),
+                              scrollController: FixedExtentScrollController(
+                                initialItem: years.indexOf(selectedYear),
                               ),
                               itemExtent: 42,
                               useMagnifier: true,
                               magnification: 1.08,
                               selectionOverlay:
                                   CupertinoPickerDefaultSelectionOverlay(
-                                background:
-                                    _softBlue.withValues(alpha: 0.9),
-                              ),
+                                    background: _softBlue.withValues(
+                                      alpha: 0.9,
+                                    ),
+                                  ),
                               onSelectedItemChanged: (index) {
                                 setModalState(() {
                                   selectedYear = years[index];
@@ -274,8 +257,7 @@ class _ProfileRegistrationScreenState
                           ),
                           Expanded(
                             child: CupertinoPicker(
-                              scrollController:
-                                  FixedExtentScrollController(
+                              scrollController: FixedExtentScrollController(
                                 initialItem: selectedMonth - 1,
                               ),
                               itemExtent: 42,
@@ -283,9 +265,10 @@ class _ProfileRegistrationScreenState
                               magnification: 1.08,
                               selectionOverlay:
                                   CupertinoPickerDefaultSelectionOverlay(
-                                background:
-                                    _softBlue.withValues(alpha: 0.9),
-                              ),
+                                    background: _softBlue.withValues(
+                                      alpha: 0.9,
+                                    ),
+                                  ),
                               onSelectedItemChanged: (index) {
                                 setModalState(() {
                                   selectedMonth = index + 1;
@@ -322,8 +305,7 @@ class _ProfileRegistrationScreenState
                           ),
                           Expanded(
                             child: CupertinoPicker(
-                              scrollController:
-                                  FixedExtentScrollController(
+                              scrollController: FixedExtentScrollController(
                                 initialItem: selectedDay - 1,
                               ),
                               itemExtent: 42,
@@ -331,9 +313,10 @@ class _ProfileRegistrationScreenState
                               magnification: 1.08,
                               selectionOverlay:
                                   CupertinoPickerDefaultSelectionOverlay(
-                                background:
-                                    _softBlue.withValues(alpha: 0.9),
-                              ),
+                                    background: _softBlue.withValues(
+                                      alpha: 0.9,
+                                    ),
+                                  ),
                               onSelectedItemChanged: (index) {
                                 setModalState(() {
                                   selectedDay = index + 1;
@@ -369,19 +352,15 @@ class _ProfileRegistrationScreenState
                               },
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: _textPrimary,
-                                backgroundColor:
-                                    const Color(0xFFF2F6FA),
+                                backgroundColor: const Color(0xFFF2F6FA),
                                 side: BorderSide.none,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
                               child: const Text(
                                 '취소',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                style: TextStyle(fontWeight: FontWeight.w700),
                               ),
                             ),
                           ),
@@ -399,35 +378,27 @@ class _ProfileRegistrationScreenState
                                 );
 
                                 if (candidate.isAfter(now)) {
-                                  ScaffoldMessenger.of(context)
-                                      .showSnackBar(
+                                  ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
-                                      content: Text(
-                                        '오늘 이후 날짜는 선택할 수 없습니다.',
-                                      ),
+                                      content: Text('오늘 이후 날짜는 선택할 수 없습니다.'),
                                     ),
                                   );
                                   return;
                                 }
 
-                                Navigator.of(sheetContext).pop(
-                                  candidate,
-                                );
+                                Navigator.of(sheetContext).pop(candidate);
                               },
                               style: FilledButton.styleFrom(
                                 backgroundColor: _primary,
                                 foregroundColor: Colors.white,
                                 elevation: 0,
                                 shape: RoundedRectangleBorder(
-                                  borderRadius:
-                                      BorderRadius.circular(14),
+                                  borderRadius: BorderRadius.circular(14),
                                 ),
                               ),
                               child: const Text(
                                 '확인',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                             ),
                           ),
@@ -447,9 +418,7 @@ class _ProfileRegistrationScreenState
 
     setState(() {
       _birthDate = selected;
-      _birthDateController.text = DateFormat(
-        'yyyy.MM.dd',
-      ).format(selected);
+      _birthDateController.text = DateFormat('yyyy.MM.dd').format(selected);
     });
   }
 
@@ -464,9 +433,7 @@ class _ProfileRegistrationScreenState
         return FractionallySizedBox(
           heightFactor: 0.92,
           child: ClipRRect(
-            borderRadius: const BorderRadius.vertical(
-              top: Radius.circular(26),
-            ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(26)),
             child: KpostalView(
               appBar: AppBar(
                 automaticallyImplyLeading: false,
@@ -490,9 +457,7 @@ class _ProfileRegistrationScreenState
                     onPressed: () {
                       Navigator.of(sheetContext).pop();
                     },
-                    icon: const Icon(
-                      Icons.close_rounded,
-                    ),
+                    icon: const Icon(Icons.close_rounded),
                   ),
                   const SizedBox(width: 6),
                 ],
@@ -518,20 +483,16 @@ class _ProfileRegistrationScreenState
     if (!_formKey.currentState!.validate()) return;
 
     if (_birthDate == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('생년월일을 선택해주세요.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('생년월일을 선택해주세요.')));
       return;
     }
 
     if (_sex == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('성별을 선택해주세요.'),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('성별을 선택해주세요.')));
       return;
     }
 
@@ -549,18 +510,13 @@ class _ProfileRegistrationScreenState
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (context) {
-          return PatientLinkScreen(
-            registrationData: registrationData,
-          );
+          return PatientLinkScreen(registrationData: registrationData);
         },
       ),
     );
   }
 
-  String? _requiredValidator(
-    String? value,
-    String fieldName,
-  ) {
+  String? _requiredValidator(String? value, String fieldName) {
     if (value == null || value.trim().isEmpty) {
       return '$fieldName을 입력해주세요.';
     }
@@ -570,10 +526,7 @@ class _ProfileRegistrationScreenState
 
   Widget _fieldLabel(String label) {
     return Padding(
-      padding: const EdgeInsets.only(
-        left: 2,
-        bottom: 7,
-      ),
+      padding: const EdgeInsets.only(left: 2, bottom: 7),
       child: Align(
         alignment: Alignment.centerLeft,
         child: Text(
@@ -604,85 +557,56 @@ class _ProfileRegistrationScreenState
             color: _softBlue,
             borderRadius: BorderRadius.circular(10),
           ),
-          child: Icon(
-            icon,
-            color: _strongBlue,
-            size: 20,
-          ),
+          child: Icon(icon, color: _strongBlue, size: 20),
         ),
       ),
       suffixIcon: suffixIcon,
       filled: true,
       fillColor: Colors.white,
-      hintStyle: const TextStyle(
-        color: Color(0xFF9AA8B8),
-        fontSize: 13,
-      ),
-      contentPadding: const EdgeInsets.symmetric(
-        horizontal: 14,
-        vertical: 16,
-      ),
+      hintStyle: const TextStyle(color: Color(0xFF9AA8B8), fontSize: 13),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: _border,
-        ),
+        borderSide: const BorderSide(color: _border),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: _border,
-        ),
+        borderSide: const BorderSide(color: _border),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: _primary,
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: _primary, width: 1.5),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: Color(0xFFE45B65),
-        ),
+        borderSide: const BorderSide(color: Color(0xFFE45B65)),
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(14),
-        borderSide: const BorderSide(
-          color: Color(0xFFE45B65),
-          width: 1.5,
-        ),
+        borderSide: const BorderSide(color: Color(0xFFE45B65), width: 1.5),
       ),
     );
   }
 
-  Widget _sectionCard({
-    required List<Widget> children,
-  }) {
+  Widget _sectionCard({required List<Widget> children}) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: _border,
-        ),
+        border: Border.all(color: _border),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF6F8EAE)
-                .withValues(alpha: 0.045),
+            color: const Color(0xFF6F8EAE).withValues(alpha: 0.045),
             blurRadius: 16,
             offset: const Offset(0, 5),
           ),
         ],
       ),
-      child: Column(
-        children: children,
-      ),
+      child: Column(children: children),
     );
   }
-  
+
   Widget _buildIntro() {
     return SizedBox(
       height: 136,
@@ -692,7 +616,7 @@ class _ProfileRegistrationScreenState
           // ==========================================
           // 배경 버블 장식
           // ==========================================
-  
+
           // 오른쪽 위 큰 버블
           Positioned(
             right: 38,
@@ -702,12 +626,16 @@ class _ProfileRegistrationScreenState
               height: 86,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color.fromARGB(255, 212, 237, 255)
-                    .withValues(alpha: 0.48),
+                color: const Color.fromARGB(
+                  255,
+                  212,
+                  237,
+                  255,
+                ).withValues(alpha: 0.48),
               ),
             ),
           ),
-  
+
           // 왼쪽 아래 은은한 버블
           Positioned(
             left: -22,
@@ -717,12 +645,16 @@ class _ProfileRegistrationScreenState
               height: 76,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color.fromARGB(255, 226, 248, 255)
-                    .withValues(alpha: 0.55),
+                color: const Color.fromARGB(
+                  255,
+                  226,
+                  248,
+                  255,
+                ).withValues(alpha: 0.55),
               ),
             ),
           ),
-  
+
           // 숨이 뒤 작은 흰 버블
           Positioned(
             right: 103,
@@ -732,13 +664,16 @@ class _ProfileRegistrationScreenState
               height: 26,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: const Color.fromARGB(255, 202, 244, 255).withValues(
-                  alpha: 0.72,
-                ),
+                color: const Color.fromARGB(
+                  255,
+                  202,
+                  244,
+                  255,
+                ).withValues(alpha: 0.72),
               ),
             ),
           ),
-  
+
           // ==========================================
           // 안내 문구
           // ==========================================
@@ -754,15 +689,11 @@ class _ProfileRegistrationScreenState
                     children: [
                       TextSpan(
                         text: '서비스 이용을 위해\n',
-                        style: TextStyle(
-                          color: _textPrimary,
-                        ),
+                        style: TextStyle(color: _textPrimary),
                       ),
                       TextSpan(
                         text: '기본정보를 입력해주세요.',
-                        style: TextStyle(
-                          color: _strongBlue,
-                        ),
+                        style: TextStyle(color: _strongBlue),
                       ),
                     ],
                   ),
@@ -785,7 +716,7 @@ class _ProfileRegistrationScreenState
               ],
             ),
           ),
-  
+
           // ==========================================
           // 보안 숨이
           // ==========================================
@@ -813,24 +744,19 @@ class _ProfileRegistrationScreenState
           child: InkWell(
             onTap: () {
               setState(() {
-                _isSexDropdownOpen =
-                    !_isSexDropdownOpen;
+                _isSexDropdownOpen = !_isSexDropdownOpen;
               });
             },
             borderRadius: BorderRadius.circular(14),
             child: AnimatedContainer(
               duration: const Duration(milliseconds: 160),
               height: 56,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(14),
                 border: Border.all(
-                  color: _isSexDropdownOpen
-                      ? _primary
-                      : _border,
+                  color: _isSexDropdownOpen ? _primary : _border,
                   width: _isSexDropdownOpen ? 1.5 : 1,
                 ),
               ),
@@ -855,10 +781,10 @@ class _ProfileRegistrationScreenState
                       _sex == 'MALE'
                           ? '남성'
                           : _sex == 'FEMALE'
-                              ? '여성'
-                              : _sex == 'OTHER'
-                                  ? '기타'
-                                  : '선택해주세요.',
+                          ? '여성'
+                          : _sex == 'OTHER'
+                          ? '기타'
+                          : '선택해주세요.',
                       style: TextStyle(
                         color: _sex == null
                             ? const Color(0xFF9AA8B8)
@@ -872,8 +798,7 @@ class _ProfileRegistrationScreenState
                   ),
                   AnimatedRotation(
                     turns: _isSexDropdownOpen ? 0.5 : 0,
-                    duration:
-                        const Duration(milliseconds: 180),
+                    duration: const Duration(milliseconds: 180),
                     child: const Icon(
                       Icons.keyboard_arrow_down_rounded,
                       color: Color(0xFF718398),
@@ -894,13 +819,10 @@ class _ProfileRegistrationScreenState
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(14),
-                    border: Border.all(
-                      color: _border,
-                    ),
+                    border: Border.all(color: _border),
                     boxShadow: [
                       BoxShadow(
-                        color: const Color(0xFF6F8EAE)
-                            .withValues(alpha: 0.08),
+                        color: const Color(0xFF6F8EAE).withValues(alpha: 0.08),
                         blurRadius: 14,
                         offset: const Offset(0, 5),
                       ),
@@ -909,26 +831,11 @@ class _ProfileRegistrationScreenState
                   clipBehavior: Clip.antiAlias,
                   child: Column(
                     children: [
-                      _buildSexOption(
-                        label: '남성',
-                        value: 'MALE',
-                      ),
-                      const Divider(
-                        height: 1,
-                        color: Color(0xFFEDF2F7),
-                      ),
-                      _buildSexOption(
-                        label: '여성',
-                        value: 'FEMALE',
-                      ),
-                      const Divider(
-                        height: 1,
-                        color: Color(0xFFEDF2F7),
-                      ),
-                      _buildSexOption(
-                        label: '기타',
-                        value: 'OTHER',
-                      ),
+                      _buildSexOption(label: '남성', value: 'MALE'),
+                      const Divider(height: 1, color: Color(0xFFEDF2F7)),
+                      _buildSexOption(label: '여성', value: 'FEMALE'),
+                      const Divider(height: 1, color: Color(0xFFEDF2F7)),
+                      _buildSexOption(label: '기타', value: 'OTHER'),
                     ],
                   ),
                 )
@@ -938,16 +845,11 @@ class _ProfileRegistrationScreenState
     );
   }
 
-  Widget _buildSexOption({
-    required String label,
-    required String value,
-  }) {
+  Widget _buildSexOption({required String label, required String value}) {
     final selected = _sex == value;
 
     return Material(
-      color: selected
-          ? const Color(0xFFEAF4FF)
-          : Colors.white,
+      color: selected ? const Color(0xFFEAF4FF) : Colors.white,
       child: InkWell(
         onTap: () {
           setState(() {
@@ -957,20 +859,13 @@ class _ProfileRegistrationScreenState
         },
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
-            vertical: 15,
-          ),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
           child: Text(
             label,
             style: TextStyle(
-              color: selected
-                  ? _primary
-                  : _textPrimary,
+              color: selected ? _primary : _textPrimary,
               fontSize: 14,
-              fontWeight: selected
-                  ? FontWeight.w800
-                  : FontWeight.w600,
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
             ),
           ),
         ),
@@ -999,10 +894,7 @@ class _ProfileRegistrationScreenState
         ),
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
-          child: Divider(
-            height: 1,
-            color: Color(0xFFE8EEF4),
-          ),
+          child: Divider(height: 1, color: Color(0xFFE8EEF4)),
         ),
       ),
       body: SafeArea(
@@ -1010,12 +902,7 @@ class _ProfileRegistrationScreenState
           key: _formKey,
           child: ListView(
             physics: const ClampingScrollPhysics(),
-            padding: const EdgeInsets.fromLTRB(
-              18,
-              10,
-              18,
-              28,
-            ),
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 28),
             children: [
               _buildIntro(),
 
@@ -1030,10 +917,7 @@ class _ProfileRegistrationScreenState
                       icon: Icons.person_outline_rounded,
                     ),
                     validator: (value) {
-                      return _requiredValidator(
-                        value,
-                        '이름',
-                      );
+                      return _requiredValidator(value, '이름');
                     },
                   ),
 
@@ -1083,11 +967,7 @@ class _ProfileRegistrationScreenState
                       icon: Icons.phone_outlined,
                     ),
                     validator: (value) {
-                      final requiredError =
-                          _requiredValidator(
-                        value,
-                        '휴대전화번호',
-                      );
+                      final requiredError = _requiredValidator(value, '휴대전화번호');
 
                       if (requiredError != null) {
                         return requiredError;
@@ -1106,7 +986,6 @@ class _ProfileRegistrationScreenState
                   ),
 
                   const SizedBox(height: 7),
-
                 ],
               ),
 
@@ -1131,24 +1010,18 @@ class _ProfileRegistrationScreenState
                   _fieldLabel('우편번호'),
 
                   Row(
-                    crossAxisAlignment:
-                        CrossAxisAlignment.start,
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Expanded(
                         child: TextFormField(
-                          controller:
-                              _postalCodeController,
+                          controller: _postalCodeController,
                           readOnly: true,
                           decoration: _decoration(
                             hint: '우편번호',
-                            icon:
-                                Icons.location_on_outlined,
+                            icon: Icons.location_on_outlined,
                           ),
                           validator: (value) {
-                            return _requiredValidator(
-                              value,
-                              '우편번호',
-                            );
+                            return _requiredValidator(value, '우편번호');
                           },
                         ),
                       ),
@@ -1162,24 +1035,14 @@ class _ProfileRegistrationScreenState
                           onPressed: _searchAddress,
                           style: OutlinedButton.styleFrom(
                             foregroundColor: _primary,
-                            backgroundColor:
-                                const Color(0xFFEAF4FF),
-                            side: const BorderSide(
-                              color: Color(0xFFD4E6FA),
-                            ),
-                            padding:
-                                const EdgeInsets.symmetric(
-                              horizontal: 10,
-                            ),
+                            backgroundColor: const Color(0xFFEAF4FF),
+                            side: const BorderSide(color: Color(0xFFD4E6FA)),
+                            padding: const EdgeInsets.symmetric(horizontal: 10),
                             shape: RoundedRectangleBorder(
-                              borderRadius:
-                                  BorderRadius.circular(14),
+                              borderRadius: BorderRadius.circular(14),
                             ),
                           ),
-                          icon: const Icon(
-                            Icons.search_rounded,
-                            size: 18,
-                          ),
+                          icon: const Icon(Icons.search_rounded, size: 18),
                           label: const Text(
                             '주소 검색',
                             style: TextStyle(
@@ -1203,10 +1066,7 @@ class _ProfileRegistrationScreenState
                       icon: Icons.home_outlined,
                     ),
                     validator: (value) {
-                      return _requiredValidator(
-                        value,
-                        '기본주소',
-                      );
+                      return _requiredValidator(value, '기본주소');
                     },
                   ),
 
@@ -1222,10 +1082,7 @@ class _ProfileRegistrationScreenState
                       icon: Icons.notes_rounded,
                     ),
                     validator: (value) {
-                      return _requiredValidator(
-                        value,
-                        '상세주소',
-                      );
+                      return _requiredValidator(value, '상세주소');
                     },
                   ),
                 ],
@@ -1242,16 +1099,12 @@ class _ProfileRegistrationScreenState
                     foregroundColor: Colors.white,
                     elevation: 0,
                     shape: RoundedRectangleBorder(
-                      borderRadius:
-                          BorderRadius.circular(14),
+                      borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text(
                     '다음',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                    ),
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
                   ),
                 ),
               ),

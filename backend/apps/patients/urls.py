@@ -4,6 +4,7 @@ from django.urls import path
 from .air_quality_views import AirQualityAPIView
 from .auth_views import (
     PatientGoogleLoginAPIView,
+    PatientKakaoLoginAPIView,
     PatientLinkAPIView,
     PatientRegistrationAPIView,
     PatientTokenRefreshAPIView,
@@ -91,6 +92,11 @@ urlpatterns = [
         "auth/google/",
         PatientGoogleLoginAPIView.as_view(),
         name="patient-google-login",
+    ),
+    path(
+        "auth/kakao/",
+        PatientKakaoLoginAPIView.as_view(),
+        name="patient-kakao-login",
     ),
     path(
         "auth/register/",

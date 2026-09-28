@@ -29,7 +29,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
   static const Color _textPrimary = Color(0xFF191F28);
   static const Color _textSecondary = Color(0xFF6B7684);
   static const Color _border = Color(0xFFE2E8F0);
-  static const Color _surface = Color(0xFFF8FBFF);
+  static const Color _surface = Colors.white;
 
   List<AppointmentDoctor> _doctors = [];
   AppointmentDoctor? _selectedDoctor;
@@ -847,7 +847,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 13),
 
               decoration: BoxDecoration(
-                color: const Color(0xFFF7FAFF),
+                color: Colors.white,
 
                 borderRadius: BorderRadius.circular(14),
 
@@ -1169,19 +1169,19 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
     final selectedDate = _selectedDate;
 
     final slots = selectedDate == null
-        ? <AppointmentAvailabilitySlot>[]
-        : _availability?.findDate(selectedDate)?.allSlots ?? [];
+        ? <DateTime>[]
+        : _availability?.findDate(selectedDate)?.slots ?? [];
 
     // 오전
     final morningSlots = slots.where((slot) {
-      final koreaTime = slot.startAt.toUtc().add(const Duration(hours: 9));
+      final koreaTime = slot.toUtc().add(const Duration(hours: 9));
 
       return koreaTime.hour < 12;
     }).toList();
 
     // 오후
     final afternoonSlots = slots.where((slot) {
-      final koreaTime = slot.startAt.toUtc().add(const Duration(hours: 9));
+      final koreaTime = slot.toUtc().add(const Duration(hours: 9));
 
       return koreaTime.hour >= 12;
     }).toList();
@@ -1196,6 +1196,11 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
 
         if (_loadingAvailability)
           const SizedBox.shrink()
+        else if (!_hasAvailableDates())
+          const Text(
+            '예약 가능한 일정이 없습니다.',
+            style: TextStyle(color: Color(0xFF8B95A1)),
+          )
         else if (selectedDate == null)
           _buildEmptyTimeMessage()
         else if (slots.isEmpty)
@@ -1259,7 +1264,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
   /// 마지막 줄 1~3개여도
   /// 가운데 정렬되지 않고
   /// 왼쪽부터 그대로 표시됨.
-  Widget _buildTimeGrid(List<AppointmentAvailabilitySlot> slots) {
+  Widget _buildTimeGrid(List<DateTime> slots) {
     return GridView.builder(
       shrinkWrap: true,
 
@@ -1281,8 +1286,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
         final slot = slots[index];
 
         final selected =
-            _selectedTime != null &&
-            _selectedTime!.isAtSameMomentAs(slot.startAt);
+            _selectedTime != null && _selectedTime!.isAtSameMomentAs(slot);
 
         return _buildTimeButton(slot: slot, selected: selected);
       },
@@ -1316,20 +1320,13 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
     );
   }
 
-  Widget _buildTimeButton({
-    required AppointmentAvailabilitySlot slot,
-    required bool selected,
-  }) {
-    final available = slot.isAvailable;
-
+  Widget _buildTimeButton({required DateTime slot, required bool selected}) {
     return InkWell(
-      onTap: available
-          ? () {
-              setState(() {
-                _selectedTime = slot.startAt;
-              });
-            }
-          : null,
+      onTap: () {
+        setState(() {
+          _selectedTime = slot;
+        });
+      },
 
       borderRadius: BorderRadius.circular(10),
 
@@ -1339,50 +1336,27 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
         alignment: Alignment.center,
 
         decoration: BoxDecoration(
-          color: selected
-              ? _primaryLight
-              : available
-              ? const Color(0xFFFBFAFF)
-              : const Color(0xFFF1F3F5),
+          color: selected ? _primaryLight : Colors.white,
 
           borderRadius: BorderRadius.circular(10),
 
           border: Border.all(
-            color: selected
-                ? _primary
-                : available
-                ? const Color(0xFFDCD9E7)
-                : const Color(0xFFE5E7EB),
+            color: selected ? _primary : const Color(0xFFDCD9E7),
 
             width: selected ? 1.4 : 1,
           ),
         ),
 
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              _formatTime(slot.startAt),
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                color: selected
-                    ? _primaryDark
-                    : available
-                    ? const Color(0xFF4E5968)
-                    : const Color(0xFF9CA3AF),
-              ),
-            ),
-            Text(
-              available
-                  ? '${slot.bookedCount}/${slot.capacity} 예약 · ${slot.remainingCount}자리'
-                  : '마감',
-              style: const TextStyle(
-                fontSize: 8,
-                color: Color(0xFF9CA3AF),
-              ),
-            ),
-          ],
+        child: Text(
+          _formatTime(slot),
+
+          style: TextStyle(
+            fontSize: 13,
+
+            fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+
+            color: selected ? _primaryDark : const Color(0xFF4E5968),
+          ),
         ),
       ),
     );
@@ -1487,10 +1461,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
     );
   }
 
-  Widget _buildSelectionGuide({
-    required IconData icon,
-    required String text,
-  }) {
+  Widget _buildSelectionGuide({required IconData icon, required String text}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
@@ -1506,10 +1477,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF8B95A1),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
             ),
           ),
         ],

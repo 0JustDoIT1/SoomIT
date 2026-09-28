@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../../../core/network/dio_client.dart';
 import '../models/air_quality_guidance.dart';
@@ -27,22 +28,35 @@ class AirQualityService {
         queryParameters: {'latitude': latitude, 'longitude': longitude},
         options: Options(receiveTimeout: const Duration(seconds: 30)),
       );
+
       final data = response.data;
+
+      // 대기질 API 실제 응답 확인용
+      debugPrint('대기질 API 응답: $data');
+
       if (data == null) {
         throw const AirQualityException('대기질 응답이 비어 있습니다.');
       }
+
       return AirQualityGuidance.fromJson(data);
     } on AirQualityException {
       rethrow;
     } on DioException catch (error) {
-      final detail = error.response?.data is Map
-          ? (error.response?.data as Map)['detail']
-          : null;
+      final responseData = error.response?.data;
+
+      final detail = responseData is Map ? responseData['detail'] : null;
+
       throw AirQualityException(
         detail is String && detail.isNotEmpty ? detail : '현재 대기질을 불러오지 못했습니다.',
       );
-    } on TypeError {
+    } on TypeError catch (error) {
+      debugPrint('대기질 응답 TypeError: $error');
+
       throw const AirQualityException('대기질 응답을 해석하지 못했습니다.');
+    } catch (error) {
+      debugPrint('대기질 조회 오류: $error');
+
+      throw const AirQualityException('현재 대기질을 불러오지 못했습니다.');
     }
   }
 }

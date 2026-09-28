@@ -11,9 +11,7 @@ class NotificationService {
 
     return data
         .map(
-          (json) => PatientNotification.fromJson(
-            json as Map<String, dynamic>,
-          ),
+          (json) => PatientNotification.fromJson(json as Map<String, dynamic>),
         )
         .toList();
   }
@@ -23,8 +21,6 @@ class NotificationService {
       '/api/patients/notifications/$id/read/',
     );
 
-    return PatientNotification.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return PatientNotification.fromJson(response.data as Map<String, dynamic>);
   }
 }

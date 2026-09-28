@@ -15,8 +15,7 @@ class SymptomStatisticsTab extends StatefulWidget {
   });
 
   @override
-  State<SymptomStatisticsTab> createState() =>
-      _SymptomStatisticsTabState();
+  State<SymptomStatisticsTab> createState() => _SymptomStatisticsTabState();
 }
 
 class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
@@ -41,11 +40,36 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
   static const List<_SymptomUi> _items = [
     _SymptomUi('기침', Icons.air_rounded, Color(0xFF20BFA9), Color(0xFFE4FAF5)),
     _SymptomUi('호흡곤란', Icons.air_rounded, Color(0xFF4A8FF7), Color(0xFFEAF3FF)),
-    _SymptomUi('흉통', Icons.favorite_outline_rounded, Color(0xFFF0646D), Color(0xFFFFEBED)),
-    _SymptomUi('가래', Icons.water_drop_outlined, Color(0xFF27B88E), Color(0xFFE7F9F2)),
-    _SymptomUi('객혈', Icons.bloodtype_outlined, Color(0xFFF25D61), Color(0xFFFFECEC)),
-    _SymptomUi('피로', Icons.self_improvement_rounded, Color(0xFFF0A53A), Color(0xFFFFF4E2)),
-    _SymptomUi('발열', Icons.device_thermostat_rounded, Color(0xFFFF7D4D), Color(0xFFFFEFE9)),
+    _SymptomUi(
+      '흉통',
+      Icons.favorite_outline_rounded,
+      Color(0xFFF0646D),
+      Color(0xFFFFEBED),
+    ),
+    _SymptomUi(
+      '가래',
+      Icons.water_drop_outlined,
+      Color(0xFF27B88E),
+      Color(0xFFE7F9F2),
+    ),
+    _SymptomUi(
+      '객혈',
+      Icons.bloodtype_outlined,
+      Color(0xFFF25D61),
+      Color(0xFFFFECEC),
+    ),
+    _SymptomUi(
+      '피로',
+      Icons.self_improvement_rounded,
+      Color(0xFFF0A53A),
+      Color(0xFFFFF4E2),
+    ),
+    _SymptomUi(
+      '발열',
+      Icons.device_thermostat_rounded,
+      Color(0xFFFF7D4D),
+      Color(0xFFFFEFE9),
+    ),
   ];
 
   _Period _period = _Period.sevenDays;
@@ -58,10 +82,11 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
         .toList();
     final filtered = _filterByPeriod(scoredAll);
 
-    final selectedRecords = filtered
-        .where((record) => record.symptomType == _selectedSymptom)
-        .toList()
-      ..sort((a, b) => a.loggedAt.compareTo(b.loggedAt));
+    final selectedRecords =
+        filtered
+            .where((record) => record.symptomType == _selectedSymptom)
+            .toList()
+          ..sort((a, b) => a.loggedAt.compareTo(b.loggedAt));
 
     final trendRecords = _latestPerDate(selectedRecords);
 
@@ -193,7 +218,9 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  current.isEmpty ? '${_period.label} 기록이 아직 없어요' : '${_period.label} 기록 요약',
+                  current.isEmpty
+                      ? '${_period.label} 기록이 아직 없어요'
+                      : '${_period.label} 기록 요약',
                   style: const TextStyle(
                     color: _text,
                     fontSize: 15,
@@ -321,20 +348,13 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
           ),
         ),
         const SizedBox(height: 3),
-        Text(
-          subtitle,
-          style: const TextStyle(color: _subText, fontSize: 11.5),
-        ),
+        Text(subtitle, style: const TextStyle(color: _subText, fontSize: 11.5)),
       ],
     );
   }
 
-  bool _isHighAlertSymptom(
-    String symptomType,
-  ) {
-    return symptomType == '객혈' ||
-        symptomType == '호흡곤란' ||
-        symptomType == '흉통';
+  bool _isHighAlertSymptom(String symptomType) {
+    return symptomType == '객혈' || symptomType == '호흡곤란' || symptomType == '흉통';
   }
 
   Color _averageScoreColor(
@@ -349,50 +369,25 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
     if (_isHighAlertSymptom(symptomType)) {
       if (average >= 5) {
         final t = ((average - 5) / 5).clamp(0.0, 1.0).toDouble();
-        return Color.lerp(
-              _riskRed,
-              _riskDeepRed,
-              t,
-            ) ??
-            _riskRed;
+        return Color.lerp(_riskRed, _riskDeepRed, t) ?? _riskRed;
       }
 
       final t = ((average - 1) / 3).clamp(0.0, 1.0).toDouble();
-      return Color.lerp(
-            _riskYellow,
-            _riskOrange,
-            t,
-          ) ??
-          _riskYellow;
+      return Color.lerp(_riskYellow, _riskOrange, t) ?? _riskYellow;
     }
 
     if (average >= 8) {
       final t = ((average - 8) / 2).clamp(0.0, 1.0).toDouble();
-      return Color.lerp(
-            _riskRed,
-            _riskDeepRed,
-            t,
-          ) ??
-          _riskRed;
+      return Color.lerp(_riskRed, _riskDeepRed, t) ?? _riskRed;
     }
 
     if (average >= 4) {
       final t = ((average - 4) / 3).clamp(0.0, 1.0).toDouble();
-      return Color.lerp(
-            _riskYellow,
-            _riskOrange,
-            t,
-          ) ??
-          _riskYellow;
+      return Color.lerp(_riskYellow, _riskOrange, t) ?? _riskYellow;
     }
 
     final t = ((average - 1) / 2).clamp(0.0, 1.0).toDouble();
-    return Color.lerp(
-          _riskGreen,
-          _riskLightGreen,
-          t,
-        ) ??
-        _riskGreen;
+    return Color.lerp(_riskGreen, _riskLightGreen, t) ?? _riskGreen;
   }
 
   List<Color> _averageGradientColors(
@@ -407,57 +402,32 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
     );
 
     if (!hasRecords) {
-      return const [
-        _riskNeutral,
-        _riskNeutral,
-      ];
+      return const [_riskNeutral, _riskNeutral];
     }
 
     if (_isHighAlertSymptom(symptomType)) {
       if (average >= 5) {
-        return [
-          _riskYellow,
-          _riskOrange,
-          currentColor,
-        ];
+        return [_riskYellow, _riskOrange, currentColor];
       }
 
-      return [
-        _riskYellow,
-        currentColor,
-      ];
+      return [_riskYellow, currentColor];
     }
 
     if (average >= 8) {
-      return [
-        _riskGreen,
-        _riskYellow,
-        _riskOrange,
-        currentColor,
-      ];
+      return [_riskGreen, _riskYellow, _riskOrange, currentColor];
     }
 
     if (average >= 4) {
-      return [
-        _riskGreen,
-        _riskYellow,
-        currentColor,
-      ];
+      return [_riskGreen, _riskYellow, currentColor];
     }
 
-    return [
-      _riskGreen,
-      currentColor,
-    ];
+    return [_riskGreen, currentColor];
   }
 
   Widget _buildAverageCard(List<SymptomLog> filtered) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 16,
-        vertical: 7,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(21),
@@ -470,24 +440,15 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
               _items[i],
               _average(
                 filtered
-                    .where(
-                      (record) =>
-                          record.symptomType ==
-                          _items[i].name,
-                    )
+                    .where((record) => record.symptomType == _items[i].name)
                     .toList(),
               ),
               hasRecords: filtered.any(
-                (record) =>
-                    record.symptomType ==
-                    _items[i].name,
+                (record) => record.symptomType == _items[i].name,
               ),
             ),
             if (i != _items.length - 1)
-              const Divider(
-                height: 1,
-                color: Color(0xFFF1F4F7),
-              ),
+              const Divider(height: 1, color: Color(0xFFF1F4F7)),
           ],
         ],
       ),
@@ -513,13 +474,9 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
 
     return InkWell(
       borderRadius: BorderRadius.circular(12),
-      onTap: () => setState(
-        () => _selectedSymptom = item.name,
-      ),
+      onTap: () => setState(() => _selectedSymptom = item.name),
       child: Padding(
-        padding: const EdgeInsets.symmetric(
-          vertical: 9,
-        ),
+        padding: const EdgeInsets.symmetric(vertical: 9),
         child: Row(
           children: [
             Container(
@@ -529,11 +486,7 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
                 color: item.background,
                 shape: BoxShape.circle,
               ),
-              child: Icon(
-                item.icon,
-                color: item.color,
-                size: 17,
-              ),
+              child: Icon(item.icon, color: item.color, size: 17),
             ),
             const SizedBox(width: 10),
             SizedBox(
@@ -550,11 +503,8 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final width = constraints.maxWidth *
-                      (average / 10).clamp(
-                        0.0,
-                        1.0,
-                      );
+                  final width =
+                      constraints.maxWidth * (average / 10).clamp(0.0, 1.0);
 
                   return Container(
                     height: 8,
@@ -564,9 +514,7 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
                     ),
                     alignment: Alignment.centerLeft,
                     child: AnimatedContainer(
-                      duration: const Duration(
-                        milliseconds: 250,
-                      ),
+                      duration: const Duration(milliseconds: 250),
                       width: width,
                       height: 8,
                       decoration: BoxDecoration(
@@ -577,11 +525,8 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
                                 colors: gradientColors,
                               )
                             : null,
-                        color: hasRecords
-                            ? null
-                            : const Color(0xFFEDF2F7),
-                        borderRadius:
-                            BorderRadius.circular(99),
+                        color: hasRecords ? null : const Color(0xFFEDF2F7),
+                        borderRadius: BorderRadius.circular(99),
                       ),
                     ),
                   );
@@ -590,28 +535,17 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
             ),
             const SizedBox(width: 10),
             AnimatedContainer(
-              duration: const Duration(
-                milliseconds: 200,
-              ),
-              constraints: const BoxConstraints(
-                minWidth: 38,
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 7,
-                vertical: 5,
-              ),
+              duration: const Duration(milliseconds: 200),
+              constraints: const BoxConstraints(minWidth: 38),
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
               decoration: BoxDecoration(
                 color: hasRecords
-                    ? averageColor.withValues(
-                        alpha: 0.12,
-                      )
+                    ? averageColor.withValues(alpha: 0.12)
                     : const Color(0xFFF3F7FB),
                 borderRadius: BorderRadius.circular(99),
                 border: Border.all(
                   color: hasRecords
-                      ? averageColor.withValues(
-                          alpha: 0.24,
-                        )
+                      ? averageColor.withValues(alpha: 0.24)
                       : const Color(0xFFE5EDF5),
                 ),
               ),
@@ -619,9 +553,7 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
                 average.toStringAsFixed(1),
                 textAlign: TextAlign.center,
                 style: TextStyle(
-                  color: hasRecords
-                      ? averageColor
-                      : _subText,
+                  color: hasRecords ? averageColor : _subText,
                   fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                 ),
@@ -666,10 +598,7 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(13),
-                borderSide: const BorderSide(
-                  color: _primary,
-                  width: 1.4,
-                ),
+                borderSide: const BorderSide(color: _primary, width: 1.4),
               ),
             ),
             items: _items
@@ -714,10 +643,7 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
             const SizedBox(height: 11),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(
-                horizontal: 13,
-                vertical: 11,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 11),
               decoration: BoxDecoration(
                 color: const Color(0xFFEFF9F5),
                 borderRadius: BorderRadius.circular(14),
@@ -769,12 +695,20 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
       ),
       child: Row(
         children: [
-          const Icon(Icons.warning_amber_rounded, color: Color(0xFFE85D67), size: 20),
+          const Icon(
+            Icons.warning_amber_rounded,
+            color: Color(0xFFE85D67),
+            size: 20,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               '선택한 기간에 위험 수준으로 기록된 증상이 $count건 있어요. 해당 기록을 확인해주세요.',
-              style: const TextStyle(color: Color(0xFFB34D56), fontSize: 11.5, height: 1.45),
+              style: const TextStyle(
+                color: Color(0xFFB34D56),
+                fontSize: 11.5,
+                height: 1.45,
+              ),
             ),
           ),
         ],
@@ -833,17 +767,38 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
                             Container(
                               width: 35,
                               height: 35,
-                              decoration: const BoxDecoration(color: Color(0xFFF0EFFF), shape: BoxShape.circle),
-                              child: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF8B8BF5), size: 17),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF0EFFF),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                color: Color(0xFF8B8BF5),
+                                size: 17,
+                              ),
                             ),
                             const SizedBox(width: 11),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  Text(_longDate(records[i].loggedAt), style: const TextStyle(color: _text, fontSize: 11.5, fontWeight: FontWeight.w800)),
+                                  Text(
+                                    _longDate(records[i].loggedAt),
+                                    style: const TextStyle(
+                                      color: _text,
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
                                   const SizedBox(height: 5),
-                                  Text(records[i].symptomDescription?.trim() ?? '', style: const TextStyle(color: _subText, fontSize: 12, height: 1.45)),
+                                  Text(
+                                    records[i].symptomDescription?.trim() ?? '',
+                                    style: const TextStyle(
+                                      color: _subText,
+                                      fontSize: 12,
+                                      height: 1.45,
+                                    ),
+                                  ),
                                 ],
                               ),
                             ),
@@ -909,7 +864,9 @@ class _SymptomStatisticsTabState extends State<SymptomStatisticsTab> {
     final days = _period.days;
     if (days == null) return [...records];
     final start = _today().subtract(Duration(days: days - 1));
-    return records.where((record) => !_recordDate(record).isBefore(start)).toList();
+    return records
+        .where((record) => !_recordDate(record).isBefore(start))
+        .toList();
   }
 
   List<SymptomLog> _latestPerDate(List<SymptomLog> records) {
@@ -1021,18 +978,35 @@ class _MetricCard extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(label, style: const TextStyle(color: Color(0xFF748198), fontSize: 11, fontWeight: FontWeight.w600)),
+                child: Text(
+                  label,
+                  style: const TextStyle(
+                    color: Color(0xFF748198),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
               ),
               Container(
                 width: 30,
                 height: 30,
-                decoration: BoxDecoration(color: iconBackground, shape: BoxShape.circle),
+                decoration: BoxDecoration(
+                  color: iconBackground,
+                  shape: BoxShape.circle,
+                ),
                 child: Icon(icon, color: iconColor, size: 16),
               ),
             ],
           ),
           const Spacer(),
-          Text(value, style: TextStyle(color: valueColor ?? const Color(0xFF172033), fontSize: 20, fontWeight: FontWeight.w800)),
+          Text(
+            value,
+            style: TextStyle(
+              color: valueColor ?? const Color(0xFF172033),
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
         ],
       ),
     );
@@ -1062,13 +1036,34 @@ class _RecordRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(date, style: const TextStyle(color: Color(0xFF172033), fontSize: 12, fontWeight: FontWeight.w700)),
+                Text(
+                  date,
+                  style: const TextStyle(
+                    color: Color(0xFF172033),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
                 const SizedBox(height: 4),
                 Row(
                   children: [
-                    Container(width: 7, height: 7, decoration: BoxDecoration(color: statusColor, shape: BoxShape.circle)),
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: statusColor,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
                     const SizedBox(width: 6),
-                    Text(status, style: TextStyle(color: statusColor, fontSize: 10.5, fontWeight: FontWeight.w700)),
+                    Text(
+                      status,
+                      style: TextStyle(
+                        color: statusColor,
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -1076,8 +1071,18 @@ class _RecordRow extends StatelessWidget {
           ),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-            decoration: BoxDecoration(color: const Color(0xFFF3F7FB), borderRadius: BorderRadius.circular(99)),
-            child: Text(value, style: const TextStyle(color: Color(0xFF172033), fontSize: 12, fontWeight: FontWeight.w800)),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF3F7FB),
+              borderRadius: BorderRadius.circular(99),
+            ),
+            child: Text(
+              value,
+              style: const TextStyle(
+                color: Color(0xFF172033),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
           ),
         ],
       ),
@@ -1094,7 +1099,10 @@ class _EmptyRow extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24),
       child: Center(
-        child: Text(text, style: const TextStyle(color: Color(0xFF748198), fontSize: 12)),
+        child: Text(
+          text,
+          style: const TextStyle(color: Color(0xFF748198), fontSize: 12),
+        ),
       ),
     );
   }

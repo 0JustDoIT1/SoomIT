@@ -4,10 +4,7 @@ import '../../../shared/base_card.dart';
 import '../../exam_result/models/exam_schedule.dart';
 
 class ExamCard extends StatelessWidget {
-  const ExamCard({
-    super.key,
-    required this.schedule,
-  });
+  const ExamCard({super.key, required this.schedule});
 
   final ExamSchedule schedule;
 
@@ -92,8 +89,8 @@ class ExamCard extends StatelessWidget {
     final hour = local.hour == 0
         ? 12
         : local.hour > 12
-            ? local.hour - 12
-            : local.hour;
+        ? local.hour - 12
+        : local.hour;
 
     final minute = local.minute.toString().padLeft(2, '0');
 

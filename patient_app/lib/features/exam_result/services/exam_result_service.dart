@@ -5,46 +5,31 @@ import '../models/exam_result.dart';
 
 class ExamResultService {
   Future<List<ExamResult>> getExamResults() async {
-    final response = await DioClient.instance.get(
-      '/api/clinical/results/',
-    );
+    final response = await DioClient.instance.get('/api/clinical/results/');
 
     // 임시 확인용
     debugPrint('================ CLINICAL RESULTS ================');
     debugPrint(response.data.toString());
     debugPrint('==================================================');
 
-    final List<dynamic> data =
-        response.data as List<dynamic>;
+    final List<dynamic> data = response.data as List<dynamic>;
 
     final rawResults = data
-        .map(
-          (json) => ExamResult.fromJson(
-            json as Map<String, dynamic>,
-          ),
-        )
+        .map((json) => ExamResult.fromJson(json as Map<String, dynamic>))
         .toList();
 
     return _mergeResults(rawResults);
   }
 
-  List<ExamResult> _mergeResults(
-    List<ExamResult> results,
-  ) {
+  List<ExamResult> _mergeResults(List<ExamResult> results) {
     final List<ExamResult> output = [];
 
     final pathologyResults = results
-        .where(
-          (result) => result.isPathologyGroup,
-        )
+        .where((result) => result.isPathologyGroup)
         .toList();
 
     if (pathologyResults.isNotEmpty) {
-      output.add(
-        _mergePathologyGroup(
-          pathologyResults,
-        ),
-      );
+      output.add(_mergePathologyGroup(pathologyResults));
     }
 
     for (final result in results) {
@@ -52,26 +37,16 @@ class ExamResultService {
         continue;
       }
 
-      output.add(
-        _normalizeResult(result),
-      );
+      output.add(_normalizeResult(result));
     }
 
-    output.sort(
-      (a, b) =>
-          b.resultDate.compareTo(a.resultDate),
-    );
+    output.sort((a, b) => b.resultDate.compareTo(a.resultDate));
 
     return output;
   }
 
-  ExamResult _mergePathologyGroup(
-    List<ExamResult> items,
-  ) {
-    items.sort(
-      (a, b) =>
-          b.resultDate.compareTo(a.resultDate),
-    );
+  ExamResult _mergePathologyGroup(List<ExamResult> items) {
+    items.sort((a, b) => b.resultDate.compareTo(a.resultDate));
 
     final latest = items.first;
 
@@ -94,8 +69,7 @@ class ExamResultService {
       resultStatus: latest.resultStatus,
       resultStatusLabel: latest.resultStatusLabel,
       resultDate: latest.resultDate,
-      resultSummary:
-          '조직검사, 유전자검사 및 PD-L1 결과가 확인되었습니다.',
+      resultSummary: '조직검사, 유전자검사 및 PD-L1 결과가 확인되었습니다.',
       resultSections: sections,
       hospitalName: latest.hospitalName,
       departmentName: latest.departmentName,
@@ -103,9 +77,7 @@ class ExamResultService {
     );
   }
 
-  ExamResult _normalizeResult(
-    ExamResult result,
-  ) {
+  ExamResult _normalizeResult(ExamResult result) {
     String examName = result.examName;
 
     switch (result.examType) {
@@ -123,10 +95,7 @@ class ExamResultService {
     }
 
     final visibleSections = result.resultSections
-        .where(
-          (section) =>
-              !_isExcludedSection(section),
-        )
+        .where((section) => !_isExcludedSection(section))
         .toList();
 
     return ExamResult(
@@ -144,12 +113,8 @@ class ExamResultService {
     );
   }
 
-  bool _isExcludedSection(
-    ExamResultSection section,
-  ) {
-    final value =
-        '${section.type} ${section.label}'
-            .toUpperCase();
+  bool _isExcludedSection(ExamResultSection section) {
+    final value = '${section.type} ${section.label}'.toUpperCase();
 
     return value.contains('DOCTOR_OPINION') ||
         value.contains('MEDICAL_OPINION') ||

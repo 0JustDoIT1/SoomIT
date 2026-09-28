@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 
 import '../../shared/app_shell.dart';
-import '../test_features/test_features_screen.dart';
+
 import 'services/patient_auth_service.dart';
+
 import 'terms_agreement_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -16,19 +17,25 @@ class _LoginScreenState extends State<LoginScreen> {
   final PatientAuthService _authService = PatientAuthService();
 
   static const Color _textPrimary = Color(0xFF172033);
+
   static const Color _textSecondary = Color(0xFF748198);
+
   static const Color _divider = Color(0xFFE6EBF1);
 
   bool _isGoogleSigningIn = false;
 
-  void _openTestFeatures() {
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute<void>(builder: (_) => const TestFeaturesScreen()));
-  }
+  bool _isKakaoSigningIn = false;
+
+  // =========================================================
+
+  // Google 로그인
+
+  // =========================================================
 
   Future<void> _loginWithGoogle() async {
-    if (_isGoogleSigningIn) return;
+    if (_isGoogleSigningIn || _isKakaoSigningIn) {
+      return;
+    }
 
     setState(() {
       _isGoogleSigningIn = true;
@@ -37,34 +44,52 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final result = await _authService.loginWithGoogle();
 
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       if (result.registrationRequired) {
+        final registrationToken = result.registrationToken;
+
+        if (registrationToken == null || registrationToken.isEmpty) {
+          throw Exception('Google 회원가입 인증정보가 없습니다.');
+        }
+
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
             builder: (context) {
               return TermsAgreementScreen(
-                registrationToken: result.registrationToken!,
+                registrationToken: registrationToken,
+
                 initialName: result.prefilledName,
               );
             },
           ),
         );
+
         return;
       }
 
       await Navigator.of(context).pushAndRemoveUntil(
         MaterialPageRoute<void>(builder: (context) => const AppShell()),
+
         (route) => false,
       );
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted) {
+        return;
+      }
 
       final errorText = error.toString();
+
       final normalizedError = errorText.toLowerCase();
 
-      // 사용자가 Google 로그인 창에서 뒤로가거나 취소한 경우는
-      // 실제 오류가 아니므로 SnackBar를 표시하지 않는다.
+      // 사용자가 Google 로그인 창에서
+
+      // 뒤로가거나 취소한 경우는 실제 오류가 아니므로
+
+      // SnackBar를 표시하지 않는다.
+
       final isUserCanceled =
           normalizedError.contains('googlesigninexceptioncode.canceled') ||
           normalizedError.contains('cancelled by user') ||
@@ -88,6 +113,124 @@ class _LoginScreenState extends State<LoginScreen> {
     }
   }
 
+  // =========================================================
+
+  // Kakao 로그인
+
+  // =========================================================
+
+  Future<void> _loginWithKakao() async {
+    if (_isKakaoSigningIn || _isGoogleSigningIn) {
+      return;
+    }
+
+    setState(() {
+      _isKakaoSigningIn = true;
+    });
+
+    try {
+      // Kakao SDK 로그인
+
+      // ↓
+
+      // access token
+
+      // ↓
+
+      // Django /api/patients/auth/kakao/
+
+      // ↓
+
+      // REGISTRATION_REQUIRED 또는 AUTHENTICATED
+
+      final result = await _authService.loginWithKakao();
+
+      if (!mounted) {
+        return;
+      }
+
+      // -------------------------------------------------------
+
+      // 신규 카카오 사용자
+
+      // -------------------------------------------------------
+
+      if (result.registrationRequired) {
+        final registrationToken = result.registrationToken;
+
+        if (registrationToken == null || registrationToken.isEmpty) {
+          throw Exception('카카오 회원가입 인증정보가 없습니다.');
+        }
+
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (context) {
+              return TermsAgreementScreen(
+                registrationToken: registrationToken,
+
+                initialName: result.prefilledName,
+              );
+            },
+          ),
+        );
+
+        return;
+      }
+
+      // -------------------------------------------------------
+
+      // 기존 카카오 사용자
+
+      // -------------------------------------------------------
+
+      await Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute<void>(builder: (context) => const AppShell()),
+
+        (route) => false,
+      );
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      final errorText = error.toString();
+
+      final normalizedError = errorText.toLowerCase();
+
+      // 사용자가 카카오 로그인 화면을 닫거나
+
+      // 로그인을 취소한 경우
+
+      final isUserCanceled =
+          normalizedError.contains('cancel') ||
+          normalizedError.contains('canceled') ||
+          normalizedError.contains('cancelled') ||
+          normalizedError.contains('access_denied');
+
+      if (isUserCanceled) {
+        return;
+      }
+
+      final message = errorText.replaceFirst('Exception: ', '');
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isKakaoSigningIn = false;
+        });
+      }
+    }
+  }
+
+  // =========================================================
+
+  // 준비 중 로그인
+
+  // =========================================================
+
   void _showPreparingMessage(String provider) {
     ScaffoldMessenger.of(
       context,
@@ -101,11 +244,15 @@ class _LoginScreenState extends State<LoginScreen> {
         decoration: const BoxDecoration(
           gradient: LinearGradient(
             begin: Alignment.topCenter,
+
             end: Alignment.bottomCenter,
+
             colors: [Color(0xFFF1FBF8), Color(0xFFF3F9FC), Color(0xFFEAF2F8)],
+
             stops: [0.0, 0.52, 1.0],
           ),
         ),
+
         child: Stack(
           children: [
             const Positioned.fill(
@@ -114,13 +261,19 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: BoxDecoration(
                     gradient: RadialGradient(
                       center: Alignment(0.0, -0.78),
+
                       radius: 1.05,
+
                       colors: [
                         Color(0x5557D6C7),
+
                         Color(0x3D53A8F5),
+
                         Color(0x1F53A8F5),
+
                         Colors.transparent,
                       ],
+
                       stops: [0.0, 0.28, 0.52, 0.82],
                     ),
                   ),
@@ -134,8 +287,11 @@ class _LoginScreenState extends State<LoginScreen> {
                   decoration: BoxDecoration(
                     gradient: RadialGradient(
                       center: Alignment(0.92, -0.45),
+
                       radius: 0.72,
+
                       colors: [Color(0x2457D6C7), Colors.transparent],
+
                       stops: [0.0, 0.78],
                     ),
                   ),
@@ -148,33 +304,46 @@ class _LoginScreenState extends State<LoginScreen> {
                 builder: (context, constraints) {
                   return SingleChildScrollView(
                     physics: const ClampingScrollPhysics(),
+
                     padding: const EdgeInsets.symmetric(horizontal: 24),
+
                     child: ConstrainedBox(
                       constraints: BoxConstraints(
                         minHeight: constraints.maxHeight,
                       ),
+
                       child: Center(
                         child: ConstrainedBox(
                           constraints: const BoxConstraints(maxWidth: 420),
+
                           child: Padding(
                             padding: const EdgeInsets.only(top: 35, bottom: 27),
+
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.stretch,
+
                               children: [
                                 Center(
                                   child: Image.asset(
                                     'assets/images/logo_full.png',
+
                                     width: 230,
+
                                     fit: BoxFit.contain,
+
                                     errorBuilder: (context, error, stackTrace) {
                                       return const SizedBox(
                                         height: 100,
+
                                         child: Center(
                                           child: Text(
                                             '숨-잇',
+
                                             style: TextStyle(
                                               color: _textPrimary,
+
                                               fontSize: 34,
+
                                               fontWeight: FontWeight.w800,
                                             ),
                                           ),
@@ -190,23 +359,35 @@ class _LoginScreenState extends State<LoginScreen> {
                                   shaderCallback: (bounds) {
                                     return const LinearGradient(
                                       begin: Alignment.centerLeft,
+
                                       end: Alignment.centerRight,
+
                                       colors: [
                                         Color(0xFF35C7A5),
+
                                         Color(0xFF3AAFE8),
+
                                         Color(0xFF4C7FEA),
                                       ],
                                     ).createShader(bounds);
                                   },
+
                                   blendMode: BlendMode.srcIn,
+
                                   child: const Text(
                                     '숨을 잇다, 건강을 잇다, 마음을 잇다',
+
                                     textAlign: TextAlign.center,
+
                                     style: TextStyle(
                                       color: Colors.white,
+
                                       fontSize: 15,
+
                                       fontWeight: FontWeight.w700,
+
                                       letterSpacing: -0.2,
+
                                       height: 1.4,
                                     ),
                                   ),
@@ -215,11 +396,16 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const SizedBox(height: 15),
 
                                 const Text(
-                                  '환자와 의료진을 연결하는\n건강관리 서비스를 시작해보세요.',
+                                  '환자와 의료진을 연결하는\n'
+                                  '건강관리 서비스를 시작해보세요.',
+
                                   textAlign: TextAlign.center,
+
                                   style: TextStyle(
                                     color: _textSecondary,
+
                                     fontSize: 14,
+
                                     height: 1.55,
                                   ),
                                 ),
@@ -231,27 +417,37 @@ class _LoginScreenState extends State<LoginScreen> {
                                     Expanded(
                                       child: Divider(
                                         color: _divider,
+
                                         height: 1,
+
                                         thickness: 1,
                                       ),
                                     ),
+
                                     Padding(
                                       padding: EdgeInsets.symmetric(
                                         horizontal: 13,
                                       ),
+
                                       child: Text(
                                         '간편 로그인',
+
                                         style: TextStyle(
                                           color: Color(0xFF8B95A1),
+
                                           fontSize: 12,
+
                                           fontWeight: FontWeight.w600,
                                         ),
                                       ),
                                     ),
+
                                     Expanded(
                                       child: Divider(
                                         color: _divider,
+
                                         height: 1,
+
                                         thickness: 1,
                                       ),
                                     ),
@@ -260,76 +456,97 @@ class _LoginScreenState extends State<LoginScreen> {
 
                                 const SizedBox(height: 22),
 
+                                // =============================
+
+                                // Google 로그인
+
+                                // =============================
                                 _SocialLoginButton(
                                   label: _isGoogleSigningIn
                                       ? 'Google 로그인 중...'
                                       : 'Google 로 시작하기',
+
                                   iconAsset:
                                       'assets/images/social/google_logo_normalized.png',
+
                                   iconSize: 60,
+
                                   backgroundColor: const Color(0xFFF2F2F2),
+
                                   foregroundColor: const Color(0xFF1F1F1F),
+
                                   borderColor: const Color(0xFFDADCE0),
-                                  onPressed: _isGoogleSigningIn
+
+                                  onPressed:
+                                      _isGoogleSigningIn || _isKakaoSigningIn
                                       ? null
                                       : _loginWithGoogle,
                                 ),
 
                                 const SizedBox(height: 12),
 
+                                // =============================
+
+                                // Kakao 로그인
+
+                                // =============================
                                 _SocialLoginButton(
-                                  label: '카카오로 시작하기',
+                                  label: _isKakaoSigningIn
+                                      ? '카카오 로그인 중...'
+                                      : '카카오로 시작하기',
+
                                   iconAsset:
                                       'assets/images/social/kakao_logo_normalized.png',
+
                                   iconSize: 30,
+
                                   backgroundColor: const Color(0xFFFEE500),
+
                                   foregroundColor: const Color(0xD9000000),
+
                                   borderColor: const Color(0xFFFEE500),
-                                  onPressed: () {
-                                    _showPreparingMessage('카카오');
-                                  },
+
+                                  onPressed:
+                                      _isKakaoSigningIn || _isGoogleSigningIn
+                                      ? null
+                                      : _loginWithKakao,
                                 ),
 
                                 const SizedBox(height: 12),
 
+                                // =============================
+
+                                // Naver 로그인
+
+                                // =============================
                                 _SocialLoginButton(
                                   label: '네이버로 시작하기',
+
                                   iconAsset:
                                       'assets/images/social/naver_logo_normalized.png',
+
                                   iconSize: 60,
+
                                   backgroundColor: const Color.fromARGB(
                                     255,
+
                                     5,
+
                                     173,
+
                                     79,
                                   ),
+
                                   foregroundColor: Colors.white,
+
                                   borderColor: const Color(0xFF03A94D),
-                                  onPressed: () {
-                                    _showPreparingMessage('네이버');
-                                  },
-                                ),
 
-                                const SizedBox(height: 22),
-
-                                OutlinedButton.icon(
-                                  onPressed: _openTestFeatures,
-                                  icon: const Icon(Icons.apps_rounded),
-                                  label: const Text('로그인 없이 테스트 기능 사용하기'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: const Color(0xFF3198F4),
-                                    side: const BorderSide(
-                                      color: Color(0xFFB9DDFC),
-                                    ),
-                                    minimumSize: const Size.fromHeight(52),
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(14),
-                                    ),
-                                    textStyle: const TextStyle(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
+                                  onPressed:
+                                      _isGoogleSigningIn || _isKakaoSigningIn
+                                      ? null
+                                      : () {
+                                          _showPreparingMessage('네이버');
+                                        },
                                 ),
 
                                 const SizedBox(height: 28),
@@ -337,10 +554,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 const Text(
                                   '소셜 로그인 후 서비스 이용에 필요한 약관 동의와 '
                                   '기본정보 입력이 진행됩니다.',
+
                                   textAlign: TextAlign.center,
+
                                   style: TextStyle(
                                     color: Color(0xFF9AA6B2),
+
                                     fontSize: 12,
+
                                     height: 1.55,
                                   ),
                                 ),
@@ -363,20 +584,32 @@ class _LoginScreenState extends State<LoginScreen> {
 
 class _SocialLoginButton extends StatelessWidget {
   final String label;
+
   final String iconAsset;
+
   final double iconSize;
+
   final Color backgroundColor;
+
   final Color foregroundColor;
+
   final Color borderColor;
+
   final VoidCallback? onPressed;
 
   const _SocialLoginButton({
     required this.label,
+
     required this.iconAsset,
+
     required this.iconSize,
+
     required this.backgroundColor,
+
     required this.foregroundColor,
+
     required this.borderColor,
+
     required this.onPressed,
   });
 
@@ -384,46 +617,70 @@ class _SocialLoginButton extends StatelessWidget {
   Widget build(BuildContext context) {
     return SizedBox(
       width: double.infinity,
+
       height: 56,
+
       child: OutlinedButton(
         onPressed: onPressed,
+
         style: OutlinedButton.styleFrom(
           backgroundColor: backgroundColor,
+
           foregroundColor: foregroundColor,
+
           disabledBackgroundColor: backgroundColor,
+
           disabledForegroundColor: foregroundColor.withValues(alpha: 0.65),
+
           side: BorderSide(color: borderColor, width: 1),
+
           elevation: 0,
+
           padding: const EdgeInsets.symmetric(horizontal: 18),
+
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
         ),
+
         child: Stack(
           alignment: Alignment.center,
+
           children: [
             Align(
               alignment: Alignment.centerLeft,
+
               child: SizedBox(
                 width: 60,
+
                 height: 60,
+
                 child: Center(
                   child: Image.asset(
                     iconAsset,
+
                     width: iconSize,
+
                     height: iconSize,
+
                     fit: BoxFit.contain,
                   ),
                 ),
               ),
             ),
+
             Text(
               label,
+
               textAlign: TextAlign.center,
+
               style: TextStyle(
                 color: foregroundColor,
+
                 fontSize: 15,
+
                 fontWeight: FontWeight.w700,
+
                 letterSpacing: -0.2,
               ),
             ),

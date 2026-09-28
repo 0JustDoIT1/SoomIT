@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+
+    <style name="LaunchTheme" parent="Theme.AppCompat.Light.NoActionBar">
+
+        <!-- Flutter가 뜨기 전 배경 -->
+        <item name="android:windowSplashScreenBackground">
+            #F1FBF8
+        </item>
+
+        <!-- Android가 앱 아이콘을 스플래시에 표시하지 않도록 투명 처리 -->
+        <item name="android:windowSplashScreenAnimatedIcon">
+            @android:color/transparent
+        </item>
+
+        <item name="android:windowSplashScreenAnimationDuration">
+            0
+        </item>
+
+    </style>
+
+</resources>

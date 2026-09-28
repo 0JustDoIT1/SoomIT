@@ -158,9 +158,7 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
               title: const Text(
                 '오늘 기록 완료',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w700),
               ),
               content: Text(
                 '$detail\n하루에 같은 증상은 한 번만 기록할 수 있습니다.',
@@ -181,13 +179,9 @@ class _SymptomFormScreenState extends State<SymptomFormScreen> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            '증상 기록 저장에 실패했습니다.\n$e',
-          ),
-        ),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('증상 기록 저장에 실패했습니다.\n$e')));
     } catch (e) {
       if (!mounted) return;
 

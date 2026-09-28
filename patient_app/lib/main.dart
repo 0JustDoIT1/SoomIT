@@ -1,13 +1,17 @@
+import 'dart:async';
+
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_naver_map/flutter_naver_map.dart';
+import 'package:home_widget/home_widget.dart';
+import 'package:kakao_flutter_sdk_user/kakao_flutter_sdk_user.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'core/settings/font_scale_controller.dart';
-import 'features/auth/auth_gate.dart';
 import 'features/notification/firebase_messaging_service.dart';
+import 'features/notification/notification_navigation_service.dart';
 import 'features/splash/splash_screen.dart';
 import 'firebase_options.dart';
 import 'l10n/app_localizations.dart';
@@ -15,15 +19,37 @@ import 'l10n/app_localizations.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  await FlutterNaverMap().init(clientId: 'kcrblwf7b5');
+  // =========================================================
+  // 카카오 SDK 초기화
+  // =========================================================
+  await KakaoSdk.init(nativeAppKey: '0a17fdd9b3ef886194a2c238393ddfc9');
 
+  // =========================================================
+  // Firebase 초기화
+  // =========================================================
   await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
 
+  // Firebase 백그라운드 메시지 핸들러
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
+  // =========================================================
   // 저장된 글자 크기 설정 불러오기
+  // =========================================================
   await fontScaleController.load();
 
+  // =========================================================
+  // 네이버 지도 SDK 초기화
+  // =========================================================
+  await FlutterNaverMap().init(
+    clientId: '여기에_네이버지도_CLIENT_ID',
+    onAuthFailed: (ex) {
+      debugPrint('네이버 지도 인증 실패: $ex');
+    },
+  );
+
+  // =========================================================
+  // 앱 실행
+  // =========================================================
   runApp(const MedicalApp());
 }
 
@@ -43,7 +69,10 @@ class MedicalAppState extends State<MedicalApp> {
   static const String _darkModePreferenceKey = 'dark_mode_enabled';
 
   Locale _locale = const Locale('ko');
+
   ThemeMode _themeMode = ThemeMode.light;
+
+  StreamSubscription<Uri?>? _homeWidgetClickSubscription;
 
   bool get isDarkMode => _themeMode == ThemeMode.dark;
 
@@ -53,14 +82,54 @@ class MedicalAppState extends State<MedicalApp> {
 
     _loadSavedLanguage();
     _loadSavedThemeMode();
+    _initializeHomeWidgetNavigation();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       FirebaseMessagingService.instance.initialize();
     });
   }
 
+  // =========================================================
+  // 홈 위젯 클릭 처리
+  // =========================================================
+
+  Future<void> _initializeHomeWidgetNavigation() async {
+    // 앱이 이미 실행 중이거나 백그라운드에 있을 때
+    _homeWidgetClickSubscription = HomeWidget.widgetClicked.listen(
+      _handleHomeWidgetClick,
+    );
+
+    // 앱이 완전히 종료된 상태에서 위젯을 눌러 실행했을 때
+    final initialUri = await HomeWidget.initiallyLaunchedFromHomeWidget();
+
+    if (initialUri != null) {
+      _handleHomeWidgetClick(initialUri);
+    }
+  }
+
+  void _handleHomeWidgetClick(Uri? uri) {
+    if (uri == null) {
+      return;
+    }
+
+    debugPrint('홈 위젯 클릭 URI: $uri');
+
+    // MedicationWidgetProvider.kt에서
+    // Uri.parse("soomit://medication") 전달
+    if (uri.scheme == 'soomit' && uri.host == 'medication') {
+      NotificationNavigationService.instance.handlePayload({
+        'notification_type': 'MEDICATION',
+      });
+    }
+  }
+
+  // =========================================================
+  // 언어 설정
+  // =========================================================
+
   Future<void> _loadSavedLanguage() async {
     final prefs = await SharedPreferences.getInstance();
+
     final savedLanguage = prefs.getString(_languagePreferenceKey);
 
     if (savedLanguage == null || !mounted) {
@@ -73,20 +142,24 @@ class MedicalAppState extends State<MedicalApp> {
   }
 
   Future<void> changeLanguage(String languageCode) async {
-    // 화면 언어를 먼저 바꿔 즉시 반응하도록 함.
     if (mounted) {
       setState(() {
         _locale = Locale(languageCode);
       });
     }
 
-    // 저장은 화면 변경 뒤에 처리.
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.setString(_languagePreferenceKey, languageCode);
   }
 
+  // =========================================================
+  // 다크모드 설정
+  // =========================================================
+
   Future<void> _loadSavedThemeMode() async {
     final prefs = await SharedPreferences.getInstance();
+
     final darkModeEnabled = prefs.getBool(_darkModePreferenceKey) ?? false;
 
     if (!mounted) {
@@ -99,18 +172,20 @@ class MedicalAppState extends State<MedicalApp> {
   }
 
   Future<void> changeDarkMode(bool enabled) async {
-    // SharedPreferences 저장을 기다리지 않고
-    // 테마 상태부터 먼저 변경
     if (mounted) {
       setState(() {
         _themeMode = enabled ? ThemeMode.dark : ThemeMode.light;
       });
     }
 
-    // 저장은 UI 변경 뒤에 처리.
     final prefs = await SharedPreferences.getInstance();
+
     await prefs.setBool(_darkModePreferenceKey, enabled);
   }
+
+  // =========================================================
+  // 라이트 테마
+  // =========================================================
 
   ThemeData _buildLightTheme() {
     const primary = Color(0xFF2F80ED);
@@ -136,6 +211,10 @@ class MedicalAppState extends State<MedicalApp> {
     );
   }
 
+  // =========================================================
+  // 다크 테마
+  // =========================================================
+
   ThemeData _buildDarkTheme() {
     const primary = Color(0xFF6EADFF);
 
@@ -160,6 +239,21 @@ class MedicalAppState extends State<MedicalApp> {
     );
   }
 
+  // =========================================================
+  // 종료
+  // =========================================================
+
+  @override
+  void dispose() {
+    _homeWidgetClickSubscription?.cancel();
+
+    super.dispose();
+  }
+
+  // =========================================================
+  // 앱
+  // =========================================================
+
   @override
   Widget build(BuildContext context) {
     return ValueListenableBuilder<AppFontSize>(
@@ -167,6 +261,7 @@ class MedicalAppState extends State<MedicalApp> {
       builder: (context, fontSize, child) {
         return MaterialApp(
           debugShowCheckedModeBanner: false,
+
           title: '숨-잇',
 
           locale: _locale,
@@ -181,7 +276,9 @@ class MedicalAppState extends State<MedicalApp> {
           ],
 
           theme: _buildLightTheme(),
+
           darkTheme: _buildDarkTheme(),
+
           themeMode: _themeMode,
 
           // 앱 전체 글자 크기 적용
@@ -196,44 +293,10 @@ class MedicalAppState extends State<MedicalApp> {
             );
           },
 
-          // 기존 AuthGate 대신 SplashEntry
-          home: const SplashEntry(),
+          // 앱 시작 → SplashScreen → AuthGate
+          home: const SplashScreen(),
         );
       },
     );
-  }
-}
-
-// ============================================================
-// Splash → AuthGate 연결
-// ============================================================
-
-class SplashEntry extends StatefulWidget {
-  const SplashEntry({super.key});
-
-  @override
-  State<SplashEntry> createState() => _SplashEntryState();
-}
-
-class _SplashEntryState extends State<SplashEntry> {
-  bool _showSplash = true;
-
-  @override
-  Widget build(BuildContext context) {
-    if (_showSplash) {
-      return SplashScreen(
-        onFinished: () {
-          if (!mounted) return;
-
-          setState(() {
-            _showSplash = false;
-          });
-        },
-      );
-    }
-
-    // 스플래시가 끝나면
-    // 기존 로그인/JWT 판별 구조로 이동
-    return const AuthGate();
   }
 }

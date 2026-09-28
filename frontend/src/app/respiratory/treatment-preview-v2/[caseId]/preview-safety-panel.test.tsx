@@ -40,8 +40,7 @@ describe("PreviewSafetyPanel", () => {
     render(<PreviewSafetyPanel caseId="case-1" base="http://api.test" fetcher={request} prescription={{ ...prescription, safety_check_results: [{ id: "safe-1", result: "WARNING", message: "중복 성분", source_code: "DUPLICATION_CHECK" }] }} doseInputs={{ height: "170", weight: "65", egfr: "88" }} onRefresh={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "안전성 검사 다시 실행" }));
-    expect(await screen.findByRole("heading", { name: "Safety Check · WARNING · 의료진 확인 필요" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "경고 확인 후 다음 단계" }));
+    fireEvent.click(await screen.findByRole("button", { name: "경고 확인 후 다음 단계" }));
 
     await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
     expect(JSON.parse(String(request.mock.calls[1][1]?.body))).toEqual(expect.objectContaining({

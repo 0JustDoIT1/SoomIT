@@ -10,11 +10,7 @@ class QuestionnaireService {
     final List<dynamic> data = response.data as List<dynamic>;
 
     return data
-        .map(
-          (json) => Questionnaire.fromJson(
-            json as Map<String, dynamic>,
-          ),
-        )
+        .map((json) => Questionnaire.fromJson(json as Map<String, dynamic>))
         .toList();
   }
 
@@ -32,9 +28,7 @@ class QuestionnaireService {
       },
     );
 
-    return Questionnaire.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return Questionnaire.fromJson(response.data as Map<String, dynamic>);
   }
 
   Future<Questionnaire> updateQuestionnaire({
@@ -57,8 +51,6 @@ class QuestionnaireService {
       data: data,
     );
 
-    return Questionnaire.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return Questionnaire.fromJson(response.data as Map<String, dynamic>);
   }
 }

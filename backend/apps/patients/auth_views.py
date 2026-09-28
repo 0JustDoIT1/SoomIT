@@ -3,6 +3,7 @@ import hashlib
 from django.core.exceptions import ImproperlyConfigured
 from django.db import IntegrityError, transaction
 from django.utils import timezone
+
 from drf_spectacular.utils import extend_schema
 from rest_framework import status
 from rest_framework.permissions import (
@@ -14,29 +15,40 @@ from rest_framework.views import APIView
 
 from .auth_serializers import (
     GoogleSocialLoginSerializer,
+    KakaoSocialLoginSerializer,
     PatientRegistrationSerializer,
     PatientTokenRefreshSerializer,
     PatientLinkSerializer,
 )
+
 from .models import (
     Patient,
     PatientAccount,
     SocialAccount,
 )
+
 from .patient_tokens import (
     decode_patient_refresh_token,
     decode_social_registration_token,
     issue_patient_tokens,
     issue_social_registration_token,
 )
+
 from .social_auth import (
     SocialAuthenticationError,
     verify_google_id_token,
+    verify_kakao_access_token,
 )
 
 from .patient_authentication import (
     PatientJWTAuthentication,
 )
+
+
+# ============================================================
+# Google 소셜 로그인
+# ============================================================
+
 @extend_schema(
     tags=["환자앱-인증"],
     summary="Google 소셜 로그인",
@@ -54,7 +66,10 @@ class PatientGoogleLoginAPIView(APIView):
         serializer = GoogleSocialLoginSerializer(
             data=request.data
         )
-        serializer.is_valid(raise_exception=True)
+
+        serializer.is_valid(
+            raise_exception=True
+        )
 
         raw_id_token = serializer.validated_data[
             "id_token"
@@ -64,6 +79,7 @@ class PatientGoogleLoginAPIView(APIView):
             identity = verify_google_id_token(
                 raw_id_token
             )
+
         except SocialAuthenticationError as exc:
             return Response(
                 {
@@ -72,6 +88,7 @@ class PatientGoogleLoginAPIView(APIView):
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
         except ImproperlyConfigured:
             return Response(
                 {
@@ -91,10 +108,16 @@ class PatientGoogleLoginAPIView(APIView):
             )
             .filter(
                 provider=SocialAccount.Provider.GOOGLE,
-                provider_uid=identity["provider_uid"],
+                provider_uid=identity[
+                    "provider_uid"
+                ],
             )
             .first()
         )
+
+        # ----------------------------------------------------
+        # 신규 Google 사용자
+        # ----------------------------------------------------
 
         if social_account is None:
             registration = (
@@ -120,6 +143,10 @@ class PatientGoogleLoginAPIView(APIView):
                 },
                 status=status.HTTP_200_OK,
             )
+
+        # ----------------------------------------------------
+        # 기존 Google 사용자
+        # ----------------------------------------------------
 
         patient_account = (
             social_account.patient_account
@@ -173,7 +200,9 @@ class PatientGoogleLoginAPIView(APIView):
                     "access_expires_at"
                 ],
                 "patient_account": {
-                    "id": str(patient_account.id),
+                    "id": str(
+                        patient_account.id
+                    ),
                     "link_status": (
                         patient_account.link_status
                     ),
@@ -182,6 +211,183 @@ class PatientGoogleLoginAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
+
+
+# ============================================================
+# Kakao 소셜 로그인
+# ============================================================
+
+@extend_schema(
+    tags=["환자앱-인증"],
+    summary="Kakao 소셜 로그인",
+    description=(
+        "Kakao access token을 검증하고 기존 회원이면 환자용 JWT를, "
+        "신규 회원이면 기본정보 입력용 임시 토큰을 발급합니다."
+    ),
+    request=KakaoSocialLoginSerializer,
+)
+class PatientKakaoLoginAPIView(APIView):
+    authentication_classes = []
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = KakaoSocialLoginSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        raw_access_token = (
+            serializer.validated_data[
+                "access_token"
+            ]
+        )
+
+        try:
+            identity = (
+                verify_kakao_access_token(
+                    raw_access_token
+                )
+            )
+
+        except SocialAuthenticationError as exc:
+            return Response(
+                {
+                    "code": "invalid_kakao_token",
+                    "detail": str(exc),
+                },
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        except ImproperlyConfigured:
+            return Response(
+                {
+                    "code": "patient_auth_not_configured",
+                    "detail": (
+                        "환자 로그인 설정이 완료되지 않았습니다."
+                    ),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
+        social_account = (
+            SocialAccount.objects
+            .select_related(
+                "patient_account",
+                "patient_account__patient",
+            )
+            .filter(
+                provider=SocialAccount.Provider.KAKAO,
+                provider_uid=identity[
+                    "provider_uid"
+                ],
+            )
+            .first()
+        )
+
+        # ----------------------------------------------------
+        # 신규 Kakao 사용자
+        # ----------------------------------------------------
+
+        if social_account is None:
+            registration = (
+                issue_social_registration_token(
+                    identity
+                )
+            )
+
+            return Response(
+                {
+                    "status": "REGISTRATION_REQUIRED",
+                    "provider": "KAKAO",
+                    "registration_token": registration[
+                        "registration_token"
+                    ],
+                    "registration_expires_at": registration[
+                        "expires_at"
+                    ],
+                    "profile": {
+                        "name": identity.get("name"),
+                        "email": identity.get("email"),
+                    },
+                },
+                status=status.HTTP_200_OK,
+            )
+
+        # ----------------------------------------------------
+        # 기존 Kakao 사용자
+        # ----------------------------------------------------
+
+        patient_account = (
+            social_account.patient_account
+        )
+
+        if (
+            patient_account.link_status
+            == PatientAccount.LinkStatus.REJECTED
+        ):
+            return Response(
+                {
+                    "code": "patient_account_rejected",
+                    "detail": (
+                        "사용할 수 없는 환자 계정입니다."
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if (
+            patient_account.link_status
+            == PatientAccount.LinkStatus.LINKED
+            and patient_account.patient_id is None
+        ):
+            return Response(
+                {
+                    "code": "invalid_patient_link",
+                    "detail": (
+                        "환자 연결 정보를 확인해주세요."
+                    ),
+                },
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        tokens = issue_patient_tokens(
+            patient_account
+        )
+
+        is_linked = (
+            patient_account.link_status
+            == PatientAccount.LinkStatus.LINKED
+            and patient_account.patient_id is not None
+        )
+
+        return Response(
+            {
+                "status": "AUTHENTICATED",
+                "access": tokens["access"],
+                "refresh": tokens["refresh"],
+                "access_expires_at": tokens[
+                    "access_expires_at"
+                ],
+                "patient_account": {
+                    "id": str(
+                        patient_account.id
+                    ),
+                    "link_status": (
+                        patient_account.link_status
+                    ),
+                    "is_linked": is_linked,
+                },
+            },
+            status=status.HTTP_200_OK,
+        )
+
+
+# ============================================================
+# 환자앱 회원가입
+# ============================================================
 
 @extend_schema(
     tags=["환자앱-인증"],
@@ -200,7 +406,10 @@ class PatientRegistrationAPIView(APIView):
         serializer = PatientRegistrationSerializer(
             data=request.data
         )
-        serializer.is_valid(raise_exception=True)
+
+        serializer.is_valid(
+            raise_exception=True
+        )
 
         data = serializer.validated_data
 
@@ -210,6 +419,7 @@ class PatientRegistrationAPIView(APIView):
                     data["registration_token"]
                 )
             )
+
         except ValueError as exc:
             return Response(
                 {
@@ -219,15 +429,25 @@ class PatientRegistrationAPIView(APIView):
                 status=status.HTTP_401_UNAUTHORIZED,
             )
 
-        normalized_phone = data["phone_number"]
+        normalized_phone = data[
+            "phone_number"
+        ]
 
         phone_number_hash = hashlib.sha256(
-            normalized_phone.encode("utf-8")
+            normalized_phone.encode(
+                "utf-8"
+            )
         ).hexdigest()
+
+        # ----------------------------------------------------
+        # 이미 존재하는 소셜 계정인지 확인
+        # ----------------------------------------------------
 
         if SocialAccount.objects.filter(
             provider=identity["provider"],
-            provider_uid=identity["provider_uid"],
+            provider_uid=identity[
+                "provider_uid"
+            ],
         ).exists():
             return Response(
                 {
@@ -238,6 +458,10 @@ class PatientRegistrationAPIView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+
+        # ----------------------------------------------------
+        # 동일 전화번호 계정 존재 여부
+        # ----------------------------------------------------
 
         if PatientAccount.objects.filter(
             phone_number_hash=phone_number_hash
@@ -254,57 +478,87 @@ class PatientRegistrationAPIView(APIView):
             )
 
         patient = None
-        patient_code = data.get("patient_code", "")
+
+        patient_code = data.get(
+            "patient_code",
+            "",
+        )
+
+        # ----------------------------------------------------
+        # 환자코드 입력 시 기존 Patient 연결
+        # ----------------------------------------------------
 
         if patient_code:
-            matching_patients = Patient.objects.filter(
-                patient_code=patient_code,
-                name=data["name"],
-                birth_date=data["birth_date"],
-                sex=data["sex"],
-                phone_number_hash=phone_number_hash,
+            matching_patients = (
+                Patient.objects.filter(
+                    patient_code=patient_code,
+                    name=data["name"],
+                    birth_date=data[
+                        "birth_date"
+                    ],
+                    sex=data["sex"],
+                    phone_number_hash=(
+                        phone_number_hash
+                    ),
+                )
             )
 
-            matching_count = matching_patients.count()
+            matching_count = (
+                matching_patients.count()
+            )
 
             if matching_count == 0:
                 return Response(
                     {
-                        "code": "patient_verification_failed",
+                        "code": (
+                            "patient_verification_failed"
+                        ),
                         "detail": (
                             "입력한 정보와 일치하는 "
                             "환자정보를 찾을 수 없습니다."
                         ),
                     },
-                    status=status.HTTP_400_BAD_REQUEST,
+                    status=(
+                        status.HTTP_400_BAD_REQUEST
+                    ),
                 )
 
             if matching_count > 1:
                 return Response(
                     {
-                        "code": "patient_code_ambiguous",
+                        "code": (
+                            "patient_code_ambiguous"
+                        ),
                         "detail": (
                             "동일한 환자코드가 여러 병원에 "
                             "등록되어 있습니다."
                         ),
                     },
-                    status=status.HTTP_409_CONFLICT,
+                    status=(
+                        status.HTTP_409_CONFLICT
+                    ),
                 )
 
-            patient = matching_patients.first()
+            patient = (
+                matching_patients.first()
+            )
 
             if PatientAccount.objects.filter(
                 patient=patient
             ).exists():
                 return Response(
                     {
-                        "code": "patient_already_linked",
+                        "code": (
+                            "patient_already_linked"
+                        ),
                         "detail": (
                             "이미 다른 계정에 연결된 "
                             "환자정보입니다."
                         ),
                     },
-                    status=status.HTTP_409_CONFLICT,
+                    status=(
+                        status.HTTP_409_CONFLICT
+                    ),
                 )
 
         link_status = (
@@ -319,19 +573,29 @@ class PatientRegistrationAPIView(APIView):
                     PatientAccount.objects.create(
                         patient=patient,
                         name=data["name"],
-                        birth_date=data["birth_date"],
+                        birth_date=data[
+                            "birth_date"
+                        ],
                         sex=data["sex"],
-                        phone_number=normalized_phone,
+                        phone_number=(
+                            normalized_phone
+                        ),
                         phone_number_hash=(
                             phone_number_hash
                         ),
                         phone_verified_at=None,
-                        postal_code=data["postal_code"],
-                        address=data["address"],
-                        address_detail=(
-                            data["address_detail"]
+                        postal_code=data[
+                            "postal_code"
+                        ],
+                        address=data[
+                            "address"
+                        ],
+                        address_detail=data[
+                            "address_detail"
+                        ],
+                        link_status=(
+                            link_status
                         ),
-                        link_status=link_status,
                         linked_at=(
                             timezone.now()
                             if patient is not None
@@ -341,12 +605,17 @@ class PatientRegistrationAPIView(APIView):
                 )
 
                 SocialAccount.objects.create(
-                    patient_account=patient_account,
-                    provider=identity["provider"],
-                    provider_uid=(
-                        identity["provider_uid"]
+                    patient_account=(
+                        patient_account
                     ),
+                    provider=identity[
+                        "provider"
+                    ],
+                    provider_uid=identity[
+                        "provider_uid"
+                    ],
                 )
+
         except IntegrityError:
             return Response(
                 {
@@ -371,14 +640,25 @@ class PatientRegistrationAPIView(APIView):
                     "access_expires_at"
                 ],
                 "patient_account": {
-                    "id": str(patient_account.id),
-                    "link_status": link_status,
-                    "is_linked": patient is not None,
+                    "id": str(
+                        patient_account.id
+                    ),
+                    "link_status": (
+                        link_status
+                    ),
+                    "is_linked": (
+                        patient is not None
+                    ),
                 },
             },
             status=status.HTTP_201_CREATED,
         )
-        
+
+
+# ============================================================
+# 환자 access token 재발급
+# ============================================================
+
 @extend_schema(
     tags=["환자앱-인증"],
     summary="환자 access token 재발급",
@@ -393,19 +673,29 @@ class PatientTokenRefreshAPIView(APIView):
     permission_classes = [AllowAny]
 
     def post(self, request):
-        serializer = PatientTokenRefreshSerializer(
-            data=request.data
+        serializer = (
+            PatientTokenRefreshSerializer(
+                data=request.data
+            )
         )
-        serializer.is_valid(raise_exception=True)
 
-        raw_refresh_token = serializer.validated_data[
-            "refresh"
-        ]
+        serializer.is_valid(
+            raise_exception=True
+        )
+
+        raw_refresh_token = (
+            serializer.validated_data[
+                "refresh"
+            ]
+        )
 
         try:
-            token_data = decode_patient_refresh_token(
-                raw_refresh_token
+            token_data = (
+                decode_patient_refresh_token(
+                    raw_refresh_token
+                )
             )
+
         except ValueError as exc:
             return Response(
                 {
@@ -414,6 +704,7 @@ class PatientTokenRefreshAPIView(APIView):
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
+
         except ImproperlyConfigured:
             return Response(
                 {
@@ -427,9 +718,13 @@ class PatientTokenRefreshAPIView(APIView):
 
         patient_account = (
             PatientAccount.objects
-            .select_related("patient")
+            .select_related(
+                "patient"
+            )
             .filter(
-                id=token_data["patient_account_id"]
+                id=token_data[
+                    "patient_account_id"
+                ]
             )
             .first()
         )
@@ -437,8 +732,12 @@ class PatientTokenRefreshAPIView(APIView):
         if patient_account is None:
             return Response(
                 {
-                    "code": "patient_account_not_found",
-                    "detail": "환자 계정을 찾을 수 없습니다.",
+                    "code": (
+                        "patient_account_not_found"
+                    ),
+                    "detail": (
+                        "환자 계정을 찾을 수 없습니다."
+                    ),
                 },
                 status=status.HTTP_401_UNAUTHORIZED,
             )
@@ -449,8 +748,12 @@ class PatientTokenRefreshAPIView(APIView):
         ):
             return Response(
                 {
-                    "code": "patient_account_rejected",
-                    "detail": "사용할 수 없는 환자 계정입니다.",
+                    "code": (
+                        "patient_account_rejected"
+                    ),
+                    "detail": (
+                        "사용할 수 없는 환자 계정입니다."
+                    ),
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -463,7 +766,9 @@ class PatientTokenRefreshAPIView(APIView):
             return Response(
                 {
                     "code": "invalid_patient_link",
-                    "detail": "환자 연결 정보를 확인해주세요.",
+                    "detail": (
+                        "환자 연결 정보를 확인해주세요."
+                    ),
                 },
                 status=status.HTTP_403_FORBIDDEN,
             )
@@ -483,7 +788,12 @@ class PatientTokenRefreshAPIView(APIView):
             },
             status=status.HTTP_200_OK,
         )
-        
+
+
+# ============================================================
+# 기존 환자정보 연결
+# ============================================================
+
 @extend_schema(
     tags=["환자앱-인증"],
     summary="기존 환자정보 연결",
@@ -497,6 +807,7 @@ class PatientLinkAPIView(APIView):
     authentication_classes = [
         PatientJWTAuthentication,
     ]
+
     permission_classes = [
         IsAuthenticated,
     ]
@@ -505,6 +816,7 @@ class PatientLinkAPIView(APIView):
         serializer = PatientLinkSerializer(
             data=request.data
         )
+
         serializer.is_valid(
             raise_exception=True
         )
@@ -529,6 +841,10 @@ class PatientLinkAPIView(APIView):
                     )
                 )
 
+                # --------------------------------------------
+                # 이미 연결 완료 상태
+                # --------------------------------------------
+
                 if (
                     patient_account.link_status
                     == PatientAccount
@@ -551,6 +867,10 @@ class PatientLinkAPIView(APIView):
                             status.HTTP_409_CONFLICT
                         ),
                     )
+
+                # --------------------------------------------
+                # UNLINKED 상태만 연결 가능
+                # --------------------------------------------
 
                 if (
                     patient_account.link_status
@@ -577,12 +897,18 @@ class PatientLinkAPIView(APIView):
                     Patient.objects
                     .select_for_update()
                     .filter(
-                        patient_code=patient_code,
-                        name=patient_account.name,
+                        patient_code=(
+                            patient_code
+                        ),
+                        name=(
+                            patient_account.name
+                        ),
                         birth_date=(
                             patient_account.birth_date
                         ),
-                        sex=patient_account.sex,
+                        sex=(
+                            patient_account.sex
+                        ),
                         phone_number_hash=(
                             patient_account
                             .phone_number_hash
@@ -626,12 +952,18 @@ class PatientLinkAPIView(APIView):
                         ),
                     )
 
-                patient = matching_patients.first()
+                patient = (
+                    matching_patients.first()
+                )
 
                 already_linked = (
                     PatientAccount.objects
-                    .filter(patient=patient)
-                    .exclude(id=patient_account.id)
+                    .filter(
+                        patient=patient
+                    )
+                    .exclude(
+                        id=patient_account.id
+                    )
                     .exists()
                 )
 
@@ -651,15 +983,20 @@ class PatientLinkAPIView(APIView):
                         ),
                     )
 
-                patient_account.patient = patient
+                patient_account.patient = (
+                    patient
+                )
+
                 patient_account.link_status = (
                     PatientAccount
                     .LinkStatus
                     .LINKED
                 )
+
                 patient_account.linked_at = (
                     timezone.now()
                 )
+
                 patient_account.save(
                     update_fields=[
                         "patient",
@@ -672,7 +1009,9 @@ class PatientLinkAPIView(APIView):
         except IntegrityError:
             return Response(
                 {
-                    "code": "patient_link_conflict",
+                    "code": (
+                        "patient_link_conflict"
+                    ),
                     "detail": (
                         "환자정보가 이미 다른 "
                         "계정에 연결되어 있습니다."
@@ -694,7 +1033,9 @@ class PatientLinkAPIView(APIView):
                     "access_expires_at"
                 ],
                 "patient_account": {
-                    "id": str(patient_account.id),
+                    "id": str(
+                        patient_account.id
+                    ),
                     "patient_id": str(
                         patient_account.patient_id
                     ),

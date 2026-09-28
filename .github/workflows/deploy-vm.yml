@@ -223,6 +223,10 @@ jobs:
               sudo docker exec soomit-infra-nginx nginx -s reload
             fi
             \$compose ps
+            # Immutable commit-tagged images accumulate on the small VM disk.
+            # Prune only images and build cache unused by running containers.
+            sudo docker image prune -a -f
+            sudo docker builder prune -f
           "
 
   verify:

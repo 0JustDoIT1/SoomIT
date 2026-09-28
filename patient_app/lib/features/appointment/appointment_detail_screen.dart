@@ -105,9 +105,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
   }
 
   bool get _canRequestCancellation {
-    return !_isFinished &&
-        _isFutureAppointment &&
-        !_isCancellationRequested;
+    return !_isFinished && _isFutureAppointment && !_isCancellationRequested;
   }
 
   @override
@@ -732,8 +730,7 @@ class _AppointmentDetailScreenState extends State<AppointmentDetailScreen> {
       );
     }
 
-    if (_isChangeRequested ||
-        _appointment.appointmentStatus == 'REQUESTED') {
+    if (_isChangeRequested || _appointment.appointmentStatus == 'REQUESTED') {
       return const _StatusStyle(
         foreground: Color(0xFF428BF5),
         background: Color(0xFFEAF3FF),
@@ -944,11 +941,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
       if (_sameDate(item.date, selectedDate)) {
         final slots = [...item.allSlots]
           ..sort(
-            (a, b) => _koreaTime(
-              a.startAt,
-            ).compareTo(
-              _koreaTime(b.startAt),
-            ),
+            (a, b) => _koreaTime(a.startAt).compareTo(_koreaTime(b.startAt)),
           );
 
         return slots;
@@ -994,11 +987,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
         ? _dateOnly(currentSelected)
         : availableDates.first;
 
-    DateTime displayedMonth = DateTime(
-      initialDate.year,
-      initialDate.month,
-      1,
-    );
+    DateTime displayedMonth = DateTime(initialDate.year, initialDate.month, 1);
     DateTime? temporarySelected = currentSelected == null
         ? null
         : _dateOnly(currentSelected);
@@ -1088,9 +1077,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
                       decoration: BoxDecoration(
                         color: const Color(0xFFF5FAFF),
                         borderRadius: BorderRadius.circular(13),
-                        border: Border.all(
-                          color: const Color(0xFFDCEBFF),
-                        ),
+                        border: Border.all(color: const Color(0xFFDCEBFF)),
                       ),
                       child: const Row(
                         children: [
@@ -1164,19 +1151,13 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
 
                     const Row(
                       children: [
-                        _ChangeCalendarWeekday(
-                          '일',
-                          color: Color(0xFFE56B6F),
-                        ),
+                        _ChangeCalendarWeekday('일', color: Color(0xFFE56B6F)),
                         _ChangeCalendarWeekday('월'),
                         _ChangeCalendarWeekday('화'),
                         _ChangeCalendarWeekday('수'),
                         _ChangeCalendarWeekday('목'),
                         _ChangeCalendarWeekday('금'),
-                        _ChangeCalendarWeekday(
-                          '토',
-                          color: Color(0xFF5B8DEF),
-                        ),
+                        _ChangeCalendarWeekday('토', color: Color(0xFF5B8DEF)),
                       ],
                     ),
 
@@ -1281,9 +1262,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
                               ),
                               child: const Text(
                                 '취소',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w700,
-                                ),
+                                style: TextStyle(fontWeight: FontWeight.w700),
                               ),
                             ),
                           ),
@@ -1303,19 +1282,19 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
                               style: FilledButton.styleFrom(
                                 backgroundColor: _strongBlue,
                                 foregroundColor: Colors.white,
-                                disabledBackgroundColor:
-                                    const Color(0xFFD9E5F2),
-                                disabledForegroundColor:
-                                    const Color(0xFF9AA8B8),
+                                disabledBackgroundColor: const Color(
+                                  0xFFD9E5F2,
+                                ),
+                                disabledForegroundColor: const Color(
+                                  0xFF9AA8B8,
+                                ),
                                 shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(13),
                                 ),
                               ),
                               child: const Text(
                                 '선택',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                ),
+                                style: TextStyle(fontWeight: FontWeight.w800),
                               ),
                             ),
                           ),
@@ -1388,9 +1367,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
           height: 38,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: enabled
-                ? const Color(0xFFF6F9FC)
-                : const Color(0xFFFAFBFC),
+            color: enabled ? const Color(0xFFF6F9FC) : const Color(0xFFFAFBFC),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: enabled
@@ -1401,9 +1378,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
           child: Icon(
             icon,
             size: 22,
-            color: enabled
-                ? const Color(0xFF52657B)
-                : const Color(0xFFC8CED6),
+            color: enabled ? const Color(0xFF52657B) : const Color(0xFFC8CED6),
           ),
         ),
       ),
@@ -1468,10 +1443,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
           decoration: BoxDecoration(
             color: backgroundColor,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color: borderColor,
-              width: selected ? 1.3 : 1,
-            ),
+            border: Border.all(color: borderColor, width: selected ? 1.3 : 1),
           ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -1581,10 +1553,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
               Text(
                 _errorMessage!,
                 textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _textSecondary,
-                  fontSize: 14,
-                ),
+                style: const TextStyle(color: _textSecondary, fontSize: 14),
               ),
             ],
           ),
@@ -1682,10 +1651,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(14),
-                borderSide: const BorderSide(
-                  color: _primaryBlue,
-                  width: 1.4,
-                ),
+                borderSide: const BorderSide(color: _primaryBlue, width: 1.4),
               ),
             ),
           ),
@@ -1731,10 +1697,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
             child: Text(
               '요청 후 원무과 확인 시 예약이 변경됩니다.',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _textSecondary,
-                fontSize: 11,
-              ),
+              style: TextStyle(color: _textSecondary, fontSize: 11),
             ),
           ),
         ],
@@ -1756,11 +1719,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(
-            Icons.event_note_rounded,
-            size: 19,
-            color: _strongBlue,
-          ),
+          const Icon(Icons.event_note_rounded, size: 19, color: _strongBlue),
           const SizedBox(width: 9),
           Expanded(
             child: Column(
@@ -1882,10 +1841,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
                       ),
               ),
               const SizedBox(width: 8),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFF9AA8B8),
-              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFF9AA8B8)),
             ],
           ),
         ),
@@ -1893,10 +1849,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
     );
   }
 
-  Widget _buildSelectionGuide({
-    required IconData icon,
-    required String text,
-  }) {
+  Widget _buildSelectionGuide({required IconData icon, required String text}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
@@ -1907,19 +1860,12 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
       ),
       child: Row(
         children: [
-          Icon(
-            icon,
-            size: 20,
-            color: const Color(0xFFA8B3C1),
-          ),
+          Icon(icon, size: 20, color: const Color(0xFFA8B3C1)),
           const SizedBox(width: 9),
           Expanded(
             child: Text(
               text,
-              style: const TextStyle(
-                fontSize: 13,
-                color: Color(0xFF8B95A1),
-              ),
+              style: const TextStyle(fontSize: 13, color: Color(0xFF8B95A1)),
             ),
           ),
         ],
@@ -1929,13 +1875,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
 
   Widget _buildTimeSelection() {
     final slots = [..._selectedAllSlots]
-      ..sort(
-        (a, b) => _koreaTime(
-          a.startAt,
-        ).compareTo(
-          _koreaTime(b.startAt),
-        ),
-      );
+      ..sort((a, b) => _koreaTime(a.startAt).compareTo(_koreaTime(b.startAt)));
 
     final morningSlots = slots.where((slot) {
       return _koreaTime(slot.startAt).hour < 12;
@@ -1949,10 +1889,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         if (morningSlots.isNotEmpty) ...[
-          _buildTimePeriodTitle(
-            icon: Icons.wb_sunny_outlined,
-            title: '오전',
-          ),
+          _buildTimePeriodTitle(icon: Icons.wb_sunny_outlined, title: '오전'),
           const SizedBox(height: 10),
           _buildTimeGrid(morningSlots),
         ],
@@ -1961,10 +1898,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
           const SizedBox(height: 22),
 
         if (afternoonSlots.isNotEmpty) ...[
-          _buildTimePeriodTitle(
-            icon: Icons.wb_twilight_outlined,
-            title: '오후',
-          ),
+          _buildTimePeriodTitle(icon: Icons.wb_twilight_outlined, title: '오후'),
           const SizedBox(height: 10),
           _buildTimeGrid(afternoonSlots),
         ],
@@ -1978,11 +1912,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
   }) {
     return Row(
       children: [
-        Icon(
-          icon,
-          size: 17,
-          color: _strongBlue,
-        ),
+        Icon(icon, size: 17, color: _strongBlue),
         const SizedBox(width: 6),
         Text(
           title,
@@ -1996,9 +1926,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
     );
   }
 
-  Widget _buildTimeGrid(
-    List<AppointmentAvailabilitySlot> slots,
-  ) {
+  Widget _buildTimeGrid(List<AppointmentAvailabilitySlot> slots) {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
@@ -2053,9 +1981,7 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
                   _slotTimeOnly(slot.startAt),
                   style: TextStyle(
                     fontSize: 13,
-                    fontWeight: selected
-                        ? FontWeight.w800
-                        : FontWeight.w600,
+                    fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
                     color: !available
                         ? const Color(0xFFA6ADB7)
                         : selected
@@ -2081,7 +2007,6 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
       },
     );
   }
-
 
   Future<void> _submit() async {
     final slot = _selectedSlot;
@@ -2177,7 +2102,6 @@ class _AppointmentChangeSheetState extends State<_AppointmentChangeSheet> {
   }
 }
 
-
 enum _ChangeDateStatus { available, closed, full, outside }
 
 class _ChangeCalendarWeekday extends StatelessWidget {
@@ -2210,10 +2134,7 @@ class _ChangeCalendarLegend extends StatelessWidget {
   final Color color;
   final String text;
 
-  const _ChangeCalendarLegend({
-    required this.color,
-    required this.text,
-  });
+  const _ChangeCalendarLegend({required this.color, required this.text});
 
   @override
   Widget build(BuildContext context) {
@@ -2223,10 +2144,7 @@ class _ChangeCalendarLegend extends StatelessWidget {
         Container(
           width: 8,
           height: 8,
-          decoration: BoxDecoration(
-            color: color,
-            shape: BoxShape.circle,
-          ),
+          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
         ),
         const SizedBox(width: 5),
         Text(
