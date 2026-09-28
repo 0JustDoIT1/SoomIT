@@ -1,5 +1,6 @@
 import argparse
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import nibabel as nib
@@ -73,6 +74,33 @@ def minimum_distance_mm(
     return float(
         distances.min()
     )
+
+
+def minimum_distances_mm(
+    tumor_mask,
+    anatomy_masks,
+    spacing_xyz,
+    max_workers=2,
+):
+    def calculate(item):
+        feature_name, anatomy_mask = item
+        return feature_name, minimum_distance_mm(
+            tumor_mask,
+            anatomy_mask,
+            spacing_xyz,
+        )
+
+    items = list(anatomy_masks.items())
+    if max_workers <= 1:
+        return dict(calculate(item) for item in items)
+
+    try:
+        with ThreadPoolExecutor(max_workers=min(max_workers, len(items))) as executor:
+            return dict(executor.map(calculate, items))
+    except Exception:
+        # Preserve the original sequential behavior if thread creation or
+        # concurrent SciPy execution is unavailable in the runtime.
+        return dict(calculate(item) for item in items)
 
 
 def main():
@@ -228,52 +256,23 @@ def main():
     # Physical minimum distances
     # ---------------------------------
 
+    distance_features = minimum_distances_mm(
+        tumor,
+        {
+            "airway_t4_proxy_minimum_distance_mm": airway,
+            "heart_pericardial_t4_proxy_minimum_distance_mm": heart,
+            "great_vessels_t4_proxy_minimum_distance_mm": great_vessels,
+            "esophagus_t4_proxy_minimum_distance_mm": esophagus,
+            "vertebral_body_t4_proxy_minimum_distance_mm": vertebral,
+            "chest_wall_t3_proxy_minimum_distance_mm": chest_wall,
+        },
+        spacing_xyz,
+    )
+
     features = {
         "primary_lobe_tumor_overlap_fraction":
             primary_lobe_fraction,
-
-        "airway_t4_proxy_minimum_distance_mm":
-            minimum_distance_mm(
-                tumor,
-                airway,
-                spacing_xyz,
-            ),
-
-        "heart_pericardial_t4_proxy_minimum_distance_mm":
-            minimum_distance_mm(
-                tumor,
-                heart,
-                spacing_xyz,
-            ),
-
-        "great_vessels_t4_proxy_minimum_distance_mm":
-            minimum_distance_mm(
-                tumor,
-                great_vessels,
-                spacing_xyz,
-            ),
-
-        "esophagus_t4_proxy_minimum_distance_mm":
-            minimum_distance_mm(
-                tumor,
-                esophagus,
-                spacing_xyz,
-            ),
-
-        "vertebral_body_t4_proxy_minimum_distance_mm":
-            minimum_distance_mm(
-                tumor,
-                vertebral,
-                spacing_xyz,
-            ),
-
-        "chest_wall_t3_proxy_minimum_distance_mm":
-            minimum_distance_mm(
-                tumor,
-                chest_wall,
-                spacing_xyz,
-            ),
-
+        **distance_features,
         "primary_lobe":
             primary_lobe,
     }
