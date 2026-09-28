@@ -9,9 +9,7 @@ class ExamResultSection {
     required this.summary,
   });
 
-  factory ExamResultSection.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory ExamResultSection.fromJson(Map<String, dynamic> json) {
     return ExamResultSection(
       type: json['type']?.toString() ?? '',
       label: json['label']?.toString() ?? '',
@@ -69,14 +67,11 @@ class ExamResult {
     this.doctorName,
   });
 
-  factory ExamResult.fromJson(
-    Map<String, dynamic> json,
-  ) {
+  factory ExamResult.fromJson(Map<String, dynamic> json) {
     // =======================================================
     // 상세 결과 sections
     // =======================================================
-    final rawSections =
-        json['result_sections'];
+    final rawSections = json['result_sections'];
 
     final List<ExamResultSection> sections;
 
@@ -84,9 +79,8 @@ class ExamResult {
       sections = rawSections
           .whereType<Map>()
           .map(
-            (item) => ExamResultSection.fromJson(
-              Map<String, dynamic>.from(item),
-            ),
+            (item) =>
+                ExamResultSection.fromJson(Map<String, dynamic>.from(item)),
           )
           .toList();
     } else {
@@ -96,13 +90,9 @@ class ExamResult {
     // =======================================================
     // 날짜
     // =======================================================
-    final rawDate =
-        json['result_date']?.toString();
+    final rawDate = json['result_date']?.toString();
 
-    final parsedDate =
-        rawDate != null
-            ? DateTime.tryParse(rawDate)
-            : null;
+    final parsedDate = rawDate != null ? DateTime.tryParse(rawDate) : null;
 
     return ExamResult(
       id: json['id']?.toString() ?? '',
@@ -114,44 +104,31 @@ class ExamResult {
           json['exam_type']?.toString() ??
           '',
 
-      examName:
-          json['exam_name']?.toString() ??
-          '검사',
+      examName: json['exam_name']?.toString() ?? '검사',
 
-      resultStatus:
-          json['result_status']?.toString() ??
-          '',
+      resultStatus: json['result_status']?.toString() ?? '',
 
-      resultStatusLabel:
-          json['result_status_label']?.toString() ??
-          '',
+      resultStatusLabel: json['result_status_label']?.toString() ?? '',
 
-      resultDate:
-          parsedDate ?? DateTime.now(),
+      resultDate: parsedDate ?? DateTime.now(),
 
-      resultSummary:
-          json['result_summary']?.toString() ??
-          '검사 결과가 확인되었습니다.',
+      resultSummary: json['result_summary']?.toString() ?? '검사 결과가 확인되었습니다.',
 
       resultSections: sections,
 
       // 기존 정보가 API에 내려올 경우 사용
-      hospitalName:
-          json['hospital_name']?.toString(),
+      hospitalName: json['hospital_name']?.toString(),
 
-      departmentName:
-          json['department_name']?.toString(),
+      departmentName: json['department_name']?.toString(),
 
-      doctorName:
-          json['doctor_name']?.toString(),
+      doctorName: json['doctor_name']?.toString(),
     );
   }
 
   // =========================================================
   // 확정 결과 여부
   // =========================================================
-  bool get isConfirmed =>
-      resultStatus == 'CONFIRMED';
+  bool get isConfirmed => resultStatus == 'CONFIRMED';
 
   // =========================================================
   // 병리 계열 검사 여부
@@ -160,15 +137,12 @@ class ExamResult {
   // PATHOLOGY_GENE + PDL1을 병리 계열로 처리
   // =========================================================
   bool get isPathologyGroup =>
-      examType == 'PATHOLOGY_GENE' ||
-      examType == 'PDL1';
+      examType == 'PATHOLOGY_GENE' || examType == 'PDL1';
 
   // =========================================================
   // 영상 계열
   // 나중에 필터링 등에 사용 가능
   // =========================================================
   bool get isImagingGroup =>
-      examType == 'XRAY' ||
-      examType == 'CT' ||
-      examType == 'PET_CT_TNM';
+      examType == 'XRAY' || examType == 'CT' || examType == 'PET_CT_TNM';
 }
