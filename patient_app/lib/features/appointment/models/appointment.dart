@@ -70,46 +70,33 @@ class Appointment {
     return Appointment(
       id: json['id'] as String,
 
-      scheduledAt: DateTime.parse(
-        json['scheduled_at'] as String,
-      ).toLocal(),
+      scheduledAt: DateTime.parse(json['scheduled_at'] as String).toLocal(),
 
-      appointmentStatus:
-          json['appointment_status'] as String,
+      appointmentStatus: json['appointment_status'] as String,
 
-      appointmentStatusLabel:
-          json['appointment_status_label'] as String,
+      appointmentStatusLabel: json['appointment_status_label'] as String,
 
-      visitStatus:
-          json['visit_status'] as String,
+      visitStatus: json['visit_status'] as String,
 
-      visitStatusLabel:
-          json['visit_status_label'] as String,
+      visitStatusLabel: json['visit_status_label'] as String,
 
-      createdByType:
-          json['created_by_type'] as String,
+      createdByType: json['created_by_type'] as String,
 
-      doctorId:
-          json['doctor'] as String?,
+      doctorId: json['doctor'] as String?,
 
-      doctorName:
-          json['doctor_name'] as String?,
+      doctorName: json['doctor_name'] as String?,
 
-      hospitalName:
-          json['hospital_name'] as String,
+      hospitalName: json['hospital_name'] as String,
 
-      examType:
-          (json['order_type'] ?? json['exam_type']) as String?,
+      examType: (json['order_type'] ?? json['exam_type']) as String?,
 
-      displayType:
-          json['display_type'] as String,
+      displayType: json['display_type'] as String,
 
-      cancellationRequestedAt:
-          json['cancellation_requested_at'] != null
-              ? DateTime.parse(
-                  json['cancellation_requested_at'] as String,
-                ).toLocal()
-              : null,
+      cancellationRequestedAt: json['cancellation_requested_at'] != null
+          ? DateTime.parse(
+              json['cancellation_requested_at'] as String,
+            ).toLocal()
+          : null,
       pendingRequest: json['pending_request'] != null
           ? AppointmentPendingRequest.fromJson(
               json['pending_request'] as Map<String, dynamic>,
