@@ -1822,13 +1822,18 @@ export default function PathologyDashboardPage() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<
     PathologyCaseWorkflow | null
   >(null);
-  const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
-  const refreshCurrentWorkflow = useCallback(
-    () => setWorkflowRefreshVersion((version) => version + 1),
-    [],
-  );
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
+  const refreshCurrentWorkflow = useCallback(
+    () => {
+      setDetailLoading(true);
+      setDetailError("");
+      setSelectedWorkflow(null);
+      setWorkflowRefreshVersion((version) => version + 1);
+    },
+    [],
+  );
 
   const [tab, setTab] =
     useState<Tab>("worklist");
@@ -1917,9 +1922,6 @@ export default function PathologyDashboardPage() {
     if (!selectedId) {
       return;
     }
-
-    setDetailLoading(true);
-    setSelectedWorkflow(null);
 
     const controller = new AbortController();
     const detailTimeout = window.setTimeout(() => {
@@ -2403,8 +2405,8 @@ export default function PathologyDashboardPage() {
                     key={`${selectedId}:${currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}`}
                     item={currentWorkflowOrder}
                     sectionNumber={1}
-                    onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
-                    onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                    onGeneWsiUploaded={refreshCurrentWorkflow}
+                    onPdl1WsiUploaded={refreshCurrentWorkflow}
                     onGeneAnalysisCompleted={refreshCurrentWorkflow}
                   />
                 </div>
