@@ -8,10 +8,7 @@ import '../symptom_date_utils.dart';
 class SymptomTrendChart extends StatefulWidget {
   final List<SymptomLog> symptoms;
 
-  const SymptomTrendChart({
-    super.key,
-    required this.symptoms,
-  });
+  const SymptomTrendChart({super.key, required this.symptoms});
 
   @override
   State<SymptomTrendChart> createState() => _SymptomTrendChartState();
@@ -48,21 +45,18 @@ class _SymptomTrendChartState extends State<SymptomTrendChart> {
       builder: (context, constraints) {
         final width = constraints.maxWidth;
         final plotWidth = width - _leftPadding - _rightPadding;
-        final plotHeight =
-            _chartHeight - _topPadding - _bottomPadding;
+        final plotHeight = _chartHeight - _topPadding - _bottomPadding;
 
         double xForIndex(int index) {
           if (symptoms.length == 1) {
             return _leftPadding + plotWidth / 2;
           }
 
-          return _leftPadding +
-              plotWidth * index / (symptoms.length - 1);
+          return _leftPadding + plotWidth * index / (symptoms.length - 1);
         }
 
         double yForSeverity(int severity) {
-          return _topPadding +
-              plotHeight * (1 - severity.clamp(0, 10) / 10);
+          return _topPadding + plotHeight * (1 - severity.clamp(0, 10) / 10);
         }
 
         void handleTap(TapDownDetails details) {
@@ -119,16 +113,10 @@ class _SymptomTrendChartState extends State<SymptomTrendChart> {
                     selectedY != null)
                   Positioned(
                     left: (selectedX - 48)
-                        .clamp(
-                          2.0,
-                          math.max(2.0, width - 98),
-                        )
+                        .clamp(2.0, math.max(2.0, width - 98))
                         .toDouble(),
                     top: (selectedY - 62)
-                        .clamp(
-                          0.0,
-                          _chartHeight - 72,
-                        )
+                        .clamp(0.0, _chartHeight - 72)
                         .toDouble(),
                     child: _ChartTooltip(record: selectedRecord),
                   ),
@@ -168,13 +156,11 @@ class _TrendChartPainter extends CustomPainter {
         return leftPadding + plotWidth / 2;
       }
 
-      return leftPadding +
-          plotWidth * index / (symptoms.length - 1);
+      return leftPadding + plotWidth * index / (symptoms.length - 1);
     }
 
     double yForSeverity(int severity) {
-      return topPadding +
-          plotHeight * (1 - severity.clamp(0, 10) / 10);
+      return topPadding + plotHeight * (1 - severity.clamp(0, 10) / 10);
     }
 
     final gridPaint = Paint()
@@ -208,10 +194,7 @@ class _TrendChartPainter extends CustomPainter {
 
     final points = <Offset>[
       for (int i = 0; i < symptoms.length; i++)
-        Offset(
-          xForIndex(i),
-          yForSeverity(symptoms[i].severity),
-        ),
+        Offset(xForIndex(i), yForSeverity(symptoms[i].severity)),
     ];
 
     if (points.length > 1) {
@@ -228,26 +211,18 @@ class _TrendChartPainter extends CustomPainter {
         ..close();
 
       final areaPaint = Paint()
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color(0x293198F4),
-            Color(0x003198F4),
-          ],
-        ).createShader(
-          Rect.fromLTWH(
-            leftPadding,
-            topPadding,
-            plotWidth,
-            plotHeight,
-          ),
-        );
+        ..shader =
+            const LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [Color(0x293198F4), Color(0x003198F4)],
+            ).createShader(
+              Rect.fromLTWH(leftPadding, topPadding, plotWidth, plotHeight),
+            );
 
       canvas.drawPath(areaPath, areaPaint);
 
-      final linePath = Path()
-        ..moveTo(points.first.dx, points.first.dy);
+      final linePath = Path()..moveTo(points.first.dx, points.first.dy);
 
       for (int i = 1; i < points.length; i++) {
         linePath.lineTo(points[i].dx, points[i].dy);
@@ -285,10 +260,7 @@ class _TrendChartPainter extends CustomPainter {
       _paintText(
         canvas,
         '${korea.month}/${korea.day}',
-        Offset(
-          xForIndex(index) - 22,
-          size.height - bottomPadding + 9,
-        ),
+        Offset(xForIndex(index) - 22, size.height - bottomPadding + 9),
         axisTextStyle,
         maxWidth: 44,
         textAlign: TextAlign.center,
@@ -349,9 +321,7 @@ class _TrendChartPainter extends CustomPainter {
 class _ChartTooltip extends StatelessWidget {
   final SymptomLog record;
 
-  const _ChartTooltip({
-    required this.record,
-  });
+  const _ChartTooltip({required this.record});
 
   @override
   Widget build(BuildContext context) {
@@ -359,10 +329,7 @@ class _ChartTooltip extends StatelessWidget {
 
     return Container(
       width: 96,
-      padding: const EdgeInsets.symmetric(
-        horizontal: 10,
-        vertical: 8,
-      ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       decoration: BoxDecoration(
         color: const Color(0xFF172033),
         borderRadius: BorderRadius.circular(11),
@@ -379,10 +346,7 @@ class _ChartTooltip extends StatelessWidget {
         children: [
           Text(
             '${korea.month}월 ${korea.day}일',
-            style: const TextStyle(
-              color: Color(0xFFC7D0DA),
-              fontSize: 9.5,
-            ),
+            style: const TextStyle(color: Color(0xFFC7D0DA), fontSize: 9.5),
           ),
           const SizedBox(height: 2),
           Text(
