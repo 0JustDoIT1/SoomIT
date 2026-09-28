@@ -11,7 +11,7 @@ import numpy as np
 import openslide
 import timm
 import torch
-from PIL import Image, ImageFilter
+from PIL import Image
 from timm.data import create_transform, resolve_data_config
 
 
@@ -120,8 +120,8 @@ def create_tissue_attention_heatmap(
             normalized = np.clip((scores - low) / (high - low), 0.0, 1.0)
 
         score_sum = np.zeros((preview_height, preview_width), dtype=np.float32)
-        score_count = np.zeros((preview_height, preview_width), dtype=np.float32)
-        patch_sizes: list[float] = []
+        score_weight = np.zeros((preview_height, preview_width), dtype=np.float32)
+        coverage = np.zeros((preview_height, preview_width), dtype=bool)
         for (base_x, base_y, level), score in zip(coordinates, normalized, strict=True):
             downsample = float(slide.level_downsamples[level])
             patch_width = tile_size * downsample * scale_x
@@ -131,50 +131,61 @@ def create_tissue_attention_heatmap(
             x2 = max(x1, min(preview_width, int(np.ceil(base_x * scale_x + patch_width))))
             y2 = max(y1, min(preview_height, int(np.ceil(base_y * scale_y + patch_height))))
             if x2 > x1 and y2 > y1:
-                score_sum[y1:y2, x1:x2] += float(score)
-                score_count[y1:y2, x1:x2] += 1.0
-                patch_sizes.append((patch_width + patch_height) / 2.0)
+                coverage[y1:y2, x1:x2] = True
+                center_x = (x1 + x2) / 2.0
+                center_y = (y1 + y2) / 2.0
+                radius_x = max(1, int(np.ceil(patch_width * 1.5)))
+                radius_y = max(1, int(np.ceil(patch_height * 1.5)))
+                blend_x1 = max(0, int(np.floor(center_x - radius_x)))
+                blend_y1 = max(0, int(np.floor(center_y - radius_y)))
+                blend_x2 = min(preview_width, int(np.ceil(center_x + radius_x)))
+                blend_y2 = min(preview_height, int(np.ceil(center_y + radius_y)))
+                grid_x = np.arange(blend_x1, blend_x2, dtype=np.float32) + 0.5
+                grid_y = np.arange(blend_y1, blend_y2, dtype=np.float32) + 0.5
+                sigma_x = max(1.0, patch_width * 0.75)
+                sigma_y = max(1.0, patch_height * 0.75)
+                gaussian = np.exp(
+                    -0.5
+                    * (
+                        ((grid_y[:, None] - center_y) / sigma_y) ** 2
+                        + ((grid_x[None, :] - center_x) / sigma_x) ** 2
+                    )
+                )
+                score_sum[blend_y1:blend_y2, blend_x1:blend_x2] += float(score) * gaussian
+                score_weight[blend_y1:blend_y2, blend_x1:blend_x2] += gaussian
 
-        coverage = score_count > 0
         if not np.any(coverage):
             raise ValueError("attention patches do not overlap the WSI preview")
 
-        # Blur the accumulated scores and their weights independently before
-        # division. This preserves an overlap-weighted average at patch edges
-        # instead of allowing the empty background to lower the score.
-        peak_count = float(score_count.max())
-        sum_image = Image.fromarray(
-            np.clip(score_sum / peak_count * 255.0, 0, 255).astype(np.uint8),
-            mode="L",
-        )
-        count_image = Image.fromarray(
-            np.clip(score_count / peak_count * 255.0, 0, 255).astype(np.uint8),
-            mode="L",
-        )
-        blur_radius = max(1.0, float(np.median(patch_sizes)) * 0.5)
-        blurred_sum = np.asarray(
-            sum_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)),
-            dtype=np.float32,
-        )
-        blurred_count = np.asarray(
-            count_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)),
-            dtype=np.float32,
-        )
+        # Gaussian splatting treats each patch attention as a measurement at its
+        # center. Dividing by the accumulated weights removes visible tile edges.
         blended = np.divide(
-            blurred_sum,
-            blurred_count,
-            out=np.zeros_like(blurred_sum),
-            where=blurred_count > 0,
+            score_sum,
+            score_weight,
+            out=np.zeros_like(score_sum),
+            where=score_weight > 0,
         )
-        blended = np.clip(blended * 255.0, 0, 255).astype(np.uint8)
+        blended = np.clip(blended, 0.0, 1.0)
 
         preview_rgb = np.asarray(preview, dtype=np.uint8)
         visible_tissue = coverage & preview_tissue_mask(preview_rgb)
-        relative_attention = blended.astype(np.float32) / 255.0
+        if not np.any(visible_tissue):
+            visible_tissue = coverage
+        visible_scores = blended[visible_tissue]
+        display_low, display_high = np.percentile(visible_scores, (1, 99))
+        if display_high <= display_low:
+            relative_attention = np.zeros_like(blended)
+        else:
+            relative_attention = np.clip(
+                (blended - display_low) / (display_high - display_low),
+                0.0,
+                1.0,
+            ).astype(np.float32)
         colors = attention_colormap(relative_attention)
+        visibility = np.clip((relative_attention - 0.06) / 0.94, 0.0, 1.0)
         alpha = np.where(
             visible_tissue,
-            35.0 + 190.0 * np.power(relative_attention, 0.75),
+            225.0 * np.power(visibility, 0.7),
             0.0,
         ).astype(np.uint8)
         overlay = Image.fromarray(

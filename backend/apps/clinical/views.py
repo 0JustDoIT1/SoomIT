@@ -2443,7 +2443,7 @@ class DoctorRegimenCandidateListAPIView(ListAPIView):
                 if (finding.assessment == "LIKELY_POSITIVE"
                         and code in self.SUPPORTED_ALTERATIONS.get(gene, ())):
                     pairs.add((gene, code))
-                elif finding.assessment == "LIKELY_POSITIVE" and code:
+                elif finding.assessment == "LIKELY_POSITIVE":
                     molecular_uncertain = True
             # No unsupported/ambiguous driver may fall through to another candidate.
             if molecular_uncertain:

@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Participant = { id: string; name: string; department: string; role: string; unread_count: number };
@@ -167,7 +168,7 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   }
 
   return (
-    <div className="fixed bottom-5 right-5 z-50" data-chat-no-drag="true">
+    <div className="fixed bottom-8 right-8 z-50" data-chat-no-drag="true">
       {open ? (
         <section className="flex h-[min(620px,calc(100vh-40px))] w-[min(620px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-2xl" aria-label="숨챗">
           <header className="flex h-14 shrink-0 items-center justify-between bg-gradient-to-r from-blue-700 to-blue-500 px-4 text-white">
@@ -212,7 +213,10 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
           </div>
         </section>
       ) : (
-        <button type="button" onClick={() => setOpen(true)} className="relative rounded-full bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg hover:bg-blue-700">숨챗{unread > 0 && <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-rose-500 px-1.5 text-center text-[10px] leading-5">{unread > 99 ? "99+" : unread}</span>}</button>
+        <button type="button" onClick={() => setOpen(true)} aria-label="숨챗 열기" className="relative h-[8.25rem] w-[8.25rem] overflow-hidden rounded-full bg-transparent transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2">
+          <Image src="/images/soomchat.png" alt="" width={132} height={132} className="h-full w-full scale-[1.2] object-contain" />
+          {unread > 0 && <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-rose-500 px-1.5 text-center text-[10px] leading-5 text-white">{unread > 99 ? "99+" : unread}</span>}
+        </button>
       )}
     </div>
   );

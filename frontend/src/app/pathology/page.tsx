@@ -1822,13 +1822,18 @@ export default function PathologyDashboardPage() {
   const [selectedWorkflow, setSelectedWorkflow] = useState<
     PathologyCaseWorkflow | null
   >(null);
-  const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
-  const refreshCurrentWorkflow = useCallback(
-    () => setWorkflowRefreshVersion((version) => version + 1),
-    [],
-  );
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
+  const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
+  const refreshCurrentWorkflow = useCallback(
+    () => {
+      setDetailLoading(true);
+      setDetailError("");
+      setSelectedWorkflow(null);
+      setWorkflowRefreshVersion((version) => version + 1);
+    },
+    [],
+  );
 
   const [tab, setTab] =
     useState<Tab>("worklist");
@@ -2397,11 +2402,11 @@ export default function PathologyDashboardPage() {
               {currentWorkflowOrder ? (
                 <div className="mt-5">
                   <WorkArea
-                    key={currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}
+                    key={`${selectedId}:${currentWorkflowOrder.examination_order?.id ?? currentWorkflowOrder.id}`}
                     item={currentWorkflowOrder}
                     sectionNumber={1}
-                    onGeneWsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
-                    onPdl1WsiUploaded={() => setWorkflowRefreshVersion((version) => version + 1)}
+                    onGeneWsiUploaded={refreshCurrentWorkflow}
+                    onPdl1WsiUploaded={refreshCurrentWorkflow}
                     onGeneAnalysisCompleted={refreshCurrentWorkflow}
                   />
                 </div>
