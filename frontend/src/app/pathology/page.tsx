@@ -1827,9 +1827,7 @@ export default function PathologyDashboardPage() {
   const [workflowRefreshVersion, setWorkflowRefreshVersion] = useState(0);
   const refreshCurrentWorkflow = useCallback(
     () => {
-      setDetailLoading(true);
       setDetailError("");
-      setSelectedWorkflow(null);
       setWorkflowRefreshVersion((version) => version + 1);
     },
     [],
