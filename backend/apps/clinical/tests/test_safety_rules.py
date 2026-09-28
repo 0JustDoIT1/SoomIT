@@ -7,9 +7,12 @@ from django.test import SimpleTestCase
 
 from apps.clinical.views import (
     DoctorPrescriptionSafetyCheckAPIView as Safety,
+    DoctorPreviewPrescriptionFinalizeAPIView as PreviewFinalize,
     _allergy_names,
     _dur_pair_matches,
     _safety_input_snapshot,
+    _preview_missing_lab_inputs,
+    _preview_safety_snapshot,
 )
 from apps.clinical.safety import SafetyFreshness, compare_safety_snapshot
 
@@ -144,6 +147,39 @@ class SafetyRuleTests(SimpleTestCase):
             ).status,
             SafetyFreshness.RECHECK_REQUIRED,
         )
+
+    def test_preview_lab_requirements_keep_renal_and_hepatic_inputs_separate(self):
+        self.assertEqual(
+            _preview_missing_lab_inputs({}),
+            {"renal": True, "hepatic": True},
+        )
+        self.assertEqual(
+            _preview_missing_lab_inputs({"egfr": "90", "ast": "20", "alt": "21", "total_bilirubin": "0.8"}),
+            {"renal": False, "hepatic": False},
+        )
+        self.assertEqual(
+            _preview_missing_lab_inputs({"creatinine": "1.0", "ast": "20"}),
+            {"renal": False, "hepatic": True},
+        )
+
+    def test_preview_snapshot_changes_for_labs_medications_and_items(self):
+        item = self.prescription_item(item_seq="100", final_dose=80)
+        item.id = "item-1"
+        payload = {
+            "allergy_status": "NONE",
+            "allergies": [],
+            "current_medications": [{"medication_name": "A", "ingredient_name": "B", "mfds_item_seq": "200"}],
+            "creatinine": "1.0", "egfr": "90", "ast": "20", "alt": "21", "total_bilirubin": "0.8",
+        }
+        snapshot = _preview_safety_snapshot(payload, [item])
+        changed_lab = _preview_safety_snapshot({**payload, "ast": "30"}, [item])
+        changed_medication = _preview_safety_snapshot({**payload, "current_medications": []}, [item])
+        item.final_dose = 70
+        changed_item = _preview_safety_snapshot(payload, [item])
+        self.assertNotEqual(snapshot, changed_lab)
+        self.assertNotEqual(snapshot, changed_medication)
+        self.assertNotEqual(snapshot, changed_item)
+
 
     def test_allergy_exact_match_and_unconfirmed_states(self):
         item = self.prescription_item(drug_name="Pemetrexed", ingredient="Pemetrexed")
@@ -284,6 +320,24 @@ class SafetyRuleTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.prescription.prescription_status, "VALIDATED")
 
+    def test_general_warning_stays_draft_until_acknowledged(self):
+        self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
+        self.profiles.filter.return_value.first.return_value = NS(
+            allergies=[], allergy_status="NONE",
+        )
+        self.medications.filter.return_value.select_related.return_value = [
+            NS(ingredient_name="Ingredient A", mfds_item_seq="200"),
+        ]
+        self.safety_results.filter.side_effect = lambda **kwargs: NS(
+            exists=lambda: kwargs.get("result") == "WARNING"
+            and kwargs.get("source_code__in") is None,
+        )
+
+        response = self.post()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+
     def test_unresolved_warning_keeps_prescription_in_draft_for_recheck(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
         self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
@@ -374,3 +428,30 @@ class SafetyRuleTests(SimpleTestCase):
         self.assertEqual(first_response.status_code, 200)
         self.assertEqual(second_response.status_code, 400)
         self.safety_results.all.return_value.delete.assert_called_once()
+
+
+class PreviewFinalizeRuleTests(SimpleTestCase):
+    def test_changed_request_scoped_safety_input_blocks_finalize(self):
+        item = NS(id="item-1", final_dose=80, mfds_item_seq="100")
+        checked_input = {
+            "allergy_status": "NONE", "allergies": [], "current_medications": [],
+            "creatinine": "1.0", "egfr": "90", "ast": "20", "alt": "21", "total_bilirubin": "0.8",
+        }
+        snapshot = NS(message=json.dumps(_preview_safety_snapshot(checked_input, [item])))
+        safety_results = MagicMock()
+        safety_results.filter.return_value.order_by.return_value.first.return_value = snapshot
+        prescription = NS(
+            prescription_status="VALIDATED",
+            items=MagicMock(),
+            safety_check_results=safety_results,
+        )
+        prescription.items.all.return_value = [item]
+        request = NS(user=object(), data={"safety_input": {**checked_input, "ast": "30"}})
+        with patch("apps.clinical.views.Prescription.objects") as prescriptions:
+            (
+                prescriptions.select_for_update.return_value
+                .filter.return_value.prefetch_related.return_value.first.return_value
+            ) = prescription
+            response = PreviewFinalize.post.__wrapped__(PreviewFinalize(), request, "case-1", "rx-1")
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data["detail"], "입력값이 변경되어 Safety Check를 다시 실행해야 합니다.")

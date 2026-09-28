@@ -45,9 +45,10 @@ beforeEach(() => {
 });
 
 it("uses the staff JWT for pathology WSI tiles without exposing annotation drawing", async () => {
-  render(<OrthancWsiViewer slide={slide} caseId="case-1" fillHeight />);
+  const { container } = render(<OrthancWsiViewer slide={slide} caseId="case-1" fillHeight />);
 
   expect(await screen.findByLabelText("WSI-1 WSI 뷰어")).toBeInTheDocument();
+  expect(container.firstElementChild).toHaveClass("w-full", "h-full", "min-h-0");
   await waitFor(() => expect(mocks.fetch).toHaveBeenCalledTimes(1));
   await waitFor(() => expect(mocks.osd).toHaveBeenCalledTimes(1));
   expect(String(mocks.fetch.mock.calls[0][0])).toBe("http://api.test/api/pathology/wsis/slide-1/pyramid/");

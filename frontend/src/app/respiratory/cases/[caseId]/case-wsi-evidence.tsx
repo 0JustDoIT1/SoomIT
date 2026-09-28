@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import type OpenSeadragonType from "openseadragon";
 import { useEffect, useRef, useState } from "react";
 
@@ -20,8 +21,15 @@ type HeatmapState = {
   status: "loading" | "available" | "missing" | "error";
   imageUrl: string | null;
 };
+type ViewerIssue = "not-linked" | "error";
+type PreviewState = {
+  identity: string;
+  status: "idle" | "loading" | "available" | "missing" | "error";
+  imageUrl: string | null;
+};
 type HeatmapItem = { setOpacity: (opacity: number) => void };
 const errorDetail = (body: unknown, fallback: string) => body && typeof body === "object" && "detail" in body && typeof body.detail === "string" ? body.detail : fallback;
+const errorCode = (body: unknown) => body && typeof body === "object" && "code" in body && typeof body.code === "string" ? body.code : null;
 const stainName = (stain: "HE" | "PDL1") => stain === "PDL1" ? "PD-L1" : "H&E";
 const doctorAssetUrl = (apiBaseUrl: string, path: string) => {
   if (/^https?:\/\//.test(path)) return path;
@@ -42,8 +50,10 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
   const [loading, setLoading] = useState(true);
   const [viewerLoading, setViewerLoading] = useState(false);
   const [error, setError] = useState("");
+  const [viewerIssue, setViewerIssue] = useState<ViewerIssue | null>(null);
+  const [preview, setPreview] = useState<PreviewState>({ identity: "", status: "idle", imageUrl: null });
   const [heatmapEnabled, setHeatmapEnabled] = useState(false);
-  const [heatmapOpacity, setHeatmapOpacity] = useState(45);
+  const [heatmapOpacity, setHeatmapOpacity] = useState(65);
   const [heatmap, setHeatmap] = useState<HeatmapState>({ identity: "", status: "loading", imageUrl: null });
   const heatmapItemRef = useRef<HeatmapItem | null>(null);
   const heatmapOpacityRef = useRef(0);
@@ -131,13 +141,56 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
     if (!selectedSlide) return;
     const controller = new AbortController();
     void (async () => {
-      setViewerLoading(true); setError(""); setViewerData(null);
-      try { const response = await authorizedFetch(doctorAssetUrl(apiBaseUrl, selectedSlide.viewer_url), { signal: controller.signal }); const payload: unknown = await response.json(); if (!response.ok) throw new Error(errorDetail(payload, "WSI 뷰어 정보를 불러오지 못했습니다.")); if (!controller.signal.aborted) { const viewer = payload as Viewer; setViewerData({ ...viewer, tile_url_template: doctorAssetUrl(apiBaseUrl, viewer.tile_url_template) }); } }
-      catch (cause) { if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "WSI 뷰어를 준비하지 못했습니다."); }
+      setViewerLoading(true); setViewerIssue(null); setViewerData(null);
+      try {
+        const response = await authorizedFetch(doctorAssetUrl(apiBaseUrl, selectedSlide.viewer_url), { signal: controller.signal });
+        const payload: unknown = await response.json();
+        if (!response.ok) {
+          if (response.status === 409 && errorCode(payload) === "ORTHANC_SERIES_NOT_LINKED") {
+            if (!controller.signal.aborted) setViewerIssue("not-linked");
+            return;
+          }
+          throw new Error(errorDetail(payload, "WSI 원본 뷰어를 불러오지 못했습니다."));
+        }
+        if (!controller.signal.aborted) {
+          const viewer = payload as Viewer;
+          setViewerData({ ...viewer, tile_url_template: doctorAssetUrl(apiBaseUrl, viewer.tile_url_template) });
+        }
+      }
+      catch {
+        if (!controller.signal.aborted) setViewerIssue("error");
+      }
       finally { if (!controller.signal.aborted) setViewerLoading(false); }
     })();
     return () => controller.abort();
   }, [apiBaseUrl, authorizedFetch, selectedSlide]);
+
+  useEffect(() => {
+    if (!selectedSlide || !viewerIssue) return;
+    const controller = new AbortController();
+    let objectUrl: string | null = null;
+    void authorizedFetch(`${apiBaseUrl}/api/doctor/cases/slides/${encodeURIComponent(selectedSlide.id)}/preview/`, {
+      signal: controller.signal,
+      headers: { Accept: "image/jpeg,image/png" },
+    }).then(async (response) => {
+      if (response.status === 404) return { status: "missing" as const, imageUrl: null };
+      if (!response.ok) throw new Error("preview request failed");
+      const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+      if (contentType !== "image/jpeg" && contentType !== "image/png") throw new Error("invalid preview response");
+      const blob = await response.blob();
+      if (!blob.size) return { status: "missing" as const, imageUrl: null };
+      objectUrl = URL.createObjectURL(blob);
+      return { status: "available" as const, imageUrl: objectUrl };
+    }).then((next) => {
+      if (!controller.signal.aborted) setPreview({ identity: viewerOwnerKey, ...next });
+    }).catch(() => {
+      if (!controller.signal.aborted) setPreview({ identity: viewerOwnerKey, status: "error", imageUrl: null });
+    });
+    return () => {
+      controller.abort();
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [apiBaseUrl, authorizedFetch, selectedSlide, viewerIssue, viewerOwnerKey]);
 
   useEffect(() => {
     if (!viewerData || !selectedSlide || !containerRef.current) return;
@@ -157,7 +210,7 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
       );
       setCreateViewerPoint(() => (x: number, y: number) => new OpenSeadragon.Point(x, y));
       setActiveViewer({ instance: ownedViewer, ownerKey: viewerOwnerKey });
-    }).catch(() => setError("WSI 뷰어를 시작하지 못했습니다."));
+    }).catch(() => setViewerIssue("error"));
     return () => {
       disposed = true;
       detachLifecycle();
@@ -172,7 +225,11 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
   const title = `${stainName(stain)} 원본 슬라이드`;
   const heatmapAvailable = heatmap.identity === viewerOwnerKey && heatmap.status === "available";
   const heatmapLabel = heatmap.status === "loading" ? "Heatmap 확인 중" : heatmap.status === "error" ? "Heatmap 오류" : "Heatmap 없음";
-  return <section className={`${fillHeight ? "flex h-full min-h-0 flex-col" : ""} overflow-hidden rounded-lg bg-white`}><header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-3 py-2"><div><h2 className="text-sm font-semibold text-slate-900">{title}</h2></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{slides.length}개</span></header><div className={`${fillHeight ? "min-h-0 flex-1" : "min-h-[380px]"} grid grid-cols-[124px_minmax(0,1fr)] 2xl:grid-cols-[144px_minmax(0,1fr)]`}><aside className="min-h-0 overflow-y-auto border-r border-slate-200 bg-slate-50/60 p-2"><p className="px-1 pb-2 text-[10px] font-bold text-slate-500">{stainName(stain)} 슬라이드</p>{loading ? <p className="p-3 text-xs text-slate-400">목록을 불러오는 중입니다.</p> : slides.length === 0 ? <p className="p-3 text-xs leading-5 text-slate-400">조회 가능한 슬라이드가 없습니다.</p> : <div className="space-y-2">{slides.map((slide) => { const specimen = specimens.find((item) => item.id === slide.specimen_id); const selected = slide.id === selectedSlideId; return <button key={slide.id} type="button" onClick={() => setSelectedSlideId(slide.id)} className={`w-full rounded-lg border p-2 text-left ${selected ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-bold text-slate-800">{slide.slide_code}</span><span className="text-[9px] font-bold text-violet-700">{stainName(stain)}</span></div><p className="mt-1 truncate text-[10px] text-slate-500">검체 {specimen?.specimen_code ?? "-"}</p><p className="mt-1 text-[10px] text-slate-400">{slide.mpp ?? "-"} μm/px</p></button>; })}</div>}</aside><div className="flex min-h-0 min-w-0 flex-col"><div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 border-b border-slate-200 px-2 py-1.5"><div className="min-w-0 self-center"><p className="truncate text-xs font-bold text-slate-800">{selectedSlide?.slide_code ?? "슬라이드를 선택하세요"}</p><p className="truncate text-[10px] text-slate-400">{selectedSpecimen ? `${selectedSpecimen.specimen_code}${selectedSpecimen.body_site ? ` · ${selectedSpecimen.body_site}` : ""}` : ""}</p></div><div className="flex shrink-0 flex-wrap items-center justify-end gap-1"><button type="button" aria-pressed={heatmapEnabled} disabled={!heatmapAvailable} onClick={() => setHeatmapEnabled((enabled) => !enabled)} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold leading-none text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">{heatmapAvailable ? "Heatmap" : heatmapLabel}</button>{heatmapAvailable && heatmapEnabled ? <label className="flex items-center gap-1 text-[10px] text-slate-600">투명도<input aria-label="Heatmap 투명도" type="range" min="0" max="100" value={heatmapOpacity} onChange={(event) => setHeatmapOpacity(Number(event.target.value))} className="w-16 accent-violet-600" /></label> : null}<Tool label="축소" onClick={() => zoom(0.8)} disabled={!viewerData} /><Tool label="확대" onClick={() => zoom(1.25)} disabled={!viewerData} /><Tool label="초기화" onClick={() => viewerRef.current?.viewport.goHome()} disabled={!viewerData} /><Tool label="전체화면" onClick={() => { void containerRef.current?.requestFullscreen?.(); }} disabled={!viewerData} /></div><div ref={setAnnotationToolbarElement} className="col-span-2 flex min-w-0 items-center overflow-x-auto pb-0.5" /></div><div className={`${fillHeight ? "min-h-0 flex-1" : "min-h-[322px]"} relative bg-slate-950`} data-wsi-layer="image">{viewerData && selectedSlide && <div ref={containerRef} className="absolute inset-0" aria-label={`${selectedSlide.slide_code} WSI 뷰어`} />}{activeViewer?.ownerKey === viewerOwnerKey && viewerData && selectedSlide && createViewerPoint ? <WsiAnnotationLayer key={viewerOwnerKey} viewer={activeViewer.instance} toolbarElement={annotationToolbarElement} endpoint={`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?image_asset_id=${encodeURIComponent(selectedSlide.image_asset_id)}&slide_id=${encodeURIComponent(selectedSlide.id)}`} imageAssetId={selectedSlide.image_asset_id} slideId={selectedSlide.id} imageWidth={viewerData.width} imageHeight={viewerData.height} createViewerPoint={createViewerPoint} authorizedFetch={authorizedFetch} writable /> : null}{(loading || viewerLoading) && <p role="status" className={`${fillHeight ? "absolute inset-0" : "min-h-[322px]"} grid place-items-center text-sm text-slate-300`}>WSI를 불러오는 중입니다.</p>}{!loading && error && <p role="alert" className={`${fillHeight ? "absolute inset-0" : "min-h-[322px]"} grid place-items-center px-8 text-center text-sm text-rose-200`}>{error}</p>}{!loading && !error && !selectedSlide && <p className={`${fillHeight ? "absolute inset-0" : "min-h-[322px]"} grid place-items-center px-8 text-center text-sm text-slate-300`}>표시할 {stainName(stain)} WSI가 없습니다.</p>}{viewerData && selectedSlide && <span className="pointer-events-none absolute bottom-3 left-3 rounded bg-slate-950/80 px-2 py-1 text-[10px] text-white">휠로 확대·축소 · 드래그로 이동</span>}</div></div></div></section>;
+  const currentPreview = preview.identity === viewerOwnerKey ? preview : null;
+  const fallbackNotice = viewerIssue === "not-linked"
+    ? "WSI 원본 뷰어 연결이 준비되지 않았습니다. 미리보기 이미지를 표시합니다."
+    : "WSI 원본 뷰어를 불러오지 못했습니다. 미리보기 이미지를 표시합니다.";
+  return <section className={`${fillHeight ? "flex h-full min-h-0 flex-col" : ""} overflow-hidden rounded-lg bg-white`}><header className="flex shrink-0 items-center justify-between gap-2 border-b border-slate-200 px-3 py-2"><div><h2 className="text-sm font-semibold text-slate-900">{title}</h2></div><span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-600">{slides.length}개</span></header><div className={`${fillHeight ? "min-h-0 flex-1" : "min-h-[380px]"} grid grid-cols-[124px_minmax(0,1fr)] 2xl:grid-cols-[144px_minmax(0,1fr)]`}><aside className="min-h-0 overflow-y-auto border-r border-slate-200 bg-slate-50/60 p-2"><p className="px-1 pb-2 text-[10px] font-bold text-slate-500">{stainName(stain)} 슬라이드</p>{loading ? <p className="p-3 text-xs text-slate-400">목록을 불러오는 중입니다.</p> : slides.length === 0 ? <p className="p-3 text-xs leading-5 text-slate-400">조회 가능한 슬라이드가 없습니다.</p> : <div className="space-y-2">{slides.map((slide) => { const specimen = specimens.find((item) => item.id === slide.specimen_id); const selected = slide.id === selectedSlideId; return <button key={slide.id} type="button" onClick={() => setSelectedSlideId(slide.id)} className={`w-full rounded-lg border p-2 text-left ${selected ? "border-blue-300 bg-blue-50" : "border-slate-200 bg-white hover:border-slate-300"}`}><div className="flex items-center justify-between gap-2"><span className="truncate text-xs font-bold text-slate-800">{slide.slide_code}</span><span className="text-[9px] font-bold text-violet-700">{stainName(stain)}</span></div><p className="mt-1 truncate text-[10px] text-slate-500">검체 {specimen?.specimen_code ?? "-"}</p><p className="mt-1 text-[10px] text-slate-400">{slide.mpp ?? "-"} μm/px</p></button>; })}</div>}</aside><div className="flex min-h-0 min-w-0 flex-col"><div className="grid shrink-0 grid-cols-[minmax(0,1fr)_auto] gap-x-2 gap-y-1 border-b border-slate-200 px-2 py-1.5"><div className="min-w-0 self-center"><p className="truncate text-xs font-bold text-slate-800">{selectedSlide?.slide_code ?? "슬라이드를 선택하세요"}</p><p className="truncate text-[10px] text-slate-400">{selectedSpecimen ? `${selectedSpecimen.specimen_code}${selectedSpecimen.body_site ? ` · ${selectedSpecimen.body_site}` : ""}` : ""}</p></div><div className="flex shrink-0 flex-wrap items-center justify-end gap-1"><button type="button" aria-pressed={heatmapEnabled} disabled={!heatmapAvailable} onClick={() => setHeatmapEnabled((enabled) => !enabled)} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold leading-none text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">{heatmapAvailable ? "Heatmap" : heatmapLabel}</button>{heatmapAvailable && heatmapEnabled ? <label className="flex items-center gap-1 text-[10px] text-slate-600">투명도<input aria-label="Heatmap 투명도" type="range" min="0" max="100" value={heatmapOpacity} onChange={(event) => setHeatmapOpacity(Number(event.target.value))} className="w-16 accent-violet-600" /></label> : null}<Tool label="축소" onClick={() => zoom(0.8)} disabled={!viewerData} /><Tool label="확대" onClick={() => zoom(1.25)} disabled={!viewerData} /><Tool label="초기화" onClick={() => viewerRef.current?.viewport.goHome()} disabled={!viewerData} /><Tool label="전체화면" onClick={() => { void containerRef.current?.requestFullscreen?.(); }} disabled={!viewerData} /></div><div ref={setAnnotationToolbarElement} className="col-span-2 flex min-w-0 items-center overflow-x-auto pb-0.5" /></div><div className={`${fillHeight ? "min-h-0 flex-1" : "min-h-[322px]"} relative bg-slate-950`} data-wsi-layer="image">{viewerData && selectedSlide && <div ref={containerRef} className="absolute inset-0" aria-label={`${selectedSlide.slide_code} WSI 뷰어`} />}{viewerIssue && currentPreview?.status === "available" && currentPreview.imageUrl ? <Image src={currentPreview.imageUrl} alt={`${selectedSlide?.slide_code ?? "WSI"} 미리보기`} fill unoptimized className="object-contain" /> : null}{viewerIssue && currentPreview?.status === "available" && currentPreview.imageUrl && heatmapAvailable && heatmapEnabled && heatmap.imageUrl ? <Image src={heatmap.imageUrl} alt="WSI Heatmap" fill unoptimized className="pointer-events-none object-contain" style={{ opacity: heatmapOpacity / 100 }} /> : null}{activeViewer?.ownerKey === viewerOwnerKey && viewerData && selectedSlide && createViewerPoint ? <WsiAnnotationLayer key={viewerOwnerKey} viewer={activeViewer.instance} toolbarElement={annotationToolbarElement} endpoint={`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?image_asset_id=${encodeURIComponent(selectedSlide.image_asset_id)}&slide_id=${encodeURIComponent(selectedSlide.id)}`} imageAssetId={selectedSlide.image_asset_id} slideId={selectedSlide.id} imageWidth={viewerData.width} imageHeight={viewerData.height} createViewerPoint={createViewerPoint} authorizedFetch={authorizedFetch} writable /> : null}{(loading || viewerLoading || (viewerIssue && !currentPreview)) && <p role="status" className={`${fillHeight ? "absolute inset-0" : "min-h-[322px]"} grid place-items-center text-sm text-slate-300`}>WSI를 불러오는 중입니다.</p>}{!loading && error && <p role="alert" className={`${fillHeight ? "absolute inset-0" : "min-h-[322px]"} grid place-items-center px-8 text-center text-sm text-rose-200`}>{error}</p>}{!loading && !error && !selectedSlide && <p className={`${fillHeight ? "absolute inset-0" : "min-h-[322px]"} grid place-items-center px-8 text-center text-sm text-slate-300`}>표시할 {stainName(stain)} WSI가 없습니다.</p>}{viewerIssue && currentPreview?.status === "available" ? <p role="status" className="absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded bg-amber-50/95 px-3 py-2 text-center text-xs font-medium text-amber-900 shadow">{fallbackNotice}</p> : null}{viewerIssue && (currentPreview?.status === "missing" || currentPreview?.status === "error") ? <div role="status" className="absolute inset-0 grid place-items-center px-8 text-center"><div><p className="text-sm font-medium text-slate-100">표시할 WSI 이미지가 없습니다.</p><p className="mt-2 text-xs text-slate-400">{viewerIssue === "not-linked" ? "원본 WSI 뷰어 연결이 준비되지 않았습니다." : "WSI 원본 뷰어를 불러오지 못했습니다."}</p></div></div> : null}{viewerData && selectedSlide && <span className="pointer-events-none absolute bottom-3 left-3 rounded bg-slate-950/80 px-2 py-1 text-[10px] text-white">휠로 확대·축소 · 드래그로 이동</span>}</div></div></div></section>;
 }
 
 function Tool({ label, onClick, disabled }: { label: string; onClick: () => void; disabled: boolean }) { return <button type="button" onClick={onClick} disabled={disabled} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-slate-200 bg-white px-2.5 text-xs font-semibold leading-none text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:text-slate-300">{label}</button>; }

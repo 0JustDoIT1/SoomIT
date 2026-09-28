@@ -189,7 +189,7 @@ jobs:
             export DEPLOYED_AT=\"\$(date -u +%Y-%m-%dT%H:%M:%SZ)\"
             export DJANGO_ENV=production
             export DJANGO_DEBUG=0
-            export DJANGO_ALLOWED_HOSTS=soomit.kro.kr
+            export DJANGO_ALLOWED_HOSTS=soomit.kro.kr,django
             export DJANGO_CSRF_TRUSTED_ORIGINS=https://soomit.kro.kr
             export DJANGO_CORS_ALLOWED_ORIGINS=https://soomit.kro.kr
             compose='sudo -E docker compose --env-file backend/.env --env-file frontend/.env -f infra/docker-compose.yml'
@@ -223,6 +223,10 @@ jobs:
               sudo docker exec soomit-infra-nginx nginx -s reload
             fi
             \$compose ps
+            # Immutable commit-tagged images accumulate on the small VM disk.
+            # Prune only images and build cache unused by running containers.
+            sudo docker image prune -a -f
+            sudo docker builder prune -f
           "
 
   verify:

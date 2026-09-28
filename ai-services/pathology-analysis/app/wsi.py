@@ -7,11 +7,12 @@ from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 
+import cv2
 import numpy as np
 import openslide
 import timm
 import torch
-from PIL import Image, ImageFilter
+from PIL import Image
 from timm.data import create_transform, resolve_data_config
 
 
@@ -49,6 +50,43 @@ def tissue_mask(slide: openslide.OpenSlide, thumbnail_size: int) -> tuple[np.nda
     return gray < threshold, thumbnail.size
 
 
+def heatmap_tissue_mask(
+    slide: openslide.OpenSlide,
+    thumbnail_size: int,
+    *,
+    min_area_ratio: float = 0.001,
+) -> tuple[np.ndarray, tuple[int, int]]:
+    """Build the HSV tissue mask used only by the visualization pass."""
+    thumbnail = slide.get_thumbnail((thumbnail_size, thumbnail_size)).convert("RGB")
+    rgb = np.asarray(thumbnail, dtype=np.uint8)
+    return _heatmap_tissue_mask_from_rgb(rgb, min_area_ratio), thumbnail.size
+
+
+def _heatmap_tissue_mask_from_rgb(
+    rgb: np.ndarray,
+    min_area_ratio: float = 0.001,
+) -> np.ndarray:
+    """Keep stained tissue while excluding the bright slide background."""
+    saturation = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)[..., 1]
+    saturation = cv2.medianBlur(saturation, 7)
+    _, mask = cv2.threshold(
+        saturation,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+    )
+    mask = cv2.morphologyEx(
+        mask,
+        cv2.MORPH_CLOSE,
+        np.ones((5, 5), dtype=np.uint8),
+    )
+
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(mask)
+    keep = np.zeros(component_count, dtype=bool)
+    keep[1:] = stats[1:, cv2.CC_STAT_AREA] >= mask.size * min_area_ratio
+    return np.where(keep[labels], 1.0, 0.0).astype(np.float32)
+
+
 def create_preview(slide_path: Path, max_size: int = 1200) -> bytes:
     """Render a bounded JPEG preview without exposing the original SVS."""
     slide = openslide.OpenSlide(str(slide_path))
@@ -69,88 +107,105 @@ def create_tissue_attention_heatmap(
     tile_size: int,
     max_size: int = 1200,
 ) -> bytes:
-    """Render blended tissue CLAM attention over a bounded H&E thumbnail."""
+    """Render a tissue-only CLAM heatmap while preserving the JPEG contract."""
     if len(coordinates) != len(attention) or not coordinates:
         raise ValueError("attention and patch coordinates must have equal nonzero lengths")
 
     slide = openslide.OpenSlide(str(slide_path))
     try:
         preview = slide.get_thumbnail((max_size, max_size)).convert("RGB")
+        preview_rgb = np.asarray(preview, dtype=np.uint8)
+        tissue = _heatmap_tissue_mask_from_rgb(preview_rgb) > 0
         preview_width, preview_height = preview.size
-        base_width, base_height = slide.dimensions
-        scale_x = preview_width / base_width
-        scale_y = preview_height / base_height
-
         scores = np.asarray(attention, dtype=np.float32)
-        low, high = np.percentile(scores, (5, 99))
-        if not np.isfinite(low) or not np.isfinite(high):
+        if not np.all(np.isfinite(scores)):
             raise ValueError("attention scores are not finite")
-        if high <= low:
-            normalized = np.zeros_like(scores)
-        else:
-            normalized = np.clip((scores - low) / (high - low), 0.0, 1.0)
 
-        score_sum = np.zeros((preview_height, preview_width), dtype=np.float32)
-        score_count = np.zeros((preview_height, preview_width), dtype=np.float32)
-        patch_sizes: list[float] = []
-        for (base_x, base_y, level), score in zip(coordinates, normalized, strict=True):
-            downsample = float(slide.level_downsamples[level])
-            patch_width = tile_size * downsample * scale_x
-            patch_height = tile_size * downsample * scale_y
-            x1 = max(0, min(preview_width, int(base_x * scale_x)))
-            y1 = max(0, min(preview_height, int(base_y * scale_y)))
-            x2 = max(x1, min(preview_width, int(np.ceil(base_x * scale_x + patch_width))))
-            y2 = max(y1, min(preview_height, int(np.ceil(base_y * scale_y + patch_height))))
+        level = coordinates[0][2]
+        if any(coordinate[2] != level for coordinate in coordinates):
+            raise ValueError("heatmap coordinates must use one slide level")
+        downsample = float(slide.level_downsamples[level])
+        level_width, level_height = slide.level_dimensions[level]
+        scale_x = preview_width / level_width
+        scale_y = preview_height / level_height
+        patch_width = max(1, int(round(tile_size * scale_x)))
+        patch_height = max(1, int(round(tile_size * scale_y)))
+
+        score_sum = np.zeros((preview_height, preview_width), dtype=np.float64)
+        score_count = np.zeros((preview_height, preview_width), dtype=np.float64)
+        for (base_x, base_y, _), score in zip(coordinates, scores, strict=True):
+            level_x = base_x / downsample
+            level_y = base_y / downsample
+            x1 = max(0, min(preview_width, int(level_x * scale_x)))
+            y1 = max(0, min(preview_height, int(level_y * scale_y)))
+            x2 = min(preview_width, x1 + patch_width)
+            y2 = min(preview_height, y1 + patch_height)
             if x2 > x1 and y2 > y1:
                 score_sum[y1:y2, x1:x2] += float(score)
                 score_count[y1:y2, x1:x2] += 1.0
-                patch_sizes.append((patch_width + patch_height) / 2.0)
 
-        coverage = score_count > 0
-        if not np.any(coverage):
+        if np.all(score_count <= 0):
             raise ValueError("attention patches do not overlap the WSI preview")
 
-        # Blur the accumulated scores and their weights independently before
-        # division. This preserves an overlap-weighted average at patch edges
-        # instead of allowing the empty background to lower the score.
-        peak_count = float(score_count.max())
-        sum_image = Image.fromarray(
-            np.clip(score_sum / peak_count * 255.0, 0, 255).astype(np.uint8),
-            mode="L",
+        # Smooth both accumulated attention and sampling density before division.
+        # This removes rectangular patch edges without allowing sparse sampling
+        # density to change the displayed attention value.
+        sigma_x = max(1.0, patch_width)
+        sigma_y = max(1.0, patch_height)
+        score_sum = cv2.GaussianBlur(
+            score_sum,
+            (0, 0),
+            sigmaX=sigma_x,
+            sigmaY=sigma_y,
+            borderType=cv2.BORDER_REFLECT,
         )
-        count_image = Image.fromarray(
-            np.clip(score_count / peak_count * 255.0, 0, 255).astype(np.uint8),
-            mode="L",
+        score_count = cv2.GaussianBlur(
+            score_count,
+            (0, 0),
+            sigmaX=sigma_x,
+            sigmaY=sigma_y,
+            borderType=cv2.BORDER_REFLECT,
         )
-        blur_radius = max(1.0, float(np.median(patch_sizes)) * 0.5)
-        blurred_sum = np.asarray(
-            sum_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)),
-            dtype=np.float32,
-        )
-        blurred_count = np.asarray(
-            count_image.filter(ImageFilter.GaussianBlur(radius=blur_radius)),
-            dtype=np.float32,
-        )
-        blended = np.divide(
-            blurred_sum,
-            blurred_count,
-            out=np.zeros_like(blurred_sum),
-            where=blurred_count > 0,
-        )
-        blended = np.clip(blended * 255.0, 0, 255).astype(np.uint8)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            blended = np.where(score_count > 1e-9, score_sum / score_count, np.nan)
 
-        gray = np.asarray(preview.convert("L"), dtype=np.uint8)
-        preview_tissue = gray < otsu_threshold(gray)
-        blended[~(coverage & preview_tissue)] = 0
-        intensity = Image.fromarray(blended, mode="L")
-        # Suppress low attention and make high attention visible while retaining
-        # the underlying H&E morphology.
-        intensity = intensity.point(lambda value: 0 if value < 48 else min(170, int(((value - 48) / 207) ** 1.35 * 170)))
-        red_overlay = Image.new("RGBA", preview.size, (230, 35, 70, 0))
-        red_overlay.putalpha(intensity)
-        composed = Image.alpha_composite(preview.convert("RGBA"), red_overlay).convert("RGB")
+        visible_scores = blended[tissue & np.isfinite(blended)]
+        if visible_scores.size == 0:
+            raise ValueError("attention does not overlap the detected tissue")
+        display_low, display_high = np.percentile(visible_scores, (20, 99))
+        if display_high <= display_low:
+            relative_attention = np.zeros_like(blended)
+        else:
+            relative_attention = np.clip(
+                (blended - display_low) / (display_high - display_low),
+                0.0,
+                1.0,
+            ).astype(np.float32)
+        relative_attention = np.power(
+            np.nan_to_num(relative_attention, nan=0.0),
+            1.35,
+        )
+        heat_u8 = (
+            relative_attention * 255
+        ).clip(0, 255).astype(np.uint8)
+        colors = cv2.cvtColor(
+            cv2.applyColorMap(heat_u8, cv2.COLORMAP_TURBO),
+            cv2.COLOR_BGR2RGB,
+        )
+        # Present the result as a diagnostic attention map: white outside the
+        # specimen, dark low-attention tissue, and Turbo colors for hotspots.
+        # Keeping the H&E texture out of this artifact prevents tile seams and
+        # compression noise from being mistaken for model attention.
+        composed = np.full_like(colors, 255)
+        composed[tissue] = colors[tissue]
         output = BytesIO()
-        composed.save(output, format="JPEG", quality=88, optimize=True)
+        Image.fromarray(composed).save(
+            output,
+            format="JPEG",
+            quality=95,
+            optimize=True,
+            subsampling=0,
+        )
         return output.getvalue()
     finally:
         slide.close()
@@ -207,6 +262,56 @@ def patch_coordinates(
     return coordinates, level
 
 
+def heatmap_patch_coordinates(
+    slide: openslide.OpenSlide,
+    mask: np.ndarray,
+    thumbnail_size: tuple[int, int],
+    *,
+    tile_size: int,
+    tissue_fraction: float,
+    target_mpp: float,
+    max_patches: int,
+    overlap_ratio: float,
+    seed: int,
+) -> tuple[list[tuple[int, int, int]], int]:
+    """Select overlapping patches without introducing a periodic grid pattern."""
+    if not 0.0 <= overlap_ratio < 1.0:
+        raise ValueError("overlap_ratio must be at least 0 and less than 1")
+    level, downsample = select_level(slide, target_mpp)
+    level_width, level_height = slide.level_dimensions[level]
+    base_width, base_height = slide.dimensions
+    thumb_width, thumb_height = thumbnail_size
+    scale_x, scale_y = base_width / thumb_width, base_height / thumb_height
+    stride = max(1, int(tile_size * (1.0 - overlap_ratio)))
+    base_tile_size = int(tile_size * downsample)
+    integral = cv2.integral((mask > 0).astype(np.uint8))
+
+    coordinates: list[tuple[int, int, int]] = []
+    for level_y in range(0, max(1, level_height - tile_size + 1), stride):
+        for level_x in range(0, max(1, level_width - tile_size + 1), stride):
+            base_x = int(level_x * downsample)
+            base_y = int(level_y * downsample)
+            x1, y1 = int(base_x / scale_x), int(base_y / scale_y)
+            x2 = int((base_x + base_tile_size) / scale_x)
+            y2 = int((base_y + base_tile_size) / scale_y)
+            x1, y1 = max(0, min(x1, thumb_width - 1)), max(0, min(y1, thumb_height - 1))
+            x2, y2 = max(x1 + 1, min(x2, thumb_width)), max(y1 + 1, min(y2, thumb_height))
+            area = (x2 - x1) * (y2 - y1)
+            tissue_area = (
+                integral[y2, x2]
+                - integral[y1, x2]
+                - integral[y2, x1]
+                + integral[y1, x1]
+            )
+            if area > 0 and tissue_area / area >= tissue_fraction:
+                coordinates.append((base_x, base_y, level))
+
+    if len(coordinates) > max_patches:
+        indices = sorted(random.Random(seed).sample(range(len(coordinates)), max_patches))
+        coordinates = [coordinates[index] for index in indices]
+    return coordinates, level
+
+
 class Uni2hEmbedder:
     def __init__(self, device: torch.device, batch_size: int) -> None:
         self.device = device
@@ -242,22 +347,37 @@ class Uni2hEmbedder:
         thumbnail_size: int,
         seed: int,
         overlap_ratio: float = 0.0,
+        heatmap_mode: bool = False,
     ) -> tuple[torch.Tensor, list[tuple[int, int, int]], int]:
         stage_started = time.perf_counter()
         slide = openslide.OpenSlide(str(slide_path))
         try:
-            mask, thumb_size = tissue_mask(slide, thumbnail_size)
-            coordinates, level = patch_coordinates(
-                slide,
-                mask,
-                thumb_size,
-                tile_size=tile_size,
-                tissue_fraction=tissue_fraction,
-                target_mpp=target_mpp,
-                max_patches=max_patches,
-                seed=seed,
-                overlap_ratio=overlap_ratio,
-            )
+            if heatmap_mode:
+                mask, thumb_size = heatmap_tissue_mask(slide, thumbnail_size)
+                coordinates, level = heatmap_patch_coordinates(
+                    slide,
+                    mask,
+                    thumb_size,
+                    tile_size=tile_size,
+                    tissue_fraction=tissue_fraction,
+                    target_mpp=target_mpp,
+                    max_patches=max_patches,
+                    overlap_ratio=overlap_ratio,
+                    seed=seed,
+                )
+            else:
+                mask, thumb_size = tissue_mask(slide, thumbnail_size)
+                coordinates, level = patch_coordinates(
+                    slide,
+                    mask,
+                    thumb_size,
+                    tile_size=tile_size,
+                    tissue_fraction=tissue_fraction,
+                    target_mpp=target_mpp,
+                    max_patches=max_patches,
+                    seed=seed,
+                    overlap_ratio=overlap_ratio,
+                )
             log_latency("wsi_open_and_patch_selection", stage_started)
             if not coordinates:
                 raise ValueError("no tissue patches were found in the WSI")

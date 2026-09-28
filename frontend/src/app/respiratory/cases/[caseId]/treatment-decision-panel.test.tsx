@@ -26,6 +26,19 @@ it("shows regimen candidates in Step 1", async () => {
   expect(screen.queryByText("치료 차수")).not.toBeInTheDocument();
 });
 
+it("shows multi-driver clinical review guidance without selecting a candidate", async () => {
+  const egfr = { ...candidate, matched_drivers: [{ gene_symbol: "EGFR", alteration_codes: ["EGFR_EX19_DEL"] }] };
+  const braf = { ...secondCandidate, id: "rule-braf", rule_code: "TR04", matched_drivers: [{ gene_symbol: "BRAF", alteration_codes: ["BRAF_V600E"] }] };
+  renderDraft(vi.fn().mockResolvedValueOnce(response([egfr, braf])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })));
+
+  fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
+
+  expect(screen.getByText("복수의 actionable driver가 확인되었습니다.")).toBeInTheDocument();
+  expect(screen.getByText("Driver: EGFR EGFR_EX19_DEL · BRAF BRAF_V600E")).toBeInTheDocument();
+  expect(screen.getByText("Regimen을 선택해주세요")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "저장하고 다음 단계" })).toBeDisabled();
+});
+
 it("blocks Step 2 for drug treatment until a regimen is selected", async () => {
   renderDraft(vi.fn().mockResolvedValueOnce(response([candidate, secondCandidate])).mockResolvedValueOnce(response({ ...draft, selected_regimen: null, selected_regimen_detail: null })));
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
@@ -121,8 +134,9 @@ it("keeps Step 1 values when returning from Step 2", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
-  await screen.findByText("2. 치료 소견 및 확정");
-  fireEvent.click(screen.getByRole("button", { name: "이전" }));
+  const previousButton = await screen.findByRole("button", { name: "이전" });
+  await waitFor(() => expect(previousButton).toBeEnabled());
+  fireEvent.click(previousButton);
   expect(screen.getByLabelText("치료 계획")).toHaveValue("EGFR 치료계획");
   expect(screen.getByRole("button", { name: /Osimertinib \(R1\)/ })).toBeInTheDocument();
 });
@@ -153,8 +167,9 @@ it("confirms through the existing API after Step 2", async () => {
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
-  await screen.findByText("2. 치료 소견 및 확정");
-  fireEvent.click(screen.getByRole("button", { name: "치료계획 확정" }));
+  const confirmButton = await screen.findByRole("button", { name: "치료계획 확정" });
+  await waitFor(() => expect(confirmButton).toBeEnabled());
+  fireEvent.click(confirmButton);
   await waitFor(() => expect(onTreatmentConfirmed).toHaveBeenCalledWith(expect.objectContaining({ decision_status: "CONFIRMED" })));
   expect(fetch.mock.calls[5][0]).toBe("http://test/api/doctor/cases/case-1/treatment-decision/confirm/");
 });

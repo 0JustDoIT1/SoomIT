@@ -100,6 +100,34 @@ def evaluate_prescription_safety_freshness(prescription, *, items=None):
             "SNAPSHOT_MISSING",
         )
 
+    # Preview V2 intentionally uses request-scoped patient inputs instead of
+    # writing them to the patient tables. Its snapshot therefore has an
+    # ``items`` key, while the regular Case workflow has
+    # ``prescription_items``. Item edits can still be evaluated here; the
+    # request-scoped fields are compared again by the preview finalize API.
+    try:
+        saved_snapshot = json.loads(snapshot_result.message or "")
+    except (TypeError, ValueError):
+        return SafetyFreshnessEvaluation(
+            SafetyFreshness.RECHECK_REQUIRED,
+            "SNAPSHOT_INVALID",
+        )
+    if "items" in saved_snapshot and "prescription_items" not in saved_snapshot:
+        current_items = sorted([
+            {
+                "id": str(getattr(item, "id", "")),
+                "final_dose": str(getattr(item, "final_dose", None)),
+                "mfds_item_seq": explicit_item_seq(item),
+            }
+            for item in (list(prescription.items.all()) if items is None else items)
+        ], key=lambda row: row["id"])
+        if saved_snapshot.get("items") != current_items:
+            return SafetyFreshnessEvaluation(
+                SafetyFreshness.RECHECK_REQUIRED,
+                "INPUTS_CHANGED",
+            )
+        return SafetyFreshnessEvaluation(SafetyFreshness.CURRENT)
+
     patient = prescription.case.patient
     current_profile = PatientHealthProfile.objects.filter(patient=patient).first()
     current_medications = list(

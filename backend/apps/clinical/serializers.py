@@ -3,6 +3,7 @@ from decimal import Decimal
 from rest_framework import serializers
 
 from apps.ai_results.models import AiAnalysis, AnalysisType
+from apps.patients.models import PatientAccount
 
 from .models import (
     ClinicalResult,
@@ -798,6 +799,26 @@ def validate_input_snapshot(value):
 
 
 class PrescriptionItemSerializer(serializers.ModelSerializer):
+    standard_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("standard_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("standard_dose").decimal_places,
+        normalize_output=True,
+        read_only=True,
+    )
+    calculated_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("calculated_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("calculated_dose").decimal_places,
+        normalize_output=True,
+        read_only=True,
+        allow_null=True,
+    )
+    final_dose = serializers.DecimalField(
+        max_digits=PrescriptionItem._meta.get_field("final_dose").max_digits,
+        decimal_places=PrescriptionItem._meta.get_field("final_dose").decimal_places,
+        normalize_output=True,
+        read_only=True,
+        allow_null=True,
+    )
     drug_name = serializers.CharField(
         source="drug.drug_name",
         read_only=True,
@@ -894,6 +915,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
     )
     safety_check_results = serializers.SerializerMethodField()
     safety_freshness = serializers.SerializerMethodField()
+    patient_account_linked = serializers.SerializerMethodField()
 
     def get_safety_check_results(self, obj):
         results = [
@@ -905,6 +927,11 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
 
     def get_safety_freshness(self, obj):
         return evaluate_prescription_safety_freshness(obj).status
+
+    def get_patient_account_linked(self, obj):
+        return obj.case.patient.accounts.filter(
+            link_status=PatientAccount.LinkStatus.LINKED,
+        ).exists()
 
     class Meta:
         model = Prescription
@@ -927,6 +954,7 @@ class DoctorPrescriptionSerializer(serializers.ModelSerializer):
             "items",
             "safety_check_results",
             "safety_freshness",
+            "patient_account_linked",
             "created_at",
             "updated_at",
         ]
@@ -959,6 +987,7 @@ class PrescriptionItemUpdateSerializer(serializers.Serializer):
 class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
     regimen_detail = RegimenSummarySerializer(source="regimen", read_only=True)
     match_reasons = serializers.SerializerMethodField()
+    matched_drivers = serializers.SerializerMethodField()
     therapy_components = serializers.SerializerMethodField()
     therapy_label = serializers.SerializerMethodField()
     treatment_type = serializers.SerializerMethodField()
@@ -1002,7 +1031,24 @@ class TreatmentRuleCandidateSerializer(serializers.ModelSerializer):
             "therapy_label",
             "treatment_type",
             "match_reasons",
+            "matched_drivers",
         ]
 
     def get_match_reasons(self, obj):
         return self.context.get("match_reasons_by_id", {}).get(obj.id, [])
+
+    def get_matched_drivers(self, obj):
+        prefix = "바이오마커 일치: "
+        drivers = []
+        for reason in self.get_match_reasons(obj):
+            if not reason.startswith(prefix):
+                continue
+            gene_symbol, separator, alteration_codes = reason[len(prefix):].partition(" / ")
+            if separator:
+                drivers.append({
+                    "gene_symbol": gene_symbol,
+                    "alteration_codes": [
+                        code.strip() for code in alteration_codes.split(",") if code.strip()
+                    ],
+                })
+        return drivers

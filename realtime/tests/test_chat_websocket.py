@@ -46,6 +46,13 @@ class FakeRedis:
         self.publish = AsyncMock(return_value=1)
 
 
+def test_django_internal_headers_mark_request_as_https():
+    headers = main._django_headers("access-token")
+
+    assert headers["Authorization"] == "Bearer access-token"
+    assert headers["X-Forwarded-Proto"] == "https"
+
+
 def test_private_message_is_broadcast_only_to_sender_and_recipients():
     room_id = str(uuid4())
     sender_id = str(uuid4())
@@ -131,6 +138,20 @@ def test_token_can_be_supplied_without_query_string_via_websocket_protocol():
     authorize.assert_awaited_once_with(case_id, "header-token")
     connect.assert_awaited_once()
     assert connect.await_args.args[3] == "soomit-chat"
+
+
+def test_protocol_is_echoed_when_global_authorization_is_rejected():
+    websocket = FakeWebSocket(token=None, protocols=["soomit-chat", "invalid-token"])
+
+    with (
+        patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
+        patch.object(main, "_authorize_global", AsyncMock(return_value=(4401, None, None))),
+    ):
+        asyncio.run(main.global_chat_endpoint(websocket))
+
+    assert websocket.accepted is True
+    assert websocket.accepted_subprotocol == "soomit-chat"
+    assert websocket.close_code == 4401
 
 
 def test_disallowed_origin_closes_with_4403():

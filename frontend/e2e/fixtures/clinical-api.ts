@@ -141,6 +141,11 @@ export async function installClinicalApi(page: Page) {
       return;
     }
 
+    if (path.endsWith("/allergy-profile/")) {
+      await json(route, { allergy_status: "UNCONFIRMED", allergies: [], height_cm: null, weight_kg: null });
+      return;
+    }
+
     if (path.endsWith("/treatment-evidence/")) {
       await json(route, { status: "READY", evidence: { answer: "E2E evidence", sources: [] } });
       return;
@@ -175,6 +180,47 @@ export async function installClinicalApi(page: Page) {
     }
 
     await json(route, []);
+  });
+}
+
+export async function installPrescriptionWarningFlow(page: Page) {
+  const warning = {
+    ...prescription("rx-warning", "DRAFT", "임시저장"),
+    safety_freshness: "CURRENT",
+    items: [{ id: "item-warning", drug_name: "E2E Drug", ingredient_name: "E2E Ingredient", calculated_dose: 80, final_dose: 80, unit: "mg", route: "INTRAVENOUS", instructions: "Day 1", mfds_item_seq: "123456789" }],
+    safety_check_results: [{ id: "safety-warning", check_type_label: "DUR", result: "WARNING", result_label: "경고", message: "병용 시 의료진 검토가 필요합니다.", source_code: "DUR_getSpcifyAgrdeTabooInfoList01", acknowledged_at: null as string | null, acknowledgment_note: null as string | null }],
+  };
+  const unresolved = {
+    ...warning,
+    id: "rx-unresolved",
+    safety_check_results: [{ id: "safety-unresolved", check_type_label: "검사 데이터", result: "WARNING", result_label: "경고", message: "신장기능 정보가 필요합니다.", source_code: "LAB_MISSING", acknowledged_at: null, acknowledgment_note: null }],
+  };
+  const flowPrescriptions = [warning, unresolved];
+
+  await page.route("**/api/doctor/cases/case-prescription/**", async (route) => {
+    const path = new URL(route.request().url()).pathname;
+    const method = route.request().method();
+    if (path === "/api/doctor/cases/case-prescription/") {
+      await json(route, caseRecord("case-prescription", "CASE-E2E-RX", "PRESCRIPTION"));
+      return;
+    }
+    if (path.endsWith("/clinical-results/")) {
+      await json(route, confirmedResults);
+      return;
+    }
+    if (path.endsWith("/prescriptions/") && method === "GET") {
+      await json(route, flowPrescriptions);
+      return;
+    }
+    if (path.endsWith("/prescriptions/rx-warning/warnings/acknowledge/") && method === "POST") {
+      warning.prescription_status = "VALIDATED";
+      warning.prescription_status_label = "검증완료";
+      warning.safety_check_results[0].acknowledged_at = "2026-09-28T01:00:00Z";
+      warning.safety_check_results[0].acknowledgment_note = "담당의 검토";
+      await json(route, warning);
+      return;
+    }
+    await route.fallback();
   });
 }
 
