@@ -36,8 +36,6 @@ class PatientQrService {
       data: const {},
     );
 
-    return PatientQrToken.fromJson(
-      response.data as Map<String, dynamic>,
-    );
+    return PatientQrToken.fromJson(response.data as Map<String, dynamic>);
   }
 }

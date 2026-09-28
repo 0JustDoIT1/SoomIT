@@ -11,9 +11,7 @@ class QuestionnaireService {
 
     return data
         .map(
-          (json) => PatientQuestionnaire.fromJson(
-            json as Map<String, dynamic>,
-          ),
+          (json) => PatientQuestionnaire.fromJson(json as Map<String, dynamic>),
         )
         .toList();
   }
