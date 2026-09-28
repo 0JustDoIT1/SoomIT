@@ -65,7 +65,7 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   await expect(page.getByRole("heading", { name: /Safety Check · RECHECK_REQUIRED/ })).toBeVisible();
   await page.getByRole("button", { name: /안전성 (검사 실행|재검사)/ }).click();
   await expect(page.getByRole("heading", { name: "Safety Check · PASS", exact: true })).toBeVisible();
-  await expect(page.getByText("현재 상태: VALIDATED · 검증 완료", { exact: true })).toBeVisible();
+  await expect(page.getByText("현재 상태: VALIDATED · Safety 통과", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "처방 최종 확정", exact: true })).toBeEnabled();
   const finalAction = await page.getByRole("button", { name: "처방 최종 확정", exact: true }).boundingBox();
   const workspace = await page.getByRole("region", { name: "처방 작업공간", exact: true }).boundingBox();

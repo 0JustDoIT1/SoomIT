@@ -134,6 +134,7 @@ class PathologyPipeline:
                 slide_path,
                 **embedding_options,
                 overlap_ratio=overlap_ratio,
+                heatmap_mode=True,
             )
             log_latency("heatmap_embedding_total", stage_started)
             stage_started = time.perf_counter()
