@@ -106,6 +106,7 @@ def _django_headers(access_token: str) -> dict[str, str]:
     return {
         "Authorization": f"Bearer {access_token}",
         "X-Service-Token": DJANGO_SERVICE_TOKEN,
+        "X-Forwarded-Proto": "https",
         "Content-Type": "application/json",
     }
 
@@ -144,6 +145,11 @@ async def _authorize_global(access_token: str) -> tuple[int, str | None, str | N
     if response.status_code == 200:
         data = response.json()
         return 0, str(data.get("user_id")), str(data.get("hospital_id"))
+    logger.warning(
+        "Django global chat access check rejected status=%s detail=%s",
+        response.status_code,
+        _error_detail(response, "unavailable"),
+    )
     return (4401, None, None) if response.status_code == 401 else ((4403, None, None) if response.status_code in (403, 404) else (1011, None, None))
 
 
@@ -151,10 +157,14 @@ async def _send_error(websocket: WebSocket, code: str, detail: str):
     await websocket.send_json({"type": "chat.error", "code": code, "detail": detail})
 
 
-async def _reject_websocket(websocket: WebSocket, code: int):
+async def _reject_websocket(
+    websocket: WebSocket,
+    code: int,
+    subprotocol: str | None = None,
+):
     # ASGI servers turn a pre-accept close into an HTTP 403 response. Accepting
     # first ensures clients receive the specified application close code.
-    await websocket.accept()
+    await websocket.accept(subprotocol=subprotocol)
     await websocket.close(code=code)
 
 
@@ -235,20 +245,20 @@ async def global_chat_endpoint(websocket: WebSocket):
     selected = "soomit-chat" if "soomit-chat" in protocols else None
     token = next((p for p in protocols if p != "soomit-chat"), "") or websocket.query_params.get("token", "")
     if not token:
-        await _reject_websocket(websocket, 4401)
+        await _reject_websocket(websocket, 4401, selected)
         return
     if websocket.headers.get("origin") not in ALLOWED_ORIGINS:
-        await _reject_websocket(websocket, 4403)
+        await _reject_websocket(websocket, 4403, selected)
         return
     code, user_id, hospital_id = await _authorize_global(token)
     if code:
-        await _reject_websocket(websocket, code)
+        await _reject_websocket(websocket, code, selected)
         return
     room = f"global:{hospital_id}"
     try:
         await manager.connect(room, websocket, user_id, selected)
     except Exception:
-        await _reject_websocket(websocket, 1011)
+        await _reject_websocket(websocket, 1011, selected)
         return
     try:
         while True:
@@ -302,21 +312,21 @@ async def chat_endpoint(websocket: WebSocket, case_id: str):
     access_token = (protocol_token or websocket.query_params.get("token", "")).strip()
     origin = websocket.headers.get("origin")
     if not access_token:
-        await _reject_websocket(websocket, 4401)
+        await _reject_websocket(websocket, 4401, selected_protocol)
         return
     if not canonical_case_id or not origin or origin not in ALLOWED_ORIGINS:
-        await _reject_websocket(websocket, 4403)
+        await _reject_websocket(websocket, 4403, selected_protocol)
         return
 
     close_code, user_id = await _authorize_case(canonical_case_id, access_token)
     if close_code:
-        await _reject_websocket(websocket, close_code)
+        await _reject_websocket(websocket, close_code, selected_protocol)
         return
     try:
         await manager.connect(canonical_case_id, websocket, user_id, selected_protocol)
     except Exception:
         logger.exception("WebSocket room initialization failed")
-        await _reject_websocket(websocket, 1011)
+        await _reject_websocket(websocket, 1011, selected_protocol)
         return
 
     try:
