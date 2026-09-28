@@ -50,18 +50,6 @@ def tissue_mask(slide: openslide.OpenSlide, thumbnail_size: int) -> tuple[np.nda
     return gray < threshold, thumbnail.size
 
 
-def heatmap_tissue_mask(
-    slide: openslide.OpenSlide,
-    thumbnail_size: int,
-    *,
-    min_area_ratio: float = 0.001,
-) -> tuple[np.ndarray, tuple[int, int]]:
-    """Build the HSV tissue mask used only by the visualization pass."""
-    thumbnail = slide.get_thumbnail((thumbnail_size, thumbnail_size)).convert("RGB")
-    rgb = np.asarray(thumbnail, dtype=np.uint8)
-    return _heatmap_tissue_mask_from_rgb(rgb, min_area_ratio), thumbnail.size
-
-
 def _heatmap_tissue_mask_from_rgb(
     rgb: np.ndarray,
     min_area_ratio: float = 0.001,
@@ -233,16 +221,13 @@ def patch_coordinates(
     target_mpp: float,
     max_patches: int,
     seed: int,
-    overlap_ratio: float = 0.0,
 ) -> tuple[list[tuple[int, int, int]], int]:
-    if not 0.0 <= overlap_ratio < 1.0:
-        raise ValueError("overlap_ratio must be at least 0 and less than 1")
     level, downsample = select_level(slide, target_mpp)
     level_width, level_height = slide.level_dimensions[level]
     base_width, base_height = slide.dimensions
     thumb_width, thumb_height = thumbnail_size
     scale_x, scale_y = base_width / thumb_width, base_height / thumb_height
-    stride = max(1, int(round(tile_size * (1.0 - overlap_ratio))))
+    stride = tile_size
     coordinates: list[tuple[int, int, int]] = []
     for y in range(0, level_height, stride):
         for x in range(0, level_width, stride):
@@ -259,56 +244,6 @@ def patch_coordinates(
                 coordinates.append((base_x, base_y, level))
     if len(coordinates) > max_patches:
         coordinates = random.Random(seed).sample(coordinates, max_patches)
-    return coordinates, level
-
-
-def heatmap_patch_coordinates(
-    slide: openslide.OpenSlide,
-    mask: np.ndarray,
-    thumbnail_size: tuple[int, int],
-    *,
-    tile_size: int,
-    tissue_fraction: float,
-    target_mpp: float,
-    max_patches: int,
-    overlap_ratio: float,
-    seed: int,
-) -> tuple[list[tuple[int, int, int]], int]:
-    """Select overlapping patches without introducing a periodic grid pattern."""
-    if not 0.0 <= overlap_ratio < 1.0:
-        raise ValueError("overlap_ratio must be at least 0 and less than 1")
-    level, downsample = select_level(slide, target_mpp)
-    level_width, level_height = slide.level_dimensions[level]
-    base_width, base_height = slide.dimensions
-    thumb_width, thumb_height = thumbnail_size
-    scale_x, scale_y = base_width / thumb_width, base_height / thumb_height
-    stride = max(1, int(tile_size * (1.0 - overlap_ratio)))
-    base_tile_size = int(tile_size * downsample)
-    integral = cv2.integral((mask > 0).astype(np.uint8))
-
-    coordinates: list[tuple[int, int, int]] = []
-    for level_y in range(0, max(1, level_height - tile_size + 1), stride):
-        for level_x in range(0, max(1, level_width - tile_size + 1), stride):
-            base_x = int(level_x * downsample)
-            base_y = int(level_y * downsample)
-            x1, y1 = int(base_x / scale_x), int(base_y / scale_y)
-            x2 = int((base_x + base_tile_size) / scale_x)
-            y2 = int((base_y + base_tile_size) / scale_y)
-            x1, y1 = max(0, min(x1, thumb_width - 1)), max(0, min(y1, thumb_height - 1))
-            x2, y2 = max(x1 + 1, min(x2, thumb_width)), max(y1 + 1, min(y2, thumb_height))
-            area = (x2 - x1) * (y2 - y1)
-            tissue_area = (
-                integral[y2, x2]
-                - integral[y1, x2]
-                - integral[y2, x1]
-                + integral[y1, x1]
-            )
-            if area > 0 and tissue_area / area >= tissue_fraction:
-                coordinates.append((base_x, base_y, level))
-
-    if len(coordinates) > max_patches:
-        indices = sorted(random.Random(seed).sample(range(len(coordinates)), max_patches))
-        coordinates = [coordinates[index] for index in indices]
     return coordinates, level
 
 
@@ -346,38 +281,21 @@ class Uni2hEmbedder:
         tissue_fraction: float,
         thumbnail_size: int,
         seed: int,
-        overlap_ratio: float = 0.0,
-        heatmap_mode: bool = False,
     ) -> tuple[torch.Tensor, list[tuple[int, int, int]], int]:
         stage_started = time.perf_counter()
         slide = openslide.OpenSlide(str(slide_path))
         try:
-            if heatmap_mode:
-                mask, thumb_size = heatmap_tissue_mask(slide, thumbnail_size)
-                coordinates, level = heatmap_patch_coordinates(
-                    slide,
-                    mask,
-                    thumb_size,
-                    tile_size=tile_size,
-                    tissue_fraction=tissue_fraction,
-                    target_mpp=target_mpp,
-                    max_patches=max_patches,
-                    overlap_ratio=overlap_ratio,
-                    seed=seed,
-                )
-            else:
-                mask, thumb_size = tissue_mask(slide, thumbnail_size)
-                coordinates, level = patch_coordinates(
-                    slide,
-                    mask,
-                    thumb_size,
-                    tile_size=tile_size,
-                    tissue_fraction=tissue_fraction,
-                    target_mpp=target_mpp,
-                    max_patches=max_patches,
-                    seed=seed,
-                    overlap_ratio=overlap_ratio,
-                )
+            mask, thumb_size = tissue_mask(slide, thumbnail_size)
+            coordinates, level = patch_coordinates(
+                slide,
+                mask,
+                thumb_size,
+                tile_size=tile_size,
+                tissue_fraction=tissue_fraction,
+                target_mpp=target_mpp,
+                max_patches=max_patches,
+                seed=seed,
+            )
             log_latency("wsi_open_and_patch_selection", stage_started)
             if not coordinates:
                 raise ValueError("no tissue patches were found in the WSI")

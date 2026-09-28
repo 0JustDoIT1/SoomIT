@@ -29,7 +29,6 @@ GENE_SHA = os.environ["PATHOLOGY_GENE_MODEL_SHA256"].lower()
 MAX_WSI_BYTES = int(os.getenv("PATHOLOGY_MAX_WSI_BYTES", str(10 * 1024**3)))
 MAX_PATCHES = int(os.getenv("PATHOLOGY_MAX_PATCHES", "10000"))
 BATCH_SIZE = int(os.getenv("PATHOLOGY_UNI2H_BATCH_SIZE", "32"))
-HEATMAP_OVERLAP_RATIO = float(os.getenv("PATHOLOGY_HEATMAP_OVERLAP_RATIO", "0.5"))
 logger = logging.getLogger("uvicorn.error")
 
 
@@ -117,16 +116,6 @@ def predict(body: PredictRequest) -> dict:
             if body.include_heatmap:
                 stage_started = time.perf_counter()
                 try:
-                    coordinates, tissue_attention = app.state.pipeline.predict_heatmap_attention(
-                        slide_path,
-                        overlap_ratio=HEATMAP_OVERLAP_RATIO,
-                        max_patches=MAX_PATCHES,
-                        tile_size=256,
-                        target_mpp=0.5,
-                        tissue_fraction=0.5,
-                        thumbnail_size=2000,
-                        seed=42,
-                    )
                     if len(coordinates) != len(tissue_attention):
                         raise ValueError("attention and patch coordinate counts do not match")
                     heatmap_uri = upload_tissue_heatmap(
