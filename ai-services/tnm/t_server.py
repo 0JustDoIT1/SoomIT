@@ -68,9 +68,8 @@ def size_category(size_mm: float | None) -> str:
     return "T4"
 
 
-def quantify(mask_path: Path) -> dict:
-    image = nib.load(str(mask_path))
-    mask = np.asarray(image.dataobj) > 0
+def quantify(image: nib.Nifti1Image, mask: np.ndarray) -> dict:
+    mask = np.asarray(mask, dtype=bool)
     if not mask.any():
         return {"tumor_detected": False, "tumor_volume_ml": None, "mask_bbox_diagonal_mm": None, "component_count": 0}
     spacing = np.asarray(image.header.get_zooms()[:3], dtype=float)
@@ -88,9 +87,10 @@ def quantify(mask_path: Path) -> dict:
     }
 
 
-def component_candidates(mask_path: Path) -> tuple[np.ndarray, int, list[dict]]:
-    image = nib.load(str(mask_path))
-    mask = np.asarray(image.dataobj) > 0
+def component_candidates(
+    image: nib.Nifti1Image,
+    mask: np.ndarray,
+) -> tuple[np.ndarray, int, list[dict]]:
     labels, count = ndimage.label(mask)
     spacing = np.asarray(image.header.get_zooms()[:3], dtype=float)
     candidates = []
@@ -118,27 +118,31 @@ def component_candidates(mask_path: Path) -> tuple[np.ndarray, int, list[dict]]:
     return labels, int(count), candidates
 
 
-def select_component(mask_path: Path, component_id: int) -> None:
-    image = nib.load(str(mask_path))
-    mask = np.asarray(image.dataobj) > 0
-    labels, count = ndimage.label(mask)
+def select_component(
+    image: nib.Nifti1Image,
+    labels: np.ndarray,
+    component_id: int,
+    output_path: Path,
+) -> np.ndarray:
+    count = int(labels.max())
     if component_id < 1 or component_id > int(count):
         raise ValueError(f"primary_component_id must identify a component from 1 to {count}")
     selected = (labels == component_id).astype(np.uint8)
     output = nib.Nifti1Image(selected, image.affine, header=image.header.copy())
     output.set_data_dtype(np.uint8)
-    nib.save(output, str(mask_path))
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    nib.save(output, str(output_path))
+    return selected
 
 
 def select_primary_component(
-    mask_path: Path,
+    image: nib.Nifti1Image,
     labels: np.ndarray,
     candidates: list[dict],
     metadata: dict,
     target_mask_path: Path | None,
 ) -> tuple[int, dict]:
     """Choose a deterministic T component in original CT geometry."""
-    image = nib.load(str(mask_path))
     target_mask = None
     if target_mask_path is not None:
         target_image = nib.load(str(target_mask_path))
@@ -182,8 +186,10 @@ def select_primary_component(
     return int(selected["component_id"]), selected
 
 
-def restore_to_original_geometry(crop_mask_path: Path, metadata_path: Path, output_path: Path) -> Path:
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+def restore_to_original_geometry(
+    crop_mask_path: Path,
+    metadata: dict,
+) -> tuple[nib.Nifti1Image, np.ndarray]:
     crop_image = nib.load(str(crop_mask_path))
     crop_mask = np.asarray(crop_image.dataobj) > 0
     crop_min = np.asarray(metadata["crop_min_xyz"], dtype=int)
@@ -198,9 +204,7 @@ def restore_to_original_geometry(crop_mask_path: Path, metadata_path: Path, outp
     ] = crop_mask.astype(np.uint8)
     image = nib.Nifti1Image(restored, np.asarray(metadata["original_affine"], dtype=float))
     image.set_data_dtype(np.uint8)
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    nib.save(image, str(output_path))
-    return output_path
+    return image, restored
 
 
 @asynccontextmanager
@@ -266,8 +270,12 @@ def predict(body: TRequest) -> dict:
             if not mask_path.is_file():
                 raise FileNotFoundError("nnU-Net did not create the expected tumor mask")
             stage_started = time.perf_counter()
-            restored_mask_path = restore_to_original_geometry(mask_path, metadata_path, root / "restored" / "tumor_mask.nii.gz")
-            labels, prediction_component_count, components = component_candidates(restored_mask_path)
+            restored_mask_path = root / "restored" / "tumor_mask.nii.gz"
+            restored_image, restored_mask = restore_to_original_geometry(mask_path, metadata)
+            labels, prediction_component_count, components = component_candidates(
+                restored_image,
+                restored_mask,
+            )
             if prediction_component_count == 0:
                 raise ValueError("T prediction contains no connected component")
             if body.primary_component_id is not None:
@@ -275,11 +283,17 @@ def predict(body: TRequest) -> dict:
                 primary_component_selection = {"component_id": primary_component_id, "method": "request_override"}
             else:
                 primary_component_id, primary_component_selection = select_primary_component(
-                    restored_mask_path, labels, components, metadata, target_mask_path
+                    restored_image, labels, components, metadata, target_mask_path
                 )
                 primary_component_selection["method"] = "auto-primary-v1"
-            select_component(restored_mask_path, primary_component_id)
-            metrics = quantify(restored_mask_path)
+            selected_mask = select_component(
+                restored_image,
+                labels,
+                primary_component_id,
+                restored_mask_path,
+            )
+            del labels
+            metrics = quantify(restored_image, selected_mask)
             metrics["prediction_component_count"] = prediction_component_count
             log_latency("postprocessing", stage_started)
             stage_started = time.perf_counter()
