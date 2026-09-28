@@ -81,10 +81,7 @@ class _HeaderButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
 
-  const _HeaderButton({
-    required this.icon,
-    required this.onTap,
-  });
+  const _HeaderButton({required this.icon, required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -97,11 +94,7 @@ class _HeaderButton extends StatelessWidget {
         child: SizedBox(
           width: 50,
           height: 50,
-          child: Icon(
-            icon,
-            size: 25,
-            color: const Color(0xFF2F8DFE),
-          ),
+          child: Icon(icon, size: 25, color: const Color(0xFF2F8DFE)),
         ),
       ),
     );

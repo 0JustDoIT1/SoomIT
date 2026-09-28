@@ -6,10 +6,7 @@ class AppLocalizations {
   AppLocalizations(this.locale);
 
   static AppLocalizations of(BuildContext context) {
-    return Localizations.of<AppLocalizations>(
-      context,
-      AppLocalizations,
-    )!;
+    return Localizations.of<AppLocalizations>(context, AppLocalizations)!;
   }
 
   static const LocalizationsDelegate<AppLocalizations> delegate =
@@ -94,9 +91,7 @@ class _AppLocalizationsDelegate
   }
 
   @override
-  bool shouldReload(
-    covariant LocalizationsDelegate<AppLocalizations> old,
-  ) {
+  bool shouldReload(covariant LocalizationsDelegate<AppLocalizations> old) {
     return false;
   }
 }

@@ -5,11 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 
 class BottomNav extends StatelessWidget {
-  const BottomNav({
-    super.key,
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const BottomNav({super.key, required this.currentIndex, required this.onTap});
 
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -20,12 +16,7 @@ class BottomNav extends StatelessWidget {
 
     return Container(
       decoration: const BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: Color(0xFFEEEEEE),
-            width: 1,
-          ),
-        ),
+        border: Border(top: BorderSide(color: Color(0xFFEEEEEE), width: 1)),
       ),
       child: BottomNavigationBar(
         currentIndex: currentIndex,

@@ -2,11 +2,7 @@
 import 'package:flutter/material.dart';
 
 class BaseCard extends StatelessWidget {
-  const BaseCard({
-    super.key,
-    required this.child,
-    this.padding,
-  });
+  const BaseCard({super.key, required this.child, this.padding});
 
   final Widget child;
   final EdgeInsetsGeometry? padding;
