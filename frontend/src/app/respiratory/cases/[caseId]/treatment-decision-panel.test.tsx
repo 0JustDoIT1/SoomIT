@@ -122,7 +122,7 @@ it("saves Step 1 and shows the summary plus opinion panels in Step 2", async () 
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   fireEvent.click(screen.getByRole("button", { name: /Osimertinib \(R1\)/ }));
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
-  expect(await screen.findByText("2. 치료 소견 및 확정")).toBeInTheDocument();
+  expect(await screen.findByText("2. 종합 소견 및 확정")).toBeInTheDocument();
   expect(await screen.findByLabelText("치료계획 요약")).toHaveTextContent("Osimertinib (R1)");
   expect(screen.getByTestId("treatment-opinions")).toHaveAttribute("data-regimen", "regimen-1");
   expect(JSON.parse(fetch.mock.calls[2][1].body)).toMatchObject({ selected_regimen: "regimen-1", treatment_type: "TARGETED_THERAPY" });

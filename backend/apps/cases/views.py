@@ -817,24 +817,47 @@ class DoctorDashboardMemoAPIView(APIView):
 class DoctorTreatmentOpinionAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]
+    OPINION_SCHEMA_KEYS = {
+        "xray_summary",
+        "ct_summary",
+        "staging_summary",
+        "pathology_biomarker_summary",
+        "treatment_summary",
+        "safety_follow_up",
+    }
     SYSTEM_PROMPT = (
-        "Draft a concise clinician-review treatment opinion using only supplied confirmed context, "
-        "selected regimen, Treatment Rule, NCI evidence, prescription and safety data. "
-        "Do not invent biomarkers, recommend a new regimen, alter doses, or change safety results. "
+        "Draft a concise longitudinal clinician-review opinion using every supplied confirmed result "
+        "from chest X-ray, chest CT, PET-CT/TNM, pathology, gene testing and PD-L1, followed by the "
+        "selected treatment plan, prescription and safety data. Preserve the chronological diagnostic "
+        "reasoning and clearly distinguish confirmed findings from unavailable findings. "
+        "Use Treatment Rule and NCI evidence only to explain the already selected treatment. "
+        "Do not invent findings or biomarkers, recommend a new regimen, alter doses, or change safety results. "
         "Write every value in Korean. Return valid JSON only, without Markdown fences or commentary. "
-        "Use exactly these keys: clinical_summary, treatment_summary, evidence_summary, safety_summary, cautions. "
+        "Use exactly these keys: xray_summary, ct_summary, staging_summary, "
+        "pathology_biomarker_summary, treatment_summary, safety_follow_up. "
         "Keep each value concise and suitable for a compact clinician review panel."
     )
     KOREAN_REPAIR_PROMPT = (
-        "아래 치료 소견의 모든 자연어 내용을 간결한 한국어로 변환하세요. "
+        "아래 진료 종합 소견의 모든 자연어 내용을 간결한 한국어로 변환하세요. "
         "의학적 의미와 수치, 약물명은 바꾸지 마세요. "
-        "clinical_summary, treatment_summary, evidence_summary, safety_summary, cautions 키를 사용하는 "
+        "xray_summary, ct_summary, staging_summary, pathology_biomarker_summary, "
+        "treatment_summary, safety_follow_up 키를 사용하는 "
         "유효한 JSON만 반환하고 Markdown 코드블록이나 부가 설명은 쓰지 마세요."
     )
 
     @staticmethod
     def _is_korean_opinion(opinion):
         return isinstance(opinion, str) and re.search(r"[가-힣]", opinion) is not None
+
+    @classmethod
+    def _is_current_opinion(cls, opinion):
+        if not cls._is_korean_opinion(opinion):
+            return False
+        try:
+            parsed = json.loads(opinion)
+        except (TypeError, ValueError):
+            return False
+        return isinstance(parsed, dict) and cls.OPINION_SCHEMA_KEYS.issubset(parsed)
 
     @staticmethod
     def _case(request, case_id):
@@ -844,12 +867,254 @@ class DoctorTreatmentOpinionAPIView(APIView):
             case_status=LungCancerCase.CaseStatus.ACTIVE,
         ).first()
 
+    @staticmethod
+    def _confirmed_clinical_journey(case):
+        """Return every confirmed diagnostic result in workflow order for the final opinion."""
+        results_manager = getattr(case, "clinical_results", None)
+        if results_manager is None:
+            return []
+        stage_order = {
+            WorkflowStage.XRAY: 0,
+            WorkflowStage.CT: 1,
+            WorkflowStage.PET_CT_TNM: 2,
+            WorkflowStage.PATHOLOGY_GENE: 3,
+            WorkflowStage.PDL1: 4,
+        }
+        results = results_manager.filter(
+            result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).order_by("confirmed_at", "created_at")
+        serialized = list(DoctorClinicalResultSerializer(results, many=True).data)
+        return sorted(serialized, key=lambda item: stage_order.get(item.get("workflow_stage"), 99))
+
+    @staticmethod
+    def _confirmed_data_fallback(journey, evidence, draft_context, safety_data):
+        """Build a readable longitudinal narrative from confirmed values only."""
+        def stage_detail(stage, key):
+            result = next((item for item in journey if item.get("workflow_stage") == stage), {})
+            return (result.get("result_detail") or {}).get(key) or {}
+
+        def text(value):
+            return str(value).strip() if value is not None else ""
+
+        def finish(value):
+            value = text(value)
+            if not value:
+                return ""
+            return value if value[-1] in ".!?。" else f"{value}."
+
+        def narrative(*sentences):
+            values = [finish(value) for value in sentences if text(value)]
+            return " ".join(values) if values else "확정된 결과가 없습니다."
+
+        def unique(values):
+            output = []
+            seen = set()
+            for value in values:
+                value = text(value)
+                if value and value.casefold() not in seen:
+                    seen.add(value.casefold())
+                    output.append(value)
+            return output
+
+        action_labels = {
+            "NO_FURTHER_ACTION": "추가 조치 없이 경과 관찰",
+            "CHEST_CT": "흉부 CT 추가 검사",
+            "REPEAT_XRAY": "흉부 X-ray 재검",
+        }
+        treatment_labels = {
+            "CHEMOTHERAPY": "항암화학요법",
+            "TARGETED_THERAPY": "표적치료",
+            "IMMUNOTHERAPY": "면역치료",
+            "COMBINATION": "병합치료",
+            "RADIATION": "방사선치료",
+            "SURGERY": "수술",
+            "SUPPORTIVE_CARE": "완화치료",
+            "OBSERVATION": "경과관찰",
+            "OTHER": "기타 치료",
+        }
+        safety_labels = {
+            "safety_not_run": "처방 안전성 검토 전",
+            "safety_completed": "처방 안전성 검토 완료",
+            "unresolved_warning": "미해결 안전성 경고 있음",
+            "block_present": "처방 차단 항목 있음",
+        }
+        regimen_labels = {"Osimertinib": "오시머티닙"}
+        alteration_labels = {
+            "EXON19DEL": "exon 19 결실",
+            "EXON19_DEL": "exon 19 결실",
+            "EXON_19_DEL": "exon 19 결실",
+            "EX19_DEL": "exon 19 결실",
+            "EGFR_EX19_DEL": "exon 19 결실",
+            "EGFR_EXON19DEL": "exon 19 결실",
+            "EGFR_EXON19_DEL": "exon 19 결실",
+            "L858R": "L858R 변이",
+        }
+        pathology_labels = {
+            "LUAD": "폐선암",
+            "ADENOCARCINOMA": "폐선암",
+            "LUSC": "폐편평상피암",
+            "SQUAMOUS_CELL_CARCINOMA": "폐편평상피암",
+        }
+
+        xray = stage_detail(WorkflowStage.XRAY, "xray")
+        ct = stage_detail(WorkflowStage.CT, "ct")
+        tnm = stage_detail(WorkflowStage.PET_CT_TNM, "tnm")
+        pathology = stage_detail(WorkflowStage.PATHOLOGY_GENE, "pathology")
+        gene = stage_detail(WorkflowStage.PATHOLOGY_GENE, "gene")
+        pdl1 = stage_detail(WorkflowStage.PDL1, "pdl1")
+
+        nodule_descriptions = []
+        for observation in ct.get("nodule_observations") or []:
+            location = text(observation.get("lobe_label") or observation.get("location_description"))
+            size = observation.get("max_diameter_mm")
+            number = observation.get("nodule_no")
+            description = f"{location + '에 ' if location else ''}"
+            description += f"{number}번 결절" if number is not None else "결절"
+            if size is not None:
+                description += f"(최대 {size} mm)"
+            if observation.get("malignancy_risk") is not None:
+                description += f", 악성 위험도 {observation.get('malignancy_risk')}%"
+            nodule_descriptions.append(description)
+
+        positive_genes = []
+        indeterminate_genes = []
+        negative_gene_count = 0
+        for finding in gene.get("findings") or []:
+            assessment = text(finding.get("assessment")).upper()
+            gene_symbol = text(finding.get("gene_symbol"))
+            alteration_code = text(finding.get("alteration_code"))
+            alteration = alteration_labels.get(alteration_code.upper(), alteration_code)
+            finding_label = " ".join(part for part in [gene_symbol, alteration] if part)
+            if gene_symbol and not alteration:
+                finding_label = f"{gene_symbol} 변이"
+            if assessment == "LIKELY_POSITIVE":
+                positive_genes.append(finding_label or gene_symbol)
+            elif assessment == "INDETERMINATE":
+                indeterminate_genes.append(finding_label or gene_symbol)
+            elif assessment == "LIKELY_NEGATIVE":
+                negative_gene_count += 1
+
+        regimen = evidence.get("regimen") or {}
+        regimen_name = text(regimen.get("name"))
+        localized_regimen = regimen_labels.get(regimen_name, regimen_name)
+        regimen_code = text(regimen.get("code"))
+        regimen_display = localized_regimen
+        if localized_regimen and regimen_code:
+            regimen_display = f"{localized_regimen}({regimen_code})"
+        treatment_type = treatment_labels.get(
+            text(draft_context.get("treatment_type")).upper(),
+            text(draft_context.get("treatment_type")),
+        )
+        warnings = [
+            result.get("message")
+            for result in safety_data.get("results") or []
+            if result.get("result") in {"WARNING", "BLOCK"} and result.get("message")
+        ]
+
+        xray_assessment = text(xray.get("assessment_label") or xray.get("assessment"))
+        xray_finding = text(xray.get("finding_summary"))
+        xray_finding = xray_finding.replace("결절의심", "결절 의심").replace("결절발견", "결절 발견")
+        xray_action = action_labels.get(text(xray.get("recommended_action")), text(xray.get("recommended_action")))
+        xray_result = xray_finding or (f"{xray_assessment} 소견" if xray_assessment else "")
+
+        ct_finding = ", ".join(nodule_descriptions) or text(ct.get("finding_summary"))
+        ct_assessment = text(ct.get("overall_assessment_label") or ct.get("overall_assessment"))
+        ct_assessment = ct_assessment.replace("결절의심", "결절 의심").replace("결절발견", "결절 발견")
+        ct_risk = ct.get("overall_malignancy_risk")
+
+        tnm_categories = " ".join(filter(None, [
+            text(tnm.get("t_category")), text(tnm.get("n_category")), text(tnm.get("m_category")),
+        ]))
+        stage_group = text(tnm.get("stage_group"))
+
+        pathology_terms = unique([
+            pathology_labels.get(text(value).upper(), value)
+            for value in [pathology.get("histologic_type"), pathology.get("subtype"), pathology.get("diagnosis_summary")]
+        ])
+        pathology_diagnosis = ", ".join(pathology_terms)
+        malignancy = text(pathology.get("malignancy_status_label") or pathology.get("malignancy_status"))
+
+        biomarker_sentences = []
+        if positive_genes:
+            gene_priority = {"EGFR": 0, "ALK": 1, "ROS1": 2, "BRAF": 3, "KRAS": 4, "MET": 5, "RET": 6}
+            positive_genes = sorted(
+                unique(positive_genes),
+                key=lambda value: gene_priority.get(value.split(" ", 1)[0].upper(), 99),
+            )
+            biomarker_sentences.append(f"유전자 검사에서 {' 및 '.join(positive_genes)} 소견이 확인되었다")
+        if indeterminate_genes:
+            biomarker_sentences.append(f"{', '.join(unique(indeterminate_genes))}은 판정불가로 추가 확인이 필요하다")
+        if negative_gene_count:
+            biomarker_sentences.append(
+                f"그 외 검사된 주요 유전자 {negative_gene_count}개에서는 양성 변이가 확인되지 않았다"
+            )
+        if pdl1.get("tps_percent") is not None:
+            biomarker_sentences.append(f"PD-L1 TPS는 {pdl1.get('tps_percent')}%로 확정되었다")
+        elif text(pdl1.get("indeterminate_reason")):
+            biomarker_sentences.append(f"PD-L1은 {text(pdl1.get('indeterminate_reason'))} 사유로 판정불가이다")
+
+        clinical_basis = unique([
+            f"Stage {stage_group}" if stage_group else None,
+            pathology_diagnosis,
+            *positive_genes,
+        ])
+        treatment_plan = text(draft_context.get("treatment_plan"))
+        if treatment_plan in {"예정", "계획", "진행 예정"}:
+            treatment_plan_sentence = f"{treatment_type or '치료'}를 진행할 예정이다"
+        else:
+            treatment_plan_sentence = f"세부 치료계획은 {treatment_plan}" if treatment_plan else ""
+
+        safety_status = text(safety_data.get("safety_status")) or "safety_not_run"
+        safety_status_label = safety_labels.get(safety_status, safety_status)
+        summaries = {
+            "xray_summary": narrative(
+                f"흉부 X-ray에서 {xray_result}이 확인되었다" if xray_result else None,
+                f"이에 따라 {xray_action}를 권고하였다" if xray_action else None,
+            ),
+            "ct_summary": narrative(
+                f"후속 흉부 CT에서 {ct_finding}가 확인되었다" if ct_finding else None,
+                f"전체 악성 위험도는 {ct_risk}%로 평가되었다" if ct_risk is not None else
+                f"영상 판정은 {ct_assessment}이다" if ct_assessment and not ct_finding else
+                f"악성 위험도는 {ct_risk}%로 평가되었다" if ct_risk is not None else None,
+            ),
+            "staging_summary": narrative(
+                f"병기 평가를 위해 시행한 PET-CT/TNM 검토 결과 {tnm_categories}, Stage {stage_group}로 확정되었다"
+                if tnm_categories and stage_group else
+                f"PET-CT/TNM 검토 결과 {tnm_categories or stage_group}로 확정되었다"
+                if tnm_categories or stage_group else None,
+            ),
+            "pathology_biomarker_summary": narrative(
+                f"조직검사에서 {'악성 ' if malignancy == '악성' else ''}{pathology_diagnosis}이 확인되었다"
+                if pathology_diagnosis else f"조직검사 결과는 {malignancy}이다" if malignancy else None,
+                *biomarker_sentences,
+            ),
+            "treatment_summary": narrative(
+                f"이상의 {', '.join(clinical_basis)} 결과를 근거로 {regimen_display} {treatment_type}를 선택하였다"
+                if clinical_basis and regimen_display else
+                f"{regimen_display} {treatment_type}를 선택하였다" if regimen_display else None,
+                treatment_plan_sentence,
+            ),
+            "safety_follow_up": narrative(
+                f"현재 상태는 '{safety_status_label}'이다",
+                f"확인된 주의사항은 {'; '.join(warnings)}이다" if warnings else "기록된 처방 차단 또는 미해결 경고는 없다",
+                "치료 시작 전 의료진의 최종 안전성 확인과 치료계획에 따른 추적 관찰이 필요하다",
+            ),
+        }
+        return json.dumps(summaries, ensure_ascii=False, default=str)
+
     def get(self, request, case_id):
         case = self._case(request, case_id)
         if case is None:
             return Response({"detail": "담당 중인 활성 Case를 찾을 수 없습니다."}, status=status.HTTP_404_NOT_FOUND)
         opinion = TreatmentAIOpinion.objects.filter(case=case).first()
-        if opinion is None or not self._is_korean_opinion(opinion.opinion):
+        if (
+            opinion is None
+            or not self._is_current_opinion(opinion.opinion)
+            or (
+                opinion.status.startswith("CONFIRMED_DATA_FALLBACK")
+                and opinion.status != "CONFIRMED_DATA_FALLBACK_V3"
+            )
+        ):
             return Response({
                 "case_id": str(case.id),
                 "status": "NOT_GENERATED",
@@ -885,7 +1150,15 @@ class DoctorTreatmentOpinionAPIView(APIView):
             clinical_result__case=case,
             clinical_result__result_status=ClinicalResult.ResultStatus.CONFIRMED,
         ).exists()
-        if confirmed_decision and existing_opinion is not None and self._is_korean_opinion(existing_opinion.opinion):
+        if (
+            confirmed_decision
+            and existing_opinion is not None
+            and not (
+                existing_opinion.status.startswith("CONFIRMED_DATA_FALLBACK")
+                and existing_opinion.status != "CONFIRMED_DATA_FALLBACK_V3"
+            )
+            and self._is_current_opinion(existing_opinion.opinion)
+        ):
             return Response(TreatmentAIOpinionSerializer(existing_opinion).data)
         prescription = Prescription.objects.filter(case=case).prefetch_related("items", "safety_check_results").order_by("-created_at").first()
         prescription_data = {"prescription_available": prescription is not None}
@@ -902,7 +1175,9 @@ class DoctorTreatmentOpinionAPIView(APIView):
             safety_data["safety_status"] = ("block_present" if any(r.result == "BLOCK" for r in results)
                 else "unresolved_warning" if any(r.result == "WARNING" and r.acknowledged_at is None for r in results)
                 else "safety_completed") if results else "safety_not_run"
-        prompt_context = {"clinical_context": evidence["clinical_context"], "regimen": evidence["regimen"],
+        clinical_journey = self._confirmed_clinical_journey(case)
+        prompt_context = {"confirmed_clinical_journey": clinical_journey,
+            "clinical_context": evidence["clinical_context"], "regimen": evidence["regimen"],
             "treatment_rule": evidence["treatment_rule"], "evidence": evidence["evidence"],
             "draft_treatment": {
                 "treatment_type": draft_context.get("treatment_type", ""),
@@ -911,20 +1186,24 @@ class DoctorTreatmentOpinionAPIView(APIView):
             "prescription": prescription_data, "safety": safety_data}
         try:
             opinion = request_chat_completion([{"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str)}], max_tokens=600, temperature=0)
-            if not self._is_korean_opinion(opinion):
+                {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str)}], max_tokens=900, temperature=0)
+            if not self._is_current_opinion(opinion):
                 opinion = request_chat_completion([
                     {"role": "system", "content": self.KOREAN_REPAIR_PROMPT},
                     {"role": "user", "content": opinion},
-                ], max_tokens=600, temperature=0)
-        except MedgemmaServiceError:
-            return Response({"status": "MEDGEMMA_ERROR", "review_required": True}, status=502)
-        if not self._is_korean_opinion(opinion):
-            return Response({"status": "MEDGEMMA_LANGUAGE_ERROR", "review_required": True}, status=502)
+                ], max_tokens=900, temperature=0)
+        except MedgemmaServiceError as exc:
+            logger.warning("MedGemma treatment opinion failed; using confirmed-data fallback: %s", exc)
+            opinion = self._confirmed_data_fallback(clinical_journey, evidence, draft_context, safety_data)
+            opinion_status = "CONFIRMED_DATA_FALLBACK_V3"
+        else:
+            opinion_status = "AVAILABLE"
+        if not self._is_current_opinion(opinion):
+            return Response({"status": "MEDGEMMA_FORMAT_ERROR", "review_required": True}, status=502)
         saved_opinion, _ = TreatmentAIOpinion.objects.update_or_create(
             case=case,
             defaults={
-                "status": "AVAILABLE",
+                "status": opinion_status,
                 "opinion": opinion,
                 "sources": evidence["evidence"]["sources"],
                 "safety_status": safety_data["safety_status"],

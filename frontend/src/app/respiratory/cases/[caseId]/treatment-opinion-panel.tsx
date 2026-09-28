@@ -55,15 +55,15 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
     void authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-opinion/`)
       .then(async (response) => {
         const body = await response.json().catch(() => ({})) as TreatmentOpinionResponse & { detail?: string };
-        if (!response.ok) throw new Error(body.detail || "AI 치료 소견을 불러오지 못했습니다.");
+        if (!response.ok) throw new Error(body.detail || "AI 종합 소견을 불러오지 못했습니다.");
         if (active) {
-          setAiOpinion(body.status === "NOT_GENERATED" || !body.opinion ? null : body);
+          setAiOpinion(body.status === "NOT_GENERATED" || !isLongitudinalOpinion(body.opinion) ? null : body);
           setAiError("");
         }
       })
       .catch((caught) => {
         console.error(caught);
-        if (active) setAiError("AI 치료 소견을 불러오지 못했습니다.");
+        if (active) setAiError("AI 종합 소견을 불러오지 못했습니다.");
       })
       .finally(() => { if (active) setLoadedAiCaseId(caseId); });
     return () => { active = false; };
@@ -75,7 +75,7 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
     generatingRef.current = true;
     setGenerating(true);
     setAiError("");
-    showToast.info("치료 소견 생성을 시작했습니다.", { id: toastId });
+    showToast.info("진료 종합 소견 생성을 시작했습니다.", { id: toastId });
     try {
       const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-opinion/`, {
         method: "POST",
@@ -88,13 +88,15 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
       });
       const body = await response.json().catch(() => ({})) as TreatmentOpinionResponse & { detail?: string };
       if (!response.ok) throw new Error(body.detail || body.status || "Treatment opinion request failed.");
+      if (!isLongitudinalOpinion(body.opinion)) throw new Error("단계별 종합 소견 형식이 아닙니다. 백엔드 적용 상태를 확인해주세요.");
       setAiOpinion(body);
       setLoadedAiCaseId(caseId);
-      showToast.success("치료 소견 생성이 완료되었습니다.", { id: toastId });
+      showToast.success("진료 종합 소견 생성이 완료되었습니다.", { id: toastId });
     } catch (caught) {
       console.error(caught);
-      setAiError("치료 소견을 생성하지 못했습니다.");
-      showToast.error("치료 소견 생성에 실패했습니다.", { id: toastId });
+      const detail = caught instanceof Error ? caught.message : "진료 종합 소견을 생성하지 못했습니다.";
+      setAiError(detail);
+      showToast.error(detail, { id: toastId });
     } finally {
       generatingRef.current = false;
       setGenerating(false);
@@ -129,17 +131,18 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
     }
   };
 
-  return <section className="grid min-w-0 gap-3 lg:grid-cols-2" aria-label="치료 소견 비교">
+  return <section className="grid min-w-0 gap-3 lg:grid-cols-2" aria-label="진료 종합 소견 비교">
     <article className="flex min-h-[220px] min-w-0 flex-col overflow-hidden rounded-lg border border-violet-200 bg-violet-50/40 p-3">
-      <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold text-violet-600">MEDGEMMA · 참고용</p><h3 className="text-sm font-bold text-slate-900">AI 치료 소견</h3></div>{(!readOnly || (!loadingAiOpinion && !currentAiOpinion)) && <button type="button" onClick={() => void generate()} disabled={generating || loadingAiOpinion || !canGenerate} className="shrink-0 rounded border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{generating ? "치료 소견 생성 중..." : readOnly ? "확정 계획으로 소견 생성" : currentAiOpinion ? "치료 소견 다시 생성" : "치료 소견 생성"}</button>}</div>
+      <div className="flex items-start justify-between gap-3"><div><p className="text-[10px] font-semibold text-violet-600">{currentAiOpinion?.status.startsWith("CONFIRMED_DATA_FALLBACK") ? "확정 결과 자동 요약 · 참고용" : "MEDGEMMA · 참고용"}</p><h3 className="text-sm font-bold text-slate-900">{currentAiOpinion?.status.startsWith("CONFIRMED_DATA_FALLBACK") ? "확정 결과 기반 종합 소견" : "AI 진료 종합 소견"}</h3></div>{(!readOnly || (!loadingAiOpinion && !currentAiOpinion)) && <button type="button" onClick={() => void generate()} disabled={generating || loadingAiOpinion || !canGenerate} className="shrink-0 rounded border border-violet-200 bg-white px-3 py-2 text-xs font-semibold text-violet-700 disabled:cursor-not-allowed disabled:bg-slate-200 disabled:text-slate-500">{generating ? "종합 소견 생성 중..." : readOnly ? "확정 결과로 종합 소견 생성" : currentAiOpinion ? "종합 소견 다시 생성" : "종합 소견 생성"}</button>}</div>
       {aiError && <p role="alert" className="mt-3 text-xs text-rose-600">{aiError}</p>}
-      {!readOnly && !canGenerate && <p className="mt-2 text-xs text-amber-700">Regimen을 선택하면 현재 치료계획을 기준으로 치료 소견을 생성할 수 있습니다.</p>}
-      <div className="mt-3 max-h-80 min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-md bg-white p-3 text-sm leading-6 text-slate-700" aria-label="AI 치료 소견 내용">{loadingAiOpinion ? <p className="text-xs text-slate-500">저장된 AI 치료 소견을 불러오는 중입니다.</p> : currentAiOpinion ? <><OpinionContent opinion={currentAiOpinion.opinion} /><p className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-400">상태 {currentAiOpinion.status} · Safety {currentAiOpinion.safety_status || "-"} · 저장된 참고 소견 · 의료진 검토 필요</p></> : <p className="text-xs text-slate-500">생성된 AI 치료 소견이 없습니다. AI 소견은 참고자료이며 의료진 소견과 별도로 관리됩니다.</p>}</div>
+      {!readOnly && !canGenerate && <p className="mt-2 text-xs text-amber-700">Regimen을 선택하면 확정된 검사 결과와 치료계획을 함께 종합할 수 있습니다.</p>}
+      <p className="mt-2 text-[11px] leading-5 text-slate-500">확정된 X-ray → CT → PET-CT/TNM → 병리·유전자 → PD-L1 → 치료 결과를 시간순으로 종합합니다.</p>
+      <div className="mt-3 max-h-80 min-h-0 flex-1 overflow-y-auto overflow-x-hidden rounded-md bg-white p-3 text-sm leading-6 text-slate-700" aria-label="AI 진료 종합 소견 내용">{loadingAiOpinion ? <p className="text-xs text-slate-500">저장된 AI 종합 소견을 불러오는 중입니다.</p> : currentAiOpinion ? <><OpinionContent opinion={currentAiOpinion.opinion} /><p className="mt-3 border-t border-slate-100 pt-2 text-[11px] text-slate-400">상태 {currentAiOpinion.status} · Safety {currentAiOpinion.safety_status || "-"} · 저장된 참고 소견 · 의료진 검토 필요</p></> : <p className="text-xs text-slate-500">생성된 AI 종합 소견이 없습니다. AI 소견은 참고자료이며 의료진 최종 소견과 별도로 관리됩니다.</p>}</div>
     </article>
 
     <article className="flex min-h-[220px] flex-col rounded-lg border border-blue-200 bg-blue-50/30 p-3">
-      <div><p className="text-[10px] font-semibold text-blue-600">PHYSICIAN NOTE</p><h3 className="text-sm font-bold text-slate-900">호흡기내과 소견</h3></div>
-      <label className="mt-3 flex min-h-0 flex-1 flex-col text-xs font-semibold text-slate-700"><span className="sr-only">호흡기내과 소견</span><textarea value={currentPhysicianOpinion} onChange={(event) => setPhysicianOpinion(event.target.value)} disabled={readOnly || loadingPhysicianOpinion || saving} placeholder={loadingPhysicianOpinion ? "소견을 불러오는 중입니다." : "치료에 대한 의료진 소견을 입력하세요."} rows={7} className="min-h-[132px] flex-1 resize-none rounded-md border border-slate-300 bg-white p-3 text-sm font-normal leading-6 text-slate-800 disabled:bg-slate-100" /></label>
+      <div><p className="text-[10px] font-semibold text-blue-600">PHYSICIAN NOTE</p><h3 className="text-sm font-bold text-slate-900">호흡기내과 최종 종합 소견</h3></div>
+      <label className="mt-3 flex min-h-0 flex-1 flex-col text-xs font-semibold text-slate-700"><span className="sr-only">호흡기내과 최종 종합 소견</span><textarea value={currentPhysicianOpinion} onChange={(event) => setPhysicianOpinion(event.target.value)} disabled={readOnly || loadingPhysicianOpinion || saving} placeholder={loadingPhysicianOpinion ? "소견을 불러오는 중입니다." : "검사 전 과정과 진단·병기·치료계획을 종합한 최종 소견을 입력하세요."} rows={7} className="min-h-[132px] flex-1 resize-none rounded-md border border-slate-300 bg-white p-3 text-sm font-normal leading-6 text-slate-800 disabled:bg-slate-100" /></label>
       {!loadingPhysicianOpinion && !physicianError && !currentPhysicianOpinion && <p className="mt-2 text-xs text-slate-500">작성된 호흡기내과 소견이 없습니다.</p>}
       {physicianError && <p role="alert" className="mt-2 text-xs text-rose-600">{physicianError}</p>}
       {!readOnly && <button type="button" onClick={() => void savePhysicianOpinion()} disabled={loadingPhysicianOpinion || saving} className="mt-3 self-end rounded-md border border-blue-200 bg-white px-4 py-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">{saving ? "저장 중..." : "의료진 소견 저장"}</button>}
@@ -147,12 +150,13 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
   </section>;
 }
 
-const OPINION_LABELS: Record<string, string> = {
-  clinical_summary: "임상 요약",
-  treatment_summary: "치료 요약",
-  evidence_summary: "근거 요약",
-  safety_summary: "안전성 요약",
-  cautions: "주의사항",
+const CURRENT_OPINION_LABELS: Record<string, string> = {
+  xray_summary: "X-ray 소견",
+  ct_summary: "CT 소견",
+  staging_summary: "PET-CT / TNM 병기",
+  pathology_biomarker_summary: "병리·유전자·PD-L1",
+  treatment_summary: "치료계획 및 결정 근거",
+  safety_follow_up: "안전성 및 추적 계획",
 };
 
 function OpinionContent({ opinion }: { opinion?: string | null }) {
@@ -166,9 +170,20 @@ function parseStructuredOpinion(opinion: string) {
   const normalized = opinion.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
   try {
     const parsed = JSON.parse(normalized) as Record<string, unknown>;
-    const entries = Object.entries(OPINION_LABELS).filter(([key]) => typeof parsed[key] === "string" && String(parsed[key]).trim());
+    const entries = Object.entries(CURRENT_OPINION_LABELS).filter(([key]) => typeof parsed[key] === "string" && String(parsed[key]).trim());
     return entries.length ? entries.map(([key, label]) => ({ key, label, value: String(parsed[key]) })) : null;
   } catch {
     return null;
+  }
+}
+
+function isLongitudinalOpinion(opinion?: string | null) {
+  if (!opinion) return false;
+  const normalized = opinion.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
+  try {
+    const parsed = JSON.parse(normalized) as Record<string, unknown>;
+    return Object.keys(CURRENT_OPINION_LABELS).every((key) => typeof parsed[key] === "string");
+  } catch {
+    return false;
   }
 }

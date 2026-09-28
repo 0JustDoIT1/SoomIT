@@ -17,22 +17,30 @@ const props = {
 const response = (body: object, status = 200) => new Response(JSON.stringify(body), { status });
 const emptyPhysicianOpinion = { id: null, case: "case-1", physician_opinion: "", created_at: null, updated_at: null };
 const notGenerated = { case_id: "case-1", status: "NOT_GENERATED", opinion: null, sources: [], review_required: true };
+const longitudinalOpinion = (xraySummary: string) => JSON.stringify({
+  xray_summary: xraySummary,
+  ct_summary: "CT 결절 확인",
+  staging_summary: "Stage IVA",
+  pathology_biomarker_summary: "선암, EGFR 양성",
+  treatment_summary: "오시머티닙 치료계획",
+  safety_follow_up: "안전성 확인 후 추적",
+});
 
 describe("TreatmentOpinionPanel", () => {
   it("shows independent AI and physician columns and keeps the AI result read-only", async () => {
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
       .mockResolvedValueOnce(response(notGenerated))
-      .mockResolvedValueOnce(response({ status: "SUCCEEDED", safety_status: "PASS", opinion: "AI 참고 소견", review_required: true }));
+      .mockResolvedValueOnce(response({ status: "SUCCEEDED", safety_status: "PASS", opinion: longitudinalOpinion("AI 참고 소견"), review_required: true }));
     render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
 
-    expect(screen.getByRole("heading", { name: "AI 치료 소견" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "호흡기내과 소견" })).toBeInTheDocument();
-    expect(await screen.findByPlaceholderText("치료에 대한 의료진 소견을 입력하세요.")).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "치료 소견 생성" }));
+    expect(screen.getByRole("heading", { name: "AI 진료 종합 소견" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "호흡기내과 최종 종합 소견" })).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("검사 전 과정과 진단·병기·치료계획을 종합한 최종 소견을 입력하세요.")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "종합 소견 생성" }));
 
     expect(await screen.findByText("AI 참고 소견")).toBeInTheDocument();
-    expect(screen.getByLabelText("AI 치료 소견 내용").querySelector("textarea")).toBeNull();
+    expect(screen.getByLabelText("AI 진료 종합 소견 내용").querySelector("textarea")).toBeNull();
     expect(authorizedFetch).toHaveBeenNthCalledWith(
       3,
       "http://test/api/doctor/cases/case-1/treatment-opinion/",
@@ -65,9 +73,9 @@ describe("TreatmentOpinionPanel", () => {
     const authorizedFetch = vi.fn((url: RequestInfo | URL) => Promise.resolve(response(String(url).includes("physician-treatment-opinion") ? emptyPhysicianOpinion : notGenerated)));
     render(<TreatmentOpinionPanel {...props} selectedRegimenId={null} authorizedFetch={authorizedFetch} />);
 
-    const editor = await screen.findByPlaceholderText("치료에 대한 의료진 소견을 입력하세요.");
+    const editor = await screen.findByPlaceholderText("검사 전 과정과 진단·병기·치료계획을 종합한 최종 소견을 입력하세요.");
     expect(editor).toBeEnabled();
-    expect(screen.getByRole("button", { name: "치료 소견 생성" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "종합 소견 생성" })).toBeDisabled();
     expect(screen.getByText(/Regimen을 선택하면/)).toBeInTheDocument();
     expect(authorizedFetch).toHaveBeenCalledTimes(2);
   });
@@ -78,7 +86,7 @@ describe("TreatmentOpinionPanel", () => {
       .mockResolvedValueOnce(response(notGenerated))
       .mockResolvedValueOnce(response({ ...emptyPhysicianOpinion, id: "opinion-1", physician_opinion: "의료진 직접 소견" }, 201));
     const view = render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
-    const editor = await screen.findByPlaceholderText("치료에 대한 의료진 소견을 입력하세요.");
+    const editor = await screen.findByPlaceholderText("검사 전 과정과 진단·병기·치료계획을 종합한 최종 소견을 입력하세요.");
 
     fireEvent.change(editor, { target: { value: "의료진 직접 소견" } });
     fireEvent.click(screen.getByRole("button", { name: "의료진 소견 저장" }));
@@ -100,16 +108,16 @@ describe("TreatmentOpinionPanel", () => {
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
       .mockResolvedValueOnce(response(notGenerated))
       .mockResolvedValueOnce(response({ detail: "저장 실패" }, 500))
-      .mockResolvedValueOnce(response({ status: "SUCCEEDED", opinion: "새 AI 소견", review_required: true }));
+      .mockResolvedValueOnce(response({ status: "SUCCEEDED", opinion: longitudinalOpinion("새 AI 소견"), review_required: true }));
     render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
-    const editor = await screen.findByPlaceholderText("치료에 대한 의료진 소견을 입력하세요.");
+    const editor = await screen.findByPlaceholderText("검사 전 과정과 진단·병기·치료계획을 종합한 최종 소견을 입력하세요.");
 
     fireEvent.change(editor, { target: { value: "보존할 의료진 초안" } });
     fireEvent.click(screen.getByRole("button", { name: "의료진 소견 저장" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("저장 실패");
     expect(editor).toHaveValue("보존할 의료진 초안");
 
-    fireEvent.click(screen.getByRole("button", { name: "치료 소견 생성" }));
+    fireEvent.click(screen.getByRole("button", { name: "종합 소견 생성" }));
     expect(await screen.findByText("새 AI 소견")).toBeInTheDocument();
     expect(editor).toHaveValue("보존할 의료진 초안");
     consoleError.mockRestore();
@@ -121,17 +129,17 @@ describe("TreatmentOpinionPanel", () => {
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
       .mockResolvedValueOnce(response(notGenerated))
       .mockResolvedValueOnce(response({ detail: "AI unavailable" }, 502))
-      .mockResolvedValueOnce(response({ status: "SUCCEEDED", opinion: "재시도 AI 소견", review_required: true }));
+      .mockResolvedValueOnce(response({ status: "SUCCEEDED", opinion: longitudinalOpinion("재시도 AI 소견"), review_required: true }));
     render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
-    const editor = await screen.findByPlaceholderText("치료에 대한 의료진 소견을 입력하세요.");
+    const editor = await screen.findByPlaceholderText("검사 전 과정과 진단·병기·치료계획을 종합한 최종 소견을 입력하세요.");
     fireEvent.change(editor, { target: { value: "AI 없이 작성한 소견" } });
 
-    fireEvent.click(screen.getByRole("button", { name: "치료 소견 생성" }));
-    expect(await screen.findByText("치료 소견을 생성하지 못했습니다.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "종합 소견 생성" }));
+    expect(await screen.findByText("AI unavailable")).toBeInTheDocument();
     expect(editor).toBeEnabled();
     expect(editor).toHaveValue("AI 없이 작성한 소견");
 
-    fireEvent.click(screen.getByRole("button", { name: "치료 소견 생성" }));
+    fireEvent.click(screen.getByRole("button", { name: "종합 소견 생성" }));
     expect(await screen.findByText("재시도 AI 소견")).toBeInTheDocument();
     expect(editor).toHaveValue("AI 없이 작성한 소견");
     consoleError.mockRestore();
@@ -164,13 +172,13 @@ describe("TreatmentOpinionPanel", () => {
 
     expect(await screen.findByDisplayValue("확정 시점 소견")).toBeDisabled();
     expect(screen.queryByRole("button", { name: "의료진 소견 저장" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "치료 소견 생성" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "종합 소견 생성" })).not.toBeInTheDocument();
   });
 
   it("restores a persisted AI opinion in the confirmed read-only view", async () => {
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
-      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: "확정 전에 저장된 AI 소견", safety_status: "safety_completed" }));
+      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: longitudinalOpinion("확정 전에 저장된 AI 소견"), safety_status: "safety_completed" }));
     render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} readOnly />);
 
     expect(await screen.findByText("확정 전에 저장된 AI 소견")).toBeInTheDocument();
@@ -178,28 +186,41 @@ describe("TreatmentOpinionPanel", () => {
     expect(screen.queryByRole("button", { name: /소견 생성/ })).not.toBeInTheDocument();
   });
 
-  it("allows a one-time AI opinion backfill for a confirmed legacy decision", async () => {
+  it("hides a legacy treatment-only opinion and allows a one-time longitudinal backfill", async () => {
+    const legacyOpinion = JSON.stringify({
+      clinical_summary: "IVA 단계 NSCLC",
+      treatment_summary: "오시머티닙 권장",
+      evidence_summary: "치료 근거",
+      safety_summary: "안전성 요약",
+      cautions: "주의사항",
+    });
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
-      .mockResolvedValueOnce(response(notGenerated))
-      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: "확정 계획 기반 AI 소견" }));
+      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: legacyOpinion }))
+      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: longitudinalOpinion("확정 계획 기반 AI 소견") }));
     render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} readOnly />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "확정 계획으로 소견 생성" }));
+    expect(screen.queryByText("임상 요약")).not.toBeInTheDocument();
+    expect(screen.queryByText("IVA 단계 NSCLC")).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "확정 결과로 종합 소견 생성" }));
     expect(await screen.findByText("확정 계획 기반 AI 소견")).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "확정 계획으로 소견 생성" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "확정 결과로 종합 소견 생성" })).not.toBeInTheDocument();
   });
 
-  it("renders fenced JSON as compact labeled sections without breaking the layout", async () => {
-    const englishJson = '```json\n{"clinical_summary":"English clinical summary","treatment_summary":"English treatment summary","evidence_summary":"Evidence","safety_summary":"Safety","cautions":"Caution"}\n```';
+  it("renders the longitudinal JSON as compact stage sections without breaking the layout", async () => {
+    const longitudinalJson = '```json\n{"xray_summary":"X-ray result","ct_summary":"CT result","staging_summary":"Stage IVA","pathology_biomarker_summary":"Adenocarcinoma, EGFR positive","treatment_summary":"Osimertinib","safety_follow_up":"Safety follow-up"}\n```';
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
-      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: englishJson }));
+      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: longitudinalJson }));
     render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
 
-    expect(await screen.findByText("임상 요약")).toBeInTheDocument();
-    expect(screen.getByText("English clinical summary")).toBeInTheDocument();
+    expect(await screen.findByText("X-ray 소견")).toBeInTheDocument();
+    expect(screen.getByText("CT 소견")).toBeInTheDocument();
+    expect(screen.getByText("PET-CT / TNM 병기")).toBeInTheDocument();
+    expect(screen.getByText("병리·유전자·PD-L1")).toBeInTheDocument();
+    expect(screen.getByText("치료계획 및 결정 근거")).toBeInTheDocument();
+    expect(screen.getByText("안전성 및 추적 계획")).toBeInTheDocument();
     expect(screen.queryByText(/```json/)).not.toBeInTheDocument();
-    expect(screen.getByLabelText("AI 치료 소견 내용")).toHaveClass("max-h-80", "overflow-y-auto", "overflow-x-hidden");
+    expect(screen.getByLabelText("AI 진료 종합 소견 내용")).toHaveClass("max-h-80", "overflow-y-auto", "overflow-x-hidden");
   });
 });
