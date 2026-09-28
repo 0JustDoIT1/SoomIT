@@ -30,6 +30,9 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   await expect(menu.getByRole("button", { name: "PD-L1", exact: true })).toHaveAttribute("data-access-state", "ACTIONABLE");
   await menu.getByRole("button", { name: "PD-L1", exact: true }).click();
   await page.getByRole("button", { name: "결과 확인 및 확정" }).click();
+  const pdl1Dialog = page.getByRole("dialog", { name: "최종 TPS 검토" });
+  await pdl1Dialog.getByLabel("PD-L1 최종 TPS").fill("60");
+  await pdl1Dialog.getByRole("button", { name: "PD-L1 결과 확정", exact: true }).click();
   await page.getByRole("button", { name: "다음 단계 결정", exact: true }).click();
   await page.getByRole("dialog").getByRole("button", { name: "치료결정으로 진행", exact: true }).click();
   await menu.getByRole("button", { name: "치료계획·처방", exact: true }).click();
@@ -81,6 +84,7 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   expect(state.candidateCalls).toBeGreaterThan(0);
   expect(errors).toEqual([]);
   await page.screenshot({ path: "../reports/workflow-prescription-final.png" });
+  await page.getByRole("dialog", { name: "최종 진료 요약" }).getByRole("button", { name: "확인하고 닫기", exact: true }).click();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
   await expect(page).toHaveURL(/login$/);
   expect(await page.evaluate(() => sessionStorage.getItem("accessToken"))).toBeNull();

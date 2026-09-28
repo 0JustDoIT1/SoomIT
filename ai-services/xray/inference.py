@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import io
+import logging
 import os
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -15,6 +17,17 @@ from torchvision.models.detection import fasterrcnn_resnet50_fpn_v2
 from torchvision.transforms.functional import to_tensor
 
 from artifact import ensure_gcs_artifact
+
+
+logger = logging.getLogger("uvicorn.error")
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=xray stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 DETECTOR_CLASS_NAMES = [
@@ -155,7 +168,11 @@ class XrayModels:
 
     @torch.inference_mode()
     def predict(self, image: Image.Image, score_threshold: float) -> dict[str, Any]:
+        total_started = time.perf_counter()
+        wait_started = time.perf_counter()
         with self._lock:
+            log_latency("inference_lock_wait", wait_started)
+            stage_started = time.perf_counter()
             classifier_input = CLASSIFICATION_TRANSFORM(image).unsqueeze(0).to(self.device)
             logits = self.classifier(classifier_input)
             probabilities_tensor = torch.softmax(logits, dim=1)[0].cpu()
@@ -164,9 +181,16 @@ class XrayModels:
                 name: float(probabilities_tensor[index])
                 for index, name in enumerate(CLASSIFICATION_CLASS_NAMES)
             }
+            log_latency("classification", stage_started)
 
+            stage_started = time.perf_counter()
             detector_input = to_tensor(image).to(self.device)
             output = self.detector([detector_input])[0]
+            if self.device.type == "cuda":
+                torch.cuda.synchronize(self.device)
+            log_latency("detection", stage_started)
+
+            stage_started = time.perf_counter()
             detections = []
             for box, score_tensor, label_tensor in zip(
                 output["boxes"], output["scores"], output["labels"], strict=True
@@ -185,9 +209,10 @@ class XrayModels:
                         "bbox_xyxy": [float(value) for value in box.cpu()],
                     }
                 )
+            log_latency("postprocessing", stage_started)
 
         assessment = ("NEGATIVE", "INDETERMINATE", "SUSPICIOUS")[class_index]
-        return {
+        result = {
             "model_revision": self.revision,
             "image": {"width": image.width, "height": image.height},
             "classification": {
@@ -199,3 +224,5 @@ class XrayModels:
             },
             "detections": detections,
         }
+        log_latency("model_total", total_started)
+        return result

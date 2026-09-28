@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Query, Request
@@ -10,6 +12,15 @@ from inference import InvalidImageError, XrayModels
 
 MAX_IMAGE_BYTES = int(os.environ.get("MAX_IMAGE_BYTES", str(32 * 1024 * 1024)))
 models: XrayModels | None = None
+logger = logging.getLogger("uvicorn.error")
+
+
+def log_latency(stage: str, started: float) -> None:
+    logger.info(
+        "latency service=xray stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 @asynccontextmanager
@@ -35,6 +46,7 @@ async def predict(
     request: Request,
     score_threshold: float = Query(default=0.30, ge=0.0, le=1.0),
 ):
+    total_started = time.perf_counter()
     if models is None:
         raise HTTPException(status_code=503, detail="Models are not loaded")
 
@@ -48,7 +60,11 @@ async def predict(
         raise HTTPException(status_code=413, detail="Image exceeds the configured size limit")
 
     try:
+        stage_started = time.perf_counter()
         image = models.decode_image(content)
+        log_latency("decode", stage_started)
     except InvalidImageError as exc:
         raise HTTPException(status_code=415, detail=str(exc)) from exc
-    return models.predict(image, score_threshold)
+    result = models.predict(image, score_threshold)
+    log_latency("total", total_started)
+    return result

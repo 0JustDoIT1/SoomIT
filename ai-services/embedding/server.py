@@ -1,11 +1,24 @@
 from contextlib import asynccontextmanager
+import logging
 from threading import Lock
+import time
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from encoder import DIMENSIONS, MAX_TOKENS, MODEL_ID, Encoder, InputTooLong
+
+
+logger = logging.getLogger("uvicorn.error")
+
+
+def log_latency(stage, started):
+    logger.info(
+        "latency service=embedding stage=%s elapsed_seconds=%.3f",
+        stage,
+        time.perf_counter() - started,
+    )
 
 
 class EmbeddingRequest(BaseModel):
@@ -37,15 +50,20 @@ def create_app(encoder_factory=Encoder):
 
     @app.post("/embed")
     def embed(body: EmbeddingRequest):
+        total_started = time.perf_counter()
         # Also bound inference concurrency when running outside Cloud Run.
+        wait_started = time.perf_counter()
         with app.state.inference_lock:
+            log_latency("inference_lock_wait", wait_started)
             try:
                 vectors, counts = app.state.encoder.encode(body.texts, body.input_type)
             except InputTooLong as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
-        return {"model": MODEL_ID, "revision": app.state.encoder.revision,
-                "dimensions": DIMENSIONS, "input_type": body.input_type,
-                "embeddings": vectors, "token_counts": counts}
+        response = {"model": MODEL_ID, "revision": app.state.encoder.revision,
+                    "dimensions": DIMENSIONS, "input_type": body.input_type,
+                    "embeddings": vectors, "token_counts": counts}
+        log_latency("request_total", total_started)
+        return response
 
     return app
 
