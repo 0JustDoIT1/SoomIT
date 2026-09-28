@@ -22,6 +22,7 @@ from apps.accounts.permissions import IsActiveStaff, IsDoctor, IsPulmonologyStaf
 from apps.accounts.models import User
 from apps.notifications.services import create_in_app_staff_notifications
 from apps.pathology.models import PathologySpecimen, PathologyWorkItem, WholeSlideImage
+from apps.pathology.tasks import generate_wsi_preview_task, register_wsi_with_orthanc_task
 from apps.patients.models import Appointment
 from apps.pathology.services.orthanc import (
     OrthancError,
@@ -335,16 +336,22 @@ def _orthanc_error_response(exc):
 class DoctorSlideViewerAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _BinaryPassthroughContentNegotiation
 
     def get(self, request, slide_id):
         slide = _doctor_slide_or_404(request, slide_id)
         if not slide.orthanc_series_id:
+            try:
+                register_wsi_with_orthanc_task.delay(str(slide.id))
+            except Exception:
+                logger.exception("Failed to enqueue WSI Orthanc repair for slide_id=%s", slide.id)
             return Response(
                 {
                     "detail": "WSI viewer is not ready for this slide.",
                     "code": "ORTHANC_SERIES_NOT_LINKED",
+                    "repair_requested": True,
                 },
-                status=status.HTTP_409_CONFLICT,
+                status=status.HTTP_202_ACCEPTED,
             )
         try:
             pyramid = get_wsi_pyramid(slide.orthanc_series_id)
@@ -377,6 +384,7 @@ class DoctorSlidePreviewAPIView(APIView):
 
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated, IsActiveStaff, IsDoctor, IsPulmonologyStaff]
+    content_negotiation_class = _BinaryPassthroughContentNegotiation
 
     def get(self, request, slide_id):
         slide = _doctor_slide_or_404(request, slide_id)
@@ -385,7 +393,21 @@ class DoctorSlidePreviewAPIView(APIView):
                 slide.image_asset.storage_uri,
             )
         except PathologyStorageError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+            should_enqueue = getattr(request, "query_params", {}).get("repair") != "0"
+            if should_enqueue:
+                try:
+                    generate_wsi_preview_task.delay(str(slide.id))
+                except Exception:
+                    logger.exception("Failed to enqueue WSI preview repair for slide_id=%s", slide.id)
+                    return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+            return Response(
+                {
+                    "detail": "WSI preview generation has been queued.",
+                    "code": "WSI_PREVIEW_QUEUED",
+                    "repair_requested": should_enqueue,
+                },
+                status=status.HTTP_202_ACCEPTED,
+            )
         response = HttpResponse(content, content_type=content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response
@@ -422,8 +444,8 @@ class DoctorSlideTissueHeatmapAPIView(APIView):
             content, content_type = download_pathology_wsi_tissue_heatmap(
                 slide.image_asset.storage_uri,
             )
-        except PathologyStorageError as exc:
-            return Response({"detail": str(exc)}, status=status.HTTP_404_NOT_FOUND)
+        except PathologyStorageError:
+            return HttpResponse(status=status.HTTP_204_NO_CONTENT)
         response = HttpResponse(content, content_type=content_type)
         response["Cache-Control"] = "private, max-age=3600"
         return response

@@ -30,4 +30,5 @@ sqlparse==0.5.5
 requests==2.34.2
 pydicom==3.0.2
 openslide-python==1.4.2
+openslide-bin==4.0.1.2; sys_platform == "win32"
 Pillow==11.3.0

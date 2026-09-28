@@ -69,7 +69,7 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
       signal: controller.signal,
       headers: { Accept: "image/jpeg" },
     }).then(async (response) => {
-      if (response.status === 404) return { status: "missing" as const, imageUrl: null };
+      if (response.status === 204 || response.status === 404) return { status: "missing" as const, imageUrl: null };
       if (!response.ok) throw new Error("Heatmap을 불러오지 못했습니다.");
       const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
       if (contentType !== "image/jpeg") throw new Error("Heatmap 응답 형식이 올바르지 않습니다.");
@@ -91,30 +91,47 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
 
   useEffect(() => {
     const viewer = activeViewer?.ownerKey === viewerOwnerKey ? activeViewer.instance : null;
-    if (!viewer || heatmap.identity !== viewerOwnerKey || !heatmap.imageUrl) return;
+    if (!viewer || !viewerData || heatmap.identity !== viewerOwnerKey || !heatmap.imageUrl) return;
     let item: HeatmapItem | null = null;
-    viewer.addTiledImage({
-      tileSource: heatmap.imageUrl,
-      x: 0,
-      y: 0,
-      width: 1,
-      opacity: heatmapOpacityRef.current,
-      success: (event) => {
-        item = (event as unknown as { item: HeatmapItem }).item;
-        heatmapItemRef.current = item;
-        item.setOpacity(heatmapOpacityRef.current);
+    const overlay = document.createElement("img");
+    overlay.src = heatmap.imageUrl;
+    overlay.alt = "";
+    overlay.draggable = false;
+    overlay.style.width = "100%";
+    overlay.style.height = "100%";
+    overlay.style.pointerEvents = "none";
+    overlay.style.userSelect = "none";
+    overlay.style.zIndex = "20";
+    overlay.style.opacity = String(heatmapOpacityRef.current);
+    item = {
+      setOpacity: (opacity) => {
+        overlay.style.opacity = String(opacity);
       },
+    };
+    heatmapItemRef.current = item;
+    viewer.addOverlay({
+      element: overlay,
+      location: viewer.viewport.imageToViewportRectangle(
+        0,
+        0,
+        viewerData.width,
+        viewerData.height,
+      ),
     });
+    viewer.forceRedraw();
     return () => {
-      if (item) viewer.world.removeItem(item as unknown as OpenSeadragonType.TiledImage);
+      viewer.removeOverlay(overlay);
       if (heatmapItemRef.current === item) heatmapItemRef.current = null;
     };
-  }, [activeViewer, heatmap.imageUrl, heatmap.identity, viewerOwnerKey]);
+  }, [activeViewer, heatmap.imageUrl, heatmap.identity, viewerData, viewerOwnerKey]);
 
   useEffect(() => {
     heatmapOpacityRef.current = heatmapEnabled ? heatmapOpacity / 100 : 0;
-    heatmapItemRef.current?.setOpacity(heatmapOpacityRef.current);
-  }, [heatmapEnabled, heatmapOpacity]);
+    if (heatmapItemRef.current) {
+      heatmapItemRef.current.setOpacity(heatmapOpacityRef.current);
+      activeViewer?.instance.forceRedraw();
+    }
+  }, [activeViewer, heatmapEnabled, heatmapOpacity]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -145,11 +162,11 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
       try {
         const response = await authorizedFetch(doctorAssetUrl(apiBaseUrl, selectedSlide.viewer_url), { signal: controller.signal });
         const payload: unknown = await response.json();
+        if ((response.status === 202 || response.status === 409) && errorCode(payload) === "ORTHANC_SERIES_NOT_LINKED") {
+          if (!controller.signal.aborted) setViewerIssue("not-linked");
+          return;
+        }
         if (!response.ok) {
-          if (response.status === 409 && errorCode(payload) === "ORTHANC_SERIES_NOT_LINKED") {
-            if (!controller.signal.aborted) setViewerIssue("not-linked");
-            return;
-          }
           throw new Error(errorDetail(payload, "WSI 원본 뷰어를 불러오지 못했습니다."));
         }
         if (!controller.signal.aborted) {
@@ -169,19 +186,29 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
     if (!selectedSlide || !viewerIssue) return;
     const controller = new AbortController();
     let objectUrl: string | null = null;
-    void authorizedFetch(`${apiBaseUrl}/api/doctor/cases/slides/${encodeURIComponent(selectedSlide.id)}/preview/`, {
-      signal: controller.signal,
-      headers: { Accept: "image/jpeg,image/png" },
-    }).then(async (response) => {
-      if (response.status === 404) return { status: "missing" as const, imageUrl: null };
-      if (!response.ok) throw new Error("preview request failed");
-      const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
-      if (contentType !== "image/jpeg" && contentType !== "image/png") throw new Error("invalid preview response");
-      const blob = await response.blob();
-      if (!blob.size) return { status: "missing" as const, imageUrl: null };
-      objectUrl = URL.createObjectURL(blob);
-      return { status: "available" as const, imageUrl: objectUrl };
-    }).then((next) => {
+    const loadPreview = async () => {
+      for (let attempt = 0; attempt < 30 && !controller.signal.aborted; attempt += 1) {
+        const pollQuery = attempt === 0 ? "" : "?repair=0";
+        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/slides/${encodeURIComponent(selectedSlide.id)}/preview/${pollQuery}`, {
+          signal: controller.signal,
+          headers: { Accept: "image/jpeg,image/png" },
+        });
+        if (response.status === 202) {
+          await new Promise((resolve) => setTimeout(resolve, 2_000));
+          continue;
+        }
+        if (response.status === 404) return { status: "missing" as const, imageUrl: null };
+        if (!response.ok) throw new Error("preview request failed");
+        const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase();
+        if (contentType !== "image/jpeg" && contentType !== "image/png") throw new Error("invalid preview response");
+        const blob = await response.blob();
+        if (controller.signal.aborted || !blob.size) return { status: "missing" as const, imageUrl: null };
+        objectUrl = URL.createObjectURL(blob);
+        return { status: "available" as const, imageUrl: objectUrl };
+      }
+      return { status: "missing" as const, imageUrl: null };
+    };
+    void loadPreview().then((next) => {
       if (!controller.signal.aborted) setPreview({ identity: viewerOwnerKey, ...next });
     }).catch(() => {
       if (!controller.signal.aborted) setPreview({ identity: viewerOwnerKey, status: "error", imageUrl: null });
@@ -197,6 +224,7 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
     let disposed = false;
     let ownedViewer: OpenSeadragonType.Viewer | null = null;
     let detachLifecycle = () => {};
+    let detachActivation = () => {};
     void import("openseadragon").then(({ default: OpenSeadragon }) => {
       if (disposed || !containerRef.current) return;
       const token = sessionStorage.getItem("accessToken");
@@ -208,11 +236,17 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
         viewerOwnerKey,
         (x, y) => new OpenSeadragon.Point(x, y),
       );
-      setCreateViewerPoint(() => (x: number, y: number) => new OpenSeadragon.Point(x, y));
-      setActiveViewer({ instance: ownedViewer, ownerKey: viewerOwnerKey });
+      const activateViewer = () => {
+        if (disposed || !ownedViewer) return;
+        setCreateViewerPoint(() => (x: number, y: number) => new OpenSeadragon.Point(x, y));
+        setActiveViewer({ instance: ownedViewer, ownerKey: viewerOwnerKey });
+      };
+      ownedViewer.addHandler("open", activateViewer);
+      detachActivation = () => ownedViewer?.removeHandler("open", activateViewer);
     }).catch(() => setViewerIssue("error"));
     return () => {
       disposed = true;
+      detachActivation();
       detachLifecycle();
       setActiveViewer((current) => current?.instance === ownedViewer ? null : current);
       setCreateViewerPoint(null);

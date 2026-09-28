@@ -12,6 +12,7 @@ from apps.clinical.models import ClinicalResult
 from apps.cases.models import WorkflowStage
 
 from .services.pathology_inference import request_pathology_prediction
+from .services.pathology_storage import create_and_upload_wsi_preview_from_storage
 from .services.pdl1_inference import request_pdl1_prediction
 from .services.pdl1_storage import download_pdl1_annotation_bytes
 from .services.review_submission import (
@@ -27,17 +28,39 @@ from .services.wsi_orthanc_registration import (
 logger = logging.getLogger(__name__)
 
 
-@shared_task
+@shared_task(
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_kwargs={"max_retries": 3},
+)
+def generate_wsi_preview_task(wsi_id):
+    """Backfill a preview for an existing WSI whose upload-time preview failed."""
+    from .models import WholeSlideImage
+
+    wsi = WholeSlideImage.objects.select_related("image_asset").filter(id=wsi_id).first()
+    if wsi is None:
+        return "wsi_not_found"
+    create_and_upload_wsi_preview_from_storage(wsi.image_asset.storage_uri)
+    return "generated"
+
+
+@shared_task(
+    autoretry_for=(Exception,),
+    retry_backoff=True,
+    retry_backoff_max=300,
+    retry_kwargs={"max_retries": 3},
+)
 def register_wsi_with_orthanc_task(wsi_id):
-    """Best-effort viewer preparation; never affects WSI upload or AI analysis."""
+    """Prepare the viewer independently and retry transient registration failures."""
     try:
         return register_wsi_with_orthanc(str(wsi_id))
     except WsiOrthancRegistrationError:
         logger.exception("WSI Orthanc registration failed for wsi_id=%s", wsi_id)
-        return "failed"
+        raise
     except Exception:
         logger.exception("Unexpected WSI Orthanc registration failure for wsi_id=%s", wsi_id)
-        return "failed"
+        raise
 
 
 def _mark_failed(analysis_id, error_message="PD-L1 analysis failed.", preserve_cancelled=False):

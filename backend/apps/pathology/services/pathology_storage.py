@@ -92,6 +92,10 @@ def _preview_object_name(object_name):
 
 @contextmanager
 def _local_wsi_path(source):
+    if isinstance(source, (str, Path)):
+        yield Path(source)
+        return
+
     if hasattr(source, "temporary_file_path"):
         yield Path(source.temporary_file_path())
         return
@@ -146,6 +150,30 @@ def create_and_upload_wsi_preview(*, wsi_uri, wsi_source):
         return f"gs://{bucket_name}/{_preview_object_name(object_name)}"
     except Exception as exc:
         raise PathologyStorageError("Failed to generate or upload pathology WSI preview.") from exc
+
+
+def create_and_upload_wsi_preview_from_storage(wsi_uri):
+    """Backfill a missing preview from the original GCS WSI without loading it into memory."""
+    parsed = urlparse(wsi_uri)
+    object_name = parsed.path.lstrip("/")
+    if parsed.scheme != "gs" or not parsed.netloc or not object_name:
+        raise PathologyStorageError("Invalid pathology WSI storage URI.")
+
+    suffix = Path(object_name).suffix or ".svs"
+    try:
+        with tempfile.TemporaryDirectory(prefix="pathology-wsi-backfill-") as temporary_directory:
+            local_path = Path(temporary_directory) / f"source{suffix}"
+            storage.Client().bucket(parsed.netloc).blob(object_name).download_to_filename(local_path)
+            return create_and_upload_wsi_preview(
+                wsi_uri=wsi_uri,
+                wsi_source=local_path,
+            )
+    except PathologyStorageError:
+        raise
+    except Exception as exc:
+        raise PathologyStorageError(
+            "Failed to download the original pathology WSI for preview generation."
+        ) from exc
 
 
 def upload_pathology_wsi(*, hospital_id, case_id, order_id, uploaded_file):

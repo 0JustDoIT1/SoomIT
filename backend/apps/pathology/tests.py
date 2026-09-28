@@ -31,6 +31,7 @@ from apps.pathology.models import (
 from apps.pathology.services.workflow import calculate_workflow_status
 from apps.pathology.services.pdl1_storage import PDL1StorageError
 from apps.pathology.tasks import (
+    generate_wsi_preview_task,
     register_wsi_with_orthanc_task,
     run_pathology_gene_analysis,
     run_pdl1_analysis,
@@ -1860,6 +1861,13 @@ class PathologyReadAPITestCase(APITestCase):
 
         self.assertEqual(outcome, "registered")
         register.assert_called_once_with(str(self.wsi.id))
+
+    @patch("apps.pathology.tasks.create_and_upload_wsi_preview_from_storage")
+    def test_wsi_preview_backfill_task_uses_the_existing_source(self, generate):
+        outcome = generate_wsi_preview_task(str(self.wsi.id))
+
+        self.assertEqual(outcome, "generated")
+        generate.assert_called_once_with(self.wsi.image_asset.storage_uri)
 
     def test_wsi_registration_persists_only_the_new_orthanc_series(self):
         from apps.pathology.services import wsi_orthanc_registration

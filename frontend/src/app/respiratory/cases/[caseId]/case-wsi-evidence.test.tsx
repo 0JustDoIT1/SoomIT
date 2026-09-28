@@ -10,7 +10,8 @@ type ViewerMock = {
   destroy: ReturnType<typeof vi.fn>;
   forceRedraw: ReturnType<typeof vi.fn>;
   setMouseNavEnabled: ReturnType<typeof vi.fn>;
-  addTiledImage: ReturnType<typeof vi.fn>;
+  addOverlay: ReturnType<typeof vi.fn>;
+  removeOverlay: ReturnType<typeof vi.fn>;
   world: { removeItem: ReturnType<typeof vi.fn> };
   isDestroyed: () => boolean;
   viewport: Record<string, ReturnType<typeof vi.fn>>;
@@ -18,6 +19,7 @@ type ViewerMock = {
 
 const osd = vi.hoisted(() => {
   const viewers: ViewerMock[] = [];
+  const overlays: HTMLElement[] = [];
   function makeViewer(): ViewerMock {
     let destroyed = false;
     const instance = {
@@ -30,9 +32,10 @@ const osd = vi.hoisted(() => {
       setMouseNavEnabled: vi.fn(() => {
         if (destroyed) throw new TypeError("Cannot read properties of undefined (reading 'tracking')");
       }),
-      addTiledImage: vi.fn((options: { success?: (event: { item: { setOpacity: ReturnType<typeof vi.fn> } }) => void }) => {
-        options.success?.({ item: { setOpacity: vi.fn() } });
+      addOverlay: vi.fn((options: { element: HTMLElement }) => {
+        overlays.push(options.element);
       }),
+      removeOverlay: vi.fn(),
       world: { removeItem: vi.fn() },
       isDestroyed: () => destroyed,
       viewport: {
@@ -46,6 +49,7 @@ const osd = vi.hoisted(() => {
         pointFromPixel: vi.fn((point: unknown) => point),
         viewportToImageCoordinates: vi.fn((point: unknown) => point),
         imageToViewerElementCoordinates: vi.fn((point: unknown) => point),
+        imageToViewportRectangle: vi.fn(() => ({ x: 0, y: 0, width: 1, height: 1 })),
       },
     };
     viewers.push(instance);
@@ -53,7 +57,7 @@ const osd = vi.hoisted(() => {
   }
   const factory = vi.fn(makeViewer) as unknown as ReturnType<typeof vi.fn> & { Point: new (x: number, y: number) => { x: number; y: number } };
   factory.Point = class Point { constructor(public x: number, public y: number) {} };
-  return { factory, viewers };
+  return { factory, overlays, viewers };
 });
 
 vi.mock("openseadragon", () => ({ default: osd.factory }));
@@ -68,6 +72,7 @@ function jpegResponse(content = "heatmap", status = 200) {
 
 beforeEach(() => {
   osd.factory.mockClear();
+  osd.overlays.length = 0;
   osd.viewers.length = 0;
   clearWsiViewportCacheForTests();
   sessionStorage.setItem("accessToken", "test-token");
@@ -199,12 +204,14 @@ describe("CaseWsiEvidence", () => {
 
     const toggle = await screen.findByRole("button", { name: "Heatmap" });
     expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await waitFor(() => expect(osd.viewers[0].addTiledImage).toHaveBeenCalled());
+    await waitFor(() => expect(osd.viewers[0].addOverlay).toHaveBeenCalled());
     expect(screen.getByRole("button", { name: "Point" })).toBeEnabled();
     toggle.click();
     expect(await screen.findByLabelText("Heatmap 투명도")).toHaveValue("65");
     expect(toggle).toHaveAttribute("aria-pressed", "true");
     expect(toggle).toHaveClass("border-violet-600", "bg-violet-600", "text-white");
+    await waitFor(() => expect(osd.overlays[0]?.style.opacity).toBe("0.65"));
+    expect(osd.viewers[0].forceRedraw).toHaveBeenCalled();
     expect(createObjectUrl).toHaveBeenCalled();
   });
 
@@ -215,7 +222,7 @@ describe("CaseWsiEvidence", () => {
       if (url.includes("/specimens/specimen-1/slides/")) return response([{
         id: "slide-unlinked", specimen_id: "specimen-1", image_asset_id: "asset-1", slide_code: "HE-UNLINKED", stain: "HE", status: "READY", viewer_url: "/api/doctor/cases/slides/slide-unlinked/viewer/",
       }]);
-      if (url.endsWith("/viewer/")) return response({ detail: "not linked", code: "ORTHANC_SERIES_NOT_LINKED" }, 409);
+      if (url.endsWith("/viewer/")) return response({ detail: "not linked", code: "ORTHANC_SERIES_NOT_LINKED" }, 202);
       if (url.endsWith("/preview/")) return jpegResponse("preview");
       if (url.endsWith("/tissue-heatmap/")) return jpegResponse("heatmap");
       throw new Error(`Unexpected request: ${url}`);
@@ -293,6 +300,6 @@ describe("CaseWsiEvidence", () => {
     await waitFor(() => expect(osd.viewers).toHaveLength(2));
     resolveHeatmap(jpegResponse());
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(osd.viewers[0].addTiledImage).not.toHaveBeenCalled();
+    expect(osd.viewers[0].addOverlay).not.toHaveBeenCalled();
   });
 });
