@@ -39,9 +39,13 @@ vi.mock("./treatment-decision-panel", () => ({
 vi.mock("./evidence-viewer-panel", () => ({ EvidenceViewerPanel: () => null }));
 
 const response = (data: unknown, status = 200) => new Response(JSON.stringify(data), { status });
-const baseCase = (stage: string) => ({ id: "case-1", case_code: "CASE-1", patient_code: "PAT-1", patient_name: "환자", primary_doctor_name: "의사", current_stage: stage, case_status: "ACTIVE" });
+const baseCase = (stage: string, id = "case-1", patientName = "환자") => ({ id, case_code: `CASE-${id}`, patient_code: `PAT-${id}`, patient_name: patientName, primary_doctor_name: "의사", current_stage: stage, case_status: "ACTIVE" });
 
-beforeEach(() => { vi.clearAllMocks(); mocks.search = ""; });
+beforeEach(() => {
+  vi.clearAllMocks();
+  mocks.search = "";
+  window.history.replaceState(null, "", "/respiratory/cases/case-1");
+});
 
 it("treats effect cleanup aborts as normal cancellation without errors or toasts", async () => {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
@@ -122,6 +126,43 @@ it("keeps the rendered Case visible while a same-Case workflow refresh is pendin
   pendingCaseResponses[0](response([baseCase(stage)]));
   pendingCaseResponses[1](response(baseCase(stage)));
   await waitFor(() => expect(screen.getByText("현재 Case 단계 · 처방")).toBeInTheDocument());
+});
+
+it("switches only the Case workspace without routing away from the patient list", async () => {
+  const firstCase = baseCase("CT", "case-1", "첫 번째 환자");
+  const secondCase = baseCase("PET_CT_TNM", "case-2", "두 번째 환자");
+  let resolveSecondDetail: ((value: Response) => void) | undefined;
+
+  mocks.authorizedFetch.mockImplementation((input: string) => {
+    const url = new URL(input).pathname;
+    if (url === "/api/doctor/cases/") return Promise.resolve(response([firstCase, secondCase]));
+    if (url === "/api/doctor/cases/case-1/") return Promise.resolve(response(firstCase));
+    if (url === "/api/doctor/cases/case-2/") {
+      return new Promise<Response>((resolve) => { resolveSecondDetail = resolve; });
+    }
+    if (url === "/api/doctor/cases/case-1/prescriptions/") {
+      return Promise.resolve(response([{ id: "prescription-1", safety_check_results: [{ id: "warning-1", result: "WARNING", acknowledged_at: null }] }]));
+    }
+    if (url.endsWith("/treatment-decision/")) return Promise.resolve(response({}, 404));
+    return Promise.resolve(response([]));
+  });
+
+  render(<Page />);
+  const [secondPatientName] = await screen.findAllByText("두 번째 환자");
+  await userEvent.click(secondPatientName.closest("button") as HTMLButtonElement);
+
+  await waitFor(() => expect(window.location.pathname).toBe("/respiratory/cases/case-2"));
+  expect(mocks.router.push).not.toHaveBeenCalled();
+  expect(screen.queryByRole("dialog", { name: "저장되지 않은 변경사항이 있습니다." })).not.toBeInTheDocument();
+  expect(screen.getByText("선택한 환자 정보를 불러오는 중입니다.")).toBeInTheDocument();
+  expect(screen.getAllByText("첫 번째 환자").length).toBeGreaterThan(0);
+  expect(screen.getAllByText("두 번째 환자").length).toBeGreaterThan(0);
+
+  resolveSecondDetail?.(response(secondCase));
+  await waitFor(() => {
+    expect(screen.queryByText("선택한 환자 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
+    expect(screen.getAllByText("두 번째 환자").length).toBeGreaterThan(2);
+  });
 });
 
 it("keeps the Case action outside the constrained stage body when switching imaging workspaces", async () => {
