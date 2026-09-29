@@ -22,7 +22,6 @@ import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview
 import { TreatmentDecisionPanel } from "./treatment-decision-panel";
 import { PrescriptionPanel } from "./prescription-panel";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
-import { CaseImageEvidence } from "./case-image-evidence";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
 import { CasePatientSidebar } from "./case-patient-sidebar";
@@ -56,19 +55,6 @@ const Pdl1ResultPanel = dynamic(
   () => import("./pdl1-imaging-workstation").then((module) => module.Pdl1ResultPanel),
   { loading: imagingLoading },
 );
-const CaseDicomEvidence = dynamic(
-  () => import("./case-dicom-evidence").then((module) => module.CaseDicomEvidence),
-  { loading: imagingLoading },
-);
-const CaseCtSegmentationEvidence = dynamic(
-  () => import("./case-ct-segmentation-evidence").then((module) => module.CaseCtSegmentationEvidence),
-  { loading: imagingLoading },
-);
-const CaseWsiEvidence = dynamic(
-  () => import("./case-wsi-evidence").then((module) => module.CaseWsiEvidence),
-  { loading: imagingLoading },
-);
-
 type CaseItem = {
   id: string;
   case_code: string;

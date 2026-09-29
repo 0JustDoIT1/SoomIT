@@ -91,7 +91,7 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
 });
 
 for (const scenario of ["NOT_RUN", "RECHECK_REQUIRED", "WARNING", "BLOCK"]) {
-  test(`prescription ${scenario} prevents FINAL in the browser`, async ({ page }) => {
+  test(`prescription ${scenario} exposes the matching finalization state`, async ({ page }) => {
     const state = await installWorkflowAuditApi(page, "PRESCRIPTION");
     state.decision = { id: "decision-qa", decision_status: "CONFIRMED", treatment_type: "TARGETED_THERAPY", selected_regimen: "R1", selected_regimen_detail: state.candidates[0].regimen_detail, requires_prescription: true };
     state.prescriptions.push({ id: "rx-qa", cycle_number: 1, regimen_detail: state.candidates[0].regimen_detail, prescription_status: scenario === "NOT_RUN" ? "DRAFT" : "VALIDATED", safety_freshness: ["WARNING", "BLOCK"].includes(scenario) ? "CURRENT" : scenario, items: [], safety_check_results: ["WARNING", "BLOCK"].includes(scenario) ? [{ id: "safety-qa", result: scenario, source_code: "LAB_MISSING", check_type_label: "QA safety", message: "QA blocked" }] : [] });
@@ -99,7 +99,9 @@ for (const scenario of ["NOT_RUN", "RECHECK_REQUIRED", "WARNING", "BLOCK"]) {
     await page.goto("/respiratory/cases/case-treatment?openCurrentEvidence=1");
     await page.getByRole("button", { name: "처방 · 안전성", exact: true }).click();
     await expect(page.getByRole("heading", { name: /Safety Check/ })).toBeVisible();
-    await expect(page.getByRole("button", { name: "처방 최종 확정", exact: true })).toHaveCount(0);
+    const finalize = page.getByRole("button", { name: "처방 최종 확정", exact: true });
+    if (["WARNING", "BLOCK"].includes(scenario)) await expect(finalize).toBeEnabled();
+    else await expect(finalize).toHaveCount(0);
     if (scenario !== "NOT_RUN") await expect(page.getByRole("alert").first()).toBeVisible();
     expect(state.writes).toEqual([]);
   });

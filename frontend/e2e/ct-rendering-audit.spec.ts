@@ -70,6 +70,7 @@ test(`synthetic CT, annotation persistence and cleanup with segmentation ${segme
   await page.mouse.down();
   await page.mouse.move(axial.x + axial.width * 0.6, axial.y + axial.height * 0.5, { steps: 10 });
   await page.mouse.up();
+  await page.getByRole("button", { name: "주석 저장", exact: true }).click();
   await expect.poll(() => annotations.length).toBe(1);
   expect(annotations[0].annotation_type).toBe("LENGTH");
   await expectCtPixels();
@@ -97,7 +98,7 @@ test(`synthetic CT, annotation persistence and cleanup with segmentation ${segme
   await expect(page.getByRole("button", { name: "길이 1", exact: true })).toBeVisible();
   await expectCtPixels();
   await page.getByRole("button", { name: "길이 1", exact: true }).click();
-  await page.getByRole("button", { name: "주석 삭제", exact: true }).click();
+  await page.getByRole("button", { name: "선택 삭제", exact: true }).click();
   await expect.poll(() => annotations.length).toBe(0);
   await expect(page.getByRole("button", { name: "길이 1", exact: true })).toHaveCount(0);
   await expect(page.getByLabel("CT Axial viewer", { exact: true }).locator("svg line")).toHaveCount(0);

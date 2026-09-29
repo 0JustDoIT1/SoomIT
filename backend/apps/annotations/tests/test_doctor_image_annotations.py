@@ -492,10 +492,10 @@ class DoctorImageAnnotationAPITests(TestCase):
             ),
         )
 
-        response = self.client.delete(self.list_url, {
-            "image_asset_id": self.ct.id,
-            "series_instance_uid": self.ct.series_instance_uid,
-        })
+        response = self.client.delete(
+            f"{self.list_url}?image_asset_id={self.ct.id}"
+            f"&series_instance_uid={self.ct.series_instance_uid}"
+        )
 
         self.assertEqual(response.status_code, 204)
         self.assertFalse(ImageAnnotation.objects.filter(image_asset=self.ct).exists())
@@ -510,10 +510,9 @@ class DoctorImageAnnotationAPITests(TestCase):
         )
         self.assertEqual((first.status_code, second.status_code), (201, 201))
 
-        response = self.client.delete(self.list_url, {
-            "image_asset_id": self.wsi.id,
-            "slide_id": self.slide.id,
-        })
+        response = self.client.delete(
+            f"{self.list_url}?image_asset_id={self.wsi.id}&slide_id={self.slide.id}"
+        )
 
         self.assertEqual(response.status_code, 204)
         self.assertFalse(ImageAnnotation.objects.filter(image_asset=self.wsi).exists())

@@ -67,21 +67,19 @@ test("physician selects a regimen, confirms treatment, and opens prescription st
   await expect(page.getByText(/Safety Check/).first()).toBeVisible();
 });
 
-test("general warning advances after acknowledgment while unresolved warning stays blocked", async ({ page }) => {
+test("current safety warnings remain visible without legacy acknowledgment controls", async ({ page }) => {
   await installPrescriptionWarningFlow(page);
   await authenticateWithoutLogin(page);
   await page.goto("/respiratory/cases/case-prescription");
   await page.getByRole("button", { name: "치료계획·처방" }).click();
   await page.getByRole("button", { name: "처방 · 안전성", exact: true }).click();
 
-  await expect(page.getByRole("heading", { name: "Safety Check · WARNING · 의료진 확인 필요" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeVisible();
-  page.once("dialog", dialog => dialog.accept("담당의 검토"));
-  await page.getByRole("button", { name: "경고 확인 후 다음 단계" }).click();
-  await expect(page.getByText("현재 상태: VALIDATED · 확인 완료", { exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Safety Check · WARNING · 경고" })).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "안전성 경고가 확인되었습니다" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "경고 확인 후 다음 단계" })).toHaveCount(0);
 
   await page.getByLabel("처방 선택").selectOption("rx-unresolved");
-  await expect(page.getByText("입력 보완 후 Safety Check를 다시 실행해주세요.", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert").first()).toBeVisible();
   await expect(page.getByRole("button", { name: "경고 확인 후 다음 단계" })).toHaveCount(0);
 });
 
