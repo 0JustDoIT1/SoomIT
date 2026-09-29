@@ -15,7 +15,7 @@ describe("case dirty state", () => {
   });
 
   it("warns only when a Case-scoped source is dirty", () => {
-    expect(hasUnsavedCaseChanges({ tnm: false, treatment: true, prescription: false, unacknowledgedWarnings: false })).toBe(true);
-    expect(hasUnsavedCaseChanges({ tnm: false, treatment: false, prescription: false, unacknowledgedWarnings: false })).toBe(false);
+    expect(hasUnsavedCaseChanges({ tnm: false, treatment: true, prescription: false })).toBe(true);
+    expect(hasUnsavedCaseChanges({ tnm: false, treatment: false, prescription: false })).toBe(false);
   });
 });

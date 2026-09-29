@@ -26,7 +26,9 @@ describe("CaseChangeDialog", () => {
     const onCancel = vi.fn();
     const returnFocusRef = createRef<HTMLButtonElement>();
     render(<CaseChangeDialog onCancel={onCancel} onDiscard={() => undefined} returnFocusRef={returnFocusRef} />);
-    await user.click(screen.getByRole("dialog"));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveClass("fixed", "inset-0", "z-[100]");
+    await user.click(dialog);
     expect(onCancel).not.toHaveBeenCalled();
   });
 });

@@ -8,6 +8,6 @@ export function hasPrescriptionDraftChanges({ cycleNumber, phase, cycleStartDate
   return cycleNumber !== "1" || phase !== "INDUCTION" || cycleStartDate !== "" || Object.values(itemDirty).some(Boolean);
 }
 
-export function hasUnsavedCaseChanges(flags: { tnm: boolean; treatment: boolean; prescription: boolean; unacknowledgedWarnings: boolean }) {
-  return flags.tnm || flags.treatment || flags.prescription || flags.unacknowledgedWarnings;
+export function hasUnsavedCaseChanges(flags: { tnm: boolean; treatment: boolean; prescription: boolean }) {
+  return flags.tnm || flags.treatment || flags.prescription;
 }

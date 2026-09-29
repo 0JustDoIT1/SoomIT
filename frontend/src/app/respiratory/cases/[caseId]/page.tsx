@@ -502,7 +502,8 @@ export default function RespiratoryCaseDetailPage() {
   const router = useRouter();
   const { user, authorizedFetch } = useRespiratoryAuth();
 
-  const caseId = params.caseId as string;
+  const routeCaseId = params.caseId as string;
+  const [caseId, setCaseId] = useState(routeCaseId);
 
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [selectedCase, setSelectedCase] =
@@ -672,6 +673,8 @@ export default function RespiratoryCaseDetailPage() {
   useState<PrescriptionSubMenu>("PRESCRIPTION_LIST");
 
   const [loading, setLoading] = useState(true);
+  const [caseSwitching, setCaseSwitching] = useState(false);
+  const [caseSwitchError, setCaseSwitchError] = useState("");
   const [error, setError] = useState("");
   const [clinicalResultError, setClinicalResultError] = useState("");
   const [aiResultError, setAiResultError] = useState("");
@@ -684,6 +687,22 @@ export default function RespiratoryCaseDetailPage() {
     if (caseId) window.localStorage.setItem("respiratory-last-case-id", caseId);
   }, [caseId]);
 
+  useEffect(() => {
+    const syncCaseFromHistory = () => {
+      const match = window.location.pathname.match(/^\/respiratory\/cases\/([^/]+)\/?$/);
+      const historyCaseId = match?.[1];
+      if (!historyCaseId || historyCaseId === activeCaseIdRef.current) return;
+
+      activeCaseIdRef.current = historyCaseId;
+      setCaseSwitchError("");
+      setCaseSwitching(true);
+      setCaseId(historyCaseId);
+    };
+
+    window.addEventListener("popstate", syncCaseFromHistory);
+    return () => window.removeEventListener("popstate", syncCaseFromHistory);
+  }, []);
+
   const treatmentBaseline = {
     treatment_type: caseTreatmentDecision?.treatment_type ?? "",
     selected_regimen: caseTreatmentDecision?.selected_regimen ?? "",
@@ -693,8 +712,7 @@ export default function RespiratoryCaseDetailPage() {
   };
   const hasUnsavedTreatmentDraft = hasChangedFields({ ...caseTreatmentForm }, treatmentBaseline);
   const hasUnsavedPrescriptionDraft = hasPrescriptionDraftChanges({ cycleNumber: casePrescriptionCycleNumber, phase: casePrescriptionPhase, cycleStartDate: casePrescriptionCycleStartDate, itemDirty: prescriptionItemDirty });
-  const hasUnacknowledgedWarnings = casePrescriptions.some((prescription) => prescription.safety_check_results.some((result) => result.result === "WARNING" && !result.acknowledged_at));
-  const hasUnsavedCaseChanges = combineUnsavedCaseChanges({ tnm: tnmDirty, treatment: hasUnsavedTreatmentDraft, prescription: hasUnsavedPrescriptionDraft, unacknowledgedWarnings: hasUnacknowledgedWarnings });
+  const hasUnsavedCaseChanges = combineUnsavedCaseChanges({ tnm: tnmDirty, treatment: hasUnsavedTreatmentDraft, prescription: hasUnsavedPrescriptionDraft });
 
   useEffect(() => {
     if (!hasUnsavedCaseChanges) return;
@@ -730,11 +748,14 @@ export default function RespiratoryCaseDetailPage() {
       && canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)
     );
     const fetchData = async () => {
-      const isInitialCaseLoad = loadedPageCaseIdRef.current !== caseId;
+      const isNewCaseLoad = loadedPageCaseIdRef.current !== caseId;
+      const isInitialPageLoad = loadedPageCaseIdRef.current === null;
       try {
-        if (isInitialCaseLoad) setLoading(true);
+        if (isInitialPageLoad) setLoading(true);
+        else if (isNewCaseLoad) setCaseSwitching(true);
         setError("");
-        if (isInitialCaseLoad) {
+        setCaseSwitchError("");
+        if (isNewCaseLoad) {
           setCaseTreatmentConfirmed(false);
           setCasePrescriptionError("");
           setCasePrescriptionMessage("");
@@ -798,6 +819,7 @@ export default function RespiratoryCaseDetailPage() {
           setCases(caseListData);
           setSelectedCase(caseDetailData);
           setLoading(false);
+          setCaseSwitching(false);
           setPdl1Results([]);
         }
 
@@ -929,14 +951,17 @@ export default function RespiratoryCaseDetailPage() {
         if (controller.signal.aborted) return;
         console.error(err);
         applyCurrentResponse(() => showToast.error("Case 정보를 불러오지 못했습니다.", { id: `case-load-${caseId}` }));
-        applyCurrentResponse(() => setError(
+        applyCurrentResponse(() => (isInitialPageLoad ? setError : setCaseSwitchError)(
           err instanceof Error
             ? err.message
             : "Case 조회 중 오류가 발생했습니다."
         ));
         if (isLatestRegimenRequest()) setRegimenCandidatesLoading(false);
       } finally {
-        applyCurrentResponse(() => setLoading(false));
+        applyCurrentResponse(() => {
+          if (isInitialPageLoad) setLoading(false);
+          else setCaseSwitching(false);
+        });
       }
     };
 
@@ -987,6 +1012,14 @@ export default function RespiratoryCaseDetailPage() {
     );
   }).filter((item, index, items) => items.findIndex((candidate) => candidate.id === item.id) === index);
 
+  function navigateWithinWorkspace(id: string) {
+    activeCaseIdRef.current = id;
+    setCaseSwitchError("");
+    setCaseSwitching(true);
+    setCaseId(id);
+    window.history.pushState(null, "", `/respiratory/cases/${id}`);
+  }
+
   const handleCaseSelect = (id: string) => {
     if (id === caseId) {
       return;
@@ -997,7 +1030,7 @@ export default function RespiratoryCaseDetailPage() {
       setPendingCaseId(id);
       return;
     }
-    router.push(`/respiratory/cases/${id}`);
+    navigateWithinWorkspace(id);
   };
 
   const discardDraftAndMove = () => {
@@ -1005,8 +1038,12 @@ export default function RespiratoryCaseDetailPage() {
     const nextCaseId = pendingCaseId;
     setPendingCaseId(null);
     setTnmDirty(false);
+    setCaseTreatmentForm({ ...treatmentBaseline });
+    setCasePrescriptionCycleNumber("1");
+    setCasePrescriptionPhase("INDUCTION");
+    setCasePrescriptionCycleStartDate("");
     setPrescriptionItemDirty({});
-    router.push(`/respiratory/cases/${nextCaseId}`);
+    navigateWithinWorkspace(nextCaseId);
   };
 
   const retryPanel = async (panel: "REGIMEN" | "TREATMENT" | "PRESCRIPTION") => {
@@ -1769,9 +1806,34 @@ export default function RespiratoryCaseDetailPage() {
   return (
     <>
       <div className={`${workspaceStyles.workspace} h-full min-h-0 overflow-hidden bg-[#f3f7fd]`} aria-label="Case Workspace">
-      <div className="grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(228px,244px)_116px_minmax(0,1fr)]">
+      <div className="relative grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(228px,244px)_116px_minmax(0,1fr)]">
       <div className="fixed bottom-3 right-16 z-40"><CaseConsultationRequest caseId={caseId} /></div>
-      <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
+      <div className="relative z-[60] min-h-0 overflow-hidden">
+        <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
+      </div>
+      {(caseSwitching || caseSwitchError) && (
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#f3f7fd]/95 pl-[236px] xl:pl-[244px]" aria-live="polite">
+          {caseSwitchError ? (
+            <div className="rounded-2xl border border-rose-200 bg-white px-8 py-7 text-center shadow-sm" role="alert">
+              <p className="text-sm font-bold text-slate-800">환자 정보를 불러오지 못했습니다.</p>
+              <p className="mt-2 max-w-md text-xs text-slate-500">{caseSwitchError}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCaseSwitchError("");
+                  setCaseSwitching(true);
+                  setCaseRefreshVersion((current) => current + 1);
+                }}
+                className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white transition hover:bg-blue-700"
+              >
+                다시 시도
+              </button>
+            </div>
+          ) : (
+            <LoadingIndicator label="선택한 환자 정보를 불러오는 중입니다." className="min-h-32 rounded-2xl shadow-sm" />
+          )}
+        </div>
+      )}
       <CaseInfoMenu selected={selectedInfoMenu} currentStage={selectedCase?.current_stage} caseStatus={selectedCase?.case_status} clinicalResults={tnmClinicalResults} orders={caseOrders} aiResults={tnmAnalysisResults} onSelect={handleInfoMenuSelect} />
       <div className="flex min-h-0 min-w-0 flex-col gap-1 overflow-hidden p-2">
       <CaseSummaryHeader
