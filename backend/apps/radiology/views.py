@@ -874,7 +874,7 @@ class RadiologyOrderCtDicomWebMixin(RadiologyPermissionMixin):
         return CaseImageAsset.objects.filter(
             id=asset_id,
             examination_order=order,
-            image_type=CaseImageAsset.ImageType.CT,
+            image_type__in=[CaseImageAsset.ImageType.CT, CaseImageAsset.ImageType.PET],
             storage_type=CaseImageAsset.StorageType.ORTHANC,
             status=CaseImageAsset.Status.READY,
         ).first()

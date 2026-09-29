@@ -14,7 +14,7 @@ import {
 } from "../_lib/radiology-api";
 
 const CtRegisteredSeriesPreview = dynamic(
-  () => import("./ct-registered-series-preview").then((module) => module.CtRegisteredSeriesPreview),
+  () => import("./ct-registered-series-preview").then((module) => module.DicomRegisteredSeriesPreview),
   { ssr: false },
 );
 
@@ -87,7 +87,9 @@ function ImagePreview({ exam }: { exam: RadiologyCompletedExam }) {
   const order = exam.examination_order;
   if (!asset) return <p className="text-xs text-slate-500">대표 영상 미리보기 없음</p>;
   if (order.order_type === "XRAY") return <XrayHistoryPreview orderId={order.id} assetId={asset.id} />;
-  if (order.order_type === "CT") return <CtRegisteredSeriesPreview orderId={order.id} assetId={asset.id} />;
+  if (order.order_type === "CT" || order.order_type === "PET_CT_TNM") {
+    return <CtRegisteredSeriesPreview orderId={order.id} assetId={asset.id} />;
+  }
   return <p className="text-xs text-slate-500">대표 영상 미리보기 없음</p>;
 }
 

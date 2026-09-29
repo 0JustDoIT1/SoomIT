@@ -3,13 +3,15 @@
 import { useEffect, useId, useRef, useState } from "react";
 
 import { ensureCornerstoneInitialized } from "../_lib/cornerstone-init";
-import { loadCtDicomWebSeries } from "../_lib/cornerstone-dicomweb-loader";
+import { loadDicomWebSeries } from "../_lib/cornerstone-dicomweb-loader";
 
-export function CtRegisteredSeriesPreview({ orderId, assetId }: { orderId: string; assetId: string }) {
-  return <CtRegisteredSeriesPreviewContent key={`${orderId}:${assetId}`} orderId={orderId} assetId={assetId} />;
+export function DicomRegisteredSeriesPreview({ orderId, assetId }: { orderId: string; assetId: string }) {
+  return <DicomRegisteredSeriesPreviewContent key={`${orderId}:${assetId}`} orderId={orderId} assetId={assetId} />;
 }
 
-function CtRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: string; assetId: string }) {
+export const CtRegisteredSeriesPreview = DicomRegisteredSeriesPreview;
+
+function DicomRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: string; assetId: string }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const reactId = useId();
   const [isVisible, setIsVisible] = useState(false);
@@ -38,7 +40,7 @@ function CtRegisteredSeriesPreviewContent({ orderId, assetId }: { orderId: strin
   useEffect(() => {
     if (!isVisible || imageId) return;
     let cancelled = false;
-    void loadCtDicomWebSeries(orderId, assetId)
+    void loadDicomWebSeries(orderId, assetId)
       .then(({ imageIds }) => {
         if (!cancelled && imageIds.length > 0) {
           setImageId(imageIds[Math.floor(imageIds.length / 2)]);

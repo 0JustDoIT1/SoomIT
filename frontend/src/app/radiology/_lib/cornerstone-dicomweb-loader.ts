@@ -21,16 +21,17 @@ function tagNumbers(dataset: DicomJsonDataset, tag: string): number[] | null {
   return value.every((item): item is number => typeof item === "number") ? value : null;
 }
 
-export type CtDicomWebSeries = {
+export type DicomWebSeries = {
   imageIds: string[];
 };
+export type CtDicomWebSeries = DicomWebSeries;
 
 /**
  * Registers one CT Series with Cornerstone's WADO-RS loader. Metadata is fetched
  * once up front so volume geometry is available before pixel loading starts;
  * frames themselves remain lazy and are scheduled by Cornerstone's request pool.
  */
-export async function loadCtDicomWebSeries(orderId: string, assetId: string): Promise<CtDicomWebSeries> {
+export async function loadDicomWebSeries(orderId: string, assetId: string): Promise<DicomWebSeries> {
   const { dicomImageLoader } = await ensureCornerstoneInitialized();
   const instances = await fetchCtDicomWebJson<DicomJsonDataset[]>(ctDicomWebMetadataUrl(orderId, assetId));
 
@@ -65,3 +66,6 @@ export async function loadCtDicomWebSeries(orderId: string, assetId: string): Pr
 
   return { imageIds };
 }
+
+/** Backward-compatible CT name for callers outside the completed-history preview. */
+export const loadCtDicomWebSeries = loadDicomWebSeries;
