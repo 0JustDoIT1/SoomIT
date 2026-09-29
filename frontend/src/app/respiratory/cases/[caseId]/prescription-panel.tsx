@@ -16,11 +16,16 @@ import type { AuthorizedFetch } from "./treatment-prescription-types";
 type Item = { id: string; drug_name: string; ingredient_name?: string | null; mfds_item_seq?: string | null; calculated_dose: string | number | null; final_dose: string | number | null; unit: string | null; route: string; instructions?: string | null };
 type Safety = { id: string; check_type_label: string; result: "PASS" | "WARNING" | "BLOCK"; result_label?: string; message: string; source_code?: string | null; acknowledged_at?: string | null; acknowledgment_note?: string | null };
 type Prescription = { id: string; regimen_detail?: { regimen_name: string; regimen_code: string }; cycle_number: number; phase_label?: string; prescription_status: string; prescription_status_label?: string; safety_freshness?: "NOT_RUN" | "CURRENT" | "RECHECK_REQUIRED"; patient_account_linked?: boolean; items: Item[]; safety_check_results: Safety[] };
-type Props = { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; refreshKey?: number; actionable?: boolean; waitingMessage?: string; hasSelectedRegimen?: boolean; requiresPrescription?: boolean; onPrescriptionChanged?: () => void };
+type Props = { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; refreshKey?: number; actionable?: boolean; waitingMessage?: string; hasSelectedRegimen?: boolean; requiresPrescription?: boolean; availablePrescriptionPhases?: string[]; onPrescriptionChanged?: () => void };
 
 const UNRESOLVED_SAFETY_SOURCE_CODES = new Set(["DUR_API_ERROR", "DUR_MAPPING_UNRESOLVED", "ALLERGY_UNCONFIRMED", "LAB_MISSING"]);
 const REQUEST_FAILED = "처방 요청에 실패했습니다. 입력값과 연결 상태를 확인해 주세요.";
 const REFRESH_FAILED = "요청은 처리되었지만 처방 정보를 새로 불러오지 못했습니다. 상태를 확인한 뒤 계속해 주세요.";
+const PHASE_LABELS: Record<string, string> = {
+  INDUCTION: "초기치료",
+  MAINTENANCE: "유지요법",
+  CONTINUOUS: "지속치료",
+};
 
 function prescriptionError(data: unknown): string {
   if (!data || typeof data !== "object") return REQUEST_FAILED;
@@ -35,7 +40,7 @@ function prescriptionError(data: unknown): string {
   return REQUEST_FAILED;
 }
 
-export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refreshKey = 0, actionable = true, waitingMessage, hasSelectedRegimen = false, requiresPrescription = true, onPrescriptionChanged }: Props) {
+export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refreshKey = 0, actionable = true, waitingMessage, hasSelectedRegimen = false, requiresPrescription = true, availablePrescriptionPhases = [], onPrescriptionChanged }: Props) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [selectedPrescriptionId, setSelectedPrescriptionId] = useState("");
   const [loading, setLoading] = useState(true); const [working, setWorking] = useState(false);
@@ -47,6 +52,8 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
   const [cycleNumber, setCycleNumber] = useState("1"); const [phase, setPhase] = useState("INDUCTION"); const [cycleStartDate, setCycleStartDate] = useState("");
   const [summaryPrescription, setSummaryPrescription] = useState<Prescription | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const supportedPhases = Array.from(new Set(availablePrescriptionPhases)).filter((value) => value in PHASE_LABELS);
+  const selectedPhase = supportedPhases.includes(phase) ? phase : (supportedPhases[0] ?? "");
 
   const load = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (showLoading) setLoading(true); setError("");
@@ -67,11 +74,11 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
     if (workingRef.current) return false;
     workingRef.current = true;
     setWorking(true); setError(""); setMessage("");
-    try { const r = await authorizedFetch(url, init); const d = await r.json().catch(() => null); if (!r.ok) throw new Error(prescriptionError(d)); if (!await completed(success, notifyParent)) { if (toastId) showToast.error(REFRESH_FAILED, { id: toastId }); return false; } if (toastId) showToast.success(success, { id: toastId }); return true; }
-    catch (e) { console.error(e); const text = e instanceof Error && e.message ? e.message : REQUEST_FAILED; setError(text); if (toastId) showToast.error(text, { id: toastId }); return false; }
+    try { const r = await authorizedFetch(url, init); const d = await r.json().catch(() => null); if (!r.ok) { const text = prescriptionError(d); setError(text); if (toastId) showToast.error(text, { id: toastId }); return false; } if (!await completed(success, notifyParent)) { if (toastId) showToast.error(REFRESH_FAILED, { id: toastId }); return false; } if (toastId) showToast.success(success, { id: toastId }); return true; }
+    catch (e) { const text = e instanceof Error && e.message ? e.message : REQUEST_FAILED; setError(text); if (toastId) showToast.error(text, { id: toastId }); return false; }
     finally { workingRef.current = false; setWorking(false); }
   };
-  const create = async () => { if (!actionable || workingRef.current || !requiresPrescription || !hasSelectedRegimen || !cycleStartDate) return; const id = `case-prescription-create-${caseId}`; showToast.info("처방을 저장하고 있습니다.", { id }); const ok = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cycle_number: Number(cycleNumber), phase, cycle_start_date: cycleStartDate }) }, "처방 DRAFT가 생성되었습니다.", id); if (ok) { setCycleNumber("1"); setPhase("INDUCTION"); setCycleStartDate(""); } };
+  const create = async () => { if (!actionable || workingRef.current || !requiresPrescription || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate) return; const id = `case-prescription-create-${caseId}`; showToast.info("처방을 저장하고 있습니다.", { id }); const ok = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cycle_number: Number(cycleNumber), phase: selectedPhase, cycle_start_date: cycleStartDate }) }, "처방 DRAFT가 생성되었습니다.", id); if (ok) { setCycleNumber("1"); setPhase(supportedPhases[0] ?? ""); setCycleStartDate(""); } };
   const updateItem = (prescriptionId: string, itemId: string, body: object) => request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, "처방 약물 정보가 수정되었습니다.", `case-prescription-item-${caseId}-${itemId}`, false);
   const safety = async (id: string) => {
     if (workingRef.current) return;
@@ -101,14 +108,15 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
           <input type="number" min="1" value={cycleNumber} onChange={e => setCycleNumber(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
         </label>
         <label className="text-xs font-semibold text-slate-600">치료 단계
-          <select value={phase} onChange={e => setPhase(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"><option value="INDUCTION">INDUCTION</option><option value="MAINTENANCE">MAINTENANCE</option><option value="CONTINUOUS">지속치료</option></select>
+          <select aria-label="치료 단계" value={selectedPhase} disabled={supportedPhases.length === 0} onChange={e => setPhase(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100 disabled:bg-slate-100">{supportedPhases.length ? supportedPhases.map(value => <option key={value} value={value}>{value} · {PHASE_LABELS[value]}</option>) : <option value="">사용 가능한 치료 단계 없음</option>}</select>
         </label>
         <PrescriptionDateField required label="Cycle 시작일" value={cycleStartDate} onChange={setCycleStartDate} className="w-full" />
       </div>
       {!hasSelectedRegimen && <p role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">선택된 Regimen이 없어 처방을 생성할 수 없습니다. 치료계획에서 Regimen을 먼저 확정해주세요.</p>}
+      {hasSelectedRegimen && supportedPhases.length === 0 && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.</p>}
       <div className="mt-5 flex flex-col-reverse items-stretch justify-between gap-3 sm:flex-row sm:items-center">
         <p className="text-xs text-slate-400">처방은 자동 생성되지 않으며, 시작일을 선택한 뒤 직접 생성합니다.</p>
-        <button type="button" disabled={working || !hasSelectedRegimen || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "임시 처방 생성"}</button>
+        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "임시 처방 생성"}</button>
       </div>
     </section>
   ) : (
@@ -116,9 +124,9 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
         <summary className="cursor-pointer text-xs font-semibold text-slate-700">다음 Cycle 처방 생성</summary>
         <div className="mt-2 flex flex-wrap items-end gap-2">
           <input type="number" min="1" value={cycleNumber} onChange={e => setCycleNumber(e.target.value)} className="w-20 rounded-lg border border-slate-200 p-2 text-xs" aria-label="Cycle 번호" />
-          <select value={phase} onChange={e => setPhase(e.target.value)} className="rounded-lg border border-slate-200 p-2 text-xs" aria-label="치료 단계"><option value="INDUCTION">INDUCTION</option><option value="MAINTENANCE">MAINTENANCE</option><option value="CONTINUOUS">지속치료</option></select>
+          <select value={selectedPhase} disabled={supportedPhases.length === 0} onChange={e => setPhase(e.target.value)} className="rounded-lg border border-slate-200 p-2 text-xs disabled:bg-slate-100" aria-label="치료 단계">{supportedPhases.length ? supportedPhases.map(value => <option key={value} value={value}>{value} · {PHASE_LABELS[value]}</option>) : <option value="">사용 가능한 단계 없음</option>}</select>
           <PrescriptionDateField required label="Cycle 시작일" value={cycleStartDate} onChange={setCycleStartDate} className="w-36" />
-          <button type="button" disabled={working || !hasSelectedRegimen || !cycleStartDate} onClick={() => void create()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:bg-slate-200 disabled:text-slate-500">{working ? "생성 중..." : "다음 Cycle 처방 생성"}</button>
+          <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:bg-slate-200 disabled:text-slate-500">{working ? "생성 중..." : "다음 Cycle 처방 생성"}</button>
           {!hasSelectedRegimen && <p className="text-xs text-amber-700">선택된 Regimen이 없어 처방을 생성할 수 없습니다.</p>}
         </div>
       </details>
@@ -185,7 +193,12 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
           {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && !active.safety_check_results.some(r => r.result === "BLOCK") && !hasUnresolvedWarning && !hasUnacknowledgedWarning && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => finalize(active.id, schedules)} /></div>}
           {active.prescription_status === "FINAL" && <div className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-2"><p className="text-xs font-semibold text-emerald-700">최종 확정 완료 · 수정 불가</p><button type="button" onClick={() => { setSummaryPrescription(active); setSummaryOpen(true); }} className="mt-2 w-full rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">최종 진료 요약 보기</button></div>}
         </aside>
-      </div> : <div className="flex min-h-0 flex-1 items-start justify-center overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-8 sm:items-center sm:px-8">{creationForm}</div>}
+      </div> : <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-6 sm:px-8">
+        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+          {actionable && requiresPrescription && hasSelectedRegimen && supportedPhases.length > 0 && <PatientSafetyDataPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} compact />}
+          <div className="flex justify-center">{creationForm}</div>
+        </div>
+      </div>}
     <FinalCareSummaryDialog open={summaryOpen} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} prescription={summaryPrescription} onClose={closeSummary} />
   </section>;
 }

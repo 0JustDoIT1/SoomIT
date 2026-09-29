@@ -5,7 +5,12 @@ from contextlib import ExitStack
 
 from django.test import SimpleTestCase
 from rest_framework.exceptions import ValidationError
-from apps.clinical.views import calculate_bsa, calculate_dose, DoctorPrescriptionAPIView
+from apps.clinical.views import (
+    calculate_bsa,
+    calculate_dose,
+    DoctorPrescriptionAPIView,
+    validate_prescription_dose_inputs,
+)
 from apps.clinical.models import Drug, PrescriptionItem
 from apps.clinical.serializers import PrescriptionItemSerializer
 
@@ -97,6 +102,20 @@ class DoseRuleTests(SimpleTestCase):
                      ("OTHER", 5), ("MG_PER_KG", 5), ("UNKNOWN", 5)]:
             with self.subTest(args=args), self.assertRaises(ValidationError):
                 calculate_dose(*args)
+
+    def test_prescription_inputs_report_actionable_missing_fields(self):
+        regimen_drugs = [NS(dose_basis="MG_PER_M2"), NS(dose_basis="AUC")]
+        with self.assertRaises(ValidationError) as caught:
+            validate_prescription_dose_inputs(regimen_drugs, None, None)
+
+        self.assertEqual(
+            caught.exception.detail,
+            {
+                "height_cm": "용량 계산을 위해 환자 키(cm)를 먼저 입력해 주세요.",
+                "weight_kg": "용량 계산을 위해 환자 몸무게(kg)를 먼저 입력해 주세요.",
+                "egfr": "Carboplatin 용량 계산을 위해 최신 eGFR을 먼저 입력해 주세요.",
+            },
+        )
 
     def test_prescription_uses_profile_latest_lab_and_keeps_final_empty(self):
         with ExitStack() as stack:

@@ -607,6 +607,28 @@ def calculate_dose(dose_basis, standard_dose, height_cm=None, weight_kg=None, eg
     return values
 
 
+def validate_prescription_dose_inputs(regimen_drugs, patient_profile, latest_lab):
+    """Fail before creating a prescription when dose calculation inputs are absent."""
+    dose_bases = {drug.dose_basis for drug in regimen_drugs}
+    errors = {}
+    if dose_bases & {"MG_PER_M2", "AUC"}:
+        for field, value, label in (
+            ("height_cm", getattr(patient_profile, "height_cm", None), "키(cm)"),
+            ("weight_kg", getattr(patient_profile, "weight_kg", None), "몸무게(kg)"),
+        ):
+            try:
+                _dose_decimal(value, field, positive=True)
+            except ValidationError:
+                errors[field] = f"용량 계산을 위해 환자 {label}를 먼저 입력해 주세요."
+    if "AUC" in dose_bases:
+        try:
+            _dose_decimal(getattr(latest_lab, "egfr", None), "egfr")
+        except ValidationError:
+            errors["egfr"] = "Carboplatin 용량 계산을 위해 최신 eGFR을 먼저 입력해 주세요."
+    if errors:
+        raise ValidationError(errors)
+
+
 
 @extend_schema(tags=["환자앱-검사결과"])
 class PatientClinicalResultListAPIView(ListAPIView):
@@ -1067,7 +1089,14 @@ class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
         )
 
         if not regimen_drugs:
-            raise ValidationError({"phase": "No regimen drugs exist for the selected regimen and phase."})
+            raise ValidationError({"phase": f"선택한 Regimen에 {phase} 단계 약물 스케줄이 없습니다."})
+
+        patient_profile = PatientHealthProfile.objects.filter(
+            patient=case.patient,
+        ).first()
+
+        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at", "-id").first()
+        validate_prescription_dose_inputs(regimen_drugs, patient_profile, latest_lab)
 
         prescription = serializer.save(
             case=case,
@@ -1077,12 +1106,6 @@ class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
             prescribed_by_user=request.user,
             prescribed_at=timezone.now(),
         )
-
-        patient_profile = PatientHealthProfile.objects.filter(
-            patient=case.patient,
-        ).first()
-
-        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at", "-id").first()
 
         for regimen_drug in regimen_drugs:
             dose_values = calculate_dose(

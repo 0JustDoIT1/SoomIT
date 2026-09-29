@@ -277,6 +277,7 @@ type CaseTreatmentDecision = {
   treatment_type: string | null;
   treatment_type_label: string | null;
   requires_prescription?: boolean;
+  available_prescription_phases?: string[];
   selected_regimen: string | null;
   selected_regimen_detail: RegimenCandidateDetail | null;
   treatment_plan: string | null;
@@ -2172,6 +2173,7 @@ export default function RespiratoryCaseDetailPage() {
               actionable={prescriptionActionable}
               hasSelectedRegimen={Boolean(caseTreatmentDecision?.selected_regimen)}
               requiresPrescription={treatmentRequiresPrescription}
+              availablePrescriptionPhases={caseTreatmentDecision?.available_prescription_phases ?? []}
               onPrescriptionChanged={() => setCaseRefreshVersion((current) => current + 1)}
             />
             </div>

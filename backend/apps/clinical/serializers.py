@@ -13,6 +13,7 @@ from .models import (
     Prescription,
     PrescriptionItem,
     Regimen,
+    RegimenDrug,
     SafetyCheckResult,
     TreatmentDecision,
     TreatmentRule,
@@ -768,6 +769,23 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
         source="requires_drug_prescription",
         read_only=True,
     )
+    available_prescription_phases = serializers.SerializerMethodField()
+
+    def get_available_prescription_phases(self, obj):
+        """Expose only phases that have an actual medication schedule.
+
+        The client must not offer a phase just because the enum supports it:
+        an empty regimen phase would otherwise let a clinician submit a draft
+        that the prescription endpoint necessarily rejects.
+        """
+        if not obj.requires_drug_prescription or not obj.selected_regimen_id:
+            return []
+        available = set(
+            RegimenDrug.objects.filter(regimen_id=obj.selected_regimen_id)
+            .values_list("phase", flat=True)
+            .distinct()
+        )
+        return [phase for phase in ("INDUCTION", "MAINTENANCE", "CONTINUOUS") if phase in available]
 
     class Meta:
         model = TreatmentDecision
@@ -781,6 +799,7 @@ class DoctorTreatmentDecisionSerializer(serializers.ModelSerializer):
             "treatment_type",
             "treatment_type_label",
             "requires_prescription",
+            "available_prescription_phases",
             "selected_regimen",
             "selected_regimen_detail",
             "input_snapshot",

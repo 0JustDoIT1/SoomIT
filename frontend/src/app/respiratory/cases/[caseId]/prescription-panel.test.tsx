@@ -8,7 +8,7 @@ vi.mock("@/components/ui/toast/toast", () => ({ showToast: { info: vi.fn(), succ
 vi.mock("./mfds-product-selector", () => ({ MfdsProductSelector: () => null }));
 vi.mock("./medication-schedule-panel", () => ({ MedicationSchedulePanel: () => <p>복약 일정</p> }));
 vi.mock("./patient-safety-data-panel", () => ({ PatientSafetyDataPanel: ({ compact }: { compact?: boolean }) => compact ? <section aria-label="환자 안전성 정보">안전성 입력 폼</section> : null }));
-const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen: true };
+const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen: true, availablePrescriptionPhases: ["INDUCTION"] };
 const base = { id: "rx-1", cycle_number: 1, regimen_detail: { regimen_name: "Test regimen", regimen_code: "TEST" }, items: [{ id: "item-1", drug_name: "Test drug", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "Day 1" }] };
 const mockFetch = (status: string, results: object[] = [], safetyFreshness = status === "DRAFT" ? (results.length ? "CURRENT" : "NOT_RUN") : "CURRENT") => vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ ...base, prescription_status: status, safety_freshness: safetyFreshness, safety_check_results: results }])));
 
@@ -16,6 +16,22 @@ it("renders patient safety inputs in the left prescription workspace", async () 
   render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT")} />);
   expect(await screen.findByRole("region", { name: "환자 안전성 정보" })).toBeVisible();
   expect(screen.getByText("안전성 입력 폼")).toBeVisible();
+});
+
+it("offers only medication phases configured for the selected regimen", async () => {
+  render(<PrescriptionPanel {...props} availablePrescriptionPhases={["MAINTENANCE"]} authorizedFetch={vi.fn().mockResolvedValue(new Response(JSON.stringify([])))} />);
+
+  const phase = await screen.findByLabelText("치료 단계");
+  expect(phase).toHaveValue("MAINTENANCE");
+  expect(within(phase).getByRole("option", { name: "MAINTENANCE · 유지요법" })).toBeInTheDocument();
+  expect(within(phase).queryByRole("option", { name: /INDUCTION/ })).not.toBeInTheDocument();
+});
+
+it("blocks creation when the selected regimen has no medication schedule", async () => {
+  render(<PrescriptionPanel {...props} availablePrescriptionPhases={[]} authorizedFetch={vi.fn().mockResolvedValue(new Response(JSON.stringify([])))} />);
+
+  expect(await screen.findByText("선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.")).toBeVisible();
+  expect(screen.getByRole("button", { name: "임시 처방 생성" })).toBeDisabled();
 });
 
 it("renders decimal doses without storage-only trailing zeroes", async () => {
@@ -315,6 +331,7 @@ it("creates the first draft once and requires a cycle start date", async () => {
   });
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
   expect(await screen.findByRole("heading", { name: "첫 처방을 생성하세요" })).toBeInTheDocument();
+  expect(screen.getByRole("region", { name: "환자 안전성 정보" })).toHaveTextContent("안전성 입력 폼");
   expect(screen.getByText(/처방은 자동 생성되지 않으며/)).toBeInTheDocument();
   expect(screen.queryByText("등록된 처방이 없습니다.")).not.toBeInTheDocument();
   const create = await screen.findByRole("button", { name: "임시 처방 생성" });

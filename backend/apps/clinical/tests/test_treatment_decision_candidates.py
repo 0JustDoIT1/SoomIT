@@ -209,6 +209,26 @@ class CandidateContractTests(SimpleTestCase):
         self.assertEqual(payload["case_status"], "ACTIVE")
         self.assertFalse(payload["requires_prescription"])
 
+    @patch("apps.clinical.serializers.RegimenDrug.objects")
+    def test_treatment_decision_response_lists_only_scheduled_prescription_phases(self, regimen_drugs):
+        regimen = Regimen(regimen_code="R2", regimen_name="R2", cancer_type="NSCLC")
+        regimen.id = "regimen-r2"
+        case = LungCancerCase(current_stage="PRESCRIPTION", case_status="ACTIVE")
+        clinical_result = ClinicalResult(case=case, workflow_stage="TREATMENT", result_status="CONFIRMED")
+        decision = TreatmentDecision(
+            clinical_result=clinical_result,
+            ai_recommendation_action="NOT_USED",
+            treatment_type="COMBINATION",
+            selected_regimen=regimen,
+            treatment_plan="Combination plan",
+        )
+        regimen_drugs.filter.return_value.values_list.return_value.distinct.return_value = ["MAINTENANCE", "INDUCTION"]
+
+        payload = DoctorTreatmentDecisionSerializer(decision).data
+
+        self.assertEqual(payload["available_prescription_phases"], ["INDUCTION", "MAINTENANCE"])
+        regimen_drugs.filter.assert_called_once_with(regimen_id="regimen-r2")
+
     def test_queryset_order_and_response_contract(self):
         view = Candidates()
         r1 = Regimen(regimen_code="R1", regimen_name="R1", cancer_type="NSCLC")
