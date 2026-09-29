@@ -146,6 +146,7 @@ export function CaseCtSegmentationEvidence({
   const [annotations, setAnnotations] = useState<ClinicianImageAnnotation[]>([]);
   const [annotationLoading, setAnnotationLoading] = useState(false);
   const [annotationLoadError, setAnnotationLoadError] = useState("");
+  const [dirtyAnnotationIds, setDirtyAnnotationIds] = useState<Set<string>>(() => new Set());
   const mountedRef = useRef(true);
   const assetCaseIdRef = useRef("");
   const annotationRequestRef = useRef("");
@@ -153,6 +154,7 @@ export function CaseCtSegmentationEvidence({
   // reconciling the overlay. Keep completed deletes locally so a repeated
   // click/event never reaches the protected detail endpoint as a 404.
   const deletedAnnotationIdsRef = useRef(new Set<string>());
+  const nextTemporaryAnnotationIdRef = useRef(0);
   const onEvidenceInfoChangeRef = useRef(onEvidenceInfoChange);
 
   useEffect(() => {
@@ -380,6 +382,7 @@ export function CaseCtSegmentationEvidence({
     if (assetCaseIdRef.current !== caseId || !imageAssetId || !seriesInstanceUid) {
       annotationRequestRef.current = "";
       setAnnotations([]);
+      setDirtyAnnotationIds(new Set());
       setAnnotationLoading(false);
       setAnnotationLoadError("");
       return;
@@ -389,6 +392,7 @@ export function CaseCtSegmentationEvidence({
     annotationRequestRef.current = requestKey;
     let active = true;
     setAnnotations([]);
+    setDirtyAnnotationIds(new Set());
     setAnnotationLoading(true);
     setAnnotationLoadError("");
 
@@ -433,31 +437,18 @@ export function CaseCtSegmentationEvidence({
 
   const saveAnnotation = useCallback(async (pending: PendingImageAnnotation) => {
     if (!asset) return;
-    try {
-      const response = await authorizedFetch(
-        `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image_asset: asset.id, ...pending }),
-        },
-      );
-      const body: unknown = await response.json().catch(() => ({}));
-      if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
-      setAnnotations((current) => [...current, body as ClinicianImageAnnotation]);
-      if (asset.series_instance_uid) {
-        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-      }
-      showToast.success("영상 주석을 저장했습니다.");
-      return true;
-    } catch (error) {
-      console.error(error);
-      showToast.error("영상 주석 저장에 실패했습니다.");
-      return false;
-    }
-  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+    const id = `temp-${Date.now()}-${++nextTemporaryAnnotationIdRef.current}`;
+    setDirtyAnnotationIds((current) => new Set(current).add(id));
+    setAnnotations((current) => [...current, { id, ...pending }]);
+    return true;
+  }, [asset]);
 
   const deleteAnnotation = useCallback(async (annotationId: string): Promise<boolean> => {
+    if (annotationId.startsWith("temp-")) {
+      setDirtyAnnotationIds((current) => { const next = new Set(current); next.delete(annotationId); return next; });
+      setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
+      return true;
+    }
     if (deletedAnnotationIdsRef.current.has(annotationId)) return true;
     deletedAnnotationIdsRef.current.add(annotationId);
     try {
@@ -476,50 +467,76 @@ export function CaseCtSegmentationEvidence({
       if (asset?.series_instance_uid) {
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       }
-      showToast.success("영상 주석을 삭제했습니다.");
       return true;
     } catch (error) {
       deletedAnnotationIdsRef.current.delete(annotationId);
       console.error(error);
-      showToast.error("영상 주석 삭제에 실패했습니다.");
       return false;
     }
   }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 
-  const updateAnnotation = useCallback(async (annotationId: string, pending: PendingImageAnnotation): Promise<boolean> => {
+  const deleteAllAnnotations = useCallback(async (): Promise<boolean> => {
+    if (!asset?.series_instance_uid || annotations.length === 0) return false;
+    const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
     try {
       const response = await authorizedFetch(
-        `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`,
-        { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pending) },
+        `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`,
+        { method: "DELETE" },
       );
-      const body: unknown = await response.json().catch(() => null);
-      // A delete and a Cornerstone ANNOTATION_MODIFIED event can cross in
-      // flight. A missing annotation is already reconciled, not a user-facing
-      // failure: remove the stale local item and stop any later updates.
-      if (response.status === 404) {
-        setAnnotations((current) => current.filter((annotation) => annotation.id !== annotationId));
-        if (asset?.series_instance_uid) {
-          invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-        }
-        return true;
-      }
-      if (!response.ok || !body || typeof body !== "object") {
-        const detail = body && typeof body === "object" && "detail" in body && typeof body.detail === "string"
-          ? `: ${body.detail}`
-          : "";
-        throw new Error(`annotation update failed (${response.status})${detail}`);
-      }
-      setAnnotations((current) => current.map((annotation) => annotation.id === annotationId ? body as ClinicianImageAnnotation : annotation));
-      if (asset?.series_instance_uid) {
-        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-      }
+      if (!response.ok) throw new Error(`annotation delete all failed (${response.status})`);
+      setAnnotations([]);
+      deletedAnnotationIdsRef.current.clear();
+      setDirtyAnnotationIds(new Set());
+      invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       return true;
     } catch (error) {
       console.error(error);
-      showToast.error("영상 주석 수정에 실패했습니다.");
       return false;
     }
-  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+  }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId]);
+
+  const updateAnnotation = useCallback(async (annotationId: string, pending: PendingImageAnnotation): Promise<boolean> => {
+    if (deletedAnnotationIdsRef.current.has(annotationId)) return true;
+    setDirtyAnnotationIds((current) => new Set(current).add(annotationId));
+    setAnnotations((current) => current.map((annotation) => annotation.id === annotationId ? { id: annotationId, ...pending } : annotation));
+    return true;
+  }, []);
+
+  const persistAnnotations = useCallback(async (): Promise<boolean> => {
+    if (!asset) return false;
+    const pending = annotations.filter((annotation) => dirtyAnnotationIds.has(annotation.id));
+    if (pending.length === 0) return true;
+    try {
+      const saved = await Promise.all(pending.map(async (annotation) => {
+        const temporary = annotation.id.startsWith("temp-");
+        const response = await authorizedFetch(
+          temporary
+            ? `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`
+            : `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotation.id}/`,
+          {
+            method: temporary ? "POST" : "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...(temporary ? { image_asset: asset.id } : {}), annotation_type: annotation.annotation_type, annotation_data: annotation.annotation_data }),
+          },
+        );
+        const body: unknown = await response.json().catch(() => null);
+        if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
+        return [annotation.id, body as ClinicianImageAnnotation] as const;
+      }));
+      const savedById = new Map(saved);
+      setAnnotations((current) => current.map((annotation) => savedById.get(annotation.id) ?? annotation));
+      setDirtyAnnotationIds((current) => {
+        const next = new Set(current);
+        saved.forEach(([id]) => next.delete(id));
+        return next;
+      });
+      if (asset.series_instance_uid) invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+      return true;
+    } catch (error) {
+      console.error(error);
+      return false;
+    }
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, dirtyAnnotationIds]);
 
   const loadSegmentation = useCallback(
     async (
@@ -766,6 +783,9 @@ export function CaseCtSegmentationEvidence({
             onAnnotationCreated={saveAnnotation}
             onAnnotationUpdated={updateAnnotation}
             onAnnotationDeleted={deleteAnnotation}
+            onAllAnnotationsDeleted={deleteAllAnnotations}
+            onAnnotationsSaved={persistAnnotations}
+            hasUnsavedAnnotations={dirtyAnnotationIds.size > 0}
           />
         </div>
         <div className={view === "SEGMENTATION" ? "h-full min-h-0" : "hidden h-full min-h-0"}>

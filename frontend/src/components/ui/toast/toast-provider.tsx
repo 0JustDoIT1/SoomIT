@@ -9,6 +9,9 @@ export function AppToastProvider() {
   return (
     <Toaster
       position="top-right"
+      expand
+      visibleToasts={5}
+      gap={10}
       richColors
       closeButton
       toastOptions={{

@@ -61,20 +61,17 @@ describe("AiSummaryPanel", () => {
 });
 
 describe("AiSummaryPanel review action", () => {
-  it("opens the requested analysis evidence", () => {
+  it("selects the requested analysis without rendering evidence controls", () => {
     render(<AiSummaryPanel
       currentStage="CT"
       aiResults={[{ analysis_type: "CT_ANALYSIS", status: "SUCCEEDED", result_detail: { ct: { overall_malignancy_risk: 0.4 } } }]}
       clinicalResults={[{ workflow_stage: "CT", result_status: "CONFIRMED", result_detail: {} }]}
-      evidenceByAnalysis={{ CT_ANALYSIS: <p>CT original image</p> }}
       reviewRequest={{ analysisType: "CT_ANALYSIS" }}
     />);
 
     expect(screen.getAllByRole("button", { name: /흉부 CT/ }).find((button) => button.hasAttribute("aria-pressed"))).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("CT original image")).toBeTruthy();
-    expect(screen.getByText("AI 분석 결과")).toBeTruthy();
-    expect(screen.getByText("전문과 의료진 확정 결과")).toBeTruthy();
-    expect(screen.getByText("근거 및 검토 정보")).toBeTruthy();
+    expect(screen.queryByText("영상·검체 근거 확인")).toBeNull();
+    expect(screen.queryByRole("button", { name: /상세 근거 보기/ })).toBeNull();
   });
 });
 

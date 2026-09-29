@@ -1,6 +1,7 @@
 from django.db.models import F
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -27,13 +28,12 @@ class _DoctorImageAnnotationBase(APIView):
 
 
 class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
-    def get(self, request, case_id):
-        case = self.get_case(request, case_id)
+    def get_asset(self, request, case):
         asset_id = request.query_params.get("image_asset_id")
         series_instance_uid = request.query_params.get("series_instance_uid", "").strip()
         slide_id = request.query_params.get("slide_id", "").strip()
         if not asset_id:
-            return Response({"detail": "image_asset_id is required."}, status=status.HTTP_400_BAD_REQUEST)
+            raise ValidationError({"detail": "image_asset_id is required."})
         if slide_id:
             slide = get_object_or_404(
                 WholeSlideImage.objects.select_related("image_asset"),
@@ -47,14 +47,19 @@ class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
             asset = slide.image_asset
         else:
             if not series_instance_uid:
-                return Response({"detail": "series_instance_uid is required."}, status=status.HTTP_400_BAD_REQUEST)
-            asset = get_object_or_404(
+                raise ValidationError({"detail": "series_instance_uid is required."})
+            return get_object_or_404(
                 CaseImageAsset,
                 id=asset_id,
                 case=case,
                 series_instance_uid=series_instance_uid,
                 image_type__in=[CaseImageAsset.ImageType.CT, CaseImageAsset.ImageType.PET],
             )
+        return asset
+
+    def get(self, request, case_id):
+        case = self.get_case(request, case_id)
+        asset = self.get_asset(request, case)
         annotations = ImageAnnotation.objects.filter(image_asset=asset).select_related("created_by_user", "clinical_result").order_by("created_at")
         response = Response(ImageAnnotationSerializer(annotations, many=True).data)
         response["X-Annotation-Writable"] = "true"
@@ -81,6 +86,12 @@ class DoctorCaseImageAnnotationListCreateAPIView(_DoctorImageAnnotationBase):
             return Response({"detail": "Clinical result does not belong to this Case."}, status=status.HTTP_400_BAD_REQUEST)
         annotation = serializer.save(created_by_user=request.user)
         return Response(ImageAnnotationSerializer(annotation).data, status=status.HTTP_201_CREATED)
+
+    def delete(self, request, case_id):
+        case = self.get_case(request, case_id)
+        asset = self.get_asset(request, case)
+        ImageAnnotation.objects.filter(image_asset=asset).delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class DoctorCaseImageAnnotationDetailAPIView(_DoctorImageAnnotationBase):

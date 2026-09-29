@@ -238,7 +238,7 @@ it("removes a deleted CT annotation and sends only one delete request for repeat
   expect(toastError).not.toHaveBeenCalled();
 });
 
-it("reconciles a late annotation update after deletion without showing an error", async () => {
+it("keeps an edited annotation local until the explicit save action", async () => {
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/image-assets/")) return json([{ id: "asset-stale-update", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-stale-update" }]);
@@ -253,7 +253,8 @@ it("reconciles a late annotation update after deletion without showing an error"
 
   await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("annotation-stale-update"));
   fireEvent.click(screen.getByRole("button", { name: "update-annotation" }));
-  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toBeEmptyDOMElement());
+  expect(screen.getByTestId("annotation-ids")).toHaveTextContent("annotation-stale-update");
+  expect(authorizedFetch.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
   expect(toastError).not.toHaveBeenCalled();
 });
 

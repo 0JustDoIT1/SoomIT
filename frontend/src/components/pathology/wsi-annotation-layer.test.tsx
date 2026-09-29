@@ -108,23 +108,21 @@ describe("WsiAnnotationLayer", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Point" }));
     fireEvent.pointerDown(layer, { clientX: 25, clientY: 30, pointerId: 1 });
-    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(2));
 
     fireEvent.click(screen.getByRole("button", { name: "ROI" }));
     fireEvent.pointerDown(layer, { clientX: 10, clientY: 20, pointerId: 2 });
     fireEvent.pointerMove(layer, { clientX: 40, clientY: 60, pointerId: 2 });
     fireEvent.pointerUp(layer, { clientX: 40, clientY: 60, pointerId: 2 });
-    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(3));
 
     fireEvent.click(screen.getByRole("button", { name: "Freehand" }));
     fireEvent.pointerDown(layer, { clientX: 1, clientY: 2, pointerId: 3 });
     fireEvent.pointerMove(layer, { clientX: 3, clientY: 4, pointerId: 3 });
     fireEvent.pointerUp(layer, { pointerId: 3 });
-    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(4));
 
     fireEvent.click(screen.getByRole("button", { name: "Text" }));
     fireEvent.change(screen.getByLabelText("Annotation text"), { target: { value: "  tumor edge  " } });
     fireEvent.pointerDown(layer, { clientX: 70, clientY: 80, pointerId: 4 });
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
     await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(5));
 
     const payloads = authorizedFetch.mock.calls.slice(1).map((call) => JSON.parse(String(call[1]?.body)));
@@ -146,6 +144,7 @@ describe("WsiAnnotationLayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Point" }));
     fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
     expect(document.querySelectorAll("circle")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
 
     resolvePost(response({ ...baseAnnotation, id: "server-point", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[25, 30]] } }));
     await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
@@ -163,6 +162,7 @@ describe("WsiAnnotationLayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Point" }));
     fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
     expect(document.querySelectorAll("circle")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
 
     resolveGet(response([baseAnnotation]));
     await waitFor(() => expect(document.querySelectorAll("circle")).toHaveLength(2));
@@ -180,8 +180,9 @@ describe("WsiAnnotationLayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "Point" }));
     fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
     expect(document.querySelectorAll("circle")).toHaveLength(2);
-    await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
-    expect(document.querySelectorAll("circle")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
+    await waitFor(() => expect(screen.getByText("2개")).toBeInTheDocument());
+    expect(document.querySelectorAll("circle")).toHaveLength(2);
     expect(await screen.findByRole("alert")).toHaveTextContent("저장하지 못했습니다");
   });
 
@@ -201,6 +202,7 @@ describe("WsiAnnotationLayer", () => {
     fireEvent.pointerDown(layer, { clientX: 10, clientY: 20, pointerId: 1 });
     fireEvent.pointerDown(layer, { clientX: 30, clientY: 40, pointerId: 2 });
     expect(document.querySelectorAll("circle")).toHaveLength(2);
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
 
     resolveSecond(response({ ...baseAnnotation, id: "server-second", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[30, 40]] } }));
     resolveFirst(response({ ...baseAnnotation, id: "server-first", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[10, 20]] } }));
@@ -244,6 +246,7 @@ describe("WsiAnnotationLayer", () => {
         fireEvent.pointerUp(layer, { pointerId });
       }
     }
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
     await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(5));
     expect(mockViewer.viewport.pointFromPixel).toHaveBeenCalled();
     expect(mockViewer.viewport.pointFromPixel.mock.calls[0][0]).toMatchObject({ x: 40, y: 60 });
@@ -291,6 +294,25 @@ describe("WsiAnnotationLayer", () => {
     fireEvent.click(screen.getByRole("button", { name: "선택 삭제" }));
     await waitFor(() => expect(screen.getByText("1개")).toBeInTheDocument());
     expect(String(authorizedFetch.mock.calls[1][0])).toBe("/api/pathology/wsis/slide-1/annotations/annotation-1/");
+  });
+
+  it("deletes every annotation for the active slide without confirmation", async () => {
+    const second = { ...baseAnnotation, id: "annotation-2", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[300, 400]] as [number, number][] } };
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([baseAnnotation, second]))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    const confirm = vi.spyOn(window, "confirm");
+    setup(authorizedFetch);
+    await waitFor(() => expect(screen.getByText("2개")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: "전체 삭제" }));
+
+    await waitFor(() => expect(screen.getByText("0개")).toBeInTheDocument());
+    expect(authorizedFetch).toHaveBeenLastCalledWith(
+      "/api/pathology/wsis/slide-1/annotations/",
+      { method: "DELETE" },
+    );
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it("keeps pan available in read-only mode and reports annotation failure without replacing the viewer", async () => {

@@ -169,7 +169,7 @@ export function WsiAnnotationLayer({
     return [result.x, result.y] as ImagePoint;
   }, [createViewerPoint, viewer]);
 
-  const save = useCallback(async (type: WsiAnnotationType, points: ImagePoint[], annotationText?: string) => {
+  const stage = useCallback((type: WsiAnnotationType, points: ImagePoint[], annotationText?: string) => {
     const trimmed = annotationText?.trim();
     if (type === "TEXT" && !trimmed) {
       setError({ identity, message: "Text annotation은 공백으로 저장할 수 없습니다." });
@@ -197,52 +197,51 @@ export function WsiAnnotationLayer({
     setSelectedId(temporaryId);
     setDraftPoints([]);
     setText("");
+    setError({ identity, message: "" });
+  }, [identity, imageAssetId, imageHeight, imageWidth, slideId]);
+
+  const persistStaged = useCallback(async () => {
+    const staged = loaded.identity === identity ? loaded.annotations.filter(isTemporaryAnnotation) : [];
+    if (staged.length === 0) return;
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
-      const response = await authorizedFetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          image_asset: imageAssetId,
-          annotation_type: type,
-          annotation_data: {
-            coordinate_space: "WSI_IMAGE",
-            slide_id: slideId,
-            image_width: imageWidth,
-            image_height: imageHeight,
-            image_points: points,
-            tool_name: toolName(type),
-            ...(trimmed ? { text: trimmed } : {}),
-          },
-        }),
-      });
-      const body: unknown = await response.json().catch(() => null);
-      if (!response.ok) throw new Error("Annotation을 저장하지 못했습니다.");
+      const saved = await Promise.all(staged.map(async (annotation) => {
+        const response = await authorizedFetch(endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_asset: imageAssetId,
+            annotation_type: annotation.annotation_type,
+            annotation_data: annotation.annotation_data,
+          }),
+        });
+        const body: unknown = await response.json().catch(() => null);
+        if (!response.ok) throw new Error("Annotation을 저장하지 못했습니다.");
+        return [annotation.id, body as WsiAnnotation] as const;
+      }));
       if (activeIdentity.current === identity) {
-        const saved = body as WsiAnnotation;
+        const savedByTemporaryId = new Map(saved);
         setLoaded((current) => current.identity !== identity ? current : {
           identity,
-          annotations: current.annotations.map((annotation) => annotation.id === temporaryId ? saved : annotation),
+          annotations: current.annotations.map((annotation) => savedByTemporaryId.get(annotation.id) ?? annotation),
         });
-        setSelectedId((current) => current === temporaryId ? saved.id : current);
+        setSelectedId((current) => savedByTemporaryId.get(current)?.id ?? current);
       }
     } catch (cause) {
-      if (activeIdentity.current === identity) {
-        setLoaded((current) => current.identity !== identity ? current : {
-          identity,
-          annotations: current.annotations.filter((annotation) => annotation.id !== temporaryId),
-        });
-        setSelectedId((current) => current === temporaryId ? "" : current);
-      }
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 저장하지 못했습니다." });
     } finally {
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
-  }, [authorizedFetch, endpoint, identity, imageAssetId, imageHeight, imageWidth, slideId]);
+  }, [authorizedFetch, endpoint, identity, imageAssetId, loaded]);
 
   const deleteSelected = useCallback(async () => {
     if (!selectedId || loaded.identity !== identity) return;
+    if (selectedId.startsWith("temp-")) {
+      setLoaded((current) => ({ identity, annotations: current.identity === identity ? current.annotations.filter((annotation) => annotation.id !== selectedId) : [] }));
+      setSelectedId("");
+      return;
+    }
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
@@ -259,8 +258,27 @@ export function WsiAnnotationLayer({
     }
   }, [authorizedFetch, endpoint, identity, loaded.identity, selectedId]);
 
+  const deleteAll = useCallback(async () => {
+    if (loaded.identity !== identity || loaded.annotations.length === 0) return;
+    setPendingSaveCount((count) => count + 1);
+    setError({ identity, message: "" });
+    try {
+      const response = await authorizedFetch(endpoint, { method: "DELETE" });
+      if (!response.ok) throw new Error("Annotation을 모두 삭제하지 못했습니다.");
+      if (activeIdentity.current === identity) {
+        setLoaded({ identity, annotations: [] });
+        setSelectedId("");
+        setDraftPoints([]);
+      }
+    } catch (cause) {
+      if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 모두 삭제하지 못했습니다." });
+    } finally {
+      setPendingSaveCount((count) => Math.max(0, count - 1));
+    }
+  }, [authorizedFetch, endpoint, identity, loaded]);
+
   const finishPolygon = () => {
-    if (draftPoints.length >= 3) void save("POLYGON", draftPoints);
+    if (draftPoints.length >= 3) stage("POLYGON", draftPoints);
   };
   void viewRevision;
   const saving = pendingSaveCount > 0;
@@ -275,7 +293,9 @@ export function WsiAnnotationLayer({
       {TOOLS.map((tool) => <button key={tool.type} type="button" disabled={!canWrite && tool.type !== "PAN"} aria-pressed={activeTool === tool.type} onClick={() => { setActiveTool(tool.type); setDraftPoints([]); }} className={`inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border px-2.5 text-xs font-semibold leading-none ${activeTool === tool.type ? "border-blue-500 bg-blue-600 text-white" : "border-slate-300 bg-white text-slate-600 hover:bg-slate-50"} disabled:cursor-not-allowed disabled:opacity-40`}>{tool.label}</button>)}
       {activeTool === "TEXT" && canWrite ? <input aria-label="Annotation text" value={text} onChange={(event) => setText(event.target.value)} placeholder="메모" className="h-8 w-28 shrink-0 rounded-md border border-slate-300 bg-white px-2 text-xs text-slate-800" /> : null}
       {activeTool === "POLYGON" && draftPoints.length > 0 ? <button type="button" onClick={finishPolygon} disabled={draftPoints.length < 3 || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-blue-600 px-2.5 text-xs font-semibold leading-none text-white disabled:opacity-40">완료</button> : null}
+      <button type="button" onClick={() => void persistStaged()} disabled={!canWrite || !annotations.some(isTemporaryAnnotation) || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-blue-600 bg-blue-600 px-2.5 text-xs font-semibold leading-none text-white disabled:opacity-40">주석 저장</button>
       <button type="button" onClick={() => void deleteSelected()} disabled={!canWrite || loaded.identity !== identity || !selectedId || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-rose-300 bg-white px-2.5 text-xs font-semibold leading-none text-rose-700 disabled:opacity-40">선택 삭제</button>
+      <button type="button" onClick={() => void deleteAll()} disabled={!canWrite || loaded.identity !== identity || annotations.length === 0 || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-rose-500 bg-rose-50 px-2.5 text-xs font-semibold leading-none text-rose-700 disabled:opacity-40">전체 삭제</button>
       <span className="inline-flex h-8 shrink-0 items-center whitespace-nowrap px-1.5 text-xs font-medium tabular-nums text-slate-500">{annotations.length}개</span>
     </div>,
     toolbarElement,
@@ -292,8 +312,8 @@ export function WsiAnnotationLayer({
         const point = imagePoint(event);
         if (!point) return;
         drawing.current = true;
-        if (activeTool === "POINT") { void save("POINT", [point]); drawing.current = false; }
-        else if (activeTool === "TEXT") { void save("TEXT", [point], text); drawing.current = false; }
+        if (activeTool === "POINT") { stage("POINT", [point]); drawing.current = false; }
+        else if (activeTool === "TEXT") { stage("TEXT", [point], text); drawing.current = false; }
         else if (activeTool === "POLYGON") setDraftPoints((current) => [...current, point]);
         else setDraftPoints([point]);
         event.currentTarget.setPointerCapture?.(event.pointerId);
@@ -307,8 +327,8 @@ export function WsiAnnotationLayer({
       onPointerUp={() => {
         if (!drawing.current) return;
         drawing.current = false;
-        if (activeTool === "BOUNDING_BOX" && draftPoints.length === 2) void save("BOUNDING_BOX", pointsForRectangle(draftPoints[0], draftPoints[1]));
-        if (activeTool === "FREEHAND" && draftPoints.length >= 2) void save("FREEHAND", draftPoints);
+        if (activeTool === "BOUNDING_BOX" && draftPoints.length === 2) stage("BOUNDING_BOX", pointsForRectangle(draftPoints[0], draftPoints[1]));
+        if (activeTool === "FREEHAND" && draftPoints.length >= 2) stage("FREEHAND", draftPoints);
       }}
     >
       {rendered.map((annotation) => <AnnotationShape key={annotation.id} annotation={annotation} selected={selectedId === annotation.id} onSelect={() => setSelectedId(annotation.id)} />)}

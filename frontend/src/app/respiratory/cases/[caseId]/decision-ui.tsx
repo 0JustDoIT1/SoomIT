@@ -35,7 +35,7 @@ export function DecisionModal({ title, description, children, fixedTop, busy, er
       <div className="flex shrink-0 items-start justify-between gap-3"><div><p className="text-xs font-semibold text-blue-700">호흡기내과 최종 판단</p><h2 id={titleId} className="mt-1 text-base font-bold text-slate-900">{title}</h2></div><button type="button" aria-label="닫기" disabled={busy} onClick={onClose} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed">✕</button></div>
       {description && <p className="mt-2 shrink-0 text-xs leading-5 text-slate-600">{description}</p>}
       {fixedTop && <div className="mt-2.5 shrink-0">{fixedTop}</div>}
-      <div className={`mt-2.5 min-h-0 w-full overflow-y-auto pb-6 pr-1 ${wide ? "flex-1" : ""}`}>
+      <div data-decision-scroll-area className={`mt-2.5 min-h-0 w-full overflow-y-auto pb-6 pr-1 ${wide ? "flex-1" : ""}`}>
         <fieldset disabled={busy} className="space-y-2.5">{children}</fieldset>
       </div>
       <DecisionStatus error={error} message={busy ? "처리 중입니다. 완료될 때까지 기다려 주세요." : message} />

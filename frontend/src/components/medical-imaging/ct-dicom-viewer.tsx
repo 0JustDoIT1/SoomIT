@@ -24,6 +24,9 @@ type CtDicomViewerProps = {
   onAnnotationCreated?: (annotation: PendingImageAnnotation) => Promise<boolean | void> | boolean | void;
   onAnnotationUpdated?: (annotationId: string, annotation: PendingImageAnnotation) => Promise<boolean> | boolean | void;
   onAnnotationDeleted?: (annotationId: string) => Promise<boolean> | boolean;
+  onAllAnnotationsDeleted?: () => Promise<boolean> | boolean;
+  onAnnotationsSaved?: () => Promise<boolean> | boolean;
+  hasUnsavedAnnotations?: boolean;
 };
 
 export type ClinicianImageAnnotation = {
@@ -156,7 +159,7 @@ async function runWithConcurrency<T>(items: T[], limit: number, task: (item: T) 
   await Promise.all(workers);
 }
 
-export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules = [], focusedNoduleId, onFocusedNoduleChange, loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted }: CtDicomViewerProps) {
+export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules = [], focusedNoduleId, onFocusedNoduleChange, loadSeries, loadSegmentation, seriesInstanceUid, annotations = [], onAnnotationCreated, onAnnotationUpdated, onAnnotationDeleted, onAllAnnotationsDeleted, onAnnotationsSaved, hasUnsavedAnnotations = false }: CtDicomViewerProps) {
   const resolvedCacheKey = cacheKey ?? `${orderId}:${assetId}:${seriesInstanceUid ?? ""}:${analysisId ?? ""}`;
   const restoredSession = viewerSessionCache.get(resolvedCacheKey);
   const currentNoduleFoci = useMemo(
@@ -465,9 +468,15 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool, tools.TrackballRotateTool].forEach(
         (ToolClass) => tools.addTool(ToolClass),
       );
-      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool].forEach((ToolClass) =>
+      [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.StackScrollTool, tools.LengthTool, tools.RectangleROITool].forEach((ToolClass) =>
         toolGroup.addTool(ToolClass.toolName),
       );
+      toolGroup.addTool(tools.ArrowAnnotateTool.toolName, {
+        configuration: {
+          getTextCallback: (done: (value: string) => void) => done(annotationTextRef.current.trim()),
+          changeTextCallback: (_annotation: unknown, _eventDetail: unknown, done: (value: string) => void) => done(annotationTextRef.current.trim()),
+        },
+      });
       tools.annotation.config.style.setToolGroupToolStyles(toolGroupId, {
         [tools.LengthTool.toolName]: MPR_ANNOTATION_STYLES.Length,
         [tools.RectangleROITool.toolName]: MPR_ANNOTATION_STYLES.RectangleROI,
@@ -1000,10 +1009,41 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
                 syncClinicianAnnotationsRef.current?.();
               });
             }}
-            title="마지막으로 저장한 의료진 주석 삭제"
+            title="선택한 의료진 주석 삭제"
             className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-35"
           >
-            주석 삭제
+            선택 삭제
+          </button>
+
+          <button
+            type="button"
+            disabled={annotations.length === 0 || !onAllAnnotationsDeleted}
+            onClick={() => {
+              const annotationIds = annotations.map((annotation) => annotation.id);
+              void Promise.resolve(onAllAnnotationsDeleted?.()).then((deleted) => {
+                if (!deleted) return;
+                annotationIds.forEach((annotationId) => {
+                  clinicianAnnotationIdsRef.current.delete(annotationId);
+                  pendingAnnotationUpdatesRef.current.delete(annotationId);
+                  removeCornerstoneAnnotationRef.current?.(annotationId);
+                });
+                setSelectedAnnotationId(null);
+              });
+            }}
+            title="현재 CT 영상의 의료진 주석 전체 삭제"
+            className="h-7 shrink-0 rounded-md border border-rose-700 bg-rose-950/40 px-2 text-[9px] font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            전체 삭제
+          </button>
+
+          <button
+            type="button"
+            disabled={!hasUnsavedAnnotations || !onAnnotationsSaved}
+            onClick={() => { void onAnnotationsSaved?.(); }}
+            title="작성하거나 수정한 의료진 주석 저장"
+            className="h-7 shrink-0 rounded-md border border-blue-500 bg-blue-600 px-2 text-[9px] font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-35"
+          >
+            주석 저장
           </button>
 
           {analysisId && (
@@ -1056,12 +1096,12 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           ))}
           {selectedAnnotationId && annotations.find((annotation) => annotation.id === selectedAnnotationId)?.annotation_type === "TEXT" && (
             <>
-              <input aria-label="선택한 텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} className="h-6 w-28 rounded border border-slate-700 bg-slate-900 px-1.5 text-[9px] text-white" />
-              <button type="button" onClick={() => {
+              <input aria-label="선택한 텍스트 주석 내용" value={annotationText} onChange={(event) => {
+                const value = event.target.value;
+                setAnnotationText(value);
                 const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
-                if (!selected || !annotationText.trim()) return;
-                onAnnotationUpdated?.(selected.id, { annotation_type: selected.annotation_type, annotation_data: { ...selected.annotation_data, text: annotationText.trim() } });
-              }} className="shrink-0 rounded bg-blue-600 px-2 py-1 font-semibold text-white">텍스트 저장</button>
+                if (selected && value.trim()) onAnnotationUpdated?.(selected.id, { annotation_type: selected.annotation_type, annotation_data: { ...selected.annotation_data, text: value } });
+              }} className="h-6 w-28 rounded border border-slate-700 bg-slate-900 px-1.5 text-[9px] text-white" />
             </>
           )}
         </div>

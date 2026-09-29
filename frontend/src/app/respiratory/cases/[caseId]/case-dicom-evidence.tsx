@@ -37,13 +37,18 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const [activeTool, setActiveTool] = useState<ToolMode>("WL");
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [annotationText, setAnnotationText] = useState("");
+  const [dirtyAnnotationIds, setDirtyAnnotationIds] = useState<Set<string>>(() => new Set());
   const annotationSaveRef = useRef<(annotation: Omit<Annotation, "id">) => void>(() => undefined);
   const annotationUpdateRef = useRef<(annotationId: string, annotation: Omit<Annotation, "id">) => void>(() => undefined);
   const annotationTextRef = useRef("");
+  const nextTemporaryAnnotationIdRef = useRef(0);
   const assetCaseIdRef = useRef("");
   const annotationRequestRef = useRef("");
   const asset = assets.find((item) => item.id === selectedAssetId) ?? null;
   const isTnm = stage === "PET_CT_TNM";
+  const selectedAnnotationVisible = Boolean(selectedAnnotationId && annotations.some(
+    (annotation) => annotation.id === selectedAnnotationId && annotation.annotation_data.sop_instance_uid === uids[index],
+  ));
 
   useEffect(() => {
     const controller = new AbortController();
@@ -84,27 +89,20 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
 
   const saveAnnotation = useCallback(async (annotation: Omit<Annotation, "id">) => {
     if (!asset) return;
-    try {
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ image_asset: asset.id, ...annotation }),
-      });
-      const body: unknown = await response.json().catch(() => ({}));
-      if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
-      setAnnotations((current) => [...current, body as Annotation]);
-      if (asset.series_instance_uid) {
-        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-      }
-      showToast.success("영상 주석을 저장했습니다.");
-    } catch (error) {
-      console.error(error);
-      showToast.error("영상 주석 저장에 실패했습니다.");
-    }
-  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+    const id = `temp-${Date.now()}-${++nextTemporaryAnnotationIdRef.current}`;
+    setDirtyAnnotationIds((current) => new Set(current).add(id));
+    setAnnotations((current) => [...current, { id, ...annotation }]);
+  }, [asset]);
 
   const deleteSelectedAnnotation = useCallback(async () => {
     const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
     if (!selected) return;
+    if (selected.id.startsWith("temp-")) {
+      setDirtyAnnotationIds((current) => { const next = new Set(current); next.delete(selected.id); return next; });
+      setAnnotations((current) => current.filter((annotation) => annotation.id !== selected.id));
+      setSelectedAnnotationId(null);
+      return;
+    }
     try {
       const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${selected.id}/`, { method: "DELETE" });
       if (!response.ok) throw new Error("annotation delete failed");
@@ -113,30 +111,66 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       if (asset?.series_instance_uid) {
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       }
-      showToast.success("영상 주석을 삭제했습니다.");
     } catch (error) {
       console.error(error);
-      showToast.error("영상 주석 삭제에 실패했습니다.");
     }
   }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, selectedAnnotationId]);
 
-  const updateAnnotation = useCallback(async (annotationId: string, annotation: Omit<Annotation, "id">) => {
+  const deleteAllAnnotations = useCallback(async () => {
+    if (!asset?.series_instance_uid || annotations.length === 0) return;
+    const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
     try {
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`, {
-        method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(annotation),
+      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`, { method: "DELETE" });
+      if (!response.ok) throw new Error("annotation delete all failed");
+      setAnnotations([]);
+      setDirtyAnnotationIds(new Set());
+      setSelectedAnnotationId(null);
+      invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+    } catch (error) {
+      console.error(error);
+    }
+  }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId]);
+
+  const updateAnnotation = useCallback(async (annotationId: string, annotation: Omit<Annotation, "id">) => {
+    setDirtyAnnotationIds((current) => new Set(current).add(annotationId));
+    setAnnotations((current) => current.map((item) => item.id === annotationId ? { id: annotationId, ...annotation } : item));
+  }, []);
+
+  const persistAnnotations = useCallback(async () => {
+    if (!asset) return;
+    const pending = annotations.filter((annotation) => dirtyAnnotationIds.has(annotation.id));
+    if (pending.length === 0) return;
+    try {
+      const saved = await Promise.all(pending.map(async (annotation) => {
+        const temporary = annotation.id.startsWith("temp-");
+        const response = await authorizedFetch(
+          temporary
+            ? `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`
+            : `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotation.id}/`,
+          {
+            method: temporary ? "POST" : "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...(temporary ? { image_asset: asset.id } : {}), annotation_type: annotation.annotation_type, annotation_data: annotation.annotation_data }),
+          },
+        );
+        const body: unknown = await response.json().catch(() => null);
+        if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
+        return [annotation.id, body as Annotation] as const;
+      }));
+      const savedById = new Map(saved);
+      setAnnotations((current) => current.map((annotation) => savedById.get(annotation.id) ?? annotation));
+      setDirtyAnnotationIds((current) => {
+        const next = new Set(current);
+        saved.forEach(([id]) => next.delete(id));
+        return next;
       });
-      const body: unknown = await response.json().catch(() => ({}));
-      if (!response.ok || !body || typeof body !== "object") throw new Error("annotation update failed");
-      setAnnotations((current) => current.map((item) => item.id === annotationId ? body as Annotation : item));
       if (asset?.series_instance_uid) {
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       }
-      showToast.success("영상 주석을 수정했습니다.");
     } catch (error) {
       console.error(error);
-      showToast.error("영상 주석 수정에 실패했습니다.");
     }
-  }, [apiBaseUrl, asset, authorizedFetch, caseId]);
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, dirtyAnnotationIds]);
 
   useEffect(() => { annotationSaveRef.current = saveAnnotation; }, [saveAnnotation]);
   useEffect(() => { annotationUpdateRef.current = updateAnnotation; }, [updateAnnotation]);
@@ -152,6 +186,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     if (assetCaseIdRef.current !== caseId || !imageAssetId || !seriesInstanceUid) {
       annotationRequestRef.current = "";
       setAnnotations([]);
+      setDirtyAnnotationIds(new Set());
       setSelectedAnnotationId(null);
       setAnnotationLoading(false);
       setAnnotationLoadError("");
@@ -162,6 +197,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     annotationRequestRef.current = requestKey;
     let active = true;
     setAnnotations([]);
+    setDirtyAnnotationIds(new Set());
     setSelectedAnnotationId(null);
     setAnnotationLoading(true);
     setAnnotationLoadError("");
@@ -224,8 +260,15 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         const toolGroupId = `respiratory-dicom-tools-${reactId}`;
         if (tools.ToolGroupManager.getToolGroup(toolGroupId)) tools.ToolGroupManager.destroyToolGroup(toolGroupId);
         const toolGroup = tools.ToolGroupManager.createToolGroup(toolGroupId);
+        const ownedAnnotationUids = new Set<string>();
         [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool].forEach((Tool) => tools.addTool(Tool));
-        [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.LengthTool, tools.RectangleROITool, tools.ArrowAnnotateTool].forEach((Tool) => toolGroup?.addTool(Tool.toolName));
+        [tools.WindowLevelTool, tools.PanTool, tools.ZoomTool, tools.LengthTool, tools.RectangleROITool].forEach((Tool) => toolGroup?.addTool(Tool.toolName));
+        toolGroup?.addTool(tools.ArrowAnnotateTool.toolName, {
+          configuration: {
+            getTextCallback: (done: (value: string) => void) => done(annotationTextRef.current.trim()),
+            changeTextCallback: (_annotation: unknown, _eventDetail: unknown, done: (value: string) => void) => done(annotationTextRef.current.trim()),
+          },
+        });
         toolGroup?.addViewport(viewportId, engine.id);
         const activeName = activeTool === "WL" ? tools.WindowLevelTool.toolName : activeTool === "ZOOM" ? tools.ZoomTool.toolName : activeTool === "PAN" ? tools.PanTool.toolName : activeTool === "LENGTH" ? tools.LengthTool.toolName : activeTool === "ROI" ? tools.RectangleROITool.toolName : tools.ArrowAnnotateTool.toolName;
         [tools.WindowLevelTool.toolName, tools.PanTool.toolName, tools.ZoomTool.toolName, tools.LengthTool.toolName, tools.RectangleROITool.toolName, tools.ArrowAnnotateTool.toolName].forEach((name) => toolGroup?.setToolPassive(name, { removeAllBindings: true }));
@@ -241,12 +284,10 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           const annotation_type: Annotation["annotation_type"] | null = toolName === tools.LengthTool.toolName ? "LENGTH" : toolName === tools.RectangleROITool.toolName ? "BOUNDING_BOX" : toolName === tools.ArrowAnnotateTool.toolName ? "TEXT" : null;
           const points = (data?.handles as { points?: unknown } | undefined)?.points;
           if (!annotation_type || !Array.isArray(points) || !asset.series_instance_uid || !uids[index]) return;
+          if (typeof annotation?.annotationUID === "string") ownedAnnotationUids.add(annotation.annotationUID);
           const annotationId = typeof annotation?.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-") ? annotation.annotationUID.slice("clinician-".length) : null;
           const text = annotation_type === "TEXT" ? annotationTextRef.current.trim() : undefined;
-          if (annotation_type === "TEXT" && !text) {
-            showToast.error("CT 텍스트 주석 내용을 입력해주세요.", { id: `ct-text-annotation-required-${caseId}` });
-            return;
-          }
+          if (annotation_type === "TEXT" && !text) return;
           const payload = { annotation_type, annotation_data: { series_instance_uid: asset.series_instance_uid, sop_instance_uid: uids[index], tool_name: String(toolName), viewport: "axial", frame_of_reference_uid: metadata?.FrameOfReferenceUID, world_points: points, cached_stats: data?.cachedStats, text } };
           if (annotationId) annotationUpdateRef.current(annotationId, payload);
           else if (completed) annotationSaveRef.current(payload);
@@ -259,6 +300,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           cleanupTools = () => {
             runtimeTools.eventTarget?.removeEventListener(eventName, onCompleted);
             if (modifiedEventName) runtimeTools.eventTarget?.removeEventListener(modifiedEventName, onModified);
+            ownedAnnotationUids.forEach((uid) => tools.annotation.state.removeAnnotation(uid));
             tools.ToolGroupManager.destroyToolGroup(toolGroupId);
           };
         }
@@ -274,7 +316,9 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
               const points = saved.annotation_data.world_points;
               if (!Array.isArray(points)) return;
               const toolName = saved.annotation_type === "LENGTH" ? tools.LengthTool.toolName : saved.annotation_type === "BOUNDING_BOX" ? tools.RectangleROITool.toolName : tools.ArrowAnnotateTool.toolName;
-              addAnnotation({ annotationUID: `clinician-${saved.id}`, highlighted: false, invalidated: false, isLocked: false, isVisible: true, metadata: { toolName, referencedImageId: imageId, FrameOfReferenceUID: saved.annotation_data.frame_of_reference_uid }, data: { handles: { points }, cachedStats: saved.annotation_data.cached_stats ?? {}, label: saved.annotation_data.text } }, annotationElement);
+              const annotationUID = `clinician-${saved.id}`;
+              ownedAnnotationUids.add(annotationUID);
+              addAnnotation({ annotationUID, highlighted: false, invalidated: false, isLocked: false, isVisible: true, metadata: { toolName, referencedImageId: imageId, FrameOfReferenceUID: saved.annotation_data.frame_of_reference_uid }, data: { handles: { points }, cachedStats: saved.annotation_data.cached_stats ?? {}, label: saved.annotation_data.text } }, annotationElement);
             });
         }
         viewport.render();
@@ -302,7 +346,9 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           <ToolButton active={activeTool === "ROI"} onClick={() => setActiveTool("ROI")} label="ROI" title="Rectangle ROI" />
           <ToolButton active={activeTool === "TEXT"} onClick={() => setActiveTool("TEXT")} label="Text" title="Text annotation" />
           {activeTool === "TEXT" && <input aria-label="텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} placeholder="내용 입력 후 위치 선택" className="h-6 w-32 rounded border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-white placeholder:text-slate-500" />}
-          <ToolButton disabled={!selectedAnnotationId} onClick={() => void deleteSelectedAnnotation()} label="주석 삭제" title="선택한 의료진 주석 삭제" />
+          <ToolButton disabled={dirtyAnnotationIds.size === 0} onClick={() => void persistAnnotations()} label="주석 저장" title="작성하거나 수정한 의료진 주석 저장" />
+          <ToolButton disabled={!selectedAnnotationVisible} onClick={() => void deleteSelectedAnnotation()} label="선택 삭제" title="현재 슬라이스에서 선택한 의료진 주석 삭제" />
+          <ToolButton disabled={annotations.length === 0} onClick={() => void deleteAllAnnotations()} label="전체 삭제" title="현재 영상의 의료진 주석 전체 삭제" />
           <ToolButton label="Reset" disabled={!uids.length} onClick={resetSlice} title="중앙 슬라이스로 이동" />
           <ToolButton label="전체화면" disabled={!asset} onClick={() => void openFullscreen()} title="전체화면" />
         </div>
@@ -323,15 +369,12 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           ))}
           {selectedAnnotationId && annotations.find((annotation) => annotation.id === selectedAnnotationId)?.annotation_type === "TEXT" && (
             <>
-              <input aria-label="선택한 텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} className="h-6 w-28 rounded border border-slate-700 bg-slate-900 px-1.5 text-[8px] text-white" />
-              <button type="button" onClick={() => {
+              <input aria-label="선택한 텍스트 주석 내용" value={annotationText} onChange={(event) => {
+                const value = event.target.value;
+                setAnnotationText(value);
                 const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
-                if (!selected || !annotationText.trim()) {
-                  showToast.error("CT 텍스트 주석 내용을 입력해주세요.", { id: `ct-text-annotation-required-${caseId}` });
-                  return;
-                }
-                void updateAnnotation(selected.id, { annotation_type: selected.annotation_type, annotation_data: { ...selected.annotation_data, text: annotationText.trim() } });
-              }} className="shrink-0 rounded bg-blue-600 px-1.5 py-1 text-[8px] font-semibold text-white">텍스트 주석 저장</button>
+                if (selected && value.trim()) void updateAnnotation(selected.id, { annotation_type: selected.annotation_type, annotation_data: { ...selected.annotation_data, text: value } });
+              }} className="h-6 w-28 rounded border border-slate-700 bg-slate-900 px-1.5 text-[8px] text-white" />
             </>
           )}
         </div>

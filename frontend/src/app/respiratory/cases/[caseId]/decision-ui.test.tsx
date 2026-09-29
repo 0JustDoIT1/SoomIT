@@ -4,16 +4,16 @@ import { expect, it, vi } from "vitest";
 import { DecisionModal } from "./decision-ui";
 import { resultStatusLabel } from "./decision-status-labels";
 
-it.each([true, false])("keeps the %s modal header and footer outside the scroll fieldset", (wide) => {
+it.each([true, false])("keeps the %s modal header and footer outside the scroll area", (wide) => {
   render(<DecisionModal title="Layout check" busy={false} wide={wide} fixedTop={<nav aria-label="Steps">Step 1</nav>} primaryLabel="Continue" onSubmit={vi.fn()} onClose={vi.fn()}><div>Scrollable content</div></DecisionModal>);
   const dialog = screen.getByRole("dialog");
-  const fieldset = dialog.querySelector("fieldset");
+  const scrollArea = dialog.querySelector("[data-decision-scroll-area]");
   expect(dialog).toHaveClass(wide ? "max-h-[85dvh]" : "max-h-[90dvh]", "flex-col", "overflow-hidden");
-  expect(fieldset).toHaveClass("min-h-0", "overflow-y-auto");
-  if (wide) expect(fieldset).toHaveClass("flex-1");
-  expect(fieldset).toContainElement(screen.getByText("Scrollable content"));
-  expect(fieldset).not.toContainElement(screen.getByRole("navigation", { name: "Steps" }));
-  expect(fieldset).not.toContainElement(screen.getByRole("button", { name: "Continue" }));
+  expect(scrollArea).toHaveClass("min-h-0", "overflow-y-auto");
+  if (wide) expect(scrollArea).toHaveClass("flex-1");
+  expect(scrollArea).toContainElement(screen.getByText("Scrollable content"));
+  expect(scrollArea).not.toContainElement(screen.getByRole("navigation", { name: "Steps" }));
+  expect(scrollArea).not.toContainElement(screen.getByRole("button", { name: "Continue" }));
   expect(screen.getByRole("navigation", { name: "Steps" }).parentElement).toHaveClass("shrink-0");
 });
 

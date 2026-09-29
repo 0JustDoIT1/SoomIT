@@ -138,9 +138,8 @@ describe("CtDicomViewer toolbar", () => {
     const text = screen.getByRole("textbox", { name: "선택한 텍스트 주석 내용" });
     expect(text).toHaveValue("기존 메모");
     fireEvent.change(text, { target: { value: "수정 메모" } });
-    fireEvent.click(screen.getByRole("button", { name: "텍스트 저장" }));
     expect(onAnnotationUpdated).toHaveBeenCalledWith("annotation-1", expect.objectContaining({ annotation_type: "TEXT", annotation_data: expect.objectContaining({ text: "수정 메모" }) }));
-    fireEvent.click(screen.getByRole("button", { name: "주석 삭제" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 삭제" }));
     expect(onAnnotationDeleted).toHaveBeenCalledWith("annotation-1");
   });
 });

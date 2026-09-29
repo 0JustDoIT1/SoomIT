@@ -2173,13 +2173,6 @@ export default function RespiratoryCaseDetailPage() {
               error={aiResultError}
               retrying={panelRetrying === "AI"}
               onRetry={retryAiResults}
-              evidenceByAnalysis={{
-                XRAY_ANALYSIS: <CaseImageEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="XRAY" />,
-                CT_ANALYSIS: <CaseCtSegmentationEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} analysisId={ctAnalysisResult?.id} nodules={ctAnalysisResult?.result_detail?.ct?.nodules ?? []} />,
-                PET_CT_TNM_ANALYSIS: <CaseDicomEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stage="PET_CT_TNM" />,
-                PATHOLOGY_GENE_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="HE" fillHeight />,
-                PDL1_ANALYSIS: <CaseWsiEvidence apiBaseUrl={API_BASE_URL} authorizedFetch={authorizedFetch} caseId={caseId} stain="PDL1" fillHeight />,
-              }}
             />
           </div>
         ) : selectedInfoMenu === "TREATMENT" || selectedInfoMenu === "PRESCRIPTION" ? (

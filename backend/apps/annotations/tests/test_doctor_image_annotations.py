@@ -470,6 +470,54 @@ class DoctorImageAnnotationAPITests(TestCase):
             [],
         )
 
+    def test_collection_delete_removes_only_requested_asset_annotations(self):
+        self.create_annotation()
+        self.create_annotation(
+            annotation_type=ImageAnnotation.AnnotationType.TEXT,
+            data=annotation_data(
+                self.ct.series_instance_uid,
+                points=[[3, 3, 3]],
+                text="second CT note",
+                tool_name="ArrowAnnotateTool",
+            ),
+        )
+        _, pet_annotation = self.create_annotation(
+            self.pet,
+            ImageAnnotation.AnnotationType.TEXT,
+            annotation_data(
+                self.pet.series_instance_uid,
+                points=[[0, 0, 0]],
+                text="PET note",
+                tool_name="ArrowAnnotateTool",
+            ),
+        )
+
+        response = self.client.delete(self.list_url, {
+            "image_asset_id": self.ct.id,
+            "series_instance_uid": self.ct.series_instance_uid,
+        })
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(ImageAnnotation.objects.filter(image_asset=self.ct).exists())
+        self.assertTrue(ImageAnnotation.objects.filter(id=pet_annotation.id).exists())
+
+    def test_collection_delete_removes_only_requested_wsi_slide_annotations(self):
+        first = self.client.post(self.list_url, self.wsi_payload(), format="json")
+        second = self.client.post(
+            self.list_url,
+            self.wsi_payload(points=[[300, 400]]),
+            format="json",
+        )
+        self.assertEqual((first.status_code, second.status_code), (201, 201))
+
+        response = self.client.delete(self.list_url, {
+            "image_asset_id": self.wsi.id,
+            "slide_id": self.slide.id,
+        })
+
+        self.assertEqual(response.status_code, 204)
+        self.assertFalse(ImageAnnotation.objects.filter(image_asset=self.wsi).exists())
+
     def test_requires_asset_and_series_query_parameters(self):
         self.assertEqual(self.client.get(self.list_url).status_code, 400)
         self.assertEqual(

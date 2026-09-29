@@ -80,7 +80,7 @@ it("starts saved additional plans collapsed and preserves their values when open
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   const summary = screen.getByText("추가 계획 및 결정 근거 (선택) · 작성됨");
   const dialog = screen.getByRole("dialog");
-  const scrollArea = dialog.querySelector("fieldset");
+  const scrollArea = dialog.querySelector("[data-decision-scroll-area]");
   expect(dialog).toHaveClass("max-h-[85dvh]", "overflow-hidden");
   expect(scrollArea).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
   expect(scrollArea).toContainElement(summary);
@@ -145,7 +145,7 @@ it("keeps Step 1 values when returning from Step 2", async () => {
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
   const previousButton = await screen.findByRole("button", { name: "이전" });
   await waitFor(() => expect(previousButton).toBeEnabled());
-  const stepTwoScrollArea = screen.getByRole("dialog").querySelector("fieldset");
+  const stepTwoScrollArea = screen.getByRole("dialog").querySelector("[data-decision-scroll-area]");
   expect(stepTwoScrollArea).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
   expect(stepTwoScrollArea).not.toContainElement(screen.getByLabelText("치료 결정 진행 단계"));
   expect(stepTwoScrollArea).not.toContainElement(previousButton);

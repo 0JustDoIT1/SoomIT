@@ -59,6 +59,28 @@ it("loads an empty PET annotation list with the selected asset and Series UID", 
   expect(toastError).not.toHaveBeenCalled();
 });
 
+it("deletes every PET/CT annotation for the selected series without confirmation", async () => {
+  const annotation = { id: "annotation-1", annotation_type: "LENGTH", annotation_data: { sop_instance_uid: "sop-1" } };
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/image-assets/")) return json([{ id: "pet-with-annotation", workflow_stage: "PET_CT_TNM", image_type: "PET", file_format: "DICOM", status: "READY", series_instance_uid: "series-pet" }]);
+    if (url.endsWith("/dicom-web/instances/")) return json([]);
+    if (url.includes("/image-annotations/") && init?.method === "DELETE") return new Response(null, { status: 204 });
+    if (url.includes("/image-annotations/")) return json([annotation]);
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  const confirm = vi.spyOn(window, "confirm");
+  render(<CaseDicomEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-pet" stage="PET_CT_TNM" />);
+  const button = await screen.findByRole("button", { name: "전체 삭제" });
+  await waitFor(() => expect(button).toBeEnabled());
+
+  fireEvent.click(button);
+
+  await waitFor(() => expect(authorizedFetch.mock.calls.some(([url, init]) => String(url).includes("image_asset_id=pet-with-annotation") && init?.method === "DELETE")).toBe(true));
+  expect(confirm).not.toHaveBeenCalled();
+  expect(button).toBeDisabled();
+});
+
 it("does not request PET annotations before the Series UID is ready", async () => {
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
