@@ -19,14 +19,6 @@ import {
 } from "./_lib/notification-state";
 
 type SearchCase = { id: string; patient_name: string; patient_code: string; case_code: string };
-type ConsultationSummary = { id: string; status: string };
-
-function asList<T>(value: unknown): T[] {
-  if (Array.isArray(value)) return value as T[];
-  if (value && typeof value === "object" && "results" in value && Array.isArray(value.results)) return value.results as T[];
-  return [];
-}
-
 export default function RespiratoryLayout({
   children,
 }: {
@@ -42,7 +34,6 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [notifications, setNotifications] = useState<NotificationState>({ unread_count: 0, results: [] });
   const [notificationsLoading, setNotificationsLoading] = useState(true);
-  const [consultationWaitingCount, setConsultationWaitingCount] = useState(0);
   const [notificationError, setNotificationError] = useState("");
   const [search, setSearch] = useState("");
   const [searchResults, setSearchResults] = useState<SearchCase[]>([]);
@@ -66,17 +57,6 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       if (!silent) setNotificationError(error instanceof Error ? error.message : "알림을 불러오지 못했습니다.");
     } finally {
       if (!silent) setNotificationsLoading(false);
-    }
-  }, [authorizedFetch]);
-
-  const loadConsultationWaitingCount = useCallback(async () => {
-    try {
-      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/consultations/me/`);
-      if (!response.ok) return;
-      const consultations = asList<ConsultationSummary>(await response.json());
-      setConsultationWaitingCount(consultations.filter((item) => item.status === "REQUESTED").length);
-    } catch {
-      // Keep the last known count when the optional navigation badge cannot refresh.
     }
   }, [authorizedFetch]);
 
@@ -113,14 +93,14 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
-    const initialTimer = window.setTimeout(() => void Promise.all([loadNotifications(), loadConsultationWaitingCount()]), 0);
+    const initialTimer = window.setTimeout(() => void loadNotifications(), 0);
     let disposed = false;
     let polling = false;
     const pollNotifications = async () => {
       if (disposed || polling || document.hidden) return;
       polling = true;
       try {
-        await Promise.all([loadNotifications(true), loadConsultationWaitingCount()]);
+        await loadNotifications(true);
       } finally {
         polling = false;
       }
@@ -136,7 +116,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [isReady, isAuthenticated, loadConsultationWaitingCount, loadNotifications]);
+  }, [isReady, isAuthenticated, loadNotifications]);
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;
@@ -233,7 +213,6 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
           <ShellNavButton icon="home" label="홈" active={pathname === "/respiratory/dashboard"} onClick={() => router.push("/respiratory/dashboard")} />
           <ShellNavButton icon="case" label="Case" active={pathname.startsWith("/respiratory/cases")} onClick={() => void openCaseWorkspace()} />
           <ShellNavButton icon="calendar" label="일정" active={pathname.startsWith("/respiratory/schedules")} onClick={() => router.push("/respiratory/schedules")} />
-          <ShellNavButton icon="consultation" label="협진" active={pathname.startsWith("/respiratory/consultations")} onClick={() => router.push("/respiratory/consultations")} count={consultationWaitingCount} />
           <ShellNavButton icon="notification" label="알림" active={pathname.startsWith("/respiratory/notifications")} onClick={() => router.push("/respiratory/notifications")} count={notifications.unread_count} />
         </nav>
         <nav className="mt-auto flex w-full flex-col items-center gap-1 border-t border-white/15 pt-3" aria-label="유틸리티 메뉴">
