@@ -319,7 +319,12 @@ def _patient_phase2_inputs(analysis):
         raise ValueError("Patient birth date is required for CT Phase2.")
     today = timezone.localdate()
     age = today.year - patient.birth_date.year - ((today.month, today.day) < (patient.birth_date.month, patient.birth_date.day))
-    gender = {patient.Sex.MALE: "male", patient.Sex.FEMALE: "female"}.get(patient.sex)
+    gender = {
+        patient.Sex.MALE: "male",
+        patient.Sex.FEMALE: "female",
+        patient.Sex.OTHER: "unknown",
+        patient.Sex.UNKNOWN: "unknown",
+    }.get(patient.sex)
     if age < 0 or gender is None:
         raise ValueError("Patient age or sex is not valid for CT Phase2.")
     return float(age), gender

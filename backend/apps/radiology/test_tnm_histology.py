@@ -2,13 +2,38 @@
 import json
 import runpy
 from contextlib import ExitStack, nullcontext
+from datetime import date, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from django.test import SimpleTestCase
 
+from apps.patients.models import Patient
 from apps.radiology import tasks
+
+
+class TnmPatientPhase2InputTests(SimpleTestCase):
+    def resolve(self, sex, birth_date=date(1980, 1, 1)):
+        patient = SimpleNamespace(
+            Sex=Patient.Sex,
+            birth_date=birth_date,
+            sex=sex,
+        )
+        analysis = SimpleNamespace(case=SimpleNamespace(patient=patient))
+        return tasks._patient_phase2_inputs(analysis)
+
+    def test_binary_sex_values_keep_model_categories(self):
+        self.assertEqual(self.resolve(Patient.Sex.MALE)[1], "male")
+        self.assertEqual(self.resolve(Patient.Sex.FEMALE)[1], "female")
+
+    def test_other_and_unknown_use_supported_unknown_category(self):
+        self.assertEqual(self.resolve(Patient.Sex.OTHER)[1], "unknown")
+        self.assertEqual(self.resolve(Patient.Sex.UNKNOWN)[1], "unknown")
+
+    def test_future_birth_date_still_fails(self):
+        with self.assertRaisesRegex(ValueError, "Patient age or sex"):
+            self.resolve(Patient.Sex.OTHER, date.today() + timedelta(days=1))
 
 
 class TnmHistologyTests(SimpleTestCase):
