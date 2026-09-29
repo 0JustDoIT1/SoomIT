@@ -7,12 +7,33 @@ import pydicom
 import requests
 from django.conf import settings
 from google.cloud import storage
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 from apps.cases.models import CaseImageAsset
 
 
 class PetDicomExportError(RuntimeError):
     pass
+
+
+def _orthanc_read_session():
+    session = requests.Session()
+    session.auth = (settings.ORTHANC_USERNAME, settings.ORTHANC_PASSWORD)
+    retry = Retry(
+        total=4,
+        connect=4,
+        read=4,
+        status=4,
+        backoff_factor=1,
+        status_forcelist=[502, 503, 504],
+        allowed_methods=frozenset({"GET"}),
+        respect_retry_after_header=True,
+    )
+    adapter = HTTPAdapter(pool_connections=1, pool_maxsize=2, max_retries=retry)
+    session.mount("http://", adapter)
+    session.mount("https://", adapter)
+    return session
 
 
 def _gcs_parts(uri):
@@ -32,8 +53,7 @@ def build_pet_dicom_gcs_prefix(*, hospital_id, case_id, order_id, analysis_id):
 
 
 def _download_series(series_id, destination):
-    session = requests.Session()
-    session.auth = (settings.ORTHANC_USERNAME, settings.ORTHANC_PASSWORD)
+    session = _orthanc_read_session()
     try:
         response = session.get(f"{settings.ORTHANC_BASE_URL}/series/{series_id}", timeout=settings.ORTHANC_TIMEOUT_SECONDS)
         response.raise_for_status()

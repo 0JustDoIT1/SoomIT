@@ -1,4 +1,7 @@
 import json
+import logging
+from time import sleep
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -6,6 +9,10 @@ from django.conf import settings
 
 class CtPhase2InferenceError(RuntimeError):
     pass
+
+
+logger = logging.getLogger(__name__)
+_TRANSIENT_RETRY_DELAYS_SECONDS = (5, 10)
 
 
 def _fetch_id_token():
@@ -17,6 +24,25 @@ def _fetch_id_token():
         return google.oauth2.id_token.fetch_id_token(request, settings.CT_ANALYSIS_PHASE2_SERVICE_URL)
     except Exception as exc:
         raise CtPhase2InferenceError("CT Phase2 service authentication token could not be issued.") from exc
+
+
+def _request_payload(request):
+    for attempt in range(len(_TRANSIENT_RETRY_DELAYS_SECONDS) + 1):
+        try:
+            with urlopen(request, timeout=settings.CT_ANALYSIS_PHASE2_TIMEOUT_SECONDS) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except HTTPError as exc:
+            if exc.code != 429 or attempt == len(_TRANSIENT_RETRY_DELAYS_SECONDS):
+                raise
+            delay = _TRANSIENT_RETRY_DELAYS_SECONDS[attempt]
+            logger.warning(
+                "CT Phase2 service temporarily unavailable with HTTP 429; "
+                "retrying in %s seconds (attempt %s/%s).",
+                delay,
+                attempt + 1,
+                len(_TRANSIENT_RETRY_DELAYS_SECONDS),
+            )
+            sleep(delay)
 
 
 def request_ct_phase2_analysis(**body):
@@ -32,8 +58,7 @@ def request_ct_phase2_analysis(**body):
         method="POST",
     )
     try:
-        with urlopen(request, timeout=settings.CT_ANALYSIS_PHASE2_TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8"))
+        payload = _request_payload(request)
     except Exception as exc:
         raise CtPhase2InferenceError("CT Phase2 service request failed.") from exc
     if (

@@ -57,7 +57,7 @@ export async function installWorkflowAuditApi(page: Page, stage = "PATHOLOGY_GEN
       return reply(state.decision);
     }
     if (path.endsWith("/treatment-decision/")) {
-      if (method === "POST") state.decision = { id: "decision-qa", ...body, selected_regimen_detail: candidates.find(c => c.regimen_detail.id === body.selected_regimen)?.regimen_detail, requires_prescription: true, decision_status: "DRAFT" };
+      if (method === "POST") state.decision = { id: "decision-qa", ...body, selected_regimen_detail: candidates.find(c => c.regimen_detail.id === body.selected_regimen)?.regimen_detail, requires_prescription: true, available_prescription_phases: ["INDUCTION"], decision_status: "DRAFT" };
       return state.decision ? reply(state.decision) : reply({ detail: "No treatment decision" }, 404);
     }
     if (path.endsWith("/prescriptions/")) {
