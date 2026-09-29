@@ -148,6 +148,7 @@ it("switches only the Case workspace without routing away from the patient list"
   });
 
   render(<Page />);
+  expect(await screen.findByRole("heading", { name: "담당 환자" })).toBeInTheDocument();
   const [secondPatientName] = await screen.findAllByText("두 번째 환자");
   await userEvent.click(secondPatientName.closest("button") as HTMLButtonElement);
 

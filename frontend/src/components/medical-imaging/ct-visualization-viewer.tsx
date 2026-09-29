@@ -254,7 +254,8 @@ export function CtVisualizationViewer({ analysisId, layers, fetchLayer }: CtVisu
         <button
           type="button"
           onClick={() => setWireframe((value) => !value)}
-          className="absolute right-2 top-2 rounded bg-black/60 px-2 py-1 text-[9px] font-semibold text-white"
+          aria-pressed={wireframe}
+          className="absolute right-2 top-2 rounded-md border border-white/70 bg-slate-950/80 px-2.5 py-1.5 text-[9px] font-semibold text-white shadow-sm transition hover:border-white hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80"
         >
           {wireframe ? "표면 보기" : "와이어프레임"}
         </button>
@@ -266,8 +267,8 @@ export function CtVisualizationViewer({ analysisId, layers, fetchLayer }: CtVisu
             <p className="mb-1 text-[9px] font-semibold text-slate-400">{CATEGORY_LABELS[category]}</p>
             <div className="space-y-1.5">
               {categoryLayers.map((layer) => (
-                <div key={layer.id} className="rounded bg-slate-800/60 px-1.5 py-1">
-                  <label className="flex items-center gap-1.5 text-[9px] text-slate-200">
+                <div key={layer.id} className="rounded-md border border-white/30 bg-slate-800/80 px-1.5 py-1 shadow-sm transition hover:border-white/60 hover:bg-slate-700/90">
+                  <label className="flex cursor-pointer items-center gap-1.5 text-[9px] font-medium text-slate-100">
                     <input
                       type="checkbox"
                       checked={visibility[layer.id] ?? layer.default_visible}
