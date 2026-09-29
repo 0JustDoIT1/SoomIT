@@ -222,7 +222,7 @@ class SafetyRuleTests(SimpleTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertTrue(self.created(source_code="ALLERGY_UNCONFIRMED", result="WARNING"))
-        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
 
     def test_dur_exact_pair_blocks_and_unmapped_medication_warns(self):
         item = self.prescription_item(item_seq="100")
@@ -320,7 +320,7 @@ class SafetyRuleTests(SimpleTestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(self.prescription.prescription_status, "VALIDATED")
 
-    def test_general_warning_stays_draft_until_acknowledged(self):
+    def test_general_warning_transitions_to_validated(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
         self.profiles.filter.return_value.first.return_value = NS(
             allergies=[], allergy_status="NONE",
@@ -336,9 +336,9 @@ class SafetyRuleTests(SimpleTestCase):
         response = self.post()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
 
-    def test_unresolved_warning_keeps_prescription_in_draft_for_recheck(self):
+    def test_unresolved_warning_transitions_to_validated(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
         self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
         self.safety_results.filter.side_effect = lambda **kwargs: NS(
@@ -348,9 +348,9 @@ class SafetyRuleTests(SimpleTestCase):
         response = self.post()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
 
-    def test_block_result_keeps_prescription_in_draft(self):
+    def test_block_result_transitions_to_validated(self):
         self.prescription.items.all.return_value = [self.prescription_item(item_seq="100")]
         self.profiles.filter.return_value.first.return_value = NS(allergies=[], allergy_status="NONE")
         self.safety_results.filter.side_effect = lambda **kwargs: NS(
@@ -360,7 +360,7 @@ class SafetyRuleTests(SimpleTestCase):
         response = self.post()
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(self.prescription.prescription_status, "DRAFT")
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
 
     def test_validated_prescription_cannot_run_safety_check_again(self):
         self.prescription.prescription_status = "VALIDATED"
@@ -431,6 +431,32 @@ class SafetyRuleTests(SimpleTestCase):
 
 
 class PreviewFinalizeRuleTests(SimpleTestCase):
+    def test_current_pass_warning_and_block_results_can_finalize(self):
+        item = NS(id="item-1", final_dose=80, mfds_item_seq="100")
+        checked_input = {
+            "allergy_status": "NONE", "allergies": [], "current_medications": [],
+            "creatinine": "1.0", "egfr": "90", "ast": "20", "alt": "21", "total_bilirubin": "0.8",
+        }
+        for result in ("PASS", "WARNING", "BLOCK"):
+            with self.subTest(result=result):
+                safety_results = MagicMock()
+                safety_results.filter.return_value.order_by.return_value.first.return_value = NS(
+                    message=json.dumps(_preview_safety_snapshot(checked_input, [item]))
+                )
+                safety_results.exclude.return_value.exists.return_value = True
+                prescription = NS(id="rx-1", prescription_status="VALIDATED", items=MagicMock(), safety_check_results=safety_results, save=MagicMock())
+                prescription.items.all.return_value = [item]
+                request = NS(user=object(), data={"safety_input": checked_input})
+                with patch("apps.clinical.views.Prescription.objects") as prescriptions, patch(
+                    "apps.clinical.views.DoctorPrescriptionSerializer"
+                ):
+                    (prescriptions.select_for_update.return_value.filter.return_value
+                     .prefetch_related.return_value.first.return_value) = prescription
+                    response = PreviewFinalize.post.__wrapped__(PreviewFinalize(), request, "case-1", "rx-1")
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(prescription.prescription_status, "FINAL")
+                safety_results.exclude.assert_called_with(source_code="SAFETY_INPUT_SNAPSHOT")
+
     def test_changed_request_scoped_safety_input_blocks_finalize(self):
         item = NS(id="item-1", final_dose=80, mfds_item_seq="100")
         checked_input = {

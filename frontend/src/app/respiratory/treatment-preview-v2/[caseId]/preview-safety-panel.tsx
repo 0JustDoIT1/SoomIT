@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { apiJson } from "./preview-api";
 import type { AuthorizedFetch } from "../../cases/[caseId]/treatment-prescription-types";
 import type { PreviewDoseInputs } from "./preview-prescription";
@@ -8,23 +8,46 @@ import type { Prescription, Safety } from "./preview-types";
 
 const BLOCKED_CODES = new Set(["DUR_API_ERROR", "DUR_MAPPING_UNRESOLVED", "ALLERGY_UNCONFIRMED", "LAB_MISSING"]);
 type Labs = { creatinine: string; egfr: string; ast: string; alt: string; total_bilirubin: string };
+type DrugOption = { id: string; drug_name: string; ingredient_name: string; mfds_item_seq?: string | null };
+type CurrentMedication = { medication_name: string; ingredient_name: string; mfds_item_seq: string };
 
 export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseInputs, onRefresh }: { caseId: string; base: string; fetcher: AuthorizedFetch; prescription?: Prescription; doseInputs: PreviewDoseInputs; onRefresh: () => void }) {
   const [status, setStatus] = useState("UNCONFIRMED");
   const [allergies, setAllergies] = useState("");
-  const [medications, setMedications] = useState("");
+  const [medications, setMedications] = useState<CurrentMedication[]>([]);
+  const [drugSearch, setDrugSearch] = useState("");
+  const [drugOptions, setDrugOptions] = useState<DrugOption[]>([]);
   const [labs, setLabs] = useState<Labs>({ creatinine: "", egfr: "", ast: "", alt: "", total_bilirubin: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [lastCheckedSignature, setLastCheckedSignature] = useState<string | null>(null);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = drugSearch.trim();
+    if (!query) return () => controller.abort();
+    void fetcher(`${base}/api/clinical/drug-options/?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) return;
+        const options = await response.json() as DrugOption[];
+        if (!controller.signal.aborted) setDrugOptions(options);
+      })
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [base, drugSearch, fetcher]);
+
+  const selectDrug = (drugId: string) => {
+    const drug = drugOptions.find(option => option.id === drugId);
+    if (!drug) return;
+    setMedications(current => [...current, { medication_name: drug.drug_name, ingredient_name: drug.ingredient_name, mfds_item_seq: drug.mfds_item_seq ?? "" }]);
+    setDrugSearch("");
+    setDrugOptions([]);
+  };
+
   const safetyInput = useMemo(() => ({
     allergy_status: status,
     allergies: allergies.split(",").map(value => value.trim()).filter(Boolean),
-    current_medications: medications.split("\n").map(value => value.trim()).filter(Boolean).map(line => {
-      const [medication_name, ingredient_name, mfds_item_seq = ""] = line.split("|").map(value => value.trim());
-      return { medication_name, ingredient_name, mfds_item_seq };
-    }),
+    current_medications: medications,
     ...labs,
     egfr: labs.egfr || doseInputs.egfr,
   }), [allergies, doseInputs.egfr, labs, medications, status]);
@@ -54,15 +77,6 @@ export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseIn
     } catch (reason) { setError(reason instanceof Error ? reason.message : "Safety Check 실패"); }
     finally { setBusy(false); }
   };
-  const acknowledge = async () => {
-    if (!prescription) return;
-    const note = window.prompt("WARNING 확인 사유를 입력하세요.", "Preview 검사 완료");
-    if (!note?.trim()) return;
-    setBusy(true); setError("");
-    try { await apiJson(fetcher, base, `/api/doctor/cases/${caseId}/prescriptions/${prescription.id}/preview-warnings/acknowledge/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acknowledgment_note: note.trim(), safety_input: safetyInput }) }); onRefresh(); }
-    catch (reason) { setError(reason instanceof Error ? reason.message : "WARNING 확인 실패"); }
-    finally { setBusy(false); }
-  };
   const finalize = async () => {
     if (!prescription) return;
     setBusy(true); setError("");
@@ -82,7 +96,7 @@ export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseIn
   const allergyReady = status === "NONE" || (status === "PRESENT" && Boolean(allergies.trim()));
   const medicationReady = safetyInput.current_medications.length > 0 && safetyInput.current_medications.every(item => item.medication_name && item.ingredient_name && item.mfds_item_seq);
 
-  const safetyHeading = unresolved ? "진행 차단" : needsAck ? "WARNING · 의료진 확인 필요" : prescription.prescription_status === "VALIDATED" && results.some(result => result.result === "WARNING") ? "WARNING · 확인 완료" : results.length ? "Safety 통과" : "미실행";
+  const safetyHeading = results.some(result => result.result === "BLOCK") ? "BLOCK · 경고" : results.some(result => result.result === "WARNING") ? "WARNING · 경고" : results.length ? "Safety 통과" : "미실행";
   return <section className="rounded-xl border border-slate-200 bg-white p-4"><h2 className="text-base font-bold">Safety Check · {safetyHeading}</h2><div className="mt-3 space-y-3">
     <div className="grid gap-3 lg:grid-cols-2">
       <fieldset id="preview-safety-renal" className="rounded-lg border border-slate-200 p-3"><legend className="px-1 text-xs font-bold">신장기능</legend><p className="mb-2 text-[11px] text-slate-500">Creatinine 또는 eGFR 중 하나를 입력해주세요.</p><div className="grid grid-cols-2 gap-2"><NumberInput label="Creatinine" value={labs.creatinine} onChange={value => setLabs(current => ({ ...current, creatinine: value }))} /><NumberInput label="eGFR" value={labs.egfr || doseInputs.egfr} onChange={value => setLabs(current => ({ ...current, egfr: value }))} /></div></fieldset>
@@ -90,13 +104,17 @@ export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseIn
     </div>
     <fieldset className="rounded-lg border border-slate-200 p-3"><legend className="px-1 text-xs font-bold">DUR / 안전성 확인</legend><div className="grid gap-3 lg:grid-cols-2">
       <div id="preview-safety-allergy"><p className="text-xs font-semibold">알레르기</p><div className="mt-1 flex flex-wrap gap-3 text-sm">{[["NONE", "알레르기 없음"], ["PRESENT", "알레르기 있음"], ["UNCONFIRMED", "미확인"]].map(([value, label]) => <label key={value}><input type="radio" checked={status === value} onChange={() => setStatus(value)} /> {label}</label>)}</div>{status === "PRESENT" && <input value={allergies} onChange={event => setAllergies(event.target.value)} placeholder="알레르기 약품/성분 (쉼표 구분)" className="mt-2 w-full rounded border p-2 text-sm" />}</div>
-      <label id="preview-safety-medication" className="block text-xs font-semibold">현재 복용약<textarea aria-label="현재 복용약" value={medications} onChange={event => setMedications(event.target.value)} placeholder="약품명 | 성분명 | MFDS ITEM_SEQ (한 줄에 하나)" rows={3} className="mt-1 w-full rounded border p-2 text-sm font-normal" /><span className="mt-1 block font-normal text-slate-500">ITEM_SEQ는 자동 선택하지 않습니다. 복용약이 있으면 각 항목을 명시해주세요.</span></label>
+      <div id="preview-safety-medication" className="text-xs font-semibold">현재 복용약
+        <label className="mt-1 block font-normal">약품 검색<input value={drugSearch} onChange={event => { setDrugSearch(event.target.value); setDrugOptions([]); }} placeholder="약품명·성분명·MFDS ITEM_SEQ" className="mt-1 w-full rounded border p-2 text-sm" /></label>
+        <label className="mt-2 block font-normal">약품명<select value="" onChange={event => selectDrug(event.target.value)} className="mt-1 w-full rounded border p-2 text-sm"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.id} value={option.id}>{option.drug_name} · {option.ingredient_name}</option>)}</select></label>
+        {medications.map((item, index) => <div key={`${item.medication_name}-${item.mfds_item_seq}-${index}`} className="mt-2 flex items-center justify-between gap-2 rounded border p-2 font-normal"><span>{item.medication_name} · {item.ingredient_name} · ITEM_SEQ {item.mfds_item_seq || "없음"}</span><button type="button" onClick={() => setMedications(current => current.filter((_, itemIndex) => itemIndex !== index))} className="shrink-0 text-blue-700">제거</button></div>)}
+      </div>
     </div></fieldset>
     <div className="rounded-lg bg-slate-50 px-3 py-2" aria-label="Safety 입력 상태"><p className="text-xs font-bold text-slate-700">Safety 입력 상태</p><div className="mt-1 grid grid-cols-2 gap-x-4 gap-y-1 text-[11px] text-slate-600 sm:grid-cols-3"><Status label="키" ready={Boolean(doseInputs.height)} /><Status label="몸무게" ready={Boolean(doseInputs.weight)} /><Status label="신장기능" ready={renalReady} /><Status label="간기능" ready={hepaticReady} /><Status label="알레르기" ready={allergyReady} /><Status label="현재 복용약" ready={medicationReady} /></div></div>
     {inputChanged && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-800">입력값이 변경되어 Safety Check를 다시 실행해야 합니다.</p>}
-    {needsAck && !inputChanged && !unresolved && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-800">안전성 경고가 확인되었습니다. 내용을 검토한 후 처방을 계속 진행할 수 있습니다.</p>}
-    <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void run()} className={`rounded px-4 py-2 text-sm font-semibold disabled:opacity-50 ${needsAck && !inputChanged && !unresolved ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{busy ? "처리 중..." : results.length ? "안전성 검사 다시 실행" : "처방 안전성 검사"}</button>{needsAck && !inputChanged && !unresolved && <button type="button" disabled={busy} onClick={() => void acknowledge()} className="rounded bg-amber-600 px-4 py-2 text-sm font-semibold text-white">경고 확인 후 다음 단계</button>}<button type="button" disabled={busy || !canFinalize} onClick={() => void finalize()} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300">처방 확정</button></div>
-    {!canFinalize && <p className="text-xs text-amber-700">{!completeFinalDose ? "최종 처방량을 모두 입력해주세요." : inputChanged ? "변경된 입력값으로 Safety Check를 다시 실행해주세요." : !results.length ? "안전성 검사가 필요합니다." : unresolved ? "입력 보완 후 Safety Check를 다시 실행해주세요." : needsAck ? "일반 WARNING을 확인해주세요." : "안전성 검사 결과를 확인해주세요."}</p>}
+    {(needsAck || unresolved) && !inputChanged && <p role="alert" className="rounded-lg border border-amber-200 bg-amber-50 p-2 text-xs font-semibold text-amber-800">안전성 경고가 확인되었습니다. 내용을 검토한 후 처방을 계속 진행할 수 있습니다.</p>}
+    <div className="flex flex-wrap gap-2"><button type="button" disabled={busy} onClick={() => void run()} className={`rounded px-4 py-2 text-sm font-semibold disabled:opacity-50 ${needsAck && !inputChanged && !unresolved ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{busy ? "처리 중..." : results.length ? "안전성 검사 다시 실행" : "처방 안전성 검사"}</button><button type="button" disabled={busy || !canFinalize} onClick={() => void finalize()} className="rounded bg-emerald-600 px-4 py-2 text-sm font-semibold text-white disabled:bg-slate-300">처방 확정</button></div>
+    {!canFinalize && <p className="text-xs text-amber-700">{!completeFinalDose ? "최종 처방량을 모두 입력해주세요." : inputChanged ? "변경된 입력값으로 Safety Check를 다시 실행해주세요." : !results.length ? "안전성 검사가 필요합니다." : "안전성 검사 결과를 확인해주세요."}</p>}
     {error && <p role="alert" className="text-sm text-rose-600">{error}</p>}
     {results.map((result, index) => <SafetyResult key={`${result.id}-${index}`} result={result} onMove={moveTo} />)}
   </div></section>;

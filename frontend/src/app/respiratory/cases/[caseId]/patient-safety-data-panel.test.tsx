@@ -1,8 +1,12 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
+
+vi.mock("react-day-picker", () => ({
+  DayPicker: ({ onSelect }: { onSelect: (date: Date) => void }) => <button type="button" onClick={() => onSelect(new Date(2026, 8, 15))}>2026-09-15 선택</button>,
+}));
 
 function jsonResponse(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }); }
 
@@ -74,6 +78,34 @@ describe("PatientSafetyDataPanel", () => {
     render(<PatientSafetyDataPanel caseId="case-1" apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
     expect(await screen.findByText("복용약 A")).toBeTruthy();
     expect(await screen.findByText(/Cr 0.9 · eGFR 90/)).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "검사날짜" })).toHaveValue("2026-09-15");
+    expect(screen.getByRole("button", { name: "검사날짜 달력 열기" })).toBeDisabled();
+  });
+
+  it("selects a calendar date, keeps the ISO timestamp payload and shows the saved locked date", async () => {
+    let labGets = 0;
+    let savedPayload: Record<string, unknown> | null = null;
+    const authorizedFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("allergy-profile")) return Promise.resolve(jsonResponse({ allergy_status: "NONE", allergies: [], height_cm: "170", weight_kg: "65" }));
+      if (url.includes("current-medications")) return Promise.resolve(jsonResponse([]));
+      if (init?.method === "POST") {
+        savedPayload = JSON.parse(String(init.body));
+        return Promise.resolve(jsonResponse({ id: "lab-1" }, 201));
+      }
+      labGets += 1;
+      return Promise.resolve(jsonResponse(labGets > 1 ? [{ id: "lab-1", creatinine: "0.9", tested_at: "2026-09-15T00:00:00Z" }] : []));
+    });
+    render(<PatientSafetyDataPanel compact caseId="case-date" apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "검사날짜 달력 열기" }));
+    fireEvent.click(screen.getByRole("button", { name: "2026-09-15 선택" }));
+    expect(screen.getByRole("combobox", { name: "검사날짜" })).toHaveValue("2026-09-15");
+    fireEvent.click(screen.getByRole("button", { name: "검사값 저장" }));
+
+    await waitFor(() => expect(savedPayload).toEqual(expect.objectContaining({ tested_at: "2026-09-15T00:00:00.000Z" })));
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "검사날짜" })).toHaveValue("2026-09-15"));
+    expect(screen.getByRole("button", { name: "검사날짜 달력 열기" })).toBeDisabled();
   });
 
   it("keeps medication data visible when the lab request fails", async () => {

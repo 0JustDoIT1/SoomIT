@@ -86,7 +86,6 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
     try { await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/safety-check/`, { method: "POST" }, "안전성 검사가 완료되었습니다.", undefined, false); }
     finally { setCheckingSafety(false); }
   };
-  const acknowledge = async (id: string) => { const note = window.prompt("WARNING 확인 사유를 입력하세요.", "담당의 검토 후 처방 진행"); if (note === null) return; if (!note.trim()) { setError("WARNING 확인 사유를 입력해 주세요."); return; } await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/warnings/acknowledge/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acknowledgment_note: note.trim() }) }, "WARNING 확인이 완료되었습니다."); };
   const finalize = async (id: string, schedules: FinalizeMedicationSchedule[]) => { if (!window.confirm("처방을 최종 확정하면 이후 수정할 수 없습니다.\n계속하시겠습니까?")) return; const toastId = `case-prescription-finalize-${caseId}-${id}`; showToast.info("처방을 확정하고 있습니다.", { id: toastId }); const completedFinalization = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/finalize/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medication_schedules: schedules }) }, "처방이 최종 확정되었습니다.", toastId); const finalized = prescriptionsRef.current.find((prescription) => prescription.id === id && prescription.prescription_status === "FINAL"); if (completedFinalization && finalized) { setSummaryPrescription(finalized); setSummaryOpen(true); } };
   const closeSummary = useCallback(() => setSummaryOpen(false), []);
 
@@ -94,7 +93,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
 
   const hasOpenPrescription = prescriptions.some(prescription => ["DRAFT", "VALIDATED"].includes(prescription.prescription_status));
   const creationForm = actionable && requiresPrescription && !hasOpenPrescription ? prescriptions.length === 0 ? (
-    <section aria-labelledby="first-prescription-title" className="w-full max-w-2xl rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:p-7">
+    <section aria-labelledby="first-prescription-title" className="w-full rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
       <div className="flex items-start gap-4">
         <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-lg font-bold text-blue-700">Rx</span>
         <div>
@@ -103,7 +102,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
           <p className="mt-1 text-sm leading-6 text-slate-500">확정된 치료결정을 기준으로 DRAFT를 생성합니다. 생성 후 약물과 용량을 확인하고 Safety Check를 진행할 수 있습니다.</p>
         </div>
       </div>
-      <div className="mt-6 grid gap-4 border-t border-slate-100 pt-5 sm:grid-cols-[100px_minmax(150px,1fr)_minmax(180px,1fr)]">
+      <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 xl:grid-cols-[90px_minmax(0,1fr)_minmax(0,1fr)]">
         <label className="text-xs font-semibold text-slate-600">Cycle 번호
           <input type="number" min="1" value={cycleNumber} onChange={e => setCycleNumber(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100" />
         </label>
@@ -114,9 +113,9 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
       </div>
       {!hasSelectedRegimen && <p role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">선택된 Regimen이 없어 처방을 생성할 수 없습니다. 치료계획에서 Regimen을 먼저 확정해주세요.</p>}
       {hasSelectedRegimen && supportedPhases.length === 0 && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.</p>}
-      <div className="mt-5 flex flex-col-reverse items-stretch justify-between gap-3 sm:flex-row sm:items-center">
+      <div className="mt-4 flex flex-col-reverse items-stretch justify-between gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
         <p className="text-xs text-slate-400">처방은 자동 생성되지 않으며, 시작일을 선택한 뒤 직접 생성합니다.</p>
-        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "임시 처방 생성"}</button>
+        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "임시 처방 생성"}</button>
       </div>
     </section>
   ) : (
@@ -141,9 +140,9 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
   const hasUnacknowledgedWarning = active?.safety_check_results.some(result => result.result === "WARNING" && !result.acknowledged_at && !UNRESOLVED_SAFETY_SOURCE_CODES.has(result.source_code ?? "")) ?? false;
   const isFinal = active?.prescription_status === "FINAL";
   const hasBlock = active?.safety_check_results.some(result => result.result === "BLOCK") ?? false;
-  const safetyLabel = checkingSafety ? "검사 중" : !isFinal && safetyRecheckRequired ? "RECHECK_REQUIRED · 재검사 필요" : hasBlock ? "BLOCK · 진행 차단" : hasUnresolvedWarning || hasUnacknowledgedWarning ? "WARNING · 의료진 확인 필요" : active?.safety_freshness === "NOT_RUN" ? "미실행" : active?.safety_check_results.length && active.safety_check_results.every(result => result.result === "PASS") ? "PASS" : active?.safety_check_results.some(result => result.result === "WARNING") ? "WARNING · 확인 완료" : safetyIsCurrent ? "검사 완료" : "결과 확인 필요";
-  const finalGuidance = isFinal ? "FINAL · 조회 전용입니다." : active?.prescription_status === "CANCELLED" ? "취소된 처방입니다. 조회만 가능합니다." : !actionable ? "현재 처방은 조회만 가능합니다." : checkingSafety ? "Safety Check 결과를 기다려주세요." : hasBlock || hasUnresolvedWarning ? "입력 보완 후 Safety Check를 다시 실행해주세요." : safetyRecheckRequired ? "검사 결과가 변경되어 Safety Check를 다시 실행해야 합니다." : hasUnacknowledgedWarning ? "안전성 경고가 확인되었습니다. 내용을 검토한 후 처방을 계속 진행할 수 있습니다." : active?.prescription_status === "VALIDATED" && safetyIsCurrent ? "안전성 검토가 완료되었습니다. 용량과 복약 일정을 확인한 뒤 최종 확정해주세요." : "Safety Check를 먼저 실행해주세요.";
-  const workflowStateLabel = hasBlock ? "진행 차단" : hasUnresolvedWarning ? "입력 보완 필요" : hasUnacknowledgedWarning ? "의료진 확인 필요" : active?.prescription_status === "VALIDATED" && active.safety_check_results.some(result => result.result === "WARNING") ? "확인 완료" : active?.prescription_status === "VALIDATED" && safetyIsCurrent ? "Safety 통과" : active?.prescription_status_label ?? ({ DRAFT: "작성 중", FINAL: "확정", CANCELLED: "취소" } as Record<string, string>)[active?.prescription_status ?? ""] ?? "상태 확인 필요";
+  const safetyLabel = checkingSafety ? "검사 중" : !isFinal && safetyRecheckRequired ? "RECHECK_REQUIRED · 재검사 필요" : hasBlock ? "BLOCK · 경고" : hasUnresolvedWarning || hasUnacknowledgedWarning ? "WARNING · 경고" : active?.safety_freshness === "NOT_RUN" ? "미실행" : active?.safety_check_results.length && active.safety_check_results.every(result => result.result === "PASS") ? "PASS" : active?.safety_check_results.some(result => result.result === "WARNING") ? "WARNING · 확인 완료" : safetyIsCurrent ? "검사 완료" : "결과 확인 필요";
+  const finalGuidance = isFinal ? "FINAL · 조회 전용입니다." : active?.prescription_status === "CANCELLED" ? "취소된 처방입니다. 조회만 가능합니다." : !actionable ? "현재 처방은 조회만 가능합니다." : checkingSafety ? "Safety Check 결과를 기다려주세요." : hasBlock || hasUnresolvedWarning ? "Safety 경고를 확인한 뒤 처방을 계속 진행할 수 있습니다." : safetyRecheckRequired ? "검사 결과가 변경되어 Safety Check를 다시 실행해야 합니다." : hasUnacknowledgedWarning ? "안전성 경고가 확인되었습니다. 내용을 검토한 후 처방을 계속 진행할 수 있습니다." : active?.prescription_status === "VALIDATED" && safetyIsCurrent ? "안전성 검토가 완료되었습니다. 용량과 복약 일정을 확인한 뒤 최종 확정해주세요." : "Safety Check를 먼저 실행해주세요.";
+  const workflowStateLabel = hasBlock ? "BLOCK 경고" : hasUnresolvedWarning ? "WARNING 경고" : hasUnacknowledgedWarning ? "WARNING 경고" : active?.prescription_status === "VALIDATED" && active.safety_check_results.some(result => result.result === "WARNING") ? "확인 완료" : active?.prescription_status === "VALIDATED" && safetyIsCurrent ? "Safety 통과" : active?.prescription_status_label ?? ({ DRAFT: "작성 중", FINAL: "확정", CANCELLED: "취소" } as Record<string, string>)[active?.prescription_status ?? ""] ?? "상태 확인 필요";
   const progressIndex = isFinal ? 3 : active?.prescription_status === "CANCELLED" ? -1 : active?.prescription_status === "VALIDATED" && safetyIsCurrent ? 2 : 1;
   const visibleMessage = message === "처방이 최종 확정되었습니다." && active?.prescription_status !== "FINAL"
     ? ""
@@ -181,23 +180,24 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
         <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="안전성 검토 및 최종 확정">
           <h3 className="shrink-0 text-base font-semibold">Safety Check · {safetyLabel}</h3>
           {!isFinal && <div className="flex shrink-0 items-center justify-between gap-2 rounded-lg bg-white p-2 text-[11px] text-slate-600"><span><b>Safety 입력:</b> 체격 · 신장/간기능 · 알레르기 · 현재 복용약</span><button type="button" onClick={() => focusSafetyInput()} className="shrink-0 rounded border border-blue-200 px-2 py-1 font-semibold text-blue-700">입력 확인</button></div>}
-          {active.safety_check_results.some(r => r.result === "BLOCK") && <p role="alert" className="shrink-0 rounded-lg border border-rose-300 bg-rose-50 p-2 text-xs font-semibold text-rose-800">BLOCK 결과가 있어 처방을 최종 확정할 수 없습니다.</p>}
-          {safetyRecheckRequired ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">환자 안전성 정보가 변경되어 재검사가 필요합니다.</p> : hasUnresolvedWarning ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">미해결 WARNING · 입력 보완 후 Safety Check를 다시 실행해주세요.</p> : hasUnacknowledgedWarning && <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">WARNING · 의료진 확인과 사유 기록이 필요합니다.</p>}
+          {active.safety_check_results.some(r => r.result === "BLOCK") && <p role="alert" className="shrink-0 rounded-lg border border-rose-300 bg-rose-50 p-2 text-xs font-semibold text-rose-800">BLOCK 경고가 있습니다. 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p>}
+          {safetyRecheckRequired ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">환자 안전성 정보가 변경되어 재검사가 필요합니다.</p> : hasUnresolvedWarning ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">미해결 WARNING · 경고 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p> : hasUnacknowledgedWarning && <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs font-semibold text-amber-800">WARNING · 경고 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p>}
           <div className="min-h-0 max-h-40 shrink overflow-y-auto" aria-label="안전성 검사 상세">
             {active.safety_check_results.length === 0 && <p className="text-xs text-slate-500">{active.prescription_status === "DRAFT" ? "안전성 검사 대기" : "저장된 안전성 검사 상세 결과가 없습니다."}</p>}
             {active.safety_check_results.map(result => <div key={result.id} className={`border-b py-2 text-xs ${result.result === "BLOCK" ? "border-rose-200 text-rose-800" : result.result === "WARNING" ? "border-amber-200 text-amber-800" : "border-slate-200 text-emerald-800"}`}><p className="font-semibold">{result.check_type_label} · {result.result_label ?? result.result}</p><p className="mt-1">{result.message}</p>{result.result === "WARNING" && result.acknowledged_at && <p className="mt-1">의료진 확인 완료{result.acknowledgment_note ? ` · ${result.acknowledgment_note}` : ""}</p>}{result.result === "WARNING" && ["LAB_MISSING", "ALLERGY_UNCONFIRMED", "DUR_MAPPING_UNRESOLVED"].includes(result.source_code ?? "") && <button type="button" onClick={() => focusSafetyInput(result.source_code, result.message)} className="mt-1 rounded border border-amber-300 px-2 py-1 font-semibold">부족한 입력 보완</button>}</div>)}
           </div>
           <p role="status" className="shrink-0 text-xs leading-5 text-slate-600">{finalGuidance}</p>
           {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working} onClick={() => void safety(active.id)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 ${hasUnacknowledgedWarning && !hasBlock && !hasUnresolvedWarning && !safetyRecheckRequired ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{checkingSafety ? "Safety Check 검사 중..." : working ? "처리 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
-          {actionable && ["DRAFT", "VALIDATED"].includes(active.prescription_status) && safetyIsCurrent && !safetyRecheckRequired && !hasBlock && !hasUnresolvedWarning && hasUnacknowledgedWarning && <button type="button" disabled={working} onClick={() => void acknowledge(active.id)} className="shrink-0 rounded-lg bg-amber-600 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50">경고 확인 후 다음 단계</button>}
-          {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && !active.safety_check_results.some(r => r.result === "BLOCK") && !hasUnresolvedWarning && !hasUnacknowledgedWarning && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => finalize(active.id, schedules)} /></div>}
+          {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => finalize(active.id, schedules)} /></div>}
           {active.prescription_status === "FINAL" && <div className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-2"><p className="text-xs font-semibold text-emerald-700">최종 확정 완료 · 수정 불가</p><button type="button" onClick={() => { setSummaryPrescription(active); setSummaryOpen(true); }} className="mt-2 w-full rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">최종 진료 요약 보기</button></div>}
         </aside>
-      </div> : <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 px-4 py-6 sm:px-8">
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
-          {actionable && requiresPrescription && hasSelectedRegimen && supportedPhases.length > 0 && <PatientSafetyDataPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} compact />}
-          <div className="flex justify-center">{creationForm}</div>
-        </div>
+      </div> : <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+        {actionable && requiresPrescription && hasSelectedRegimen && supportedPhases.length > 0
+          ? <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+              <PatientSafetyDataPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} compact />
+              {creationForm}
+            </div>
+          : <div className="flex justify-center">{creationForm}</div>}
       </div>}
     <FinalCareSummaryDialog open={summaryOpen} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} prescription={summaryPrescription} onClose={closeSummary} />
   </section>;

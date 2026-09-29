@@ -79,9 +79,18 @@ it("starts saved additional plans collapsed and preserves their values when open
   renderDraft();
   fireEvent.click(await screen.findByRole("button", { name: "치료계획 계속 작성 →" }));
   const summary = screen.getByText("추가 계획 및 결정 근거 (선택) · 작성됨");
+  const dialog = screen.getByRole("dialog");
+  const scrollArea = dialog.querySelector("fieldset");
+  expect(dialog).toHaveClass("max-h-[85dvh]", "overflow-hidden");
+  expect(scrollArea).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+  expect(scrollArea).toContainElement(summary);
+  expect(scrollArea).not.toContainElement(screen.getByLabelText("치료 결정 진행 단계"));
+  expect(scrollArea).not.toContainElement(screen.getByRole("button", { name: "저장하고 다음 단계" }));
   expect(summary.closest("details")).not.toHaveAttribute("open");
   fireEvent.click(summary);
   await waitFor(() => expect(summary.closest("details")).toHaveAttribute("open"));
+  expect(scrollArea).toContainElement(screen.getByLabelText("AI 추천 반영"));
+  expect(screen.getByRole("button", { name: "임시 저장" })).toBeInTheDocument();
   expect(screen.getByLabelText(/결정 근거/)).toHaveValue("EGFR 근거");
 });
 
@@ -136,6 +145,10 @@ it("keeps Step 1 values when returning from Step 2", async () => {
   fireEvent.click(screen.getByRole("button", { name: "저장하고 다음 단계" }));
   const previousButton = await screen.findByRole("button", { name: "이전" });
   await waitFor(() => expect(previousButton).toBeEnabled());
+  const stepTwoScrollArea = screen.getByRole("dialog").querySelector("fieldset");
+  expect(stepTwoScrollArea).toHaveClass("min-h-0", "flex-1", "overflow-y-auto");
+  expect(stepTwoScrollArea).not.toContainElement(screen.getByLabelText("치료 결정 진행 단계"));
+  expect(stepTwoScrollArea).not.toContainElement(previousButton);
   fireEvent.click(previousButton);
   expect(screen.getByLabelText("치료 계획")).toHaveValue("EGFR 치료계획");
   expect(screen.getByRole("button", { name: /Osimertinib \(R1\)/ })).toBeInTheDocument();

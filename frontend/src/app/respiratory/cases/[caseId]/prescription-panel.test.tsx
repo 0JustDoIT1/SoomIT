@@ -243,24 +243,15 @@ it("keeps the safety action separate from the medication scroll and preserves it
   expect(authorizedFetch.mock.calls.filter(([url, init]) => String(url).endsWith("/safety-check/") && init?.method === "POST")).toHaveLength(1);
 });
 
-it.each(["WARNING", "BLOCK"])("keeps %s visible and prevents final confirmation", async result => {
-  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT", [{ id: "safety", result, check_type_label: "DUR", message: "검토 필요" }])} />);
-  expect(await screen.findByRole("alert")).toHaveTextContent(result === "BLOCK" ? "BLOCK" : "의료진 확인");
-  expect(screen.queryByRole("button", { name: "처방 최종 확정" })).not.toBeInTheDocument();
-  if (result === "WARNING") {
-    expect(screen.getByRole("heading", { name: "Safety Check · WARNING · 의료진 확인 필요" })).toBeInTheDocument();
-    expect(screen.getByText("안전성 경고가 확인되었습니다. 내용을 검토한 후 처방을 계속 진행할 수 있습니다.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "경고 확인 후 다음 단계" })).toBeEnabled();
-    expect(screen.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeEnabled();
-  }
-});
-
-it("sends the existing acknowledgment note contract", async () => {
-  vi.spyOn(window, "prompt").mockReturnValue("담당의 검토");
-  const authorizedFetch = mockFetch("DRAFT", [{ id: "safety", result: "WARNING", check_type_label: "DUR", message: "검토 필요" }]);
+it.each(["PASS", "WARNING", "BLOCK"] as const)("allows %s final confirmation after a current Safety Check", async result => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const authorizedFetch = mockFetch("VALIDATED", [{ id: "safety", result, check_type_label: "DUR", message: "검토 필요" }]);
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
-  fireEvent.click(await screen.findByRole("button", { name: "경고 확인 후 다음 단계" }));
-  await waitFor(() => expect(authorizedFetch).toHaveBeenCalledWith(expect.stringContaining("/warnings/acknowledge/"), expect.objectContaining({ body: JSON.stringify({ acknowledgment_note: "담당의 검토" }) })));
+  const rail = await screen.findByRole("complementary", { name: "안전성 검토 및 최종 확정" });
+  if (result !== "PASS") expect(within(rail).getByRole("heading", { name: `Safety Check · ${result} · 경고` })).toBeInTheDocument();
+  fireEvent.click(within(rail).getByRole("button", { name: "처방 최종 확정" }));
+  await waitFor(() => expect(authorizedFetch).toHaveBeenCalledWith(expect.stringContaining("/finalize/"), expect.objectContaining({ method: "POST" })));
+  expect(authorizedFetch).not.toHaveBeenCalledWith(expect.stringContaining("/warnings/acknowledge/"), expect.anything());
 });
 
 it("retains finalization and allows reviewing previous prescriptions without a wizard", async () => {
@@ -332,6 +323,14 @@ it("creates the first draft once and requires a cycle start date", async () => {
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
   expect(await screen.findByRole("heading", { name: "첫 처방을 생성하세요" })).toBeInTheDocument();
   expect(screen.getByRole("region", { name: "환자 안전성 정보" })).toHaveTextContent("안전성 입력 폼");
+  const createCard = screen.getByRole("heading", { name: "첫 처방을 생성하세요" }).closest("section");
+  const columns = createCard?.parentElement;
+  expect(columns).toHaveClass("grid", "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]");
+  expect(columns).toContainElement(screen.getByRole("region", { name: "환자 안전성 정보" }));
+  expect(createCard).toHaveClass("w-full");
+  expect(screen.getByLabelText("Cycle 번호")).toBeInTheDocument();
+  expect(screen.getByLabelText("치료 단계")).toBeInTheDocument();
+  expect(screen.getByLabelText("Cycle 시작일")).toBeInTheDocument();
   expect(screen.getByText(/처방은 자동 생성되지 않으며/)).toBeInTheDocument();
   expect(screen.queryByText("등록된 처방이 없습니다.")).not.toBeInTheDocument();
   const create = await screen.findByRole("button", { name: "임시 처방 생성" });
@@ -363,10 +362,10 @@ it("keeps a final prescription visible but read-only after the case is no longer
   expect(screen.queryByRole("button", { name: "처방 최종 확정" })).not.toBeInTheDocument();
 });
 
-it("keeps unresolved safety warnings in the recheck path", async () => {
-  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT", [{ id: "safety", result: "WARNING", check_type_label: "검사 데이터", source_code: "LAB_MISSING", message: "검사 필요" }])} />);
-  expect(await screen.findByRole("alert")).toHaveTextContent("Safety Check를 다시 실행");
-  expect(screen.getByRole("button", { name: "안전성 검사 다시 실행" })).toBeInTheDocument();
+it("shows unresolved safety warnings without blocking finalization", async () => {
+  render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("VALIDATED", [{ id: "safety", result: "WARNING", check_type_label: "검사 데이터", source_code: "LAB_MISSING", message: "검사 필요" }])} />);
+  expect(await screen.findByRole("alert")).toHaveTextContent("미해결 WARNING");
+  expect(screen.getByRole("button", { name: "처방 최종 확정" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "경고 확인 후 다음 단계" })).not.toBeInTheDocument();
 });
 

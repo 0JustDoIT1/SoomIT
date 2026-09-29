@@ -12,6 +12,7 @@ type PrescriptionDateFieldProps = {
   defaultValue?: string;
   onChange?: (value: string) => void;
   required?: boolean;
+  disabled?: boolean;
   className?: string;
 };
 
@@ -43,6 +44,7 @@ export function PrescriptionDateField({
   defaultValue = "",
   onChange,
   required = false,
+  disabled = false,
   className = "",
 }: PrescriptionDateFieldProps) {
   const id = useId();
@@ -61,6 +63,7 @@ export function PrescriptionDateField({
   };
 
   const openPicker = () => {
+    if (disabled) return;
     setMonth(selected ?? new Date());
     setOpen(true);
   };
@@ -131,18 +134,20 @@ export function PrescriptionDateField({
             }
           }}
           readOnly
+          disabled={disabled}
           required={required}
           className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
         />
-        {name && <input type="hidden" name={name} value={currentValue} />}
+        {name && <input type="hidden" name={name} value={currentValue} disabled={disabled} />}
         <button
           type="button"
+          disabled={disabled}
           tabIndex={-1}
           onClick={openPicker}
           aria-label={`${label} 달력 열기`}
           aria-haspopup="dialog"
           aria-expanded={open}
-          className={`flex h-9 w-full items-center justify-between rounded-lg border bg-white px-3 text-left text-xs transition ${
+          className={`flex h-9 w-full items-center justify-between rounded-lg border bg-white px-3 text-left text-xs transition disabled:cursor-not-allowed disabled:bg-slate-50 ${
             open
               ? "border-blue-500 ring-2 ring-blue-100"
               : "border-slate-200 hover:border-slate-300"

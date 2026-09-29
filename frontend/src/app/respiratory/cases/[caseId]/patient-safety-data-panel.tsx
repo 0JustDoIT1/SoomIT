@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import { PrescriptionDateField } from "./prescription-date-field";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Medication = {
@@ -194,7 +195,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
         <p className="col-span-2 text-xs font-bold text-slate-700 sm:col-span-5">신장·간기능</p>
         <fieldset disabled={labLocked} id="safety-input-renal" className="col-span-2 grid grid-cols-2 gap-2"><Input label="Creatinine" type="number" value={labForm.creatinine} onChange={value => setLabForm(current => ({ ...current, creatinine: value }))} /><Input label="eGFR" type="number" value={labForm.egfr} onChange={value => setLabForm(current => ({ ...current, egfr: value }))} /></fieldset>
         <fieldset disabled={labLocked} id="safety-input-hepatic" className="col-span-2 grid grid-cols-3 gap-2 sm:col-span-3"><Input label="AST" type="number" value={labForm.ast} onChange={value => setLabForm(current => ({ ...current, ast: value }))} /><Input label="ALT" type="number" value={labForm.alt} onChange={value => setLabForm(current => ({ ...current, alt: value }))} /><Input label="Total Bilirubin" type="number" value={labForm.total_bilirubin} onChange={value => setLabForm(current => ({ ...current, total_bilirubin: value }))} /></fieldset>
-        <Input disabled={labLocked} required label="검사 시각" type="date" value={labForm.tested_at} onChange={value => setLabForm(current => ({ ...current, tested_at: value }))} className="col-span-2 sm:col-span-3" />
+        <PrescriptionDateField disabled={labLocked} required label="검사날짜" value={labForm.tested_at} onChange={value => setLabForm(current => ({ ...current, tested_at: value }))} className="col-span-2 sm:col-span-3" />
         <button disabled={saving !== null || labLocked || !labForm.tested_at} className="col-span-2 rounded-md border border-blue-200 bg-white py-1.5 text-xs font-semibold text-blue-700 disabled:text-slate-400">{saving === "LAB" ? "저장 중" : "검사값 저장"}</button>
         {labs[0] && <p className="col-span-2 text-[11px] text-slate-500 sm:col-span-5">최근 저장값 · {[labs[0].creatinine && `Cr ${labs[0].creatinine}`, labs[0].egfr && `eGFR ${labs[0].egfr}`, labs[0].ast && `AST ${labs[0].ast}`, labs[0].alt && `ALT ${labs[0].alt}`, labs[0].total_bilirubin && `Bilirubin ${labs[0].total_bilirubin}`].filter(Boolean).join(" · ") || "수치 없음"}</p>}
       </form>
@@ -250,7 +251,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
       <SafetyPanel title="검사실 결과" description="처방 안전성 검사에서 사용하는 신장·간 기능 수치입니다." error={labError} onRetry={() => void reloadOne(endpoint("lab-results"), authorizedFetch, setLabsAndForm, setLabError, "검사실 결과")}>
         <form onSubmit={saveLab} className="grid grid-cols-3 gap-2 border-b border-slate-100 p-3">
-          <Input disabled={labLocked} required label="검사 시각" type="date" value={labForm.tested_at} onChange={(value) => setLabForm((current) => ({ ...current, tested_at: value }))} className="col-span-3" />
+          <PrescriptionDateField disabled={labLocked} required label="검사날짜" value={labForm.tested_at} onChange={(value) => setLabForm((current) => ({ ...current, tested_at: value }))} className="col-span-3" />
           {(["creatinine", "egfr", "ast", "alt", "total_bilirubin"] as const).map((field) => <Input disabled={labLocked} key={field} label={{ creatinine: "Creatinine", egfr: "eGFR", ast: "AST", alt: "ALT", total_bilirubin: "총 빌리루빈" }[field]} type="number" value={labForm[field]} onChange={(value) => setLabForm((current) => ({ ...current, [field]: value }))} />)}
           <Input disabled={labLocked} label="메모" value={labForm.note} onChange={(value) => setLabForm((current) => ({ ...current, note: value }))} />
           <button disabled={saving !== null || labLocked || !labForm.tested_at} className="col-span-3 rounded-md bg-blue-600 py-2 text-xs font-semibold text-white disabled:bg-slate-200">{saving === "LAB" ? "등록 중" : "검사실 결과 등록"}</button>

@@ -10,11 +10,11 @@ export function DecisionStatus({ error, message }: { error?: string; message?: s
 }
 
 export function DecisionActions({ busy, disabled, label, onSubmit, onCancel, secondaryLabel, secondaryDisabled, onSecondary }: { busy: boolean; disabled?: boolean; label?: string; onSubmit?: () => void; onCancel?: () => void; secondaryLabel?: string; secondaryDisabled?: boolean; onSecondary?: () => void }) {
-  return <div className="mt-5 flex justify-end gap-2">{onCancel && <button type="button" disabled={busy} onClick={onCancel} className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">취소</button>}{secondaryLabel && onSecondary && <button type="button" disabled={busy || secondaryDisabled} onClick={onSecondary} className="rounded-md border border-blue-200 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">{secondaryLabel}</button>}{label && onSubmit && <button type="button" disabled={busy || disabled} onClick={onSubmit} className={decisionTriggerClass}>{busy ? "처리 중" : label}</button>}</div>;
+  return <div className="mt-4 flex shrink-0 justify-end gap-1.5">{onCancel && <button type="button" disabled={busy} onClick={onCancel} className="rounded-md border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700">취소</button>}{secondaryLabel && onSecondary && <button type="button" disabled={busy || secondaryDisabled} onClick={onSecondary} className="rounded-md border border-blue-100 bg-white px-3 py-2 text-xs font-semibold text-blue-700 disabled:cursor-not-allowed disabled:border-slate-200 disabled:text-slate-400">{secondaryLabel}</button>}{label && onSubmit && <button type="button" disabled={busy || disabled} onClick={onSubmit} className={decisionTriggerClass}>{busy ? "처리 중" : label}</button>}</div>;
 }
 
 // Presentation only: each stage owns validation, requests and recovery.
-export function DecisionModal({ title, description, children, busy, error, message, primaryLabel, disabled, onSubmit, onClose, secondaryLabel, secondaryDisabled, onSecondary, wide = false }: { title: string; description?: string; children: ReactNode; busy: boolean; error?: string; message?: string; primaryLabel?: string; disabled?: boolean; onSubmit?: () => void; onClose: () => void; secondaryLabel?: string; secondaryDisabled?: boolean; onSecondary?: () => void; wide?: boolean }) {
+export function DecisionModal({ title, description, children, fixedTop, busy, error, message, primaryLabel, disabled, onSubmit, onClose, secondaryLabel, secondaryDisabled, onSecondary, wide = false }: { title: string; description?: string; children: ReactNode; fixedTop?: ReactNode; busy: boolean; error?: string; message?: string; primaryLabel?: string; disabled?: boolean; onSubmit?: () => void; onClose: () => void; secondaryLabel?: string; secondaryDisabled?: boolean; onSecondary?: () => void; wide?: boolean }) {
   const titleId = useId();
   const dialog = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -23,7 +23,7 @@ export function DecisionModal({ title, description, children, busy, error, messa
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4">
-    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} className={`flex ${wide ? "max-h-[85dvh]" : "max-h-[90dvh]"} w-full flex-col rounded-lg bg-white p-4 shadow-2xl ${wide ? "max-w-5xl" : "max-w-xl"}`} onKeyDown={(event) => {
+    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} className={`flex min-h-0 ${wide ? "max-h-[85dvh]" : "max-h-[90dvh]"} w-full flex-col overflow-hidden rounded-lg bg-white p-3.5 shadow-2xl ${wide ? "max-w-4xl" : "max-w-xl"}`} onKeyDown={(event) => {
       if (event.key === "Escape" && !busy) { event.stopPropagation(); onClose(); }
       if (event.key !== "Tab") return;
       const fields = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') ?? []).filter((item) => item.getClientRects().length > 0);
@@ -32,9 +32,10 @@ export function DecisionModal({ title, description, children, busy, error, messa
       if (event.shiftKey && (document.activeElement === first || document.activeElement === dialog.current)) { event.preventDefault(); last?.focus(); }
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }}>
-      <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-blue-700">호흡기내과 최종 판단</p><h2 id={titleId} className="mt-1 text-base font-bold text-slate-900">{title}</h2></div><button type="button" aria-label="닫기" disabled={busy} onClick={onClose} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed">✕</button></div>
-      {description && <p className="mt-2 text-xs leading-5 text-slate-600">{description}</p>}
-      <fieldset disabled={busy} className={`mt-3 min-h-0 overflow-y-auto space-y-3 pr-1 ${wide ? "flex-1" : ""}`}>{children}</fieldset>
+      <div className="flex shrink-0 items-start justify-between gap-3"><div><p className="text-xs font-semibold text-blue-700">호흡기내과 최종 판단</p><h2 id={titleId} className="mt-1 text-base font-bold text-slate-900">{title}</h2></div><button type="button" aria-label="닫기" disabled={busy} onClick={onClose} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed">✕</button></div>
+      {description && <p className="mt-2 shrink-0 text-xs leading-5 text-slate-600">{description}</p>}
+      {fixedTop && <div className="mt-2.5 shrink-0">{fixedTop}</div>}
+      <fieldset disabled={busy} className={`mt-2.5 min-h-0 w-full overflow-y-auto space-y-2.5 pr-1 ${wide ? "flex-1" : ""}`}>{children}</fieldset>
       <DecisionStatus error={error} message={busy ? "처리 중입니다. 완료될 때까지 기다려 주세요." : message} />
       <DecisionActions busy={busy} disabled={disabled} label={primaryLabel} onSubmit={onSubmit} onCancel={onClose} secondaryLabel={secondaryLabel} secondaryDisabled={secondaryDisabled} onSecondary={onSecondary} />
     </section>

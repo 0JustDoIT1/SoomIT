@@ -194,7 +194,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         safety.exists.return_value = True
         safety.order_by.return_value.first.return_value = None
         safety.filter.return_value.exists.return_value = False
-        for block, warning, expected in ((True, False, 400), (False, True, 400), (False, False, 200)):
+        for block, warning, expected in ((True, False, 200), (False, True, 200), (False, False, 200)):
             self.prescription.prescription_status = "VALIDATED"
             self.prescription.save.reset_mock()
             safety.filter.side_effect = lambda **kw: NS(exists=lambda: block if kw.get("result") == "BLOCK" else warning)
@@ -210,7 +210,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.rx.select_for_update.assert_called_once_with(of=("self",))
         self.prescription.safety_check_results.all.return_value.delete.assert_not_called()
 
-    def test_unresolved_warning_cannot_be_finalized_after_acknowledgment(self):
+    def test_unresolved_warning_can_be_finalized_without_acknowledgment(self):
         items = self.prescription.items.all.return_value
         safety = self.prescription.safety_check_results.all.return_value
         items.exists.return_value = True
@@ -225,8 +225,8 @@ class PrescriptionBoundaryTests(SimpleTestCase):
 
         safety.filter.side_effect = safety_filter
         response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "rx")
-        self.assertEqual(response.status_code, 400)
-        self.prescription.save.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "FINAL")
 
     def test_finalize_requires_safety_recheck_when_patient_inputs_changed(self):
         items = self.prescription.items.all.return_value
@@ -304,17 +304,17 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         self.prescription.safety_check_results.all.return_value.delete.assert_not_called()
         self.prescription.safety_check_results.filter.assert_not_called()
 
-    def test_warning_acknowledgment_requires_a_reason(self):
+    def test_warning_acknowledgment_does_not_require_a_reason(self):
         warning_results = self.prescription.safety_check_results.filter.return_value
         warning_results.exists.return_value = True
         self.request.data = {"acknowledgment_note": "   "}
 
         response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
 
-        self.assertEqual(response.status_code, 400)
-        warning_results.update.assert_not_called()
+        self.assertEqual(response.status_code, 200)
+        warning_results.update.assert_called_once()
 
-    def test_warning_acknowledgment_excludes_unresolved_recheck_warnings(self):
+    def test_warning_acknowledgment_includes_unresolved_warnings(self):
         self.prescription.prescription_status = "DRAFT"
         warning_results = MagicMock()
         warning_results.exists.return_value = True
@@ -330,9 +330,9 @@ class PrescriptionBoundaryTests(SimpleTestCase):
         response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
 
         self.assertEqual(response.status_code, 200)
-        acknowledgeable_results.update.assert_called_once()
+        warning_results.update.assert_called_once()
         self.assertEqual(
-            acknowledgeable_results.update.call_args.kwargs["acknowledgment_note"],
+            warning_results.update.call_args.kwargs["acknowledgment_note"],
             "reviewed",
         )
         self.assertEqual(self.prescription.prescription_status, "VALIDATED")
@@ -340,7 +340,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
             update_fields=["prescription_status", "updated_at"],
         )
 
-    def test_warning_acknowledgment_rejects_block_unresolved_and_stale(self):
+    def test_warning_acknowledgment_allows_block_and_unresolved_but_rejects_stale(self):
         self.prescription.prescription_status = "DRAFT"
         self.request.data = {"acknowledgment_note": "reviewed"}
         warning_results = MagicMock()
@@ -352,6 +352,7 @@ class PrescriptionBoundaryTests(SimpleTestCase):
             with self.subTest(condition=condition):
                 self.prescription.save.reset_mock()
                 acknowledgeable_results.update.reset_mock()
+                warning_results.update.reset_mock()
                 self.freshness.return_value = NS(
                     status="RECHECK_REQUIRED" if condition == "STALE" else "CURRENT",
                 )
@@ -366,6 +367,9 @@ class PrescriptionBoundaryTests(SimpleTestCase):
                 self.prescription.safety_check_results.filter.side_effect = safety_filter
                 response = Acknowledge.post.__wrapped__(Acknowledge(), self.request, "case", "rx")
 
-                self.assertEqual(response.status_code, 400)
-                acknowledgeable_results.update.assert_not_called()
-                self.prescription.save.assert_not_called()
+                self.assertEqual(response.status_code, 400 if condition == "STALE" else 200)
+                if condition == "STALE":
+                    warning_results.update.assert_not_called()
+                    self.prescription.save.assert_not_called()
+                else:
+                    warning_results.update.assert_called_once()

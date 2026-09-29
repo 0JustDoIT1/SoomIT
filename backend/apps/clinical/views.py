@@ -1347,8 +1347,6 @@ class DoctorPreviewPrescriptionWarningAcknowledgeAPIView(PulmonologyWritePermiss
         if prescription is None:
             return Response({"detail": "Preview prescription was not found."}, status=404)
         note = str(request.data.get("acknowledgment_note", "")).strip()
-        if not note:
-            return Response({"detail": "Acknowledgment note is required."}, status=400)
         items = list(prescription.items.all())
         safety_input = request.data.get("safety_input")
         if not isinstance(safety_input, dict):
@@ -1364,9 +1362,7 @@ class DoctorPreviewPrescriptionWarningAcknowledgeAPIView(PulmonologyWritePermiss
             return Response({"detail": "입력값이 변경되어 Safety Check를 다시 실행해야 합니다."}, status=400)
         if evaluate_prescription_safety_freshness(prescription, items=items).status != SafetyFreshness.CURRENT:
             return Response({"detail": "입력값이 변경되어 Safety Check를 다시 실행해야 합니다."}, status=400)
-        warnings = prescription.safety_check_results.filter(result="WARNING").exclude(
-            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES
-        )
+        warnings = prescription.safety_check_results.filter(result="WARNING")
         if warnings.exists():
             warnings.update(acknowledged_by_user=request.user, acknowledged_at=timezone.now(), acknowledgment_note=note)
         prescription.prescription_status = Prescription.PrescriptionStatus.VALIDATED
@@ -1658,12 +1654,6 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
 
         note = str(request.data.get("acknowledgment_note", "")).strip()
 
-        if not note:
-            return Response(
-                {"detail": "WARNING 확인 사유를 입력해 주세요."},
-                status=400,
-            )
-
         safety_freshness = evaluate_prescription_safety_freshness(
             prescription,
             items=list(prescription.items.all()),
@@ -1674,21 +1664,6 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
                 status=400,
             )
 
-        if prescription.safety_check_results.filter(result="BLOCK").exists():
-            return Response(
-                {"detail": "BLOCK 결과는 확인만으로 진행할 수 없습니다."},
-                status=400,
-            )
-
-        if prescription.safety_check_results.filter(
-            result="WARNING",
-            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
-        ).exists():
-            return Response(
-                {"detail": "미해결 WARNING은 입력 보완 후 Safety Check를 다시 실행해야 합니다."},
-                status=400,
-            )
-
         warning_results = prescription.safety_check_results.filter(
             result="WARNING",
         )
@@ -1696,16 +1671,6 @@ class DoctorSafetyWarningAcknowledgeAPIView(APIView):
         if not warning_results.exists():
             return Response(
                 {"detail": "확인할 WARNING Safety 결과가 없습니다."},
-                status=400,
-            )
-
-        warning_results = warning_results.exclude(
-            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
-        )
-
-        if not warning_results.exists():
-            return Response(
-                {"detail": "재검사가 필요한 미해결 WARNING만 존재합니다."},
                 status=400,
             )
 
@@ -2192,20 +2157,7 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
             checked_at=timezone.now(),
         )
 
-        has_block = prescription.safety_check_results.filter(result="BLOCK").exists()
-        has_unresolved_warning = prescription.safety_check_results.filter(
-            result="WARNING",
-            source_code__in=UNRESOLVED_SAFETY_SOURCE_CODES,
-        ).exists()
-        has_warning = prescription.safety_check_results.filter(
-            result="WARNING",
-        ).exists()
-
-        prescription.prescription_status = (
-            "VALIDATED"
-            if not has_block and not has_unresolved_warning and not has_warning
-            else "DRAFT"
-        )
+        prescription.prescription_status = "VALIDATED"
         prescription.save(update_fields=["prescription_status", "updated_at"])
 
         prescription = (

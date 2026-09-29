@@ -13,7 +13,6 @@ import { CaseSummaryHeader, CaseWorkflowBar } from "./case-workflow-header";
 import { ResultReviewPanel, WorkflowStatusFlow } from "./result-review-panel";
 import workspaceStyles from "./workspace.module.css";
 import { CASE_WORKFLOW_STAGES, CaseInfoKey, CaseInfoMenu, getCaseInfoAccessState } from "./case-info-menu";
-import { CasePatientSidebar } from "./case-patient-sidebar";
 import { getCaseMenuNavigation } from "./case-menu-navigation";
 import { CaseOverviewPanel } from "./case-overview-panel";
 import { type Pdl1Result, selectPdl1Results } from "./pdl1-result-mapping";
@@ -1806,13 +1805,10 @@ export default function RespiratoryCaseDetailPage() {
   return (
     <>
       <div className={`${workspaceStyles.workspace} h-full min-h-0 overflow-hidden bg-[#f3f7fd]`} aria-label="Case Workspace">
-      <div className="relative grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_108px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(228px,244px)_116px_minmax(0,1fr)]">
+      <div className="relative grid h-full min-h-0 min-w-0 grid-cols-[124px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[132px_minmax(0,1fr)]">
       <div className="fixed bottom-3 right-16 z-40"><CaseConsultationRequest caseId={caseId} /></div>
-      <div className="relative z-[60] min-h-0 overflow-hidden">
-        <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />
-      </div>
       {(caseSwitching || caseSwitchError) && (
-        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#f3f7fd]/95 pl-[236px] xl:pl-[244px]" aria-live="polite">
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-[#f3f7fd]/95" aria-live="polite">
           {caseSwitchError ? (
             <div className="rounded-2xl border border-rose-200 bg-white px-8 py-7 text-center shadow-sm" role="alert">
               <p className="text-sm font-bold text-slate-800">환자 정보를 불러오지 못했습니다.</p>

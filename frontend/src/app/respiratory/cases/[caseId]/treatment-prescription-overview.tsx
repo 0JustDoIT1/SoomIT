@@ -19,8 +19,8 @@ export function TreatmentPrescriptionOverview({ mode = "TREATMENT", treatment, c
   const evidence = buildTreatmentEvidence(clinicalResults, aiResults);
 
   return (
-    <section className="mb-2 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <header className="flex h-9 items-center justify-between border-b border-slate-200 px-4">
+    <section className="mb-1.5 shrink-0 overflow-hidden rounded-lg border border-slate-100 bg-white">
+      <header className="flex h-8 items-center justify-between border-b border-slate-100 px-3">
         <h2 className="text-sm font-bold text-slate-900">선행 결과 요약</h2>
         <p className="text-[11px] text-slate-500">현재 조회된 확정 결과와 AI 분석 결과를 치료결정 근거로 확인합니다.</p>
       </header>
