@@ -411,13 +411,13 @@ it("keeps the treatment plan visible after confirmation advances to prescription
   render(<Page />);
 
   const navigation = await openCaseWorkspace("치료계획·처방");
-  expect(screen.getByRole("button", { name: "치료계획 · 근거" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "소견" })).toHaveAttribute("aria-pressed", "true");
   stage = "PRESCRIPTION";
   await userEvent.click(screen.getByRole("button", { name: "치료계획 확정 테스트" }));
 
   await waitFor(() => expect(screen.getByText("현재 Case 단계 · 처방")).toBeInTheDocument());
   expect(within(navigation).getByRole("button", { name: "치료계획·처방" })).toHaveAttribute("aria-current", "page");
-  expect(screen.getByRole("button", { name: "치료계획 · 근거" })).toHaveAttribute("aria-pressed", "true");
+  expect(screen.getByRole("button", { name: "소견" })).toHaveAttribute("aria-pressed", "true");
   expect(screen.getByTestId("treatment-final-plan")).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "처방 · 안전성" }));

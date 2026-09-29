@@ -2129,7 +2129,7 @@ export default function RespiratoryCaseDetailPage() {
           ) : (
           <section className="flex min-h-0 flex-1 flex-col gap-2">
             <nav aria-label="치료계획과 처방 보기" className="flex shrink-0 gap-2 text-xs">
-              {(["TREATMENT", "PRESCRIPTION"] as const).map(tab => <button key={tab} type="button" onClick={() => setTreatmentView({ caseId, tab })} aria-pressed={(treatmentView?.caseId === caseId ? treatmentView.tab : prescriptionActionable ? "PRESCRIPTION" : "TREATMENT") === tab} className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-600 aria-pressed:border-blue-300 aria-pressed:bg-blue-50 aria-pressed:text-blue-700">{tab === "TREATMENT" ? "치료계획 · 근거" : "처방 · 안전성"}</button>)}
+              {(["TREATMENT", "PRESCRIPTION"] as const).map(tab => <button key={tab} type="button" onClick={() => setTreatmentView({ caseId, tab })} aria-pressed={(treatmentView?.caseId === caseId ? treatmentView.tab : prescriptionActionable ? "PRESCRIPTION" : "TREATMENT") === tab} className="rounded-lg border border-slate-200 px-3 py-1.5 font-semibold text-slate-600 aria-pressed:border-blue-300 aria-pressed:bg-blue-50 aria-pressed:text-blue-700">{tab === "TREATMENT" ? "소견" : "처방 · 안전성"}</button>)}
             </nav>
             <div className={(treatmentView?.caseId === caseId ? treatmentView.tab === "PRESCRIPTION" : prescriptionActionable) ? "hidden" : "min-h-0 flex-1"}>
             <TreatmentDecisionPanel
@@ -2389,7 +2389,7 @@ export default function RespiratoryCaseDetailPage() {
                       </p>
                     )}
 
-                    {prescription.prescription_status === "VALIDATED" && !prescription.safety_check_results.some((result) => result.result === "BLOCK" || (result.result === "WARNING" && !result.acknowledged_at)) && (
+                    {prescription.prescription_status === "VALIDATED" && (
                       <div className="mt-3">
                         <PrescriptionFinalizeScheduleForm items={prescription.items} working={casePrescriptionWorking} patientAccountLinked={prescription.patient_account_linked === true} onFinalize={async (schedules) => handleCasePrescriptionFinalize(prescription.id, schedules)} />
                       </div>
