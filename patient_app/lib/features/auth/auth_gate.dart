@@ -31,8 +31,21 @@ class _AuthGateState extends State<AuthGate> {
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
-            backgroundColor: Color(0xFFF1FBF8),
-            body: SizedBox.expand(),
+            body: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xFFF1FBF8),
+                    Color(0xFFF3F9FC),
+                    Color(0xFFEAF2F8),
+                  ],
+                  stops: [0.0, 0.52, 1.0],
+                ),
+              ),
+              child: SizedBox.expand(),
+            ),
           );
         }
 

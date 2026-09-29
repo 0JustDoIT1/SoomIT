@@ -41,7 +41,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     _animationController.forward();
 
-    _timer = Timer(const Duration(milliseconds: 1500), _goToApp);
+    _timer = Timer(const Duration(milliseconds: 1300), _goToApp);
   }
 
   void _goToApp() {
@@ -51,7 +51,7 @@ class _SplashScreenState extends State<SplashScreen>
 
     Navigator.of(context).pushReplacement(
       PageRouteBuilder<void>(
-        transitionDuration: const Duration(milliseconds: 350),
+        transitionDuration: const Duration(milliseconds: 150),
         pageBuilder: (context, animation, secondaryAnimation) {
           return const AuthGate();
         },
@@ -81,7 +81,11 @@ class _SplashScreenState extends State<SplashScreen>
           gradient: LinearGradient(
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
-            colors: [Color(0xFFF1FBF8), Color(0xFFF3F9FC), Color(0xFFEAF2F8)],
+            colors: [
+              Color(0xFFF1FBF8),
+              Color(0xFFF3F9FC),
+              Color(0xFFEAF2F8),
+            ],
             stops: [0.0, 0.52, 1.0],
           ),
         ),

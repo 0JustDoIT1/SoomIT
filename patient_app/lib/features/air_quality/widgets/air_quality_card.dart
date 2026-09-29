@@ -1,109 +1,179 @@
 import 'package:flutter/material.dart';
+
 import 'package:geolocator/geolocator.dart';
 
 import '../models/air_quality_guidance.dart';
+
 import '../services/air_quality_service.dart';
 
 class AirQualityCard extends StatefulWidget {
+
   const AirQualityCard({super.key, this.compact = false, this.onTap});
 
   final bool compact;
+
   final VoidCallback? onTap;
 
   @override
+
   State<AirQualityCard> createState() => _AirQualityCardState();
+
 }
 
 class _AirQualityCardState extends State<AirQualityCard> {
+
   final _service = AirQualityService();
 
   AirQualityGuidance? _guidance;
+
   String? _errorMessage;
+
   bool _isLoading = true;
 
+  bool get _isDark => Theme.of(context).brightness == Brightness.dark;
+
+  Color get _textPrimary =>
+      _isDark ? const Color(0xFFF5F7FA) : const Color(0xFF172033);
+
+  Color get _textSecondary =>
+      _isDark ? const Color(0xFF9EACBA) : const Color(0xFF66758A);
+
+  Color get _surface =>
+      _isDark ? const Color(0xFF1B2834) : const Color(0xFFF7FBFF);
+
+  Color get _border =>
+      _isDark ? const Color(0xFF2A3948) : const Color(0xFFE5EFF8);
+
   @override
+
   void initState() {
+
     super.initState();
+
     _load();
+
   }
 
   Future<void> _load() async {
+
     setState(() {
+
       _isLoading = true;
+
       _errorMessage = null;
+
     });
 
     try {
+
       final position = await _determinePosition();
+
       final guidance = await _service.getCurrent(
+
         latitude: position.latitude,
+
         longitude: position.longitude,
+
       );
+
       if (!mounted) return;
+
       setState(() {
+
         _guidance = guidance;
+
         _isLoading = false;
+
       });
+
     } catch (error) {
+
       if (!mounted) return;
+
       setState(() {
+
         _isLoading = false;
+
         _errorMessage = error.toString().replaceFirst('Exception: ', '');
+
       });
+
     }
+
   }
 
   Future<Position> _determinePosition() async {
+
     if (!await Geolocator.isLocationServiceEnabled()) {
+
       throw const AirQualityException('휴대폰의 위치 서비스를 켜주세요.');
+
     }
 
     var permission = await Geolocator.checkPermission();
+
     if (permission == LocationPermission.denied) {
+
       permission = await Geolocator.requestPermission();
+
     }
 
     if (permission == LocationPermission.denied) {
+
       throw const AirQualityException('대기질 조회를 위해 위치 권한이 필요합니다.');
+
     }
 
     if (permission == LocationPermission.deniedForever) {
+
       throw const AirQualityException('설정에서 위치 권한을 허용해주세요.');
+
     }
 
     return Geolocator.getCurrentPosition(
+
       locationSettings: const LocationSettings(
+
         accuracy: LocationAccuracy.high,
+
         timeLimit: Duration(seconds: 15),
+
       ),
+
     );
+
   }
 
   @override
+
   Widget build(BuildContext context) {
+
     if (widget.compact) {
+
       return _buildCompact();
+
     }
 
     return _buildFull();
+
   }
 
   Widget _buildCompact() {
     if (_isLoading) {
-      return const _CompactShell(
+      return _CompactShell(
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
               width: 20,
               height: 20,
               child: CircularProgressIndicator(strokeWidth: 2.3),
             ),
-            SizedBox(width: 11),
+            const SizedBox(width: 11),
             Expanded(
               child: Text(
                 '현재 위치의 대기질을 확인하고 있어요.',
                 style: TextStyle(
-                  color: Color(0xFF66758A),
+                  color: _textSecondary,
                   fontSize: 12.5,
                   fontWeight: FontWeight.w600,
                 ),
@@ -129,8 +199,8 @@ class _AirQualityCardState extends State<AirQualityCard> {
                 _errorMessage!,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: Color(0xFF66758A),
+                style: TextStyle(
+                  color: _textSecondary,
                   fontSize: 12,
                   height: 1.35,
                 ),
@@ -139,6 +209,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
             IconButton(
               tooltip: '다시 조회',
               onPressed: _load,
+              color: _textSecondary,
               icon: const Icon(Icons.refresh_rounded, size: 20),
             ),
           ],
@@ -149,6 +220,30 @@ class _AirQualityCardState extends State<AirQualityCard> {
     final guidance = _guidance!;
     final style = _GradeStyle.fromGrade(guidance.finalGrade);
 
+    final gradientColors = _isDark
+        ? [
+            Color.alphaBlend(
+              style.accentColor.withValues(alpha: 0.10),
+              const Color(0xFF1B2834),
+            ),
+            const Color(0xFF17212B),
+          ]
+        : style.colors;
+
+    final cardBorder =
+        _isDark ? const Color(0xFF2A3948) : style.borderColor;
+
+    final iconSurface = _isDark
+        ? Color.alphaBlend(
+            style.accentColor.withValues(alpha: 0.12),
+            const Color(0xFF223140),
+          )
+        : Colors.white.withValues(alpha: 0.88);
+
+    final badgeSurface = _isDark
+        ? const Color(0xFF223140)
+        : Colors.white.withValues(alpha: 0.90);
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -158,9 +253,9 @@ class _AirQualityCardState extends State<AirQualityCard> {
           width: double.infinity,
           padding: const EdgeInsets.fromLTRB(13, 12, 10, 12),
           decoration: BoxDecoration(
-            gradient: LinearGradient(colors: style.colors),
+            gradient: LinearGradient(colors: gradientColors),
             borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: style.borderColor),
+            border: Border.all(color: cardBorder),
           ),
           child: Row(
             children: [
@@ -168,7 +263,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
                 width: 43,
                 height: 43,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.88),
+                  color: iconSurface,
                   borderRadius: BorderRadius.circular(14),
                 ),
                 child: Icon(style.icon, color: style.accentColor, size: 24),
@@ -178,10 +273,10 @@ class _AirQualityCardState extends State<AirQualityCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       '오늘의 공기 상태',
                       style: TextStyle(
-                        color: Color(0xFF748198),
+                        color: _textSecondary,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w600,
                       ),
@@ -191,8 +286,8 @@ class _AirQualityCardState extends State<AirQualityCard> {
                       guidance.title,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF172033),
+                      style: TextStyle(
+                        color: _textPrimary,
                         fontSize: 14.5,
                         fontWeight: FontWeight.w800,
                       ),
@@ -202,8 +297,8 @@ class _AirQualityCardState extends State<AirQualityCard> {
                       guidance.message,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Color(0xFF748198),
+                      style: TextStyle(
+                        color: _textSecondary,
                         fontSize: 10.5,
                         fontWeight: FontWeight.w500,
                       ),
@@ -215,7 +310,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.9),
+                  color: badgeSurface,
                   borderRadius: BorderRadius.circular(99),
                 ),
                 child: Text(
@@ -229,10 +324,12 @@ class _AirQualityCardState extends State<AirQualityCard> {
               ),
               if (widget.onTap != null) ...[
                 const SizedBox(width: 2),
-                const Icon(
+                Icon(
                   Icons.chevron_right_rounded,
                   size: 20,
-                  color: Color(0xFF91A1B7),
+                  color: _isDark
+                      ? const Color(0xFF718293)
+                      : const Color(0xFF91A1B7),
                 ),
               ],
             ],
@@ -244,17 +341,20 @@ class _AirQualityCardState extends State<AirQualityCard> {
 
   Widget _buildFull() {
     if (_isLoading) {
-      return const _CardShell(
-        colors: [Color(0xFFEAF5FF), Color(0xFFF5FAFF)],
+      return _CardShell(
+        colors: const [Color(0xFFEAF5FF), Color(0xFFF5FAFF)],
         child: Row(
           children: [
-            SizedBox(
+            const SizedBox(
               width: 22,
               height: 22,
               child: CircularProgressIndicator(strokeWidth: 2.5),
             ),
-            SizedBox(width: 12),
-            Text('현재 위치의 대기질을 확인하고 있어요.'),
+            const SizedBox(width: 12),
+            Text(
+              '현재 위치의 대기질을 확인하고 있어요.',
+              style: TextStyle(color: _textSecondary),
+            ),
           ],
         ),
       );
@@ -267,10 +367,16 @@ class _AirQualityCardState extends State<AirQualityCard> {
           children: [
             const Icon(Icons.cloud_off_rounded, color: Color(0xFFD95C59)),
             const SizedBox(width: 12),
-            Expanded(child: Text(_errorMessage!)),
+            Expanded(
+              child: Text(
+                _errorMessage!,
+                style: TextStyle(color: _textSecondary),
+              ),
+            ),
             IconButton(
               tooltip: '다시 조회',
               onPressed: _load,
+              color: _textSecondary,
               icon: const Icon(Icons.refresh_rounded),
             ),
           ],
@@ -280,6 +386,17 @@ class _AirQualityCardState extends State<AirQualityCard> {
 
     final guidance = _guidance!;
     final style = _GradeStyle.fromGrade(guidance.finalGrade);
+
+    final iconSurface = _isDark
+        ? Color.alphaBlend(
+            style.accentColor.withValues(alpha: 0.12),
+            const Color(0xFF223140),
+          )
+        : Colors.white.withValues(alpha: 0.86);
+
+    final badgeSurface = _isDark
+        ? const Color(0xFF223140)
+        : Colors.white.withValues(alpha: 0.82);
 
     return _CardShell(
       colors: style.colors,
@@ -293,7 +410,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
                 width: 46,
                 height: 46,
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.86),
+                  color: iconSurface,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(style.icon, color: style.accentColor, size: 28),
@@ -303,10 +420,10 @@ class _AirQualityCardState extends State<AirQualityCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text(
+                    Text(
                       '현재 위치 대기질',
                       style: TextStyle(
-                        color: Color(0xFF66758A),
+                        color: _textSecondary,
                         fontSize: 13,
                         fontWeight: FontWeight.w600,
                       ),
@@ -314,8 +431,8 @@ class _AirQualityCardState extends State<AirQualityCard> {
                     const SizedBox(height: 3),
                     Text(
                       guidance.title,
-                      style: const TextStyle(
-                        color: Color(0xFF172033),
+                      style: TextStyle(
+                        color: _textPrimary,
                         fontSize: 19,
                         fontWeight: FontWeight.w800,
                       ),
@@ -329,7 +446,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
                   vertical: 6,
                 ),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.82),
+                  color: badgeSurface,
                   borderRadius: BorderRadius.circular(99),
                 ),
                 child: Text(
@@ -344,6 +461,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
               IconButton(
                 tooltip: '다시 조회',
                 onPressed: _load,
+                color: _textSecondary,
                 icon: const Icon(Icons.refresh_rounded, size: 21),
               ),
             ],
@@ -351,8 +469,10 @@ class _AirQualityCardState extends State<AirQualityCard> {
           const SizedBox(height: 15),
           Text(
             guidance.message,
-            style: const TextStyle(
-              color: Color(0xFF344054),
+            style: TextStyle(
+              color: _isDark
+                  ? const Color(0xFFE8EDF3)
+                  : const Color(0xFF344054),
               fontSize: 14,
               height: 1.55,
             ),
@@ -361,6 +481,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
       ),
     );
   }
+
 }
 
 class _CompactShell extends StatelessWidget {
@@ -370,13 +491,17 @@ class _CompactShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 13),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7FBFF),
+        color: isDark ? const Color(0xFF1B2834) : const Color(0xFFF7FBFF),
         borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: const Color(0xFFE5EFF8)),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2A3948) : const Color(0xFFE5EFF8),
+        ),
       ),
       child: child,
     );
@@ -396,17 +521,28 @@ class _CardShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final effectiveColors = isDark
+        ? const [Color(0xFF1B2834), Color(0xFF17212B)]
+        : colors;
+
+    final effectiveBorder =
+        isDark ? const Color(0xFF2A3948) : borderColor;
+
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        gradient: LinearGradient(colors: colors),
+        gradient: LinearGradient(colors: effectiveColors),
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: borderColor),
-        boxShadow: const [
+        border: Border.all(color: effectiveBorder),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0D172033),
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.14)
+                : const Color(0x0D172033),
             blurRadius: 14,
-            offset: Offset(0, 6),
+            offset: const Offset(0, 6),
           ),
         ],
       ),
@@ -416,54 +552,101 @@ class _CardShell extends StatelessWidget {
 }
 
 class _GradeStyle {
+
   const _GradeStyle({
+
     required this.label,
+
     required this.icon,
+
     required this.accentColor,
+
     required this.borderColor,
+
     required this.colors,
+
   });
 
   final String label;
+
   final IconData icon;
+
   final Color accentColor;
+
   final Color borderColor;
+
   final List<Color> colors;
 
   factory _GradeStyle.fromGrade(String grade) {
+
     switch (grade) {
+
       case 'GOOD':
+
         return const _GradeStyle(
+
           label: '좋음',
+
           icon: Icons.air_rounded,
+
           accentColor: Color(0xFF2588E8),
+
           borderColor: Color(0xFFBFDFFF),
+
           colors: [Color(0xFFEAF5FF), Color(0xFFF7FBFF)],
+
         );
+
       case 'NORMAL':
+
         return const _GradeStyle(
+
           label: '보통',
+
           icon: Icons.cloud_outlined,
+
           accentColor: Color(0xFF1E9A61),
+
           borderColor: Color(0xFFC7ECD8),
+
           colors: [Color(0xFFECFAF3), Color(0xFFF8FDFB)],
+
         );
+
       case 'BAD':
+
         return const _GradeStyle(
+
           label: '나쁨',
+
           icon: Icons.masks_rounded,
+
           accentColor: Color(0xFFE17B16),
+
           borderColor: Color(0xFFFFD9AE),
+
           colors: [Color(0xFFFFF2E3), Color(0xFFFFFAF4)],
+
         );
+
       default:
+
         return const _GradeStyle(
+
           label: '매우 나쁨',
+
           icon: Icons.warning_amber_rounded,
+
           accentColor: Color(0xFFD84A4A),
+
           borderColor: Color(0xFFFFCACA),
+
           colors: [Color(0xFFFFEAEA), Color(0xFFFFF7F7)],
+
         );
+
     }
+
   }
+
 }

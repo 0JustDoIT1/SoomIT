@@ -6,11 +6,49 @@ import '../models/medication_intake_log.dart';
 import '../services/medication_service.dart';
 import 'medication_taken_edit_sheet.dart';
 
+
+bool _historyIsDark(BuildContext context) =>
+    Theme.of(context).brightness == Brightness.dark;
+
+Color _historySurface(BuildContext context) =>
+    _historyIsDark(context) ? const Color(0xFF17212B) : Colors.white;
+
+Color _historySurfaceAlt(BuildContext context) =>
+    _historyIsDark(context)
+        ? const Color(0xFF1B2834)
+        : const Color(0xFFF8FBFE);
+
+Color _historyTextPrimary(BuildContext context) =>
+    _historyIsDark(context)
+        ? const Color(0xFFF5F7FA)
+        : const Color(0xFF172033);
+
+Color _historyTextSecondary(BuildContext context) =>
+    _historyIsDark(context)
+        ? const Color(0xFFC6D0DA)
+        : const Color(0xFF4E5968);
+
+Color _historyMuted(BuildContext context) =>
+    _historyIsDark(context)
+        ? const Color(0xFF9EACBA)
+        : const Color(0xFF8B95A1);
+
+Color _historyBorder(BuildContext context) =>
+    _historyIsDark(context)
+        ? const Color(0xFF2A3948)
+        : const Color(0xFFDCEBFA);
+
+Color _historySoftBlue(BuildContext context) =>
+    _historyIsDark(context)
+        ? const Color(0xFF1A3147)
+        : const Color(0xFFEAF4FF);
+
 class MedicationHistoryTab extends StatefulWidget {
   const MedicationHistoryTab({super.key});
 
   @override
-  State<MedicationHistoryTab> createState() => _MedicationHistoryTabState();
+  State<MedicationHistoryTab> createState() =>
+      _MedicationHistoryTabState();
 }
 
 class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
@@ -37,13 +75,21 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
   }
 
   DateTime get _todayKoreaDate {
-    final koreaNow = DateTime.now().toUtc().add(const Duration(hours: 9));
+    final koreaNow = DateTime.now().toUtc().add(
+      const Duration(hours: 9),
+    );
 
-    return DateTime(koreaNow.year, koreaNow.month, koreaNow.day);
+    return DateTime(
+      koreaNow.year,
+      koreaNow.month,
+      koreaNow.day,
+    );
   }
 
   Future<List<MedicationIntakeLog>> _loadHistory() {
-    return _medicationService.getMedicationIntakeLogs(date: _selectedDate);
+    return _medicationService.getMedicationIntakeLogs(
+      date: _selectedDate,
+    );
   }
 
   Future<List<MedicationIntakeLog>> _loadCalendarLogs() {
@@ -62,11 +108,18 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
       _calendarLogsFuture = calendarFuture;
     });
 
-    await Future.wait([historyFuture, calendarFuture]);
+    await Future.wait([
+      historyFuture,
+      calendarFuture,
+    ]);
   }
 
   void _selectDate(DateTime date) {
-    final normalizedDate = DateTime(date.year, date.month, date.day);
+    final normalizedDate = DateTime(
+      date.year,
+      date.month,
+      date.day,
+    );
 
     if (_isAfterDate(normalizedDate, _todayKoreaDate)) {
       return;
@@ -74,7 +127,11 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
 
     setState(() {
       _selectedDate = normalizedDate;
-      _visibleMonth = DateTime(normalizedDate.year, normalizedDate.month, 1);
+      _visibleMonth = DateTime(
+        normalizedDate.year,
+        normalizedDate.month,
+        1,
+      );
       _historyFuture = _loadHistory();
     });
   }
@@ -100,9 +157,16 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
       0,
     ).day;
 
-    final nextDay = math.min(_selectedDate.day, daysInNextMonth);
+    final nextDay = math.min(
+      _selectedDate.day,
+      daysInNextMonth,
+    );
 
-    var nextSelectedDate = DateTime(nextMonth.year, nextMonth.month, nextDay);
+    var nextSelectedDate = DateTime(
+      nextMonth.year,
+      nextMonth.month,
+      nextDay,
+    );
 
     if (_isAfterDate(nextSelectedDate, today)) {
       nextSelectedDate = today;
@@ -124,20 +188,24 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
 
   bool get _canGoNextMonth {
     final today = _todayKoreaDate;
-    final currentMonth = DateTime(today.year, today.month, 1);
+    final currentMonth = DateTime(
+      today.year,
+      today.month,
+      1,
+    );
 
     return _visibleMonth.isBefore(currentMonth);
   }
 
   bool _isAfterDate(DateTime a, DateTime b) {
-    return DateTime(
-      a.year,
-      a.month,
-      a.day,
-    ).isAfter(DateTime(b.year, b.month, b.day));
+    return DateTime(a.year, a.month, a.day).isAfter(
+      DateTime(b.year, b.month, b.day),
+    );
   }
 
-  Future<void> _correctMissedLog(MedicationIntakeLog log) async {
+  Future<void> _correctMissedLog(
+    MedicationIntakeLog log,
+  ) async {
     if (_updatingLogIds.contains(log.id)) {
       return;
     }
@@ -177,23 +245,34 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
         _calendarLogsFuture = calendarFuture;
       });
 
-      await Future.wait([historyFuture, calendarFuture]);
+      await Future.wait([
+        historyFuture,
+        calendarFuture,
+      ]);
 
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('복용 완료로 수정되었습니다.')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            '복용 완료로 수정되었습니다.',
+          ),
+        ),
+      );
     } catch (e) {
       if (!mounted) {
         return;
       }
 
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('복약 기록 수정에 실패했습니다.\n$e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            '복약 기록 수정에 실패했습니다.\n$e',
+          ),
+        ),
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -210,7 +289,12 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
       onRefresh: _refresh,
       child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 28),
+        padding: const EdgeInsets.fromLTRB(
+          16,
+          18,
+          16,
+          28,
+        ),
         children: [
           FutureBuilder<List<MedicationIntakeLog>>(
             future: _calendarLogsFuture,
@@ -220,7 +304,8 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
                 visibleMonth: _visibleMonth,
                 today: _todayKoreaDate,
                 logs: snapshot.data ?? const <MedicationIntakeLog>[],
-                isLoading: snapshot.connectionState == ConnectionState.waiting,
+                isLoading:
+                    snapshot.connectionState == ConnectionState.waiting,
                 canGoPreviousMonth: _canGoPreviousMonth,
                 canGoNextMonth: _canGoNextMonth,
                 onDateSelected: _selectDate,
@@ -244,9 +329,11 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
                     children: [
                       Expanded(
                         child: Text(
-                          _formatSelectedDate(_selectedDate),
-                          style: const TextStyle(
-                            color: Color(0xFF172033),
+                          _formatSelectedDate(
+                            _selectedDate,
+                          ),
+                          style: TextStyle(
+                            color: _historyTextPrimary(context),
                             fontSize: 18,
                             fontWeight: FontWeight.w800,
                           ),
@@ -259,7 +346,7 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
                             vertical: 6,
                           ),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFEAF4FF),
+                            color: _historySoftBlue(context),
                             borderRadius: BorderRadius.circular(20),
                           ),
                           child: Text(
@@ -276,9 +363,12 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
 
                   const SizedBox(height: 12),
 
-                  if (snapshot.connectionState == ConnectionState.waiting)
+                  if (snapshot.connectionState ==
+                      ConnectionState.waiting)
                     const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 48),
+                      padding: EdgeInsets.symmetric(
+                        vertical: 48,
+                      ),
                       child: Center(
                         child: CircularProgressIndicator(
                           color: Color(0xFF2F80ED),
@@ -286,13 +376,15 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
                       ),
                     )
                   else if (snapshot.hasError)
-                    _HistoryErrorView(error: snapshot.error, onRetry: _refresh)
+                    _HistoryErrorView(
+                      error: snapshot.error,
+                      onRetry: _refresh,
+                    )
                   else if (logs.isEmpty)
                     const _EmptyHistoryView()
                   else
                     ...logs.map(
                       (log) => _MedicationHistoryCard(
-                        key: ValueKey(log.id),
                         log: log,
                         isUpdating: _updatingLogIds.contains(log.id),
                         onCorrect: () => _correctMissedLog(log),
@@ -308,7 +400,15 @@ class _MedicationHistoryTabState extends State<MedicationHistoryTab> {
   }
 
   String _formatSelectedDate(DateTime date) {
-    const weekdays = ['월요일', '화요일', '수요일', '목요일', '금요일', '토요일', '일요일'];
+    const weekdays = [
+      '월요일',
+      '화요일',
+      '수요일',
+      '목요일',
+      '금요일',
+      '토요일',
+      '일요일',
+    ];
 
     return '${date.month}월 ${date.day}일 '
         '${weekdays[date.weekday - 1]}';
@@ -342,7 +442,11 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final firstDay = DateTime(visibleMonth.year, visibleMonth.month, 1);
+    final firstDay = DateTime(
+      visibleMonth.year,
+      visibleMonth.month,
+      1,
+    );
 
     final daysInMonth = DateTime(
       visibleMonth.year,
@@ -356,16 +460,25 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
     final cellCount = rowCount * 7;
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 16, 14, 14),
+      padding: const EdgeInsets.fromLTRB(
+        14,
+        16,
+        14,
+        14,
+      ),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _historySurface(context),
         borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: const Color(0xFFDCEBFA)),
-        boxShadow: const [
+        border: Border.all(
+          color: _historyBorder(context),
+        ),
+        boxShadow: [
           BoxShadow(
-            color: Color(0x0C1B4B72),
+            color: _historyIsDark(context)
+                ? Colors.black.withValues(alpha: 0.16)
+                : const Color(0x0C1B4B72),
             blurRadius: 16,
-            offset: Offset(0, 7),
+            offset: const Offset(0, 7),
           ),
         ],
       ),
@@ -384,8 +497,8 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
                   children: [
                     Text(
                       '${visibleMonth.year}년 ${visibleMonth.month}월',
-                      style: const TextStyle(
-                        color: Color(0xFF172033),
+                      style: TextStyle(
+                        color: _historyTextPrimary(context),
                         fontSize: 18,
                         fontWeight: FontWeight.w800,
                       ),
@@ -422,16 +535,19 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
             itemCount: cellCount,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            gridDelegate:
+                const SliverGridDelegateWithFixedCrossAxisCount(
               crossAxisCount: 7,
               childAspectRatio: 0.88,
               crossAxisSpacing: 2,
               mainAxisSpacing: 3,
             ),
             itemBuilder: (context, index) {
-              final dayNumber = index - leadingEmptyCount + 1;
+              final dayNumber =
+                  index - leadingEmptyCount + 1;
 
-              if (dayNumber < 1 || dayNumber > daysInMonth) {
+              if (dayNumber < 1 ||
+                  dayNumber > daysInMonth) {
                 return const SizedBox.shrink();
               }
 
@@ -441,11 +557,20 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
                 dayNumber,
               );
 
-              final isFuture = _isAfterDate(date, today);
+              final isFuture = _isAfterDate(
+                date,
+                today,
+              );
 
-              final isSelected = _isSameDate(date, selectedDate);
+              final isSelected = _isSameDate(
+                date,
+                selectedDate,
+              );
 
-              final isToday = _isSameDate(date, today);
+              final isToday = _isSameDate(
+                date,
+                today,
+              );
 
               final statuses = _statusesForDate(date);
 
@@ -455,7 +580,9 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
                 isToday: isToday,
                 isDisabled: isFuture,
                 statuses: statuses,
-                onTap: isFuture ? null : () => onDateSelected(date),
+                onTap: isFuture
+                    ? null
+                    : () => onDateSelected(date),
               );
             },
           ),
@@ -464,9 +591,12 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
 
           Container(
             width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 11,
+            ),
             decoration: BoxDecoration(
-              color: const Color(0xFFF6FAFE),
+              color: _historySurfaceAlt(context),
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Wrap(
@@ -474,10 +604,22 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
               spacing: 16,
               runSpacing: 8,
               children: [
-                _CalendarLegendItem(color: Color(0xFF2F80ED), label: '복용완료'),
-                _CalendarLegendItem(color: Color(0xFFEF5B64), label: '미복용'),
-                _CalendarLegendItem(color: Color(0xFFE6A23C), label: '건너뜀'),
-                _CalendarLegendItem(color: Color(0xFF9AA5B4), label: '대기'),
+                _CalendarLegendItem(
+                  color: Color(0xFF2F80ED),
+                  label: '복용완료',
+                ),
+                _CalendarLegendItem(
+                  color: Color(0xFFEF5B64),
+                  label: '미복용',
+                ),
+                _CalendarLegendItem(
+                  color: Color(0xFFE6A23C),
+                  label: '건너뜀',
+                ),
+                _CalendarLegendItem(
+                  color: Color(0xFF9AA5B4),
+                  label: '대기',
+                ),
               ],
             ),
           ),
@@ -490,30 +632,44 @@ class _MonthlyMedicationCalendar extends StatelessWidget {
     final statuses = <String>{};
 
     for (final log in logs) {
-      final koreaDate = log.scheduledAt.toUtc().add(const Duration(hours: 9));
+      final koreaDate = log.scheduledAt
+          .toUtc()
+          .add(const Duration(hours: 9));
 
-      final logDate = DateTime(koreaDate.year, koreaDate.month, koreaDate.day);
+      final logDate = DateTime(
+        koreaDate.year,
+        koreaDate.month,
+        koreaDate.day,
+      );
 
       if (_isSameDate(logDate, date)) {
         statuses.add(log.status);
       }
     }
 
-    const order = ['TAKEN', 'MISSED', 'SKIPPED', 'PENDING'];
+    const order = [
+      'TAKEN',
+      'MISSED',
+      'SKIPPED',
+      'PENDING',
+    ];
 
-    return order.where(statuses.contains).take(3).toList();
+    return order
+        .where(statuses.contains)
+        .take(3)
+        .toList();
   }
 
   bool _isSameDate(DateTime a, DateTime b) {
-    return a.year == b.year && a.month == b.month && a.day == b.day;
+    return a.year == b.year &&
+        a.month == b.month &&
+        a.day == b.day;
   }
 
   bool _isAfterDate(DateTime a, DateTime b) {
-    return DateTime(
-      a.year,
-      a.month,
-      a.day,
-    ).isAfter(DateTime(b.year, b.month, b.day));
+    return DateTime(a.year, a.month, a.day).isAfter(
+      DateTime(b.year, b.month, b.day),
+    );
   }
 }
 
@@ -522,29 +678,40 @@ class _WeekdayHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+    const weekdays = [
+      '일',
+      '월',
+      '화',
+      '수',
+      '목',
+      '금',
+      '토',
+    ];
 
     return Row(
-      children: List.generate(weekdays.length, (index) {
-        final textColor = index == 0
-            ? const Color(0xFFE2555D)
-            : index == 6
-            ? const Color(0xFF477ED8)
-            : const Color(0xFF8A96A8);
+      children: List.generate(
+        weekdays.length,
+        (index) {
+          final textColor = index == 0
+              ? const Color(0xFFE2555D)
+              : index == 6
+                  ? const Color(0xFF477ED8)
+                  : const Color(0xFF8A96A8);
 
-        return Expanded(
-          child: Center(
-            child: Text(
-              weekdays[index],
-              style: TextStyle(
-                color: textColor,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+          return Expanded(
+            child: Center(
+              child: Text(
+                weekdays[index],
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
             ),
-          ),
-        );
-      }),
+          );
+        },
+      ),
     );
   }
 }
@@ -568,7 +735,7 @@ class _CalendarDayCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final numberColor = _numberColor();
+    final numberColor = _numberColor(context);
 
     return Material(
       color: Colors.transparent,
@@ -576,12 +743,16 @@ class _CalendarDayCell extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(16),
         child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
+          padding: const EdgeInsets.symmetric(
+            vertical: 2,
+          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
+                duration: const Duration(
+                  milliseconds: 180,
+                ),
                 width: 36,
                 height: 36,
                 alignment: Alignment.center,
@@ -591,7 +762,10 @@ class _CalendarDayCell extends StatelessWidget {
                       : Colors.transparent,
                   shape: BoxShape.circle,
                   border: isToday && !isSelected
-                      ? Border.all(color: const Color(0xFF2F80ED), width: 1.5)
+                      ? Border.all(
+                          color: const Color(0xFF2F80ED),
+                          width: 1.5,
+                        )
                       : null,
                   boxShadow: isSelected
                       ? const [
@@ -628,12 +802,14 @@ class _CalendarDayCell extends StatelessWidget {
                               (status) => Container(
                                 width: 5,
                                 height: 5,
-                                margin: const EdgeInsets.symmetric(
+                                margin:
+                                    const EdgeInsets.symmetric(
                                   horizontal: 1.5,
                                 ),
                                 decoration: BoxDecoration(
                                   color: isSelected
-                                      ? Colors.white.withValues(alpha: 0.95)
+                                      ? Colors.white
+                                          .withValues(alpha: 0.95)
                                       : _statusColor(status),
                                   shape: BoxShape.circle,
                                 ),
@@ -649,7 +825,7 @@ class _CalendarDayCell extends StatelessWidget {
     );
   }
 
-  Color _numberColor() {
+  Color _numberColor(BuildContext context) {
     if (isSelected) {
       return Colors.white;
     }
@@ -666,7 +842,9 @@ class _CalendarDayCell extends StatelessWidget {
       return const Color(0xFF477ED8);
     }
 
-    return const Color(0xFF263244);
+    return _historyIsDark(context)
+        ? const Color(0xFFF5F7FA)
+        : const Color(0xFF263244);
   }
 
   Color _statusColor(String status) {
@@ -697,7 +875,13 @@ class _MonthArrowButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: enabled ? const Color(0xFFF3F8FC) : const Color(0xFFF7F9FB),
+      color: enabled
+          ? (_historyIsDark(context)
+              ? const Color(0xFF1B2834)
+              : const Color(0xFFF3F8FC))
+          : (_historyIsDark(context)
+              ? const Color(0xFF17212B)
+              : const Color(0xFFF7F9FB)),
       shape: const CircleBorder(),
       child: InkWell(
         onTap: enabled ? onTap : null,
@@ -708,7 +892,9 @@ class _MonthArrowButton extends StatelessWidget {
           child: Icon(
             icon,
             size: 22,
-            color: enabled ? const Color(0xFF2F80ED) : const Color(0xFFC8D0DA),
+            color: enabled
+                ? const Color(0xFF2F80ED)
+                : const Color(0xFFC8D0DA),
           ),
         ),
       ),
@@ -720,7 +906,10 @@ class _CalendarLegendItem extends StatelessWidget {
   final Color color;
   final String label;
 
-  const _CalendarLegendItem({required this.color, required this.label});
+  const _CalendarLegendItem({
+    required this.color,
+    required this.label,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -730,7 +919,10 @@ class _CalendarLegendItem extends StatelessWidget {
         Container(
           width: 7,
           height: 7,
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
         ),
         const SizedBox(width: 6),
         Text(
@@ -752,17 +944,18 @@ class _MedicationHistoryCard extends StatefulWidget {
   final VoidCallback onCorrect;
 
   const _MedicationHistoryCard({
-    super.key,
     required this.log,
     required this.isUpdating,
     required this.onCorrect,
   });
 
   @override
-  State<_MedicationHistoryCard> createState() => _MedicationHistoryCardState();
+  State<_MedicationHistoryCard> createState() =>
+      _MedicationHistoryCardState();
 }
 
-class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
+class _MedicationHistoryCardState
+    extends State<_MedicationHistoryCard> {
   bool _isExpanded = false;
 
   @override
@@ -773,11 +966,15 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
-      color: Colors.white,
+      color: _historySurface(context),
       clipBehavior: Clip.antiAlias,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant),
+        side: BorderSide(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant,
+        ),
       ),
       child: Column(
         children: [
@@ -790,14 +987,16 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
             child: Padding(
               padding: const EdgeInsets.all(16),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
                 children: [
                   Container(
                     width: 42,
                     height: 42,
                     decoration: BoxDecoration(
                       color: const Color(0xFFEAF4FF),
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius:
+                          BorderRadius.circular(12),
                     ),
                     child: const Icon(
                       Icons.medication_outlined,
@@ -809,29 +1008,31 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
 
                   Expanded(
                     child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                      crossAxisAlignment:
+                          CrossAxisAlignment.start,
                       children: [
                         Text(
                           log.medicineTitle,
-                          style: const TextStyle(
-                            color: Color(0xFF191F28),
+                          style: TextStyle(
+                            color: _historyTextPrimary(context),
                             fontSize: 16,
-                            fontWeight: FontWeight.w700,
+                            fontWeight:
+                                FontWeight.w700,
                           ),
                         ),
                         const SizedBox(height: 5),
                         Text(
                           '예정 ${_formatTime(log.reminderTime)}',
-                          style: const TextStyle(
-                            color: Color(0xFF4E5968),
+                          style: TextStyle(
+                            color: _historyTextSecondary(context),
                             fontSize: 13,
                           ),
                         ),
                         const SizedBox(height: 3),
                         Text(
                           _takenTimeText(log),
-                          style: const TextStyle(
-                            color: Color(0xFF8B95A1),
+                          style: TextStyle(
+                            color: _historyMuted(context),
                             fontSize: 12,
                           ),
                         ),
@@ -842,33 +1043,42 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
                   const SizedBox(width: 8),
 
                   Column(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                    crossAxisAlignment:
+                        CrossAxisAlignment.end,
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(
+                        padding:
+                            const EdgeInsets.symmetric(
                           horizontal: 9,
                           vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: statusStyle.backgroundColor,
-                          borderRadius: BorderRadius.circular(20),
+                          color:
+                              statusStyle.backgroundColor,
+                          borderRadius:
+                              BorderRadius.circular(20),
                         ),
                         child: Text(
                           log.statusLabel,
                           style: TextStyle(
-                            color: statusStyle.foregroundColor,
+                            color:
+                                statusStyle.foregroundColor,
                             fontSize: 12,
-                            fontWeight: FontWeight.w700,
+                            fontWeight:
+                                FontWeight.w700,
                           ),
                         ),
                       ),
                       const SizedBox(height: 8),
                       AnimatedRotation(
-                        turns: _isExpanded ? 0.5 : 0,
-                        duration: const Duration(milliseconds: 200),
-                        child: const Icon(
+                        turns:
+                            _isExpanded ? 0.5 : 0,
+                        duration: const Duration(
+                          milliseconds: 200,
+                        ),
+                        child: Icon(
                           Icons.keyboard_arrow_down,
-                          color: Color(0xFF8B95A1),
+                          color: _historyMuted(context),
                         ),
                       ),
                     ],
@@ -879,7 +1089,9 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
           ),
 
           AnimatedSize(
-            duration: const Duration(milliseconds: 220),
+            duration: const Duration(
+              milliseconds: 220,
+            ),
             curve: Curves.easeInOut,
             child: _isExpanded
                 ? Column(
@@ -888,8 +1100,13 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
                       if (log.status == 'MISSED')
                         Container(
                           width: double.infinity,
-                          color: const Color(0xFFF8FBFE),
-                          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                          color: _historySurfaceAlt(context),
+                          padding: const EdgeInsets.fromLTRB(
+                            16,
+                            0,
+                            16,
+                            16,
+                          ),
                           child: Column(
                             children: [
                               SizedBox(
@@ -900,23 +1117,29 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
                                       ? null
                                       : widget.onCorrect,
                                   style: FilledButton.styleFrom(
-                                    backgroundColor: const Color(0xFF2F80ED),
+                                    backgroundColor:
+                                        const Color(0xFF2F80ED),
                                     shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(13),
+                                      borderRadius:
+                                          BorderRadius.circular(13),
                                     ),
                                   ),
                                   icon: widget.isUpdating
-                                      ? const SizedBox(
+                                      ? SizedBox(
                                           width: 18,
                                           height: 18,
                                           child: CircularProgressIndicator(
                                             strokeWidth: 2,
-                                            color: Colors.white,
+                                            color: _historySurface(context),
                                           ),
                                         )
-                                      : const Icon(Icons.edit_rounded),
+                                      : const Icon(
+                                          Icons.edit_rounded,
+                                        ),
                                   label: Text(
-                                    widget.isUpdating ? '수정 중...' : '복용 완료로 수정',
+                                    widget.isUpdating
+                                        ? '수정 중...'
+                                        : '복용 완료로 수정',
                                     style: const TextStyle(
                                       fontWeight: FontWeight.w800,
                                     ),
@@ -951,10 +1174,14 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
       return '실제 복용 시각이 기록되지 않았습니다.';
     }
 
-    final koreaTime = log.takenAt!.toUtc().add(const Duration(hours: 9));
+    final koreaTime = log.takenAt!
+        .toUtc()
+        .add(const Duration(hours: 9));
 
-    final hour = koreaTime.hour.toString().padLeft(2, '0');
-    final minute = koreaTime.minute.toString().padLeft(2, '0');
+    final hour =
+        koreaTime.hour.toString().padLeft(2, '0');
+    final minute =
+        koreaTime.minute.toString().padLeft(2, '0');
 
     return '실제 복용 $hour:$minute';
   }
@@ -973,8 +1200,8 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
     final displayHour = hour == 0
         ? 12
         : hour > 12
-        ? hour - 12
-        : hour;
+            ? hour - 12
+            : hour;
 
     return '$period $displayHour:$minute';
   }
@@ -1011,24 +1238,36 @@ class _MedicationHistoryCardState extends State<_MedicationHistoryCard> {
 class _HistoryDetails extends StatelessWidget {
   final MedicationIntakeLog log;
 
-  const _HistoryDetails({required this.log});
+  const _HistoryDetails({
+    required this.log,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FBFE),
-        border: Border(top: BorderSide(color: Color(0xFFE4EDF6))),
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        14,
+        16,
+        16,
+      ),
+      decoration: BoxDecoration(
+        color: _historySurfaceAlt(context),
+        border: Border(
+          top: BorderSide(
+            color: _historyBorder(context),
+          ),
+        ),
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment:
+            CrossAxisAlignment.start,
         children: [
-          const Text(
+          Text(
             '약 상세정보',
             style: TextStyle(
-              color: Color(0xFF191F28),
+              color: _historyTextPrimary(context),
               fontSize: 14,
               fontWeight: FontWeight.w700,
             ),
@@ -1037,9 +1276,11 @@ class _HistoryDetails extends StatelessWidget {
 
           ...log.items.map(
             (item) => Padding(
-              padding: const EdgeInsets.only(bottom: 12),
+              padding:
+                  const EdgeInsets.only(bottom: 12),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment:
+                    CrossAxisAlignment.start,
                 children: [
                   Text(
                     item.drugName,
@@ -1066,7 +1307,9 @@ class _HistoryDetails extends StatelessWidget {
                       ),
                     ),
                   if (item.instructions != null &&
-                      item.instructions!.trim().isNotEmpty)
+                      item.instructions!
+                          .trim()
+                          .isNotEmpty)
                     Text(
                       item.instructions!,
                       style: const TextStyle(
@@ -1102,33 +1345,46 @@ class _HistoryErrorView extends StatelessWidget {
   final Object? error;
   final Future<void> Function() onRetry;
 
-  const _HistoryErrorView({required this.error, required this.onRetry});
+  const _HistoryErrorView({
+    required this.error,
+    required this.onRetry,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: double.infinity,
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _historySurface(context),
         borderRadius: BorderRadius.circular(16),
       ),
       child: Column(
         children: [
-          const Icon(Icons.error_outline, size: 38),
+          const Icon(
+            Icons.error_outline,
+            size: 38,
+          ),
           const SizedBox(height: 12),
           const Text(
             '복약 기록을 불러오지 못했습니다.',
-            style: TextStyle(fontWeight: FontWeight.w700),
+            style: TextStyle(
+              fontWeight: FontWeight.w700,
+            ),
           ),
           const SizedBox(height: 8),
           Text(
             '$error',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Color(0xFF6B7280), fontSize: 12),
+            style: const TextStyle(
+              color: Color(0xFF6B7280),
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 14),
-          OutlinedButton(onPressed: onRetry, child: const Text('다시 시도')),
+          OutlinedButton(
+            onPressed: onRetry,
+            child: const Text('다시 시도'),
+          ),
         ],
       ),
     );
@@ -1142,21 +1398,32 @@ class _EmptyHistoryView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 34),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Theme.of(context).colorScheme.outlineVariant),
+      padding: const EdgeInsets.symmetric(
+        horizontal: 20,
+        vertical: 20,
       ),
-      child: const Column(
+      decoration: BoxDecoration(
+        color: _historySurface(context),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Theme.of(context)
+              .colorScheme
+              .outlineVariant,
+        ),
+      ),
+      child: Column(
         children: [
-          Icon(Icons.history, size: 42, color: Color(0xFF8B95A1)),
-          SizedBox(height: 12),
+          Icon(
+            Icons.history,
+            size: 38,
+            color: _historyMuted(context),
+          ),
+          SizedBox(height: 10),
           Text(
             '선택한 날짜의 복약 기록이 없습니다.',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF4E5968),
+              color: _historyTextSecondary(context),
               fontWeight: FontWeight.w600,
             ),
           ),
@@ -1164,7 +1431,10 @@ class _EmptyHistoryView extends StatelessWidget {
           Text(
             '기록이 없다고 반드시 미복용을 의미하지는 않습니다.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Color(0xFF8B95A1), fontSize: 12),
+            style: TextStyle(
+              color: _historyMuted(context),
+              fontSize: 12,
+            ),
           ),
         ],
       ),

@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../../../shared/base_card.dart';
 import '../../appointment/models/appointment.dart';
 
 class AppointmentCard extends StatelessWidget {
@@ -10,7 +9,46 @@ class AppointmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BaseCard(
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final surface =
+        isDark ? const Color(0xFF1B2834) : Colors.white;
+
+    final border =
+        isDark ? const Color(0xFF2A3948) : const Color(0xFFEAF1F7);
+
+    final titleColor =
+        isDark ? const Color(0xFFF5F7FA) : const Color(0xFF191F28);
+
+    final bodyColor =
+        isDark ? const Color(0xFFE8EDF3) : const Color(0xFF4E5968);
+
+    final mutedColor =
+        isDark ? const Color(0xFF9EACBA) : const Color(0xFF8B95A1);
+
+    final tagBackground =
+        isDark ? const Color(0xFF1A3147) : const Color(0xFFEFF6FF);
+
+    final tagText =
+        isDark ? const Color(0xFF6EADFF) : const Color(0xFF2B66F6);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: border),
+        boxShadow: [
+          BoxShadow(
+            color: isDark
+                ? Colors.black.withValues(alpha: 0.12)
+                : const Color(0xFF4D86B9).withValues(alpha: 0.05),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -19,44 +57,44 @@ class AppointmentCard extends StatelessWidget {
             children: [
               _buildTag(
                 _getDday(appointment.scheduledAt),
-                const Color(0xFFEFF6FF),
-                const Color(0xFF2B66F6),
+                tagBackground,
+                tagText,
               ),
               Text(
                 appointment.appointmentStatusLabel,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 12,
-                  color: Color(0xFF2B66F6),
+                  color: tagText,
                   fontWeight: FontWeight.w600,
                 ),
               ),
             ],
           ),
-
           const SizedBox(height: 12),
-
           Text(
             _formatDateTime(appointment.scheduledAt),
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: Color(0xFF191F28),
+              color: titleColor,
             ),
           ),
-
           const SizedBox(height: 4),
-
           Text(
             '${appointment.displayType} · '
             '${appointment.doctorName ?? '담당 의료진 미지정'}',
-            style: const TextStyle(fontSize: 14, color: Color(0xFF4E5968)),
+            style: TextStyle(
+              fontSize: 14,
+              color: bodyColor,
+            ),
           ),
-
           const SizedBox(height: 4),
-
           Text(
             appointment.hospitalName,
-            style: const TextStyle(fontSize: 12, color: Color(0xFF8B95A1)),
+            style: TextStyle(
+              fontSize: 12,
+              color: mutedColor,
+            ),
           ),
         ],
       ),
@@ -85,9 +123,7 @@ class AppointmentCard extends StatelessWidget {
     final now = DateTime.now();
 
     final today = DateTime(now.year, now.month, now.day);
-
     final target = DateTime(date.year, date.month, date.day);
-
     final difference = target.difference(today).inDays;
 
     if (difference == 0) {
@@ -103,14 +139,13 @@ class AppointmentCard extends StatelessWidget {
 
   String _formatDateTime(DateTime date) {
     final local = date.toLocal();
-
     final period = local.hour < 12 ? '오전' : '오후';
 
     final hour = local.hour == 0
         ? 12
         : local.hour > 12
-        ? local.hour - 12
-        : local.hour;
+            ? local.hour - 12
+            : local.hour;
 
     final minute = local.minute.toString().padLeft(2, '0');
 

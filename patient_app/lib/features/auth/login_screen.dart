@@ -512,42 +512,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       : _loginWithKakao,
                                 ),
 
-                                const SizedBox(height: 12),
-
-                                // =============================
-
-                                // Naver 로그인
-
-                                // =============================
-                                _SocialLoginButton(
-                                  label: '네이버로 시작하기',
-
-                                  iconAsset:
-                                      'assets/images/social/naver_logo_normalized.png',
-
-                                  iconSize: 60,
-
-                                  backgroundColor: const Color.fromARGB(
-                                    255,
-
-                                    5,
-
-                                    173,
-
-                                    79,
-                                  ),
-
-                                  foregroundColor: Colors.white,
-
-                                  borderColor: const Color(0xFF03A94D),
-
-                                  onPressed:
-                                      _isGoogleSigningIn || _isKakaoSigningIn
-                                      ? null
-                                      : () {
-                                          _showPreparingMessage('네이버');
-                                        },
-                                ),
 
                                 const SizedBox(height: 28),
 

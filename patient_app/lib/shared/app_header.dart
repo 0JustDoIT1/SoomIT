@@ -17,14 +17,34 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    final backgroundColor =
+        isDark ? const Color(0xFF17212B) : Colors.white;
+
+    final buttonBackgroundColor =
+        isDark ? const Color(0xFF1F2C38) : const Color(0xFFF6FAFF);
+
+    final dividerColor =
+        isDark ? const Color(0xFF2A3948) : const Color(0xFFE8EEF4);
+
     return AppBar(
       automaticallyImplyLeading: false,
       elevation: 0,
       scrolledUnderElevation: 0,
-      backgroundColor: Colors.white,
-      surfaceTintColor: Colors.white,
+      backgroundColor: backgroundColor,
+      surfaceTintColor: backgroundColor,
       toolbarHeight: 80,
       titleSpacing: 15,
+
+      bottom: PreferredSize(
+        preferredSize: const Size.fromHeight(1),
+        child: Divider(
+          height: 1,
+          thickness: 1,
+          color: dividerColor,
+        ),
+      ),
 
       title: Align(
         alignment: Alignment.centerLeft,
@@ -43,6 +63,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
         _HeaderButton(
           icon: Icons.qr_code_scanner_rounded,
           onTap: onMenuPressed,
+          backgroundColor: buttonBackgroundColor,
         ),
 
         const SizedBox(width: 8),
@@ -53,6 +74,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
             _HeaderButton(
               icon: Icons.notifications_none_rounded,
               onTap: onNotificationPressed,
+              backgroundColor: buttonBackgroundColor,
             ),
 
             if (hasUnreadNotification)
@@ -80,13 +102,18 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
 class _HeaderButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
+  final Color backgroundColor;
 
-  const _HeaderButton({required this.icon, required this.onTap});
+  const _HeaderButton({
+    required this.icon,
+    required this.onTap,
+    required this.backgroundColor,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFFF6FAFF),
+      color: backgroundColor,
       shape: const CircleBorder(),
       child: InkWell(
         onTap: onTap,
@@ -94,7 +121,11 @@ class _HeaderButton extends StatelessWidget {
         child: SizedBox(
           width: 50,
           height: 50,
-          child: Icon(icon, size: 25, color: const Color(0xFF2F8DFE)),
+          child: Icon(
+            icon,
+            size: 25,
+            color: const Color(0xFF2F8DFE),
+          ),
         ),
       ),
     );
