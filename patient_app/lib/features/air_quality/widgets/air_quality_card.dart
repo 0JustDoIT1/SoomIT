@@ -7,7 +7,6 @@ import '../models/air_quality_guidance.dart';
 import '../services/air_quality_service.dart';
 
 class AirQualityCard extends StatefulWidget {
-
   const AirQualityCard({super.key, this.compact = false, this.onTap});
 
   final bool compact;
@@ -15,13 +14,10 @@ class AirQualityCard extends StatefulWidget {
   final VoidCallback? onTap;
 
   @override
-
   State<AirQualityCard> createState() => _AirQualityCardState();
-
 }
 
 class _AirQualityCardState extends State<AirQualityCard> {
-
   final _service = AirQualityService();
 
   AirQualityGuidance? _guidance;
@@ -45,117 +41,81 @@ class _AirQualityCardState extends State<AirQualityCard> {
       _isDark ? const Color(0xFF2A3948) : const Color(0xFFE5EFF8);
 
   @override
-
   void initState() {
-
     super.initState();
 
     _load();
-
   }
 
   Future<void> _load() async {
-
     setState(() {
-
       _isLoading = true;
 
       _errorMessage = null;
-
     });
 
     try {
-
       final position = await _determinePosition();
 
       final guidance = await _service.getCurrent(
-
         latitude: position.latitude,
 
         longitude: position.longitude,
-
       );
 
       if (!mounted) return;
 
       setState(() {
-
         _guidance = guidance;
 
         _isLoading = false;
-
       });
-
     } catch (error) {
-
       if (!mounted) return;
 
       setState(() {
-
         _isLoading = false;
 
         _errorMessage = error.toString().replaceFirst('Exception: ', '');
-
       });
-
     }
-
   }
 
   Future<Position> _determinePosition() async {
-
     if (!await Geolocator.isLocationServiceEnabled()) {
-
       throw const AirQualityException('휴대폰의 위치 서비스를 켜주세요.');
-
     }
 
     var permission = await Geolocator.checkPermission();
 
     if (permission == LocationPermission.denied) {
-
       permission = await Geolocator.requestPermission();
-
     }
 
     if (permission == LocationPermission.denied) {
-
       throw const AirQualityException('대기질 조회를 위해 위치 권한이 필요합니다.');
-
     }
 
     if (permission == LocationPermission.deniedForever) {
-
       throw const AirQualityException('설정에서 위치 권한을 허용해주세요.');
-
     }
 
     return Geolocator.getCurrentPosition(
-
       locationSettings: const LocationSettings(
-
         accuracy: LocationAccuracy.high,
 
         timeLimit: Duration(seconds: 15),
-
       ),
-
     );
-
   }
 
   @override
-
   Widget build(BuildContext context) {
-
     if (widget.compact) {
-
       return _buildCompact();
-
     }
 
     return _buildFull();
-
   }
 
   Widget _buildCompact() {
@@ -230,8 +190,7 @@ class _AirQualityCardState extends State<AirQualityCard> {
           ]
         : style.colors;
 
-    final cardBorder =
-        _isDark ? const Color(0xFF2A3948) : style.borderColor;
+    final cardBorder = _isDark ? const Color(0xFF2A3948) : style.borderColor;
 
     final iconSurface = _isDark
         ? Color.alphaBlend(
@@ -481,7 +440,6 @@ class _AirQualityCardState extends State<AirQualityCard> {
       ),
     );
   }
-
 }
 
 class _CompactShell extends StatelessWidget {
@@ -527,8 +485,7 @@ class _CardShell extends StatelessWidget {
         ? const [Color(0xFF1B2834), Color(0xFF17212B)]
         : colors;
 
-    final effectiveBorder =
-        isDark ? const Color(0xFF2A3948) : borderColor;
+    final effectiveBorder = isDark ? const Color(0xFF2A3948) : borderColor;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -552,9 +509,7 @@ class _CardShell extends StatelessWidget {
 }
 
 class _GradeStyle {
-
   const _GradeStyle({
-
     required this.label,
 
     required this.icon,
@@ -564,7 +519,6 @@ class _GradeStyle {
     required this.borderColor,
 
     required this.colors,
-
   });
 
   final String label;
@@ -578,13 +532,9 @@ class _GradeStyle {
   final List<Color> colors;
 
   factory _GradeStyle.fromGrade(String grade) {
-
     switch (grade) {
-
       case 'GOOD':
-
         return const _GradeStyle(
-
           label: '좋음',
 
           icon: Icons.air_rounded,
@@ -594,13 +544,10 @@ class _GradeStyle {
           borderColor: Color(0xFFBFDFFF),
 
           colors: [Color(0xFFEAF5FF), Color(0xFFF7FBFF)],
-
         );
 
       case 'NORMAL':
-
         return const _GradeStyle(
-
           label: '보통',
 
           icon: Icons.cloud_outlined,
@@ -610,13 +557,10 @@ class _GradeStyle {
           borderColor: Color(0xFFC7ECD8),
 
           colors: [Color(0xFFECFAF3), Color(0xFFF8FDFB)],
-
         );
 
       case 'BAD':
-
         return const _GradeStyle(
-
           label: '나쁨',
 
           icon: Icons.masks_rounded,
@@ -626,13 +570,10 @@ class _GradeStyle {
           borderColor: Color(0xFFFFD9AE),
 
           colors: [Color(0xFFFFF2E3), Color(0xFFFFFAF4)],
-
         );
 
       default:
-
         return const _GradeStyle(
-
           label: '매우 나쁨',
 
           icon: Icons.warning_amber_rounded,
@@ -642,11 +583,7 @@ class _GradeStyle {
           borderColor: Color(0xFFFFCACA),
 
           colors: [Color(0xFFFFEAEA), Color(0xFFFFF7F7)],
-
         );
-
     }
-
   }
-
 }

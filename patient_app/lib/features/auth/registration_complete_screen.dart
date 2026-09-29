@@ -23,7 +23,7 @@ class RegistrationCompleteScreen extends StatelessWidget {
         : '환자코드는 마이페이지에서 나중에 연결할 수 있어요.';
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF9F8FC),
+      backgroundColor: const Color(0xFFF7FAFD),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -69,18 +69,27 @@ class RegistrationCompleteScreen extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  border: Border.all(color: const Color(0xFFD9E4F0)),
                 ),
                 child: Column(
                   children: [
                     _SummaryRow(
                       label: '계정 상태',
                       value: isLinked ? '연결됨' : '미연결',
+                      valueColor: isLinked
+                          ? const Color(0xFF3182F6)
+                          : const Color(0xFF8B95A1),
                     ),
-                    const Divider(height: 28),
+                    const Divider(
+                      height: 28,
+                      color: Color(0xFFE5EDF5),
+                    ),
                     _SummaryRow(
                       label: '이용 범위',
                       value: isLinked ? '전체 기능' : '제한된 기능',
+                      valueColor: isLinked
+                          ? const Color(0xFF3182F6)
+                          : const Color(0xFF8B95A1),
                     ),
                   ],
                 ),
@@ -92,14 +101,18 @@ class RegistrationCompleteScreen extends StatelessWidget {
                 child: FilledButton(
                   onPressed: () => _startApp(context),
                   style: FilledButton.styleFrom(
-                    backgroundColor: const Color(0xFF6D4FB3),
+                    backgroundColor: const Color(0xFF3584E8),
+                    foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(14),
                     ),
                   ),
                   child: const Text(
                     '숨-잇 시작하기',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),
@@ -114,8 +127,13 @@ class RegistrationCompleteScreen extends StatelessWidget {
 class _SummaryRow extends StatelessWidget {
   final String label;
   final String value;
+  final Color valueColor;
 
-  const _SummaryRow({required this.label, required this.value});
+  const _SummaryRow({
+    required this.label,
+    required this.value,
+    required this.valueColor,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -124,12 +142,15 @@ class _SummaryRow extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(color: Color(0xFF6B7280), fontSize: 14),
+          style: const TextStyle(
+            color: Color(0xFF6B7280),
+            fontSize: 14,
+          ),
         ),
         Text(
           value,
-          style: const TextStyle(
-            color: Color(0xFF191F28),
+          style: TextStyle(
+            color: valueColor,
             fontSize: 14,
             fontWeight: FontWeight.w700,
           ),

@@ -8,7 +8,7 @@ class DioClient {
 
   static const String _baseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.0.2.2:8000',
+    defaultValue: 'http://192.168.0.48:8000',
   );
 
   static const String _accessTokenKey = 'patient_access_token';

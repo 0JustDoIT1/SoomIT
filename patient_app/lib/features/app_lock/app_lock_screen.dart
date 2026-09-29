@@ -191,7 +191,7 @@ class _AppLockScreenState extends State<AppLockScreen> {
 
         _errorMessage =
             'PIN이 일치하지 않습니다. \n'
-            '$remainingAttempts회 살패사 30초 동안 입력이 제한됩니다.';
+            '$remainingAttempts회 실패시 30초 동안 입력이 제한됩니다.';
       });
     } catch (_) {
       if (!mounted) {

@@ -512,7 +512,6 @@ class _LoginScreenState extends State<LoginScreen> {
                                       : _loginWithKakao,
                                 ),
 
-
                                 const SizedBox(height: 28),
 
                                 const Text(

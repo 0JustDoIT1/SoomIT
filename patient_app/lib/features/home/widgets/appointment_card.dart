@@ -11,26 +11,27 @@ class AppointmentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final surface =
-        isDark ? const Color(0xFF1B2834) : Colors.white;
+    final surface = isDark ? const Color(0xFF1B2834) : Colors.white;
 
-    final border =
-        isDark ? const Color(0xFF2A3948) : const Color(0xFFEAF1F7);
+    final border = isDark ? const Color(0xFF2A3948) : const Color(0xFFEAF1F7);
 
-    final titleColor =
-        isDark ? const Color(0xFFF5F7FA) : const Color(0xFF191F28);
+    final titleColor = isDark
+        ? const Color(0xFFF5F7FA)
+        : const Color(0xFF191F28);
 
-    final bodyColor =
-        isDark ? const Color(0xFFE8EDF3) : const Color(0xFF4E5968);
+    final bodyColor = isDark
+        ? const Color(0xFFE8EDF3)
+        : const Color(0xFF4E5968);
 
-    final mutedColor =
-        isDark ? const Color(0xFF9EACBA) : const Color(0xFF8B95A1);
+    final mutedColor = isDark
+        ? const Color(0xFF9EACBA)
+        : const Color(0xFF8B95A1);
 
-    final tagBackground =
-        isDark ? const Color(0xFF1A3147) : const Color(0xFFEFF6FF);
+    final tagBackground = isDark
+        ? const Color(0xFF1A3147)
+        : const Color(0xFFEFF6FF);
 
-    final tagText =
-        isDark ? const Color(0xFF6EADFF) : const Color(0xFF2B66F6);
+    final tagText = isDark ? const Color(0xFF6EADFF) : const Color(0xFF2B66F6);
 
     return Container(
       width: double.infinity,
@@ -83,18 +84,12 @@ class AppointmentCard extends StatelessWidget {
           Text(
             '${appointment.displayType} · '
             '${appointment.doctorName ?? '담당 의료진 미지정'}',
-            style: TextStyle(
-              fontSize: 14,
-              color: bodyColor,
-            ),
+            style: TextStyle(fontSize: 14, color: bodyColor),
           ),
           const SizedBox(height: 4),
           Text(
             appointment.hospitalName,
-            style: TextStyle(
-              fontSize: 12,
-              color: mutedColor,
-            ),
+            style: TextStyle(fontSize: 12, color: mutedColor),
           ),
         ],
       ),
@@ -144,8 +139,8 @@ class AppointmentCard extends StatelessWidget {
     final hour = local.hour == 0
         ? 12
         : local.hour > 12
-            ? local.hour - 12
-            : local.hour;
+        ? local.hour - 12
+        : local.hour;
 
     final minute = local.minute.toString().padLeft(2, '0');
 

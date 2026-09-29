@@ -30,8 +30,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
   Color get _background =>
       _isDark ? const Color(0xFF101820) : const Color(0xFFF5F9FD);
 
-  Color get _surface =>
-      _isDark ? const Color(0xFF1B2834) : Colors.white;
+  Color get _surface => _isDark ? const Color(0xFF1B2834) : Colors.white;
 
   Color get _surfaceAlt =>
       _isDark ? const Color(0xFF17212B) : const Color(0xFFF8FBFF);
@@ -423,95 +422,92 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
       color: _background,
       child: SafeArea(
         child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          widget.embedded ? 18 : 12,
-          20,
-          (widget.embedded ? 28 : 20) + bottomInset,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+          padding: EdgeInsets.fromLTRB(
+            20,
+            widget.embedded ? 18 : 12,
+            20,
+            (widget.embedded ? 28 : 20) + bottomInset,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
 
-            crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.start,
 
-            children: [
-              if (!widget.embedded) ...[
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFD1D6DC),
-                      borderRadius: BorderRadius.circular(10),
+              children: [
+                if (!widget.embedded) ...[
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFD1D6DC),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 20),
-                Text(
-                  '진료 예약 요청',
-                  style: TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: _textPrimary,
+                  const SizedBox(height: 20),
+                  Text(
+                    '진료 예약 요청',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                      color: _textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    '예약 가능한 날짜와 시간을 선택해주세요.',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: _textSecondary,
+                      height: 1.45,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+
+                _buildReservationPolicyNotice(),
+
+                const SizedBox(height: 24),
+
+                _buildDoctorSection(),
+
+                const SizedBox(height: 26),
+
+                _buildDateSection(),
+
+                const SizedBox(height: 26),
+
+                _buildTimeSection(),
+
+                if (_errorMessage != null) ...[
+                  const SizedBox(height: 16),
+
+                  Text(
+                    _errorMessage!,
+                    style: TextStyle(color: Color(0xFFE5484D), fontSize: 13),
+                  ),
+                ],
+
+                const SizedBox(height: 28),
+
+                _buildSubmitButton(),
+
+                const SizedBox(height: 10),
+
+                Center(
+                  child: Text(
+                    '요청 후 원무과 승인 시 예약이 확정됩니다.',
+                    style: TextStyle(fontSize: 12, color: _textMuted),
                   ),
                 ),
-                const SizedBox(height: 6),
-                Text(
-                  '예약 가능한 날짜와 시간을 선택해주세요.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: _textSecondary,
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 12),
               ],
-
-              _buildReservationPolicyNotice(),
-
-              const SizedBox(height: 24),
-
-              _buildDoctorSection(),
-
-              const SizedBox(height: 26),
-
-              _buildDateSection(),
-
-              const SizedBox(height: 26),
-
-              _buildTimeSection(),
-
-              if (_errorMessage != null) ...[
-                const SizedBox(height: 16),
-
-                Text(
-                  _errorMessage!,
-                  style: TextStyle(
-                    color: Color(0xFFE5484D),
-                    fontSize: 13,
-                  ),
-                ),
-              ],
-
-              const SizedBox(height: 28),
-
-              _buildSubmitButton(),
-
-              const SizedBox(height: 10),
-
-              Center(
-                child: Text(
-                  '요청 후 원무과 승인 시 예약이 확정됩니다.',
-                  style: TextStyle(fontSize: 12, color: _textMuted),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
   }
 
   // =========================================================
@@ -569,10 +565,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
         if (_loadingDoctors)
           Center(child: CircularProgressIndicator(color: _primary))
         else if (_doctors.isEmpty)
-          Text(
-            '예약 가능한 의료진이 없습니다.',
-            style: TextStyle(color: _textMuted),
-          )
+          Text('예약 가능한 의료진이 없습니다.', style: TextStyle(color: _textMuted))
         else ...[
           Material(
             color: Colors.transparent,
@@ -593,9 +586,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
                   color: _surface,
                   borderRadius: BorderRadius.circular(14),
                   border: Border.all(
-                    color: _doctorListExpanded
-                        ? _primary
-                        : _border,
+                    color: _doctorListExpanded ? _primary : _border,
                     width: _doctorListExpanded ? 1.4 : 1,
                   ),
                 ),
@@ -837,10 +828,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
 
               icon: Icon(Icons.calendar_month_rounded, size: 18),
 
-              label: Text(
-                '달력',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
+              label: Text('달력', style: TextStyle(fontWeight: FontWeight.w600)),
             ),
           ],
         ),
@@ -1246,17 +1234,11 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
         if (_loadingAvailability)
           const SizedBox.shrink()
         else if (!_hasAvailableDates())
-          Text(
-            '예약 가능한 일정이 없습니다.',
-            style: TextStyle(color: _textMuted),
-          )
+          Text('예약 가능한 일정이 없습니다.', style: TextStyle(color: _textMuted))
         else if (selectedDate == null)
           _buildEmptyTimeMessage()
         else if (slots.isEmpty)
-          Text(
-            '선택한 날짜에 예약 가능한 시간이 없습니다.',
-            style: TextStyle(color: _textMuted),
-          )
+          Text('선택한 날짜에 예약 가능한 시간이 없습니다.', style: TextStyle(color: _textMuted))
         else ...[
           if (morningSlots.isNotEmpty) ...[
             _buildTimePeriodTitle(icon: Icons.wb_sunny_outlined, title: '오전'),
@@ -1510,10 +1492,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
     );
   }
 
-  Widget _buildSelectionGuide({
-    required IconData icon,
-    required String text,
-  }) {
+  Widget _buildSelectionGuide({required IconData icon, required String text}) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 15),
@@ -1529,10 +1508,7 @@ class _AppointmentRequestSheetState extends State<AppointmentRequestSheet> {
           Expanded(
             child: Text(
               text,
-              style: TextStyle(
-                fontSize: 13,
-                color: _textMuted,
-              ),
+              style: TextStyle(fontSize: 13, color: _textMuted),
             ),
           ),
         ],
@@ -1674,11 +1650,7 @@ class _LegendItem extends StatelessWidget {
 
         const SizedBox(width: 5),
 
-        Text(
-          text,
-
-          style: TextStyle(fontSize: 11, color: Color(0xFF8B95A1)),
-        ),
+        Text(text, style: TextStyle(fontSize: 11, color: Color(0xFF8B95A1))),
       ],
     );
   }

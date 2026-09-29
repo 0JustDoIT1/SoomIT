@@ -19,14 +19,15 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final backgroundColor =
-        isDark ? const Color(0xFF17212B) : Colors.white;
+    final backgroundColor = isDark ? const Color(0xFF17212B) : Colors.white;
 
-    final buttonBackgroundColor =
-        isDark ? const Color(0xFF1F2C38) : const Color(0xFFF6FAFF);
+    final buttonBackgroundColor = isDark
+        ? const Color(0xFF1F2C38)
+        : const Color(0xFFF6FAFF);
 
-    final dividerColor =
-        isDark ? const Color(0xFF2A3948) : const Color(0xFFE8EEF4);
+    final dividerColor = isDark
+        ? const Color(0xFF2A3948)
+        : const Color(0xFFE8EEF4);
 
     return AppBar(
       automaticallyImplyLeading: false,
@@ -39,11 +40,7 @@ class AppHeader extends StatelessWidget implements PreferredSizeWidget {
 
       bottom: PreferredSize(
         preferredSize: const Size.fromHeight(1),
-        child: Divider(
-          height: 1,
-          thickness: 1,
-          color: dividerColor,
-        ),
+        child: Divider(height: 1, thickness: 1, color: dividerColor),
       ),
 
       title: Align(
@@ -121,11 +118,7 @@ class _HeaderButton extends StatelessWidget {
         child: SizedBox(
           width: 50,
           height: 50,
-          child: Icon(
-            icon,
-            size: 25,
-            color: const Color(0xFF2F8DFE),
-          ),
+          child: Icon(icon, size: 25, color: const Color(0xFF2F8DFE)),
         ),
       ),
     );

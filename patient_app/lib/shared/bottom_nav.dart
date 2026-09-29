@@ -5,11 +5,7 @@ import 'package:flutter/material.dart';
 import '../l10n/app_localizations.dart';
 
 class BottomNav extends StatelessWidget {
-  const BottomNav({
-    super.key,
-    required this.currentIndex,
-    required this.onTap,
-  });
+  const BottomNav({super.key, required this.currentIndex, required this.onTap});
 
   final int currentIndex;
   final ValueChanged<int> onTap;
@@ -20,27 +16,24 @@ class BottomNav extends StatelessWidget {
 
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final backgroundColor =
-        isDark ? const Color(0xFF17212B) : Colors.white;
+    final backgroundColor = isDark ? const Color(0xFF17212B) : Colors.white;
 
-    final borderColor =
-        isDark ? const Color(0xFF2A3948) : const Color(0xFFEEEEEE);
+    final borderColor = isDark
+        ? const Color(0xFF2A3948)
+        : const Color(0xFFEEEEEE);
 
-    final selectedColor =
-        isDark ? const Color(0xFF5EA2FF) : const Color(0xFF2B66F6);
+    final selectedColor = isDark
+        ? const Color(0xFF5EA2FF)
+        : const Color(0xFF2B66F6);
 
-    final unselectedColor =
-        isDark ? const Color(0xFF8393A3) : const Color(0xFF8B95A1);
+    final unselectedColor = isDark
+        ? const Color(0xFF8393A3)
+        : const Color(0xFF8B95A1);
 
     return Container(
       decoration: BoxDecoration(
         color: backgroundColor,
-        border: Border(
-          top: BorderSide(
-            color: borderColor,
-            width: 1,
-          ),
-        ),
+        border: Border(top: BorderSide(color: borderColor, width: 1)),
       ),
       child: BottomNavigationBar(
         currentIndex: currentIndex,

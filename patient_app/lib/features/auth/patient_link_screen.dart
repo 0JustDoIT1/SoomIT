@@ -97,14 +97,19 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF9F8FC),
+      backgroundColor: const Color(0xFFF7FAFD),
       appBar: AppBar(
         title: const Text(
           '환자정보 연결',
-          style: TextStyle(fontWeight: FontWeight.w700),
+          style: TextStyle(
+            color: Color(0xFF191F28),
+            fontWeight: FontWeight.w700,
+          ),
         ),
-        backgroundColor: const Color(0xFFF9F8FC),
+        backgroundColor: const Color(0xFFF7FAFD),
+        foregroundColor: const Color(0xFF191F28),
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
       ),
       body: SafeArea(
         child: ListView(
@@ -115,17 +120,19 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                 width: 80,
                 height: 80,
                 decoration: const BoxDecoration(
-                  color: Color(0xFFEDE7FA),
+                  color: Color(0xFFEAF4FF),
                   shape: BoxShape.circle,
                 ),
                 child: const Icon(
                   Icons.link_rounded,
                   size: 40,
-                  color: Color(0xFF6D4FB3),
+                  color: Color(0xFF3182F6),
                 ),
               ),
             ),
+
             const SizedBox(height: 28),
+
             const Text(
               '병원에서 받은\n환자코드가 있나요?',
               textAlign: TextAlign.center,
@@ -136,7 +143,9 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                 fontWeight: FontWeight.w800,
               ),
             ),
+
             const SizedBox(height: 12),
+
             const Text(
               '환자코드를 연결하면 예약, 검사결과, 복약관리 등 '
               '모든 기능을 사용할 수 있어요.',
@@ -147,7 +156,9 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                 height: 1.5,
               ),
             ),
+
             const SizedBox(height: 36),
+
             TextField(
               controller: _patientCodeController,
               enabled: !_isSubmitting,
@@ -163,30 +174,48 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                 hintText: '예: P0001',
                 filled: true,
                 fillColor: Colors.white,
+                labelStyle: const TextStyle(
+                  color: Color(0xFF6B7280),
+                ),
+                hintStyle: const TextStyle(
+                  color: Color(0xFF9CA3AF),
+                ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
-                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFD9E4F0),
+                  ),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(12),
                   borderSide: const BorderSide(
-                    color: Color(0xFF6D4FB3),
+                    color: Color(0xFF3182F6),
                     width: 1.5,
+                  ),
+                ),
+                disabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: Color(0xFFE5E7EB),
                   ),
                 ),
               ),
             ),
+
             const SizedBox(height: 16),
+
             SizedBox(
               height: 54,
               child: FilledButton(
                 onPressed: _isSubmitting ? null : _checkPatientCode,
                 style: FilledButton.styleFrom(
-                  backgroundColor: const Color(0xFF6D4FB3),
-                  disabledBackgroundColor: const Color(0xFFB8A8DA),
+                  backgroundColor: const Color(0xFF3584E8),
+                  foregroundColor: Colors.white,
+                  disabledBackgroundColor: const Color(0xFFAFCDF3),
+                  disabledForegroundColor: Colors.white,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(14),
                   ),
@@ -209,7 +238,9 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                       ),
               ),
             ),
+
             const SizedBox(height: 12),
+
             SizedBox(
               height: 52,
               child: TextButton(
@@ -217,14 +248,16 @@ class _PatientLinkScreenState extends State<PatientLinkScreen> {
                 child: const Text(
                   '나중에 입력하기',
                   style: TextStyle(
-                    color: Color(0xFF6D4FB3),
+                    color: Color(0xFF3182F6),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ),
+
             const SizedBox(height: 12),
+
             const Text(
               '환자코드가 없어도 가입할 수 있으며, '
               '마이페이지에서 나중에 연결할 수 있습니다.',
