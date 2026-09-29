@@ -30,6 +30,39 @@ afterEach(() => {
 });
 
 describe("SoomChatPanel", () => {
+  it("shows an unread badge when a message arrives while the launcher is closed", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    const participant = { id: "user-2", name: "김태윤", department: "RADIOLOGY", role: "TECHNOLOGIST", unread_count: 0 };
+    let unreadCount = 0;
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/participants/")) {
+        return new Response(JSON.stringify([{ ...participant, unread_count: unreadCount }]), { status: 200 });
+      }
+      return new Response(JSON.stringify({}), { status: 404 });
+    });
+    window.sessionStorage.setItem("accessToken", "staff-token");
+
+    render(<SoomChatPanel authorizedFetch={authorizedFetch} />);
+    await waitFor(() => expect(MockWebSocket.instances).toHaveLength(1));
+    unreadCount = 1;
+    MockWebSocket.instances[0].onmessage?.({
+      data: JSON.stringify({
+        type: "chat.message.created",
+        message: {
+          id: "message-1",
+          body: "새 메시지",
+          sender: participant,
+          recipient_id: "user-1",
+          created_at: "2026-09-30T01:00:00Z",
+        },
+      }),
+    } as MessageEvent);
+
+    expect(await screen.findByLabelText("읽지 않은 채팅 1개")).toBeInTheDocument();
+    expect(MockWebSocket.instances[0].sent).toHaveLength(0);
+  });
+
   it("selects a hospital participant and sends a direct message only to that user", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     const participant = { id: "user-2", name: "김태윤", department: "RADIOLOGY", role: "TECHNOLOGIST", unread_count: 1 };

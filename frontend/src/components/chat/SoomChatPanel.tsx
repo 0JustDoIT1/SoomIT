@@ -37,6 +37,7 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   const timeline = useRef<HTMLDivElement | null>(null);
   const reconnect = useRef<number | null>(null);
   const disposed = useRef(false);
+  const openRef = useRef(open);
   const selectedIdRef = useRef(selectedId);
   const dragState = useRef<{ pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null);
   const suppressLauncherClick = useRef(false);
@@ -88,6 +89,10 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   }, [authorizedFetch, loadParticipants, markRead, merge]);
 
   useEffect(() => {
+    openRef.current = open;
+  }, [open]);
+
+  useEffect(() => {
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
@@ -115,7 +120,6 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   }, [loadMessages, open, selectedId]);
 
   useEffect(() => {
-    if (!open) return;
     disposed.current = false;
     const connect = () => {
       const token = window.sessionStorage.getItem("accessToken");
@@ -130,12 +134,16 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
           if (payload.type === "chat.message.created" && payload.message) {
             const message = payload.message;
             const activeParticipant = selectedIdRef.current;
-            const belongsToOpenConversation = message.sender.id === activeParticipant || message.recipient_id === activeParticipant;
+            const belongsToOpenConversation = openRef.current && (message.sender.id === activeParticipant || message.recipient_id === activeParticipant);
             if (belongsToOpenConversation) {
               merge([message]);
               if (message.sender.id === activeParticipant) {
                 connection.send(JSON.stringify({ type: "chat.message.read", message_id: message.id }));
               }
+            } else if (message.sender.id) {
+              setParticipants((current) => current.map((participant) => participant.id === message.sender.id
+                ? { ...participant, unread_count: participant.unread_count + 1 }
+                : participant));
             }
             void loadParticipants().catch(() => undefined);
           }
@@ -159,7 +167,7 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
       socket.current = null;
       setStatus("offline");
     };
-  }, [loadParticipants, merge, open]);
+  }, [loadParticipants, merge]);
 
   useEffect(() => {
     if (open && timeline.current) timeline.current.scrollTop = timeline.current.scrollHeight;
@@ -262,9 +270,11 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
           </div>
         </section>
       ) : (
-        <button type="button" onPointerDown={startLauncherDrag} onPointerMove={moveLauncher} onPointerUp={endLauncherDrag} onPointerCancel={endLauncherDrag} onClick={openChat} aria-label="숨챗 열기" title="클릭하여 열기 · 드래그하여 이동" className={`relative h-20 w-20 touch-none select-none overflow-hidden rounded-full bg-transparent transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${dragging ? "cursor-grabbing" : "cursor-grab"}`}>
-          <Image src="/images/soomchat.png" alt="" width={80} height={80} className="h-full w-full scale-[1.16] object-contain" />
-          {unread > 0 && <span className="absolute -right-2 -top-2 min-w-5 rounded-full bg-rose-500 px-1.5 text-center text-[10px] leading-5 text-white">{unread > 99 ? "99+" : unread}</span>}
+        <button type="button" onPointerDown={startLauncherDrag} onPointerMove={moveLauncher} onPointerUp={endLauncherDrag} onPointerCancel={endLauncherDrag} onClick={openChat} aria-label="숨챗 열기" title="클릭하여 열기 · 드래그하여 이동" className={`relative h-20 w-20 touch-none select-none overflow-visible rounded-full bg-transparent transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${dragging ? "cursor-grabbing" : "cursor-grab"}`}>
+          <span className="block h-full w-full overflow-hidden rounded-full">
+            <Image src="/images/soomchat.png" alt="" width={80} height={80} className="h-full w-full scale-[1.16] object-contain" />
+          </span>
+          {unread > 0 && <span aria-label={`읽지 않은 채팅 ${unread}개`} className="absolute -right-2 -top-2 min-w-6 rounded-full border-2 border-white bg-rose-500 px-1.5 text-center text-[10px] font-bold leading-5 text-white shadow-sm">{unread > 99 ? "99+" : unread}</span>}
         </button>
       )}
     </div>
