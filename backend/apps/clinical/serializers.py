@@ -8,6 +8,7 @@ from apps.patients.models import PatientAccount
 from .models import (
     ClinicalResult,
     CtResult,
+    Drug,
     GeneFinding,
     NoduleObservation,
     Prescription,
@@ -18,6 +19,13 @@ from .models import (
     TreatmentDecision,
     TreatmentRule,
 )
+
+
+class DrugOptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Drug
+        fields = ["id", "drug_name", "ingredient_name", "mfds_item_seq"]
+        read_only_fields = fields
 from .gene_alterations import (
     AI_TO_CLINICAL_ASSESSMENT,
     CANONICAL_ALTERATIONS,

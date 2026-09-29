@@ -23,7 +23,7 @@ export function DecisionModal({ title, description, children, busy, error, messa
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus(); };
   }, []);
   return <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/45 p-4">
-    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} className={`flex max-h-[90dvh] w-full flex-col rounded-lg bg-white p-4 shadow-2xl ${wide ? "max-w-5xl" : "max-w-xl"}`} onKeyDown={(event) => {
+    <section ref={dialog} role="dialog" aria-modal="true" aria-labelledby={titleId} aria-busy={busy} tabIndex={-1} className={`flex ${wide ? "max-h-[85dvh]" : "max-h-[90dvh]"} w-full flex-col rounded-lg bg-white p-4 shadow-2xl ${wide ? "max-w-5xl" : "max-w-xl"}`} onKeyDown={(event) => {
       if (event.key === "Escape" && !busy) { event.stopPropagation(); onClose(); }
       if (event.key !== "Tab") return;
       const fields = Array.from(dialog.current?.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') ?? []).filter((item) => item.getClientRects().length > 0);
@@ -34,7 +34,7 @@ export function DecisionModal({ title, description, children, busy, error, messa
     }}>
       <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold text-blue-700">호흡기내과 최종 판단</p><h2 id={titleId} className="mt-1 text-base font-bold text-slate-900">{title}</h2></div><button type="button" aria-label="닫기" disabled={busy} onClick={onClose} className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 disabled:cursor-not-allowed">✕</button></div>
       {description && <p className="mt-2 text-xs leading-5 text-slate-600">{description}</p>}
-      <fieldset disabled={busy} className="mt-3 min-h-0 overflow-y-auto space-y-3 pr-1">{children}</fieldset>
+      <fieldset disabled={busy} className={`mt-3 min-h-0 overflow-y-auto space-y-3 pr-1 ${wide ? "flex-1" : ""}`}>{children}</fieldset>
       <DecisionStatus error={error} message={busy ? "처리 중입니다. 완료될 때까지 기다려 주세요." : message} />
       <DecisionActions busy={busy} disabled={disabled} label={primaryLabel} onSubmit={onSubmit} onCancel={onClose} secondaryLabel={secondaryLabel} secondaryDisabled={secondaryDisabled} onSecondary={onSecondary} />
     </section>

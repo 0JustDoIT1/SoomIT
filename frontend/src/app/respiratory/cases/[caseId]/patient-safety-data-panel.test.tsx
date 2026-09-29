@@ -94,6 +94,7 @@ describe("PatientSafetyDataPanel", () => {
     const authorizedFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("allergy-profile")) return Promise.resolve(jsonResponse({ allergy_status: "NONE", allergies: [] }));
+      if (url.includes("/api/clinical/drug-options/")) return Promise.resolve(jsonResponse([{ id: "drug-1", drug_name: "복용약 A", ingredient_name: "성분 A", mfds_item_seq: "123456" }]));
       if (url.includes("current-medications") && init?.method === "POST") return Promise.resolve(jsonResponse({ id: "med-1" }, 201));
       if (url.includes("current-medications")) { medicationGets += 1; return Promise.resolve(jsonResponse(medicationGets > 1 ? [{ id: "med-1", medication_name: "복용약 A", is_active: true }] : [])); }
       return Promise.resolve(jsonResponse([]));
@@ -101,7 +102,9 @@ describe("PatientSafetyDataPanel", () => {
 
     render(<PatientSafetyDataPanel caseId="case-1" apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
     await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(3));
-    await user.type(screen.getByLabelText("약품명"), "복용약 A");
+    await user.type(screen.getByLabelText("약품 검색"), "복용약");
+    expect(await screen.findByRole("option", { name: "복용약 A · 성분 A" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("약품명"), "drug-1");
     await user.click(screen.getByRole("button", { name: "복용약 등록" }));
 
     expect(await screen.findByText("복용약 A")).toBeTruthy();
@@ -109,6 +112,7 @@ describe("PatientSafetyDataPanel", () => {
       "http://api.test/api/doctor/cases/case-1/current-medications/",
       expect.objectContaining({ method: "POST" }),
     );
+    expect(JSON.parse(String(authorizedFetch.mock.calls.find(([, init]) => init?.method === "POST")?.[1]?.body))).toEqual(expect.objectContaining({ medication_name: "복용약 A", ingredient_name: "성분 A", mfds_item_seq: "123456" }));
   });
 
   it("posts an explicit MFDS ITEM_SEQ with the current medication", async () => {
@@ -116,14 +120,28 @@ describe("PatientSafetyDataPanel", () => {
     const authorizedFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.includes("allergy-profile")) return Promise.resolve(jsonResponse({ allergy_status: "UNCONFIRMED", allergies: [] }));
+      if (url.includes("/api/clinical/drug-options/")) return Promise.resolve(jsonResponse([{ id: "drug-1", drug_name: "복용약 A", ingredient_name: "성분 A", mfds_item_seq: "123456" }]));
       if (url.includes("current-medications") && init?.method === "POST") return Promise.resolve(jsonResponse({ id: "med-1" }, 201));
       return Promise.resolve(jsonResponse([]));
     });
     render(<PatientSafetyDataPanel caseId="case-1" apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
-    await user.type(screen.getByLabelText("약품명"), "복용약 A");
-    await user.type(screen.getByLabelText("MFDS ITEM_SEQ"), "123456");
+    await user.type(screen.getByLabelText("약품 검색"), "복용약");
+    expect(await screen.findByRole("option", { name: "복용약 A · 성분 A" })).toBeInTheDocument();
+    await user.selectOptions(screen.getByLabelText("약품명"), "drug-1");
     await user.click(screen.getByRole("button", { name: "복용약 등록" }));
     const post = authorizedFetch.mock.calls.find(([, init]) => init?.method === "POST");
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual(expect.objectContaining({ medication_name: "복용약 A", mfds_item_seq: "123456" }));
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual(expect.objectContaining({ medication_name: "복용약 A", ingredient_name: "성분 A", mfds_item_seq: "123456" }));
+  });
+
+  it("disables drug search and selection when no medications is checked", async () => {
+    const user = userEvent.setup();
+    const authorizedFetch = vi.fn((input: RequestInfo | URL) => String(input).includes("allergy-profile")
+      ? Promise.resolve(jsonResponse({ allergy_status: "UNCONFIRMED", allergies: [] }))
+      : Promise.resolve(jsonResponse([])));
+    render(<PatientSafetyDataPanel caseId="case-no-medications" apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} />);
+    const checkbox = await screen.findByRole("checkbox", { name: "복용약 없음" });
+    await user.click(checkbox);
+    expect(screen.getByLabelText("약품 검색")).toBeDisabled();
+    expect(screen.getByLabelText("약품명")).toBeDisabled();
   });
 });

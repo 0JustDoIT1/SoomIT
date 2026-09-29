@@ -26,10 +26,23 @@ type LabResult = {
   tested_at: string;
   note?: string | null;
 };
+type DrugOption = { id: string; drug_name: string; ingredient_name: string; mfds_item_seq?: string | null };
 
 const EMPTY_MEDICATION = { medication_name: "", ingredient_name: "", mfds_item_seq: "", dose: "", dose_unit: "", frequency: "", route: "" };
 const EMPTY_LAB = { creatinine: "", egfr: "", ast: "", alt: "", total_bilirubin: "", tested_at: "", note: "" };
 const EMPTY_PROFILE: SafetyProfile = { allergy_status: "UNCONFIRMED", allergies: [], height_cm: "", weight_kg: "" };
+
+function labToForm(lab: LabResult) {
+  return {
+    creatinine: String(lab.creatinine ?? ""),
+    egfr: String(lab.egfr ?? ""),
+    ast: String(lab.ast ?? ""),
+    alt: String(lab.alt ?? ""),
+    total_bilirubin: String(lab.total_bilirubin ?? ""),
+    tested_at: lab.tested_at.slice(0, 10),
+    note: lab.note ?? "",
+  };
+}
 
 async function readProfileResponse(response: Response): Promise<SafetyProfile> {
   if (response.status === 404) {
@@ -52,9 +65,44 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<"PROFILE" | "MEDICATION" | "LAB" | null>(null);
   const [medicationForm, setMedicationForm] = useState(EMPTY_MEDICATION);
+  const [noMedications, setNoMedications] = useState(() => typeof window !== "undefined" && window.localStorage.getItem(`patient-safety-no-medications:${caseId}`) === "true");
+  const [drugSearch, setDrugSearch] = useState("");
+  const [drugOptions, setDrugOptions] = useState<DrugOption[]>([]);
   const [labForm, setLabForm] = useState(EMPTY_LAB);
+  const latestLab = labs[0] ?? null;
+  const labLocked = Boolean(latestLab);
+  const setLabsAndForm = useCallback((next: LabResult[]) => {
+    setLabs(next);
+    if (next[0]) setLabForm(labToForm(next[0]));
+  }, []);
+  const setMedicationsAndStatus = useCallback((next: Medication[]) => {
+    setMedications(next);
+    if (next.length > 0) {
+      setNoMedications(false);
+      window.localStorage.removeItem(`patient-safety-no-medications:${caseId}`);
+    }
+  }, [caseId]);
 
   const endpoint = useCallback((resource: "allergy-profile" | "current-medications" | "lab-results") => `${apiBaseUrl}/api/doctor/cases/${caseId}/${resource}/`, [apiBaseUrl, caseId]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const query = drugSearch.trim();
+    if (!query) {
+      return () => controller.abort();
+    }
+    void authorizedFetch(`${apiBaseUrl}/api/clinical/drug-options/?q=${encodeURIComponent(query)}`, { signal: controller.signal })
+      .then(async response => response.ok ? setDrugOptions(await response.json() as DrugOption[]) : undefined)
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [apiBaseUrl, authorizedFetch, drugSearch]);
+
+  const selectDrug = (drugId: string) => {
+    const drug = drugOptions.find(option => option.id === drugId);
+    if (!drug) return;
+    setMedicationForm(current => ({ ...current, medication_name: drug.drug_name, ingredient_name: drug.ingredient_name, mfds_item_seq: drug.mfds_item_seq ?? "" }));
+    setDrugSearch(drug.drug_name);
+  };
 
   useEffect(() => {
     const controller = new AbortController();
@@ -70,12 +118,12 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
         setProfile(next);
         setAllergiesText((next.allergies ?? []).join(", "));
       } catch (reason) { setProfileError(errorMessage(reason, "환자 기본정보를 불러오지 못했습니다.")); }
-      await applyListResponse(medicationResponse, setMedications, setMedicationError, "현재 복용약");
-      await applyListResponse(labResponse, setLabs, setLabError, "검사실 결과");
+      await applyListResponse(medicationResponse, setMedicationsAndStatus, setMedicationError, "현재 복용약");
+      await applyListResponse(labResponse, setLabsAndForm, setLabError, "검사실 결과");
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [authorizedFetch, endpoint]);
+  }, [authorizedFetch, endpoint, setLabsAndForm, setMedicationsAndStatus]);
 
   const saveProfile = async (event: FormEvent) => {
     event.preventDefault();
@@ -94,6 +142,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
   const saveMedication = async (event: FormEvent) => {
     event.preventDefault();
+    if (noMedications) return;
     if (!medicationForm.medication_name.trim()) return;
     setSaving("MEDICATION");
     setMedicationError("");
@@ -101,10 +150,16 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
       const response = await authorizedFetch(endpoint("current-medications"), jsonPost(compactPayload({ ...medicationForm, medication_name: medicationForm.medication_name.trim(), is_active: true })));
       await requireOk(response, "현재 복용약을 등록하지 못했습니다.");
       setMedicationForm(EMPTY_MEDICATION);
-      await reloadOne(endpoint("current-medications"), authorizedFetch, setMedications, setMedicationError, "현재 복용약");
+      await reloadOne(endpoint("current-medications"), authorizedFetch, setMedicationsAndStatus, setMedicationError, "현재 복용약");
       onDataChanged?.();
     } catch (reason) { setMedicationError(errorMessage(reason, "현재 복용약을 등록하지 못했습니다.")); }
     finally { setSaving(null); }
+  };
+
+  const toggleNoMedications = (checked: boolean) => {
+    setNoMedications(checked);
+    window.localStorage.setItem(`patient-safety-no-medications:${caseId}`, String(checked));
+    if (checked) setMedicationForm(EMPTY_MEDICATION);
   };
 
   const saveLab = async (event: FormEvent) => {
@@ -115,8 +170,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
     try {
       const response = await authorizedFetch(endpoint("lab-results"), jsonPost(compactPayload({ ...labForm, tested_at: new Date(labForm.tested_at).toISOString() })));
       await requireOk(response, "검사실 결과를 등록하지 못했습니다.");
-      setLabForm(EMPTY_LAB);
-      await reloadOne(endpoint("lab-results"), authorizedFetch, setLabs, setLabError, "검사실 결과");
+      await reloadOne(endpoint("lab-results"), authorizedFetch, setLabsAndForm, setLabError, "검사실 결과");
       onDataChanged?.();
     } catch (reason) { setLabError(errorMessage(reason, "검사실 결과를 등록하지 못했습니다.")); }
     finally { setSaving(null); }
@@ -138,24 +192,28 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
       <form onSubmit={saveLab} className="mt-3 grid grid-cols-2 gap-2 border-t border-blue-100 pt-3 sm:grid-cols-5">
         <p className="col-span-2 text-xs font-bold text-slate-700 sm:col-span-5">신장·간기능</p>
-        <fieldset id="safety-input-renal" className="col-span-2 grid grid-cols-2 gap-2"><Input label="Creatinine" type="number" value={labForm.creatinine} onChange={value => setLabForm(current => ({ ...current, creatinine: value }))} /><Input label="eGFR" type="number" value={labForm.egfr} onChange={value => setLabForm(current => ({ ...current, egfr: value }))} /></fieldset>
-        <fieldset id="safety-input-hepatic" className="col-span-2 grid grid-cols-3 gap-2 sm:col-span-3"><Input label="AST" type="number" value={labForm.ast} onChange={value => setLabForm(current => ({ ...current, ast: value }))} /><Input label="ALT" type="number" value={labForm.alt} onChange={value => setLabForm(current => ({ ...current, alt: value }))} /><Input label="Total Bilirubin" type="number" value={labForm.total_bilirubin} onChange={value => setLabForm(current => ({ ...current, total_bilirubin: value }))} /></fieldset>
-        <Input required label="검사 시각" type="datetime-local" value={labForm.tested_at} onChange={value => setLabForm(current => ({ ...current, tested_at: value }))} className="col-span-2 sm:col-span-3" />
-        <button disabled={saving !== null || !labForm.tested_at} className="col-span-2 rounded-md border border-blue-200 bg-white py-1.5 text-xs font-semibold text-blue-700 disabled:text-slate-400">{saving === "LAB" ? "저장 중" : "검사값 저장"}</button>
+        <fieldset disabled={labLocked} id="safety-input-renal" className="col-span-2 grid grid-cols-2 gap-2"><Input label="Creatinine" type="number" value={labForm.creatinine} onChange={value => setLabForm(current => ({ ...current, creatinine: value }))} /><Input label="eGFR" type="number" value={labForm.egfr} onChange={value => setLabForm(current => ({ ...current, egfr: value }))} /></fieldset>
+        <fieldset disabled={labLocked} id="safety-input-hepatic" className="col-span-2 grid grid-cols-3 gap-2 sm:col-span-3"><Input label="AST" type="number" value={labForm.ast} onChange={value => setLabForm(current => ({ ...current, ast: value }))} /><Input label="ALT" type="number" value={labForm.alt} onChange={value => setLabForm(current => ({ ...current, alt: value }))} /><Input label="Total Bilirubin" type="number" value={labForm.total_bilirubin} onChange={value => setLabForm(current => ({ ...current, total_bilirubin: value }))} /></fieldset>
+        <Input disabled={labLocked} required label="검사 시각" type="date" value={labForm.tested_at} onChange={value => setLabForm(current => ({ ...current, tested_at: value }))} className="col-span-2 sm:col-span-3" />
+        <button disabled={saving !== null || labLocked || !labForm.tested_at} className="col-span-2 rounded-md border border-blue-200 bg-white py-1.5 text-xs font-semibold text-blue-700 disabled:text-slate-400">{saving === "LAB" ? "저장 중" : "검사값 저장"}</button>
         {labs[0] && <p className="col-span-2 text-[11px] text-slate-500 sm:col-span-5">최근 저장값 · {[labs[0].creatinine && `Cr ${labs[0].creatinine}`, labs[0].egfr && `eGFR ${labs[0].egfr}`, labs[0].ast && `AST ${labs[0].ast}`, labs[0].alt && `ALT ${labs[0].alt}`, labs[0].total_bilirubin && `Bilirubin ${labs[0].total_bilirubin}`].filter(Boolean).join(" · ") || "수치 없음"}</p>}
       </form>
 
       <form id="safety-input-medication" onSubmit={saveMedication} className="mt-3 grid grid-cols-3 gap-2 border-t border-blue-100 pt-3">
+        <label className="col-span-3 flex items-center gap-2 text-xs font-medium text-slate-700"><input type="checkbox" checked={noMedications} disabled={medications.length > 0} onChange={(event) => toggleNoMedications(event.target.checked)} />복용약 없음</label>
+        <fieldset disabled={noMedications} className="col-span-3 grid grid-cols-3 gap-2">
         <p className="col-span-3 text-xs font-bold text-slate-700">현재 복용약 · DUR</p>
-        <Input required label="약품명" value={medicationForm.medication_name} onChange={value => setMedicationForm(current => ({ ...current, medication_name: value }))} />
+        <label className="col-span-3 text-[10px] font-medium text-slate-600">약품 검색<input disabled={noMedications} value={drugSearch} onChange={(event) => setDrugSearch(event.target.value)} placeholder="약품명·성분명·MFDS ITEM_SEQ" className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>
+        <label className="col-span-3 text-[10px] font-medium text-slate-600">약품명<select required disabled={noMedications} value={drugOptions.some(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name) ? drugOptions.find(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name)?.id : ""} onChange={(event) => selectDrug(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.id} value={option.id}>{option.drug_name} · {option.ingredient_name}</option>)}</select></label>
         <Input label="성분명" value={medicationForm.ingredient_name} onChange={value => setMedicationForm(current => ({ ...current, ingredient_name: value }))} />
         <Input label="MFDS ITEM_SEQ" value={medicationForm.mfds_item_seq} onChange={value => setMedicationForm(current => ({ ...current, mfds_item_seq: value }))} />
         <details className="col-span-3 text-[11px] text-slate-500"><summary className="cursor-pointer">용량·복용 주기·투여 경로 추가 입력</summary><div className="mt-2 grid grid-cols-3 gap-2"><Input label="용량" type="number" value={medicationForm.dose} onChange={value => setMedicationForm(current => ({ ...current, dose: value }))} /><Input label="복용 주기" value={medicationForm.frequency} onChange={value => setMedicationForm(current => ({ ...current, frequency: value }))} /><Input label="투여 경로" value={medicationForm.route} onChange={value => setMedicationForm(current => ({ ...current, route: value }))} /></div></details>
         <button disabled={saving !== null || !medicationForm.medication_name.trim()} className="col-span-3 rounded-md border border-blue-200 bg-white py-1.5 text-xs font-semibold text-blue-700 disabled:text-slate-400">{saving === "MEDICATION" ? "등록 중" : "복용약 등록"}</button>
+        </fieldset>
         {medications.length > 0 && <div className="col-span-3 flex flex-wrap gap-1">{medications.map(item => <span key={item.id} className={`rounded-full px-2 py-1 text-[10px] ${item.mfds_item_seq ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.medication_name}{item.mfds_item_seq ? ` · ${item.mfds_item_seq}` : " · ITEM_SEQ 필요"}</span>)}</div>}
       </form>
 
-      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-blue-100 pt-2 text-[10px]" aria-label="Safety 입력 상태"><DataStatus label="체격" ready={Boolean(profile.height_cm && profile.weight_kg)} /><DataStatus label="신장기능" ready={Boolean(labs[0]?.creatinine || labs[0]?.egfr)} /><DataStatus label="간기능" ready={Boolean(labs[0]?.ast && labs[0]?.alt && labs[0]?.total_bilirubin)} /><DataStatus label="알레르기" ready={profile.allergy_status !== "UNCONFIRMED"} /><DataStatus label="복용약" ready={medications.length > 0 && medications.every(item => Boolean(item.mfds_item_seq))} /></div>
+      <div className="mt-3 flex flex-wrap gap-x-3 gap-y-1 border-t border-blue-100 pt-2 text-[10px]" aria-label="Safety 입력 상태"><DataStatus label="체격" ready={Boolean(profile.height_cm && profile.weight_kg)} /><DataStatus label="신장기능" ready={Boolean(labs[0]?.creatinine || labs[0]?.egfr)} /><DataStatus label="간기능" ready={Boolean(labs[0]?.ast && labs[0]?.alt && labs[0]?.total_bilirubin)} /><DataStatus label="알레르기" ready={profile.allergy_status !== "UNCONFIRMED"} /><DataStatus label="복용약" ready={noMedications || (medications.length > 0 && medications.every(item => Boolean(item.mfds_item_seq)))} /></div>
     </section>
   );
 
@@ -171,10 +229,13 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
         </form>
       </SafetyPanel>
 
-      <section className="rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="Safety 입력 상태"><h2 className="text-sm font-bold text-slate-900">Safety 입력 상태</h2><p className="mt-1 text-[11px] text-slate-500">값을 변경하면 기존 Safety 결과는 재검사가 필요합니다.</p><div className="mt-3 grid grid-cols-2 gap-2 text-xs"><DataStatus label="키" ready={Boolean(profile.height_cm)} /><DataStatus label="몸무게" ready={Boolean(profile.weight_kg)} /><DataStatus label="신장기능" ready={Boolean(labs[0]?.creatinine || labs[0]?.egfr)} /><DataStatus label="간기능" ready={Boolean(labs[0]?.ast && labs[0]?.alt && labs[0]?.total_bilirubin)} /><DataStatus label="알레르기" ready={profile.allergy_status !== "UNCONFIRMED"} /><DataStatus label="현재 복용약" ready={medications.length > 0 && medications.every(item => Boolean(item.mfds_item_seq))} /></div></section>
-      <SafetyPanel title="현재 복용약" description="약물 중복과 상호작용 확인에 사용하는 실제 환자 복용약입니다." error={medicationError} onRetry={() => void reloadOne(endpoint("current-medications"), authorizedFetch, setMedications, setMedicationError, "현재 복용약")}>
+      <section className="rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="Safety 입력 상태"><h2 className="text-sm font-bold text-slate-900">Safety 입력 상태</h2><p className="mt-1 text-[11px] text-slate-500">값을 변경하면 기존 Safety 결과는 재검사가 필요합니다.</p><div className="mt-3 grid grid-cols-2 gap-2 text-xs"><DataStatus label="키" ready={Boolean(profile.height_cm)} /><DataStatus label="몸무게" ready={Boolean(profile.weight_kg)} /><DataStatus label="신장기능" ready={Boolean(labs[0]?.creatinine || labs[0]?.egfr)} /><DataStatus label="간기능" ready={Boolean(labs[0]?.ast && labs[0]?.alt && labs[0]?.total_bilirubin)} /><DataStatus label="알레르기" ready={profile.allergy_status !== "UNCONFIRMED"} /><DataStatus label="현재 복용약" ready={noMedications || (medications.length > 0 && medications.every(item => Boolean(item.mfds_item_seq)))} /></div></section>
+      <SafetyPanel title="현재 복용약" description="약물 중복과 상호작용 확인에 사용하는 실제 환자 복용약입니다." error={medicationError} onRetry={() => void reloadOne(endpoint("current-medications"), authorizedFetch, setMedicationsAndStatus, setMedicationError, "현재 복용약")}>
         <form onSubmit={saveMedication} className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3">
-          <Input required label="약품명" value={medicationForm.medication_name} onChange={(value) => setMedicationForm((current) => ({ ...current, medication_name: value }))} />
+          <label className="col-span-2 flex items-center gap-2 text-xs font-medium text-slate-700"><input type="checkbox" checked={noMedications} disabled={medications.length > 0} onChange={(event) => toggleNoMedications(event.target.checked)} />복용약 없음</label>
+          <fieldset disabled={noMedications} className="col-span-2 grid grid-cols-2 gap-2">
+          <label className="col-span-2 text-[10px] font-medium text-slate-600">약품 검색<input disabled={noMedications} value={drugSearch} onChange={(event) => setDrugSearch(event.target.value)} placeholder="약품명·성분명·MFDS ITEM_SEQ" className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>
+          <label className="col-span-2 text-[10px] font-medium text-slate-600">약품명<select required disabled={noMedications} value={drugOptions.some(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name) ? drugOptions.find(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name)?.id : ""} onChange={(event) => selectDrug(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.id} value={option.id}>{option.drug_name} · {option.ingredient_name}</option>)}</select></label>
           <Input label="성분명" value={medicationForm.ingredient_name} onChange={(value) => setMedicationForm((current) => ({ ...current, ingredient_name: value }))} />
           <Input label="MFDS ITEM_SEQ" value={medicationForm.mfds_item_seq} onChange={(value) => setMedicationForm((current) => ({ ...current, mfds_item_seq: value }))} />
           <Input label="용량" type="number" value={medicationForm.dose} onChange={(value) => setMedicationForm((current) => ({ ...current, dose: value }))} />
@@ -182,16 +243,17 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
           <Input label="복용 주기" value={medicationForm.frequency} onChange={(value) => setMedicationForm((current) => ({ ...current, frequency: value }))} />
           <Input label="투여 경로" value={medicationForm.route} onChange={(value) => setMedicationForm((current) => ({ ...current, route: value }))} />
           <button disabled={saving !== null || !medicationForm.medication_name.trim()} className="col-span-2 rounded-md bg-blue-600 py-2 text-xs font-semibold text-white disabled:bg-slate-200">{saving === "MEDICATION" ? "등록 중" : "복용약 등록"}</button>
+          </fieldset>
         </form>
         <div className="max-h-72 overflow-y-auto p-3">{loading ? <Empty text="불러오는 중입니다." /> : medications.length ? medications.map((item) => <MedicationRow key={item.id} item={item} />) : <Empty text="등록된 현재 복용약이 없습니다." />}</div>
       </SafetyPanel>
 
-      <SafetyPanel title="검사실 결과" description="처방 안전성 검사에서 사용하는 신장·간 기능 수치입니다." error={labError} onRetry={() => void reloadOne(endpoint("lab-results"), authorizedFetch, setLabs, setLabError, "검사실 결과")}>
+      <SafetyPanel title="검사실 결과" description="처방 안전성 검사에서 사용하는 신장·간 기능 수치입니다." error={labError} onRetry={() => void reloadOne(endpoint("lab-results"), authorizedFetch, setLabsAndForm, setLabError, "검사실 결과")}>
         <form onSubmit={saveLab} className="grid grid-cols-3 gap-2 border-b border-slate-100 p-3">
-          <Input required label="검사 시각" type="datetime-local" value={labForm.tested_at} onChange={(value) => setLabForm((current) => ({ ...current, tested_at: value }))} className="col-span-3" />
-          {(["creatinine", "egfr", "ast", "alt", "total_bilirubin"] as const).map((field) => <Input key={field} label={{ creatinine: "Creatinine", egfr: "eGFR", ast: "AST", alt: "ALT", total_bilirubin: "총 빌리루빈" }[field]} type="number" value={labForm[field]} onChange={(value) => setLabForm((current) => ({ ...current, [field]: value }))} />)}
-          <Input label="메모" value={labForm.note} onChange={(value) => setLabForm((current) => ({ ...current, note: value }))} />
-          <button disabled={saving !== null || !labForm.tested_at} className="col-span-3 rounded-md bg-blue-600 py-2 text-xs font-semibold text-white disabled:bg-slate-200">{saving === "LAB" ? "등록 중" : "검사실 결과 등록"}</button>
+          <Input disabled={labLocked} required label="검사 시각" type="date" value={labForm.tested_at} onChange={(value) => setLabForm((current) => ({ ...current, tested_at: value }))} className="col-span-3" />
+          {(["creatinine", "egfr", "ast", "alt", "total_bilirubin"] as const).map((field) => <Input disabled={labLocked} key={field} label={{ creatinine: "Creatinine", egfr: "eGFR", ast: "AST", alt: "ALT", total_bilirubin: "총 빌리루빈" }[field]} type="number" value={labForm[field]} onChange={(value) => setLabForm((current) => ({ ...current, [field]: value }))} />)}
+          <Input disabled={labLocked} label="메모" value={labForm.note} onChange={(value) => setLabForm((current) => ({ ...current, note: value }))} />
+          <button disabled={saving !== null || labLocked || !labForm.tested_at} className="col-span-3 rounded-md bg-blue-600 py-2 text-xs font-semibold text-white disabled:bg-slate-200">{saving === "LAB" ? "등록 중" : "검사실 결과 등록"}</button>
         </form>
         <div className="max-h-72 overflow-y-auto p-3">{loading ? <Empty text="불러오는 중입니다." /> : labs.length ? labs.map((item) => <LabRow key={item.id} item={item} />) : <Empty text="등록된 검사실 결과가 없습니다." />}</div>
       </SafetyPanel>
@@ -202,7 +264,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 function SafetyPanel({ title, description, error, onRetry, children }: { title: string; description: string; error: string; onRetry: () => void; children: React.ReactNode }) {
   return <section className="overflow-hidden rounded-lg border border-slate-200 bg-white"><header className="border-b border-slate-200 px-4 py-3"><h2 className="text-sm font-bold text-slate-900">{title}</h2><p className="mt-1 text-[11px] text-slate-500">{description}</p></header>{error && <div role="alert" className="flex items-center justify-between bg-rose-50 px-3 py-2 text-xs text-rose-700"><span>{error}</span><button type="button" onClick={onRetry} className="rounded border border-rose-200 bg-white px-2 py-1 font-semibold">다시 시도</button></div>}{children}</section>;
 }
-function Input({ label, value, onChange, type = "text", required = false, className = "" }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; className?: string }) { return <label className={`text-[10px] font-medium text-slate-600 ${className}`}>{label}<input required={required} type={type} step={type === "number" ? "any" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>; }
+function Input({ label, value, onChange, type = "text", required = false, disabled = false, className = "" }: { label: string; value: string; onChange: (value: string) => void; type?: string; required?: boolean; disabled?: boolean; className?: string }) { return <label className={`text-[10px] font-medium text-slate-600 ${className}`}>{label}<input disabled={disabled} required={required} type={type} step={type === "number" ? "any" : undefined} value={value} onChange={(event) => onChange(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs disabled:bg-slate-50 disabled:text-slate-700 disabled:opacity-100" /></label>; }
 function MedicationRow({ item }: { item: Medication }) { return <div className="mb-2 rounded-md bg-slate-50 p-3 text-xs"><div className="flex justify-between gap-2"><strong>{item.drug_name || item.medication_name}</strong><span className={item.is_active ? "text-emerald-700" : "text-slate-400"}>{item.is_active ? "복용 중" : "복용 종료"}</span></div><p className="mt-1 text-slate-500">{[item.ingredient_name, item.mfds_item_seq && `ITEM_SEQ ${item.mfds_item_seq}`, item.dose && `${item.dose}${item.dose_unit || ""}`, item.frequency, item.route].filter(Boolean).join(" · ") || "상세 복용 정보 없음"}</p>{!item.mfds_item_seq && <p className="mt-1 font-semibold text-amber-700">DUR 확인을 위해 MFDS ITEM_SEQ 입력이 필요합니다.</p>}</div>; }
 function LabRow({ item }: { item: LabResult }) { return <div className="mb-2 rounded-md bg-slate-50 p-3 text-xs"><div className="flex justify-between gap-2"><strong>{new Date(item.tested_at).toLocaleString("ko-KR")}</strong><span className="text-slate-400">검사 결과</span></div><p className="mt-1 text-slate-600">{[["Cr", item.creatinine], ["eGFR", item.egfr], ["AST", item.ast], ["ALT", item.alt], ["빌리루빈", item.total_bilirubin]].filter(([, value]) => value !== null && value !== undefined && value !== "").map(([label, value]) => `${label} ${value}`).join(" · ") || "등록된 수치 없음"}</p>{item.note && <p className="mt-1 text-slate-400">{item.note}</p>}</div>; }
 function Empty({ text }: { text: string }) { return <p className="py-8 text-center text-xs text-slate-400">{text}</p>; }

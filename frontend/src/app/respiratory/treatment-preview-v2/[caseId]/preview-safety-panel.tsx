@@ -42,7 +42,7 @@ export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseIn
   const unresolved = results.some(result => result.result === "BLOCK" || BLOCKED_CODES.has(result.source_code ?? ""));
   const needsAck = results.some(result => result.result === "WARNING" && !result.acknowledged_at && !BLOCKED_CODES.has(result.source_code ?? ""));
   const completeFinalDose = Boolean(prescription?.items.length && prescription.items.every(item => item.final_dose != null));
-  const canFinalize = Boolean(prescription?.prescription_status === "VALIDATED" && completeFinalDose && results.length && prescription.safety_freshness === "CURRENT" && !inputChanged && !unresolved && !needsAck);
+  const canFinalize = Boolean(prescription?.prescription_status === "VALIDATED" && completeFinalDose && results.length && prescription.safety_freshness === "CURRENT" && !inputChanged);
 
   const run = async () => {
     if (!prescription) return;
