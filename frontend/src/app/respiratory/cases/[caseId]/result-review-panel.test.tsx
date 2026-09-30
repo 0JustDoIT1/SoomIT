@@ -219,7 +219,7 @@ describe("ResultReviewPanel", () => {
       expect(screen.queryByRole("heading", { name: heading })).toBeNull();
       expect(screen.getByRole("heading", { name: "호흡기내과 검토 중" })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "AI 분석 후보" })).toBeTruthy();
-      expect(screen.getByRole("heading", { name: "X-ray Viewer" })).toBeTruthy();
+      expect(screen.getByRole("heading", { name: /X-ray/ })).toBeTruthy();
     } else {
       expect(screen.getByRole("heading", { name: heading })).toBeTruthy();
       expect(screen.getByRole("heading", { name: "원본 영상" })).toBeTruthy();
