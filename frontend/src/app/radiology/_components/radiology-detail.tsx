@@ -7,6 +7,7 @@ import dynamic from "next/dynamic";
 import { StatusBadge } from "@/components/workspace/status-badge";
 import { showToast } from "@/components/ui/toast/toast";
 import { formatPatientSex } from "@/lib/patient-display";
+import { ctSeriesDescription } from "./ct-series-description";
 
 import {
   groupBySeriesInstanceUid,
@@ -974,7 +975,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                                 onChange={() => setSelectedSeriesUid(summary.seriesInstanceUid)}
                               />
                               <span className="truncate font-medium text-slate-800">
-                                {summary.seriesDescription || "설명 없음"}
+                                {ctSeriesDescription(summary.seriesDescription, summary.sliceCount, isCt)}
                                 {isLikelyLocalizer(summary) ? " (Localizer/Scout)" : ""}
                               </span>
                             </span>
@@ -989,6 +990,7 @@ export function RadiologyDetail({ item, embedded = false, onImageUploaded }: {
                       <CtSeriesPreview
                         key={uploadedSeriesPreview?.renderKey ?? `selected-${selectedSeriesUid ?? "none"}`}
                         seriesFiles={previewSeriesFiles}
+                        isCt={isCt}
                       />
                       {ctSeriesValidation && !ctSeriesValidation.valid ? (
                         <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">

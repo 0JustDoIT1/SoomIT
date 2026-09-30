@@ -4,6 +4,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 import { sortSeriesFiles, type DicomHeaderInfo } from "../_lib/dicom-header";
 import { ensureCornerstoneInitialized } from "../_lib/cornerstone-init";
+import { ctSeriesDescription } from "./ct-series-description";
 
 function truncateUid(uid: string | null) {
   if (!uid) return "-";
@@ -15,7 +16,7 @@ function truncateUid(uid: string | null) {
  * Renders a single representative slice from a selected DICOM Series using Cornerstone3D.
  * Scope is intentionally limited to a static single-frame preview: no scroll, MPR, or volume rendering.
  */
-export function CtSeriesPreview({ seriesFiles }: { seriesFiles: DicomHeaderInfo[] }) {
+export function CtSeriesPreview({ seriesFiles, isCt }: { seriesFiles: DicomHeaderInfo[]; isCt: boolean }) {
   const elementRef = useRef<HTMLDivElement | null>(null);
   const reactId = useId();
   const [status, setStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
@@ -68,7 +69,7 @@ export function CtSeriesPreview({ seriesFiles }: { seriesFiles: DicomHeaderInfo[
       {status === "loading" ? <p className="text-xs text-slate-500">대표 영상 렌더링 중…</p> : null}
       {status === "error" ? <p className="text-xs text-red-600">대표 영상을 불러오지 못했습니다.</p> : null}
       <div className="space-y-0.5 text-xs text-slate-600">
-        <p className="font-medium text-slate-800">{previewHeader.seriesDescription || "설명 없음"}</p>
+        <p className="font-medium text-slate-800">{ctSeriesDescription(previewHeader.seriesDescription, sortedFiles.length, isCt)}</p>
         <p>전체 slice 수: {sortedFiles.length}건 · 대표 slice: {previewIndex + 1}번째</p>
         <p>Study {truncateUid(previewHeader.studyInstanceUid)} · Series {truncateUid(previewHeader.seriesInstanceUid)}</p>
       </div>
