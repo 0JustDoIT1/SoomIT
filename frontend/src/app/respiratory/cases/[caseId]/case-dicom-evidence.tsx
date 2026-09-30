@@ -103,6 +103,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     const id = `temp-${Date.now()}-${++nextTemporaryAnnotationIdRef.current}`;
     setDirtyAnnotationIds((current) => new Set(current).add(id));
     setAnnotations((current) => [...current, { id, ...annotation }]);
+    setSelectedAnnotationId(id);
   }, [asset, isMutationLocked]);
 
   const deleteSelectedAnnotation = useCallback(async () => {
@@ -309,6 +310,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     const controller = new AbortController();
     let engine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let cleanupTools: (() => void) | null = null;
+    let releaseFile: (() => void) | null = null;
     void (async () => {
       try {
         const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${asset.id}/dicom-web/instances/${uids[index]}/`, { signal: controller.signal, headers: { Accept: "application/dicom" } });
@@ -317,6 +319,10 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         const { core, tools, dicomImageLoader } = await ensureCornerstoneInitialized();
         if (cancelled || !elementRef.current) return;
         const imageId = dicomImageLoader.wadouri.fileManager.add(new File([blob], `${uids[index]}.dcm`, { type: "application/dicom" }));
+        releaseFile = () => {
+          const fileIndex = Number(imageId.split(":")[1]);
+          if (Number.isInteger(fileIndex)) dicomImageLoader.wadouri.fileManager.remove(fileIndex);
+        };
         engine = new core.RenderingEngine(`respiratory-dicom-engine-${reactId}`);
         const viewportId = `respiratory-dicom-viewport-${reactId}`;
         engine.enableElement({ viewportId, type: core.Enums.ViewportType.STACK, element: elementRef.current });
@@ -342,7 +348,10 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         const runtimeTools = { eventTarget: core.eventTarget, Enums: tools.Enums };
         const eventName = runtimeTools.Enums?.Events?.ANNOTATION_COMPLETED;
         const modifiedEventName = runtimeTools.Enums?.Events?.ANNOTATION_MODIFIED;
+        const selectionEventName = runtimeTools.Enums?.Events?.ANNOTATION_SELECTION_CHANGE;
         const syncAnnotation = (event: Event, completed: boolean) => {
+          // Rendering recalculates statistics; it is not a user edit.
+          if ((event as CustomEvent<{ changeType?: string }>).detail?.changeType === "StatsUpdated") return;
           const annotation = (event as CustomEvent<{ annotation?: Record<string, unknown> }>).detail?.annotation;
           const metadata = annotation?.metadata as Record<string, unknown> | undefined;
           const data = annotation?.data as Record<string, unknown> | undefined;
@@ -360,19 +369,33 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           else if (completed) {
             annotationSaveRef.current(payload);
             if (typeof annotation?.annotationUID === "string") {
-              tools.annotation.state.removeAnnotation(annotation.annotationUID);
               ownedAnnotationUids.delete(annotation.annotationUID);
+              tools.annotation.state.removeAnnotation(annotation.annotationUID);
             }
           }
         };
         if (runtimeTools.eventTarget && eventName) {
           const onCompleted = (event: Event) => syncAnnotation(event, true);
           const onModified = (event: Event) => syncAnnotation(event, false);
+          const onSelection = (event: Event) => {
+            const detail = (event as CustomEvent<{ selection?: string[]; removed?: string[] }>).detail;
+            const selectedUid = detail?.selection?.find((uid) => ownedAnnotationUids.has(uid) && uid.startsWith("clinician-"));
+            if (selectedUid) {
+              const id = selectedUid.slice("clinician-".length);
+              setSelectedAnnotationId(id);
+              const selected = annotationsRef.current.find((item) => item.id === id);
+              setAnnotationText(typeof selected?.annotation_data.text === "string" ? selected.annotation_data.text : "");
+            } else if (detail?.removed?.some((uid) => ownedAnnotationUids.has(uid))) {
+              setSelectedAnnotationId(null);
+            }
+          };
           runtimeTools.eventTarget.addEventListener(eventName, onCompleted);
           if (modifiedEventName) runtimeTools.eventTarget.addEventListener(modifiedEventName, onModified);
+          if (selectionEventName) runtimeTools.eventTarget.addEventListener(selectionEventName, onSelection);
           cleanupTools = () => {
             runtimeTools.eventTarget?.removeEventListener(eventName, onCompleted);
             if (modifiedEventName) runtimeTools.eventTarget?.removeEventListener(modifiedEventName, onModified);
+            if (selectionEventName) runtimeTools.eventTarget?.removeEventListener(selectionEventName, onSelection);
             ownedAnnotationUids.forEach((uid) => tools.annotation.state.removeAnnotation(uid));
             tools.ToolGroupManager.destroyToolGroup(toolGroupId);
           };
@@ -384,18 +407,36 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         const addAnnotation = annotationState?.addAnnotation;
         const annotationElement = elementRef.current;
         syncViewerRef.current = () => {
-        ownedAnnotationUids.forEach((uid) => tools.annotation.state.removeAnnotation(uid));
-        ownedAnnotationUids.clear();
+        const visibleAnnotations = annotationsRef.current.filter((saved) => saved.annotation_data.sop_instance_uid === uids[index]);
+        const visibleUids = new Set(visibleAnnotations.map((saved) => `clinician-${saved.id}`));
+        ownedAnnotationUids.forEach((uid) => {
+          if (!visibleUids.has(uid)) {
+            ownedAnnotationUids.delete(uid);
+            tools.annotation.state.removeAnnotation(uid);
+          }
+        });
         if (addAnnotation && annotationElement) {
-          annotationsRef.current
-            .filter((saved) => saved.annotation_data.sop_instance_uid === uids[index])
+          visibleAnnotations
             .forEach((saved) => {
               const points = saved.annotation_data.world_points;
               if (!Array.isArray(points)) return;
               const toolName = saved.annotation_type === "LENGTH" ? tools.LengthTool.toolName : saved.annotation_type === "BOUNDING_BOX" ? tools.RectangleROITool.toolName : tools.ArrowAnnotateTool.toolName;
               const annotationUID = `clinician-${saved.id}`;
+              const existing = tools.annotation.state.getAnnotation?.(annotationUID);
+              if (existing) {
+                existing.data.text = saved.annotation_data.text as string;
+                existing.data.label = saved.annotation_data.text as string;
+                return;
+              }
               ownedAnnotationUids.add(annotationUID);
-              addAnnotation({ annotationUID, highlighted: false, invalidated: false, isLocked: false, isVisible: true, metadata: { toolName, referencedImageId: imageId, FrameOfReferenceUID: saved.annotation_data.frame_of_reference_uid }, data: { handles: { points }, cachedStats: saved.annotation_data.cached_stats ?? {}, text: saved.annotation_data.text, label: saved.annotation_data.text } }, annotationElement);
+              // Use Cornerstone's defaults (textBox, activeHandleIndex, etc.) so
+              // restored annotations remain renderable and editable.
+              const restored = tools.LengthTool.createAnnotation({
+                annotationUID, highlighted: false, invalidated: true,
+                metadata: { ...viewport.getViewReference?.(), toolName, referencedImageId: imageId },
+                data: { handles: { points }, text: saved.annotation_data.text, label: saved.annotation_data.text },
+              });
+              addAnnotation(restored as unknown as Record<string, unknown>, annotationElement);
             });
         }
         viewport.render();
@@ -405,7 +446,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         if (!cancelled) setError(cause instanceof Error ? cause.message : "원본 DICOM을 표시하지 못했습니다.");
       }
     })();
-    return () => { cancelled = true; controller.abort(); syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); };
+    return () => { cancelled = true; controller.abort(); syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); releaseFile?.(); };
   }, [apiBaseUrl, asset, authorizedFetch, caseId, index, reactId, uids]);
 
   const resetSlice = () => setIndex(Math.floor(uids.length / 2));
@@ -413,12 +454,11 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
 
   return (
     <>
-    <section inert={mutationBusy} aria-busy={mutationBusy} ref={viewerFrameRef} className="relative grid h-full min-h-0 min-w-0 grid-rows-[52px_42px_minmax(0,1fr)_44px] overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
-      <header className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 bg-[#0b1220] px-3">
-        <div className="min-w-0"><p className="text-[11px] font-semibold tracking-wide text-cyan-300">원본 DICOM 영상</p><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2>{annotationLoading && <span className="text-xs font-semibold text-slate-400">주석 로딩</span>}{annotationLoadError && <button type="button" onClick={retryAnnotationLoad} className="text-xs font-semibold text-amber-300 underline" title={annotationLoadError}>주석 조회 재시도</button>}{annotationMutationError && <span role="alert" className="text-xs font-semibold text-rose-300" title={annotationMutationError}>주석 처리 실패</span>}</div></div>
-        <div className="flex shrink-0 items-center gap-1 text-xs">
+    <section inert={mutationBusy} aria-busy={mutationBusy} ref={viewerFrameRef} className="relative flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
+      <header className="flex min-w-0 shrink-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 border-b border-slate-800 bg-[#0b1220] px-3 py-2">
+        <div className="min-w-0 shrink-0 max-w-full"><p className="whitespace-nowrap text-[11px] font-semibold tracking-wide text-cyan-300">원본 DICOM 영상</p><div className="flex flex-wrap items-center gap-x-2 gap-y-1"><h2 className="text-sm font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2>{annotationLoading && <span className="text-xs font-semibold text-slate-400">주석 로딩</span>}{annotationLoadError && <button type="button" onClick={retryAnnotationLoad} className="text-xs font-semibold text-amber-300 underline" title={annotationLoadError}>주석 조회 재시도</button>}{annotationMutationError && <span role="alert" className="text-xs font-semibold text-rose-300" title={annotationMutationError}>주석 처리 실패</span>}</div></div>
+        <div aria-label="DICOM 도구 모음" className="flex min-w-0 max-w-full flex-wrap items-center gap-1 text-xs">
           <ToolButton active label="1×1" title="현재 단일 Stack Viewport" />
-          <ToolButton disabled label="2×2" title="현재 MPR·다중 Viewport는 지원하지 않습니다." />
           <ToolButton active={activeTool === "WL"} onClick={() => setActiveTool("WL")} label="WL/WW" title="Window/Level" />
           <ToolButton active={activeTool === "ZOOM"} onClick={() => setActiveTool("ZOOM")} label="Zoom" title="Zoom" />
           <ToolButton active={activeTool === "PAN"} onClick={() => setActiveTool("PAN")} label="Pan" title="Pan" />
@@ -426,21 +466,20 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           <ToolButton active={activeTool === "ROI"} onClick={() => setActiveTool("ROI")} label="ROI" title="Rectangle ROI" />
           <ToolButton active={activeTool === "TEXT"} onClick={() => setActiveTool("TEXT")} label="Text" title="Text annotation" />
           {activeTool === "TEXT" && <input aria-label="텍스트 주석 내용" value={annotationText} onChange={(event) => setAnnotationText(event.target.value)} placeholder="내용 입력 후 위치 선택" className="h-6 w-32 rounded border border-slate-700 bg-slate-950 px-1.5 text-[9px] text-white placeholder:text-slate-500" />}
-          <ToolButton disabled={dirtyAnnotationIds.size === 0} onClick={() => void persistAnnotations()} label="주석 저장" title="작성하거나 수정한 의료진 주석 저장" />
-          <ToolButton disabled={!selectedAnnotationVisible} onClick={() => void deleteSelectedAnnotation()} label="선택 삭제" title="현재 슬라이스에서 선택한 의료진 주석 삭제" />
-          <ToolButton disabled={annotations.length === 0} onClick={() => void deleteAllAnnotations()} label="전체 삭제" title="현재 영상의 의료진 주석 전체 삭제" />
+          <ToolButton disabled={mutationBusy} onClick={() => { if (dirtyAnnotationIds.size === 0) { showToast.info("저장할 변경 사항이 없습니다. 측정·ROI·Text 도구로 주석을 먼저 작성해 주세요."); return; } void persistAnnotations(); }} label="주석 저장" title="작성하거나 수정한 의료진 주석 저장" />
+          <ToolButton disabled={mutationBusy} onClick={() => { if (!selectedAnnotationVisible) { showToast.info("현재 슬라이스의 주석을 영상 또는 주석 목록에서 먼저 선택해 주세요."); return; } void deleteSelectedAnnotation(); }} label="선택 삭제" title="현재 슬라이스에서 선택한 의료진 주석 삭제" />
+          <ToolButton disabled={mutationBusy} onClick={() => { if (annotations.length === 0) { showToast.info("삭제할 주석이 없습니다."); return; } void deleteAllAnnotations(); }} label="전체 삭제" title="현재 영상의 의료진 주석 전체 삭제" />
           <ToolButton label="Reset" disabled={!uids.length} onClick={resetSlice} title="중앙 슬라이스로 이동" />
           <ToolButton label="전체화면" disabled={!asset} onClick={() => void openFullscreen()} title="전체화면" />
         </div>
       </header>
 
-      <div className="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-[#101827] px-2 py-1.5" aria-label="DICOM series">
+      <div className="flex h-[42px] min-h-0 min-w-0 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-800 bg-[#101827] px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="DICOM series">
         {assets.map((item) => <button key={item.id} type="button" onClick={() => setSelectedAssetId(item.id)} className={`min-h-8 shrink-0 rounded px-3 py-1 text-xs font-semibold transition ${item.id === selectedAssetId ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{item.image_type === "PET" ? "PET" : "CT"} Series</button>)}
-        {isTnm && <span className="ml-1 shrink-0 rounded border border-slate-700 px-2 py-1 text-[8px] text-slate-500" title="현재 CT-PET Fusion Viewport는 지원하지 않습니다.">Fusion 미지원</span>}
       </div>
 
       {annotations.length > 0 && (
-        <div className="absolute inset-x-0 top-[86px] z-30 flex min-w-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-950/95 px-2 py-1" aria-label="의료진 주석 목록">
+        <div className="flex min-w-0 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-950/95 px-2 py-1" aria-label="의료진 주석 목록">
           <span className="shrink-0 px-1 text-[8px] text-slate-500">의료진 주석</span>
           {annotations.filter((annotation) => annotation.annotation_data.sop_instance_uid === uids[index]).map((annotation, index) => (
             <button key={annotation.id} type="button" aria-pressed={selectedAnnotationId === annotation.id} onClick={() => selectAnnotation(annotation)} className={`shrink-0 rounded px-1.5 py-1 text-[8px] font-semibold ${selectedAnnotationId === annotation.id ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}>
@@ -460,15 +499,15 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         </div>
       )}
 
-      <div className="relative min-h-0 overflow-hidden bg-black">
+      <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
         <div ref={elementRef} tabIndex={0} onContextMenu={preventMedicalImageContextMenu} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setIndex((value) => Math.max(0, value - 1)); } if (event.key === "ArrowRight") { event.preventDefault(); setIndex((value) => Math.min(uids.length - 1, value + 1)); } }} className="absolute inset-0 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="DICOM 원본 영상 뷰어. 좌우 화살표로 슬라이스 이동" />
         {asset && <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1"><HudChip>{asset.image_type || "DICOM"} Series</HudChip><HudChip>Axial stack</HudChip><HudChip>Slice {uids.length ? `${index + 1} / ${uids.length}` : "-"}</HudChip></div>}
         {loading && <p role="status" className="grid h-full place-items-center text-xs text-slate-300">DICOM Series를 불러오는 중입니다.</p>}
         {!loading && error && <p role="alert" className="grid h-full place-items-center px-8 text-center text-xs text-rose-200">{error}</p>}
-        {!loading && !error && <p className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/55 px-2 py-1 text-[8px] text-slate-400">← / → 슬라이스 이동</p>}
+        {!loading && !error && <p className="pointer-events-none absolute bottom-2 right-2 rounded bg-black/55 px-2 py-1 text-[10px] text-slate-400">{annotations.length === 0 ? "측정·ROI·Text로 주석을 그리면 저장·삭제할 수 있습니다" : dirtyAnnotationIds.size > 0 ? "저장하지 않은 주석이 있습니다" : "주석을 선택하면 삭제할 수 있습니다"} · ← / → 슬라이스 이동</p>}
       </div>
 
-      <footer className="flex min-w-0 items-center gap-2 border-t border-slate-800 bg-[#0b1220] px-3">
+      <footer className="flex h-11 min-w-0 shrink-0 items-center gap-2 border-t border-slate-800 bg-[#0b1220] px-3">
         <button type="button" disabled={!uids.length || index === 0} onClick={() => setIndex((value) => value - 1)} className="rounded border border-slate-700 px-2 py-1 text-[9px] font-medium text-slate-200 disabled:opacity-35">이전</button>
         <input aria-label="DICOM 슬라이스" type="range" min={0} max={Math.max(0, uids.length - 1)} value={Math.min(index, Math.max(0, uids.length - 1))} disabled={!uids.length} onChange={(event) => setIndex(Number(event.target.value))} className="min-w-0 flex-1 accent-blue-500" />
         <span className="w-14 text-right text-[9px] tabular-nums text-slate-400">{uids.length ? `${index + 1}/${uids.length}` : "-"}</span>

@@ -6,6 +6,7 @@ import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
 const addDicomFile = vi.hoisted(() => vi.fn((file: File) => `wadouri:${file.name}`));
 const addDicomMetadata = vi.hoisted(() => vi.fn());
 const toastError = vi.hoisted(() => vi.fn());
+const seriesLoaded = vi.hoisted(() => vi.fn());
 
 vi.mock("@/components/ui/toast/toast", () => ({
   showToast: { error: toastError, success: vi.fn() },
@@ -35,7 +36,7 @@ vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
     onAnnotationUpdated?: (annotationId: string, annotation: { annotation_type: "LENGTH"; annotation_data: Record<string, unknown> }) => Promise<boolean> | boolean | void;
   }) => <div data-testid="ct-viewer">
     <button onClick={() => onAnnotationCreated?.({ annotation_type: "LENGTH", annotation_data: {} })}>create-annotation</button>
-    <button type="button" onClick={() => void loadSeries(orderId, assetId)}>load-series</button>
+    <button type="button" onClick={() => void loadSeries(orderId, assetId).then(seriesLoaded)}>load-series</button>
     <button type="button" onClick={() => void loadSegmentation("analysis-cache")}>load-segmentation</button>
     <span data-testid="annotation-ids">{annotations.map(({ id }) => id).join(",")}</span>
     <button type="button" onClick={() => void onAnnotationDeleted?.(annotations[0]?.id ?? "")}>delete-annotation</button>
@@ -60,6 +61,7 @@ it("retains a newly drawn annotation when the initial GET finishes later", async
     return json([]);
   });
   render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-load-race" />);
+  await waitFor(() => expect(finishLoad).toBeTypeOf("function"));
   fireEvent.click(await screen.findByRole("button", { name: "create-annotation" }));
   const draftId = screen.getByTestId("annotation-ids").textContent;
   expect(draftId).toContain("temp-");
@@ -104,6 +106,7 @@ function createFetch() {
 }
 
 beforeEach(() => {
+  seriesLoaded.mockClear();
   toastError.mockClear();
   addDicomMetadata.mockClear();
 });
@@ -135,7 +138,7 @@ it("reuses CT series and segmentation requests after remounting the same Case se
   expect(toastError).not.toHaveBeenCalled();
 });
 
-it("falls back to full DICOM instances when the frame streaming route is unavailable", async () => {
+it("returns lazy sorted instance URLs without bulk downloads when frames are unavailable", async () => {
   vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const baseFetch = createFetch();
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -147,8 +150,30 @@ it("falls back to full DICOM instances when the frame streaming route is unavail
   render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-frame-fallback" analysisId="analysis-frame-fallback" />);
   fireEvent.click(await screen.findByRole("button", { name: "load-series" }));
 
-  await waitFor(() => expect(authorizedFetch.mock.calls.filter(([url]) => String(url).includes("/dicom-web/series/"))).toHaveLength(1));
+  await waitFor(() => expect(seriesLoaded).toHaveBeenCalledOnce());
+  expect(seriesLoaded.mock.calls[0][0]).toEqual({
+    imageIds: [
+      "wadouri:http://test/api/doctor/cases/case-frame-fallback/image-assets/asset-cache/dicom-web/instances/sop-1/",
+      "wadouri:http://test/api/doctor/cases/case-frame-fallback/image-assets/asset-cache/dicom-web/instances/sop-2/",
+    ], sopInstanceUids: ["sop-1", "sop-2"],
+  });
+  expect(authorizedFetch.mock.calls.some(([url]) => String(url).includes("/dicom-web/series/"))).toBe(false);
+  expect(authorizedFetch.mock.calls.some(([url]) => String(url).endsWith("/dicom-web/instances/"))).toBe(false);
   expect(addDicomMetadata).not.toHaveBeenCalled();
+});
+
+it("prepares a metadata fallback series using only the instance list", async () => {
+  const baseFetch = createFetch();
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/metadata/")) return json({}, 502);
+    return baseFetch(input);
+  });
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-no-metadata" />);
+  fireEvent.click(await screen.findByRole("button", { name: "load-series" }));
+  await waitFor(() => expect(seriesLoaded).toHaveBeenCalledOnce());
+  expect(seriesLoaded.mock.calls[0][0].imageIds).toHaveLength(2);
+  expect(seriesLoaded.mock.calls[0][0].imageIds[0]).toMatch(/^wadouri:http/);
+  expect(authorizedFetch.mock.calls.filter(([url]) => String(url).includes("/dicom-web/")).map(([url]) => String(url).split("/dicom-web/")[1])).toEqual(["metadata/", "instances/"]);
 });
 
 it("keeps the original CT viewer mounted while visiting the 3D view", async () => {

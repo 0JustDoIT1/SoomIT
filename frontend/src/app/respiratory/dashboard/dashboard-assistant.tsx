@@ -57,6 +57,7 @@ export function DashboardAssistant({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [isOpen, setIsOpen] = useState(true);
+  const [expanded, setExpanded] = useState(false);
   const requestController = useRef<AbortController | null>(null);
 
   useEffect(
@@ -188,8 +189,8 @@ export function DashboardAssistant({
         </button>
       </div>
 
-      <div id="dashboard-assistant-content" className="grid gap-2.5 p-3">
-      <div className="flex min-h-8 items-center gap-2 overflow-x-auto" aria-label="빠른 질문">
+      <div id="dashboard-assistant-content" className="grid min-w-0 grid-cols-[minmax(0,1fr)] gap-2.5 p-3">
+      <div className="flex min-h-8 flex-wrap items-center gap-2" aria-label="빠른 질문">
           <span className="shrink-0 rounded-md bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-500">빠른 질문</span>
           {QUICK_ACTIONS.map((action) => (
             <button
@@ -205,9 +206,14 @@ export function DashboardAssistant({
       </div>
 
       {(messages.length > 0 || loading || error) && (
+        <div className="min-w-0 overflow-hidden rounded-xl border border-slate-200 bg-slate-50/60">
         <div
+          id="dashboard-assistant-messages"
+          role="region"
+          tabIndex={0}
           aria-live="polite"
-          className="max-h-[310px] space-y-3 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-3 [overflow-wrap:anywhere]"
+          aria-label="AI 질문과 답변"
+          className={`min-w-0 space-y-2.5 overflow-y-auto overscroll-contain p-3 [overflow-wrap:anywhere] [scrollbar-gutter:stable] focus-visible:outline-2 focus-visible:outline-blue-400 ${expanded ? "max-h-[65dvh]" : "max-h-[240px]"}`}
         >
           {messages.map((message, index) => message.display === "quick" ? (
             <p key={`${message.role}-${index}`} className="sr-only">{message.content}</p>
@@ -216,12 +222,12 @@ export function DashboardAssistant({
               key={`${message.role}-${index}`}
               className={
                 message.role === "user"
-                  ? "ml-auto max-w-[70%] rounded-xl rounded-tr-sm bg-[#2f6f9f] px-3.5 py-2 text-sm leading-6 text-white"
-                  : "rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm leading-6 text-slate-700"
+                  ? "w-full min-w-0 rounded-xl border border-blue-100 bg-blue-50/70 px-3.5 py-2.5 text-sm leading-6 text-slate-800"
+                  : "min-w-0 rounded-xl border border-slate-200 bg-white px-3.5 py-3 text-sm leading-6 text-slate-700"
               }
             >
               {message.role === "assistant" ? (
-                <div>
+                <div className="min-w-0">
                   <div className="mb-2 flex items-center gap-2 border-b border-slate-100 pb-2">
                     <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-50 text-blue-600" aria-hidden="true"><AssistantIcon small /></span>
                     <span className="text-[11px] font-bold text-blue-700">AI 요약</span>
@@ -229,7 +235,10 @@ export function DashboardAssistant({
                   <AssistantText content={message.content} />
                 </div>
               ) : (
-                <p>{message.content}</p>
+                <div className="flex min-w-0 items-start gap-2.5">
+                  <span className="shrink-0 rounded-md bg-blue-100 px-2 text-[11px] font-semibold leading-6 text-blue-700">질문</span>
+                  <p className="min-w-0 whitespace-pre-wrap">{message.content}</p>
+                </div>
               )}
 
               {message.references?.map((reference) => {
@@ -272,6 +281,13 @@ export function DashboardAssistant({
               {error}
             </p>
           )}
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-slate-200 bg-white px-3 py-1.5">
+          <span className="text-[11px] text-slate-500">긴 답변은 대화창 안에서 스크롤해 주세요</span>
+          <button type="button" aria-expanded={expanded} aria-controls="dashboard-assistant-messages" onClick={() => setExpanded((current) => !current)} className="shrink-0 rounded-md px-2 py-1 text-xs font-semibold text-blue-700 transition hover:bg-blue-50">
+            {expanded ? "작게 보기" : "넓게 보기"}
+          </button>
+        </div>
         </div>
       )}
 

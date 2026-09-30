@@ -16,7 +16,6 @@ import {
   loadImageAnnotations,
   shouldNotifyImageAnnotationLoadFailure,
 } from "./image-annotation-request";
-import { parseDicomMultipart, sopUidFromContentLocation } from "./dicom-multipart";
 
 type AuthorizedFetch = (
   input: RequestInfo | URL,
@@ -54,20 +53,6 @@ function cachedRequest<T>(cache: Map<string, Promise<T>>, key: string, load: () 
     cache.delete(oldest);
   }
   return request;
-}
-
-async function mapWithConcurrency<T, R>(items: T[], limit: number, task: (item: T) => Promise<R>) {
-  const results = new Array<R>(items.length);
-  let cursor = 0;
-  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (cursor < items.length) {
-      const index = cursor;
-      cursor += 1;
-      results[index] = await task(items[index]);
-    }
-  });
-  await Promise.all(workers);
-  return results;
 }
 
 export type CtEvidenceInfo = {
@@ -241,19 +226,17 @@ export function CaseCtSegmentationEvidence({
 
   const loadSeries = useCallback(
     async (_orderId: string, assetId: string) => {
-      const cacheKey = `frame-probe-v1:${caseId}:${assetId}:${asset?.series_instance_uid ?? ""}`;
+      const cacheKey = `lazy-instances-v2:${apiBaseUrl}:${caseId}:${assetId}:${asset?.series_instance_uid ?? ""}`;
       const series = await cachedRequest(seriesRequestCache, cacheKey, async () => {
         const metadataUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/metadata/`;
         const instancesUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/`;
-        const bulkUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/series/`;
-        const { dicomImageLoader } = await ensureCornerstoneInitialized();
-
-        // Metadata is small and lets Cornerstone request/decode frames only as
-        // they are needed. This avoids blocking first paint on the entire CT
-        // Series download (often tens of megabytes).
-        const metadataResponse = await authorizedFetch(metadataUrl, {
-          headers: { Accept: "application/dicom+json" },
-        }).catch(() => null);
+        // Load the imaging runtime and metadata concurrently.
+        const [{ dicomImageLoader }, metadataResponse] = await Promise.all([
+          ensureCornerstoneInitialized(),
+          authorizedFetch(metadataUrl, { headers: { Accept: "application/dicom+json" } }).catch(() => null),
+        ]);
+        const instanceImageId = (uid: string) =>
+          `wadouri:${instancesUrl}${encodeURIComponent(uid)}/`;
         if (metadataResponse?.ok) {
           const metadataBody: unknown = await metadataResponse.json().catch(() => null);
           if (Array.isArray(metadataBody)) {
@@ -277,7 +260,8 @@ export function CaseCtSegmentationEvidence({
                 headers: { Accept: 'multipart/related; type="application/octet-stream"' },
               }).catch(() => null);
               if (!frameProbe?.ok) {
-                console.warn("[ct-series] frame streaming endpoint unavailable; using DICOM instance fallback");
+                // Keep the sorted metadata order without downloading the series first.
+                return { imageIds: ordered.map(({ uid }) => instanceImageId(uid)), sopInstanceUids: ordered.map(({ uid }) => uid) };
               } else {
                 const imageIds = ordered.map(({ dataset, uid }) => {
                   const frameUrl = `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/${encodeURIComponent(uid)}/frames/1/`;
@@ -294,13 +278,8 @@ export function CaseCtSegmentationEvidence({
           }
         }
 
-        // Compatibility fallback for incomplete DICOMweb metadata. It is not
-        // started in parallel, so a healthy lazy path never downloads 70MB in
-        // the background unnecessarily.
-        const [instancesResponse, bulkResponse] = await Promise.all([
-          authorizedFetch(instancesUrl),
-          authorizedFetch(bulkUrl, { headers: { Accept: 'multipart/related; type="application/dicom"' } }).catch(() => null),
-        ]);
+        // WADO-URI fetches only requested slices; do not block on a bulk download.
+        const instancesResponse = await authorizedFetch(instancesUrl);
 
       const instanceBody: unknown = await instancesResponse
         .json()
@@ -323,47 +302,7 @@ export function CaseCtSegmentationEvidence({
         throw new Error("CT DICOM instance가 없습니다.");
       }
 
-      let filesByUid: Map<string, Uint8Array> | null = null;
-      if (bulkResponse?.ok) {
-        try {
-          const contentType = bulkResponse.headers.get("Content-Type") ?? "";
-          const parts = parseDicomMultipart(await bulkResponse.arrayBuffer(), contentType);
-          const located = new Map(parts.map((part) => [sopUidFromContentLocation(part.contentLocation), part.bytes]));
-          filesByUid = new Map(uids.map((uid, index) => [uid, located.get(uid) ?? parts[index]?.bytes]).filter((entry): entry is [string, Uint8Array] => Boolean(entry[1])));
-          if (filesByUid.size !== uids.length) filesByUid = null;
-        } catch (reason) {
-          console.warn("[ct-series] bulk multipart parsing failed; using per-instance fallback", reason);
-        }
-      }
-
-      const imageIds = filesByUid
-        ? uids.map((uid) => dicomImageLoader.wadouri.fileManager.add(new File([Uint8Array.from(filesByUid!.get(uid)!).buffer], `${uid}.dcm`, { type: "application/dicom" })))
-        : await mapWithConcurrency(
-          uids,
-          10,
-          async (uid) => {
-          const response = await authorizedFetch(
-            `${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${assetId}/dicom-web/instances/${uid}/`,
-            {
-              headers: {
-                Accept: "application/dicom",
-              },
-            },
-          );
-
-          if (!response.ok) {
-            throw new Error("CT 원본 DICOM을 불러오지 못했습니다.");
-          }
-
-          const blob = await response.blob();
-
-          return dicomImageLoader.wadouri.fileManager.add(
-            new File([blob], `${uid}.dcm`, {
-              type: "application/dicom",
-            }),
-          );
-          },
-        );
+      const imageIds = uids.map(instanceImageId);
 
       return { imageIds, sopInstanceUids: uids };
       });

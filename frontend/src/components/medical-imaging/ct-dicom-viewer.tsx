@@ -500,7 +500,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       const annotationEventName = tools.Enums.Events.ANNOTATION_COMPLETED;
       const annotationModifiedEventName = tools.Enums.Events.ANNOTATION_MODIFIED;
       const syncAnnotation = (event: Event, completed: boolean) => {
-        const detail = (event as CustomEvent<{ annotation?: Record<string, unknown> }>).detail;
+        const detail = (event as CustomEvent<{ annotation?: Record<string, unknown>; changeType?: string; viewportId?: string }>).detail;
+        if (detail?.changeType === "StatsUpdated") return;
         const annotation = detail?.annotation;
         if (!annotation || !seriesInstanceUid) return;
         const metadata = annotation.metadata as Record<string, unknown> | undefined;
@@ -521,7 +522,12 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         const imageIndex = imageIds.indexOf(referencedImageId);
         const sopInstanceUid = sopInstanceUidsRef.current[imageIndex] ?? sopInstanceUidsRef.current[0];
         if (!sopInstanceUid) return;
-        const viewportId = typeof metadata?.viewportId === "string" ? metadata.viewportId : AXIAL_VIEWPORT_ID;
+        const normal = metadata?.viewPlaneNormal as number[] | undefined;
+        const matchingViewport = normal && MPR_VIEWPORT_IDS.find((id) => {
+          const cameraNormal = renderingEngine?.getViewport(id).getCamera().viewPlaneNormal;
+          return cameraNormal && Math.abs(normal.reduce((sum, value, i) => sum + value * cameraNormal[i], 0)) > 0.999;
+        });
+        const viewportId = detail?.viewportId ?? matchingViewport ?? AXIAL_VIEWPORT_ID;
         const cachedStats = data?.cachedStats && typeof data.cachedStats === "object" ? data.cachedStats : undefined;
         const annotationId = typeof annotation.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-")
           ? annotation.annotationUID.slice("clinician-".length)
@@ -537,6 +543,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
             viewport: viewportId.replace("ct-dicom-viewer-", ""),
             frame_of_reference_uid: typeof metadata?.FrameOfReferenceUID === "string" ? metadata.FrameOfReferenceUID : undefined,
             world_points: points,
+            view_plane_normal: metadata?.viewPlaneNormal,
+            view_up: metadata?.viewUp,
             cached_stats: cachedStats,
             text,
           },
@@ -566,12 +574,27 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         }
       };
       if (annotationEventName) {
+        const selectionEvent = tools.Enums.Events.ANNOTATION_SELECTION_CHANGE;
+        const handleSelection = (event: Event) => {
+          const detail = (event as CustomEvent<{ selection?: string[]; removed?: string[] }>).detail;
+          const uid = detail?.selection?.find((value) => ownedAnnotationUids.has(value) && value.startsWith("clinician-"));
+          if (uid) {
+            const id = uid.slice("clinician-".length);
+            setSelectedAnnotationId(id);
+            const selected = annotationsRef.current.find((item) => item.id === id);
+            setAnnotationText(typeof selected?.annotation_data.text === "string" ? selected.annotation_data.text : "");
+          } else if (detail?.removed?.some((value) => ownedAnnotationUids.has(value))) {
+            setSelectedAnnotationId(null);
+          }
+        };
+        if (selectionEvent) core.eventTarget.addEventListener(selectionEvent, handleSelection);
         const handleAnnotationCompleted = (event: Event) => syncAnnotation(event, true);
         const handleAnnotationModified = (event: Event) => syncAnnotation(event, false);
         core.eventTarget.addEventListener(annotationEventName, handleAnnotationCompleted);
         if (annotationModifiedEventName) core.eventTarget.addEventListener(annotationModifiedEventName, handleAnnotationModified);
         const previousCleanup = cleanupCornerstoneState;
         cleanupCornerstoneState = () => {
+          if (selectionEvent) core.eventTarget.removeEventListener(selectionEvent, handleSelection);
           core.eventTarget.removeEventListener(annotationEventName, handleAnnotationCompleted);
           if (annotationModifiedEventName) core.eventTarget.removeEventListener(annotationModifiedEventName, handleAnnotationModified);
           previousCleanup?.();
@@ -657,12 +680,19 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         tools.utilities.triggerAnnotationRenderForViewportIds([...MPR_VIEWPORT_IDS]);
       };
       const syncClinicianAnnotations = () => {
-        // Cornerstone stores annotations globally, rather than in a rendering
-        // engine. Remove persisted clinician overlays left by an earlier Case
-        // before restoring this Case; otherwise they can be drawn over a
-        // different patient's CT after navigation or Fast Refresh.
-        restoredClinicianAnnotationUids.forEach((uid) => annotationState?.removeAnnotation?.(uid));
-        restoredClinicianAnnotationUids.clear();
+        // Keep live objects while dragging; removing them loses selection and
+        // leaves Cornerstone's edit session pointing at a detached annotation.
+        const validUids = new Set(annotationsRef.current.filter((saved) =>
+          saved.annotation_data.series_instance_uid === seriesInstanceUid &&
+          sopInstanceUidsRef.current.includes(String(saved.annotation_data.sop_instance_uid)),
+        ).map((saved) => `clinician-${saved.id}`));
+        restoredClinicianAnnotationUids.forEach((uid) => {
+          if (!validUids.has(uid)) {
+            ownedAnnotationUids.delete(uid);
+            annotationState?.removeAnnotation?.(uid);
+            restoredClinicianAnnotationUids.delete(uid);
+          }
+        });
         if (!annotationState?.addAnnotation) return;
         const addAnnotation = annotationState.addAnnotation;
         annotationsRef.current.forEach((saved) => {
@@ -680,7 +710,15 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           const target = ({ axial: axialRef.current, coronal: coronalRef.current, sagittal: sagittalRef.current } as Record<string, HTMLDivElement | null>)[viewportName] ?? axialRef.current;
           if (!target) return;
           const annotationUID = `clinician-${saved.id}`;
-          addAnnotation({
+          const existing = tools.annotation.state.getAnnotation(annotationUID);
+          if (existing) {
+            existing.data.text = typeof data.text === "string" ? data.text : undefined;
+            existing.data.label = typeof data.text === "string" ? data.text : undefined;
+            return;
+          }
+          const targetViewportId = ({ axial: AXIAL_VIEWPORT_ID, coronal: CORONAL_VIEWPORT_ID, sagittal: SAGITTAL_VIEWPORT_ID } as Record<string, string>)[viewportName] ?? AXIAL_VIEWPORT_ID;
+          const camera = renderingEngine?.getViewport(targetViewportId).getCamera();
+          addAnnotation(tools.LengthTool.createAnnotation({
             annotationUID,
             highlighted: false,
             invalidated: false,
@@ -690,6 +728,8 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               toolName,
               FrameOfReferenceUID: data.frame_of_reference_uid,
               referencedImageId: imageIds[Math.max(0, sopInstanceUidsRef.current.indexOf(String(data.sop_instance_uid)))],
+              viewPlaneNormal: data.view_plane_normal ?? camera?.viewPlaneNormal,
+              viewUp: data.view_up ?? camera?.viewUp,
             },
             data: {
               handles: { points },
@@ -697,7 +737,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               text: typeof data.text === "string" ? data.text : undefined,
               label: typeof data.text === "string" ? data.text : undefined,
             },
-          }, target);
+          }) as unknown as Record<string, unknown>, target);
           restoredClinicianAnnotationUids.add(annotationUID);
           ownedAnnotationUids.add(annotationUID);
         });
@@ -755,9 +795,15 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       }
       // Keep the explicit DICOMweb decode path as a background fallback for
       // loaders that stall with metadata alone. Cached/in-flight images are shared.
+      let lastBackgroundRender = performance.now();
       void runWithConcurrency(imageIds, 8, async (imageId) => {
         if (disposed) return;
         await core.imageLoader.loadAndCacheImage(imageId);
+        if (!disposed && performance.now() - lastBackgroundRender >= 100) {
+          lastBackgroundRender = performance.now();
+          renderingEngine?.render();
+        }
+      }).then(() => {
         if (!disposed) renderingEngine?.render();
       }).catch((reason: unknown) => {
         if (!disposed) setViewerError(reason instanceof Error ? reason.message : "CT 슬라이스를 불러오지 못했습니다.");
