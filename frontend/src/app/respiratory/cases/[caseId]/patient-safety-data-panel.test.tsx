@@ -11,6 +11,43 @@ vi.mock("react-day-picker", () => ({
 function jsonResponse(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }); }
 
 describe("PatientSafetyDataPanel", () => {
+  it.each([true, false])("registers another lab without copying old values (compact=%s)", async (compact) => {
+    const changed = vi.fn();
+    const oldLab = { id: "old", creatinine: "0.9", tested_at: "2026-09-15T00:00:00Z" };
+    let labs = [oldLab];
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input).includes("allergy-profile")) return jsonResponse({ allergy_status: "NONE", allergies: [] });
+      if (!String(input).includes("lab-results")) return jsonResponse([]);
+      if (init?.method === "POST") {
+        const payload = JSON.parse(String(init.body));
+        labs = [{ id: "new", ...payload }, oldLab];
+        return jsonResponse(labs[0], 201);
+      }
+      return jsonResponse(labs);
+    });
+    render(<PatientSafetyDataPanel compact={compact} caseId="lab-add" apiBaseUrl="http://test" authorizedFetch={authorizedFetch} onDataChanged={changed} />);
+    fireEvent.click(await screen.findByRole("button", { name: "새 검사값 등록" }));
+    expect(screen.getByLabelText("Creatinine")).toHaveValue(null);
+    expect(screen.getByLabelText("eGFR")).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "등록 취소" }));
+    expect(screen.getByLabelText("Creatinine")).toHaveValue(0.9);
+    expect(screen.getByLabelText("eGFR")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "새 검사값 등록" }));
+    fireEvent.click(screen.getByRole("button", { name: "검사날짜 달력 열기" }));
+    fireEvent.click(screen.getByRole("button", { name: "2026-09-15 선택" }));
+    const save = screen.getByRole("button", { name: compact ? "검사값 저장" : "검사실 결과 등록" });
+    fireEvent.click(save);
+    expect(await screen.findByRole("alert")).toHaveTextContent("검사 수치를 하나 이상");
+    expect(authorizedFetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+    fireEvent.change(screen.getByLabelText("eGFR"), { target: { value: "90" } });
+    fireEvent.click(save);
+    await waitFor(() => expect(changed).toHaveBeenCalledOnce());
+    expect(screen.getByLabelText("eGFR")).toHaveValue(90);
+    expect(screen.getByLabelText("eGFR")).toBeDisabled();
+    expect(labs).toHaveLength(2);
+    expect(labs[1]).toEqual(oldLab);
+  });
+
   it("treats a missing profile as first input, saves it, and reloads the stored values", async () => {
     const user = userEvent.setup();
     const changed = vi.fn();
@@ -101,6 +138,7 @@ describe("PatientSafetyDataPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: "검사날짜 달력 열기" }));
     fireEvent.click(screen.getByRole("button", { name: "2026-09-15 선택" }));
     expect(screen.getByRole("combobox", { name: "검사날짜" })).toHaveValue("2026-09-15");
+    fireEvent.change(screen.getByLabelText("Creatinine"), { target: { value: "0.9" } });
     fireEvent.click(screen.getByRole("button", { name: "검사값 저장" }));
 
     await waitFor(() => expect(savedPayload).toEqual(expect.objectContaining({ tested_at: "2026-09-15T00:00:00.000Z" })));

@@ -71,7 +71,8 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   const [selectedDrugSeq, setSelectedDrugSeq] = useState("");
   const [labForm, setLabForm] = useState(EMPTY_LAB);
   const latestLab = labs[0] ?? null;
-  const labLocked = Boolean(latestLab);
+  const [addingLab, setAddingLab] = useState(false);
+  const labLocked = Boolean(latestLab) && !addingLab;
   const setLabsAndForm = useCallback((next: LabResult[]) => {
     setLabs(next);
     if (next[0]) setLabForm(labToForm(next[0]));
@@ -160,17 +161,31 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
   const saveLab = async (event: FormEvent) => {
     event.preventDefault();
+    if (labLocked || saving !== null) return;
     if (!labForm.tested_at) return;
+    const values = [labForm.creatinine, labForm.egfr, labForm.ast, labForm.alt, labForm.total_bilirubin].filter(value => value !== "");
+    if (!values.length) { setLabError("검사 수치를 하나 이상 입력해 주세요."); return; }
+    if (values.some(value => !Number.isFinite(Number(value)) || Number(value) < 0)) { setLabError("검사 수치는 0 이상의 숫자로 입력해 주세요."); return; }
     setSaving("LAB");
     setLabError("");
     try {
       const response = await authorizedFetch(endpoint("lab-results"), jsonPost(compactPayload({ ...labForm, tested_at: new Date(labForm.tested_at).toISOString() })));
       await requireOk(response, "검사실 결과를 등록하지 못했습니다.");
+      setAddingLab(false);
       await reloadOne(endpoint("lab-results"), authorizedFetch, setLabsAndForm, setLabError, "검사실 결과");
       onDataChanged?.();
     } catch (reason) { setLabError(errorMessage(reason, "검사실 결과를 등록하지 못했습니다.")); }
     finally { setSaving(null); }
   };
+
+  const labActions = latestLab && <div className="col-span-full text-xs text-slate-600">
+    <button type="button" disabled={saving !== null || loading} className="rounded border border-blue-200 px-3 py-2 text-blue-700" onClick={() => {
+      setLabError("");
+      setAddingLab(!addingLab);
+      setLabForm(addingLab ? labToForm(latestLab) : { ...EMPTY_LAB });
+    }}>{addingLab ? "등록 취소" : "새 검사값 등록"}</button>
+    {addingLab && <p className="mt-2">기존 기록은 보존됩니다. 이번 검사 날짜와 확인된 수치를 입력해 주세요. 누락값 보완 시 같은 검사의 기존 수치도 함께 입력해 주세요.</p>}
+  </div>;
 
   if (compact) return (
     <section id="patient-safety-inputs" className="mt-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3" aria-label="환자 안전성 정보">
@@ -188,6 +203,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
       <form onSubmit={saveLab} className="mt-3 grid grid-cols-2 gap-2 border-t border-blue-100 pt-3 sm:grid-cols-5">
         <p className="col-span-2 text-xs font-bold text-slate-700 sm:col-span-5">신장·간기능</p>
+        {labActions}
         <fieldset disabled={labLocked} id="safety-input-renal" className="col-span-2 grid grid-cols-2 gap-2"><Input label="Creatinine" type="number" value={labForm.creatinine} onChange={value => setLabForm(current => ({ ...current, creatinine: value }))} /><Input label="eGFR" type="number" value={labForm.egfr} onChange={value => setLabForm(current => ({ ...current, egfr: value }))} /></fieldset>
         <fieldset disabled={labLocked} id="safety-input-hepatic" className="col-span-2 grid grid-cols-3 gap-2 sm:col-span-3"><Input label="AST" type="number" value={labForm.ast} onChange={value => setLabForm(current => ({ ...current, ast: value }))} /><Input label="ALT" type="number" value={labForm.alt} onChange={value => setLabForm(current => ({ ...current, alt: value }))} /><Input label="Total Bilirubin" type="number" value={labForm.total_bilirubin} onChange={value => setLabForm(current => ({ ...current, total_bilirubin: value }))} /></fieldset>
         <PrescriptionDateField disabled={labLocked} required label="검사날짜" value={labForm.tested_at} onChange={value => setLabForm(current => ({ ...current, tested_at: value }))} className="col-span-2 sm:col-span-3" />
@@ -250,6 +266,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
       <SafetyPanel title="검사실 결과" description="처방 안전성 검사에서 사용하는 신장·간 기능 수치입니다." error={labError} onRetry={() => void reloadOne(endpoint("lab-results"), authorizedFetch, setLabsAndForm, setLabError, "검사실 결과")}>
         <form onSubmit={saveLab} className="grid grid-cols-3 gap-2 border-b border-slate-100 p-3">
+          {labActions}
           <PrescriptionDateField disabled={labLocked} required label="검사날짜" value={labForm.tested_at} onChange={(value) => setLabForm((current) => ({ ...current, tested_at: value }))} className="col-span-3" />
           {(["creatinine", "egfr", "ast", "alt", "total_bilirubin"] as const).map((field) => <Input disabled={labLocked} key={field} label={{ creatinine: "Creatinine", egfr: "eGFR", ast: "AST", alt: "ALT", total_bilirubin: "총 빌리루빈" }[field]} type="number" value={labForm[field]} onChange={(value) => setLabForm((current) => ({ ...current, [field]: value }))} />)}
           <Input disabled={labLocked} label="메모" value={labForm.note} onChange={(value) => setLabForm((current) => ({ ...current, note: value }))} />

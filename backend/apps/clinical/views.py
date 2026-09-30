@@ -1109,7 +1109,7 @@ class DoctorPrescriptionAPIView(PulmonologyWritePermissionMixin, APIView):
             patient=case.patient,
         ).first()
 
-        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at", "-id").first()
+        latest_lab = LabResult.objects.filter(patient=case.patient).order_by("-tested_at", "-created_at", "-id").first()
         validate_prescription_dose_inputs(regimen_drugs, patient_profile, latest_lab)
 
         prescription = serializer.save(
@@ -1892,7 +1892,7 @@ class DoctorPrescriptionSafetyCheckAPIView(APIView):
         latest_lab = (
             LabResult.objects
             .filter(patient=patient)
-            .order_by("-tested_at")
+            .order_by("-tested_at", "-created_at", "-id")
             .first()
         )
 

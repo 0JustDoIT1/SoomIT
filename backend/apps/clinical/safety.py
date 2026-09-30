@@ -133,7 +133,7 @@ def evaluate_prescription_safety_freshness(prescription, *, items=None):
     current_medications = list(
         CurrentMedication.objects.filter(patient=patient, is_active=True).select_related("drug")
     )
-    current_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at").first()
+    current_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at", "-created_at", "-id").first()
     current_snapshot = build_safety_input_snapshot(
         items=list(prescription.items.all()) if items is None else items,
         medications=current_medications,

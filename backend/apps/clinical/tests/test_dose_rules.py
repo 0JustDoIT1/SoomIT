@@ -158,4 +158,4 @@ class DoseRuleTests(SimpleTestCase):
             self.assertEqual(items.create.call_args_list[-1].kwargs["renal_value"], Decimal(74))
             self.assertTrue(all(call.kwargs["final_dose"] is None for call in items.create.call_args_list))
             self.assertTrue(all(call.kwargs["unit"] == "mg" for call in items.create.call_args_list))
-            labs.filter.return_value.order_by.assert_called_once_with("-tested_at", "-id")
+            labs.filter.return_value.order_by.assert_called_once_with("-tested_at", "-created_at", "-id")

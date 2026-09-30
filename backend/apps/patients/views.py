@@ -497,7 +497,7 @@ class DoctorLabResultListCreateAPIView(ListCreateAPIView):
             LabResult.objects
             .filter(patient=case.patient)
             .select_related("recorded_by_user")
-            .order_by("-tested_at")
+            .order_by("-tested_at", "-created_at", "-id")
         )
 
     def perform_create(self, serializer):

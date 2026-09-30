@@ -878,6 +878,19 @@ class CurrentMedicationSerializer(serializers.ModelSerializer):
 # 호흡기내과 - 검사실 수치
 # ─────────────────────────────────────────────
 class LabResultSerializer(serializers.ModelSerializer):
+    def validate(self, attrs):
+        fields = ("creatinine", "egfr", "ast", "alt", "total_bilirubin")
+        errors = {
+            field: "검사 수치는 0 이상이어야 합니다."
+            for field in fields
+            if attrs.get(field) is not None and attrs[field] < 0
+        }
+        if errors:
+            raise serializers.ValidationError(errors)
+        if not any(attrs.get(field, getattr(self.instance, field, None)) is not None for field in fields):
+            raise serializers.ValidationError("검사 수치를 하나 이상 입력해 주세요.")
+        return attrs
+
     class Meta:
         model = LabResult
         fields = [
