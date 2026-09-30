@@ -125,10 +125,10 @@ function CtAiSummary({ detail, selectedNoduleId, onSelectNodule }: { detail: unk
         {nodules.map((value, index) => {
           const id = noduleId(value, index);
           const selected = index === selectedIndex;
-          return <button key={`${id}-${index}`} type="button" role="tab" aria-selected={selected} onClick={() => onSelectNodule(id)} className={`shrink-0 rounded-md border px-2 py-1 text-[9px] font-semibold transition ${selected ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"}`}>결절 #{id}</button>;
+          return <button key={`${id}-${index}`} type="button" role="tab" aria-selected={selected} onClick={() => onSelectNodule(id)} className={`shrink-0 rounded-md border px-2 py-1 text-[9px] font-semibold transition ${selected ? "border-blue-500 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-600 hover:border-blue-300 hover:text-blue-700"}`}>{nodules.length === 1 ? "결절" : `결절 #${id}`}</button>;
         })}
       </div>
-      <CtNoduleDetail value={selectedNodule} index={selectedIndex} />
+      <CtNoduleDetail value={selectedNodule} index={selectedIndex} single={nodules.length === 1} />
     </div> : <div className="mt-2 rounded-md border border-dashed border-blue-200 bg-white/70 px-3 py-3 text-center text-[10px] text-slate-500">검출된 결절이 없습니다.</div>}
     <p className="mt-3 text-[10px] leading-4 text-blue-800">AI 결과는 의료진 확정 판독과 함께 검토해야 합니다.</p>
   </div>;
@@ -138,7 +138,7 @@ function CtSummaryValue({ label, value, emphasis = false }: { label: string; val
   return <div className="min-w-0 rounded-md border border-blue-100 bg-white px-2.5 py-2"><p className="text-[9px] text-slate-500">{label}</p><p className={`mt-0.5 truncate font-bold ${emphasis ? "text-base text-rose-600" : "text-sm text-blue-700"}`}>{value}</p></div>;
 }
 
-function CtNoduleDetail({ value, index }: { value: unknown; index: number }) {
+function CtNoduleDetail({ value, index, single }: { value: unknown; index: number; single: boolean }) {
   const nodule = asRecord(value);
   const payload = asRecord(nodule?.finding_payload);
   const quantification = asRecord(payload?.quantification);
@@ -159,7 +159,7 @@ function CtNoduleDetail({ value, index }: { value: unknown; index: number }) {
 
   return <section data-testid={`ct-nodule-${number}`} className="mt-1.5 rounded-md border border-slate-200 bg-white p-3">
     <div className="flex items-center justify-between gap-2">
-      <h3 className="text-[11px] font-bold text-slate-800">결절 #{String(number)}</h3>
+      <h3 className="text-[11px] font-bold text-slate-800">{single ? "결절" : `결절 #${String(number)}`}</h3>
       {malignancyLabel && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[8px] font-semibold text-slate-600">AI 분류 · {malignancyLabel}</span>}
     </div>
     <div className="mt-2 rounded-md border border-blue-100 bg-blue-50/70 px-3 py-2">

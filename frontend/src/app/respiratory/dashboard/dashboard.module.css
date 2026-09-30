@@ -22,6 +22,12 @@
 .dashboard [class~="border-slate-100"] { border-color: var(--color-slate-200); }
 .dashboard h2 { font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
 .dashboard h3 { font-size: 14px; font-weight: 650; }
+.dashboard .assistantTitle {
+  font-weight: 700;
+  letter-spacing: 0;
+  font-kerning: normal;
+  text-rendering: optimizeLegibility;
+}
 .dashboard button { cursor: pointer; }
 .dashboard button:disabled { cursor: not-allowed; opacity: .55; }
 .dashboard :is(button, input, select) { transition: background-color .15s, border-color .15s; }

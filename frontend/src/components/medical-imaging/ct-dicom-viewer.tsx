@@ -30,6 +30,7 @@ type CtDicomViewerProps = {
 };
 
 export type ClinicianImageAnnotation = {
+  clientId?: string;
   id: string;
   annotation_type: "LENGTH" | "BOUNDING_BOX" | "TEXT";
   annotation_data: Record<string, unknown>;
@@ -195,7 +196,10 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
   const [activeTool, setActiveTool] = useState<MprToolMode>(restoredSession?.activeTool ?? "WL");
   const [segmentationVisible, setSegmentationVisible] = useState(restoredSession?.segmentationVisible ?? true);
   const [selectedNoduleId, setSelectedNoduleId] = useState<string | null>(initialNoduleId);
-  const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
+  const [selectedAnnotationKey, setSelectedAnnotationId] = useState<string | null>(null);
+  const selectedAnnotationId = annotations.find((item) =>
+    item.id === selectedAnnotationKey || item.clientId === selectedAnnotationKey,
+  )?.id ?? null;
   const [annotationText, setAnnotationText] = useState("");
 
   const imageIdsRef = useRef<string[] | null>(null);
@@ -1122,7 +1126,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               onClick={() => focusNodule(nodule.id)}
               className={`h-7 shrink-0 rounded-md border px-2 text-[9px] font-semibold transition ${effectiveSelectedNoduleId === nodule.id ? "border-violet-400 bg-violet-600 text-white" : "border-slate-700 bg-slate-900 text-slate-300 hover:bg-slate-800"}`}
             >
-              {nodule.label}
+              {visibleNodules.length === 1 ? "결절" : nodule.label}
             </button>
           ))}
         </div>

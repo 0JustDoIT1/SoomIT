@@ -1,10 +1,11 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { clearWsiViewportCacheForTests } from "@/components/pathology/wsi-viewer";
 import { CaseWsiEvidence } from "./case-wsi-evidence";
 
 type ViewerMock = {
+  element: HTMLElement;
   addHandler: ReturnType<typeof vi.fn>;
   removeHandler: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
@@ -23,6 +24,7 @@ const osd = vi.hoisted(() => {
   function makeViewer(): ViewerMock {
     let destroyed = false;
     const instance = {
+      element: document.createElement("div"),
       addHandler: vi.fn((name: string, handler: () => void) => {
         if (name === "open") queueMicrotask(handler);
       }),
@@ -79,6 +81,77 @@ beforeEach(() => {
 });
 
 describe("CaseWsiEvidence", () => {
+  function multiSlideFetch() {
+    return vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const url = String(input);
+      if (url.endsWith("/specimens/")) return response([{ id: "specimen-1", specimen_code: "SP-1" }]);
+      if (url.includes("/specimens/specimen-1/slides/")) return response([1, 2].map((id) => ({
+        id: `slide-${id}`, specimen_id: "specimen-1", image_asset_id: `asset-${id}`,
+        slide_code: `HE-${id}`, stain: "HE", status: "READY",
+        viewer_url: `/api/doctor/cases/slides/slide-${id}/viewer/`,
+      })));
+      if (url.endsWith("/viewer/")) return response({ width: 2048, height: 1024, tile_width: 512, tile_height: 512, max_level: 1, sizes: [[2048, 1024], [1024, 512]], tile_url_template: "/tiles/{level}/{x}/{y}.jpg" });
+      if (url.endsWith("/tissue-heatmap/")) return response({ detail: "not available" }, 404);
+      if (url.includes("/image-annotations/")) return init?.method === "POST"
+        ? response({ id: "saved-1", ...JSON.parse(String(init.body)) }) : response([]);
+      throw new Error(`Unexpected request: ${url}`);
+    });
+  }
+
+  it.each(["Point", "Polygon", "Text"])("confirms before discarding an unsaved %s when selecting another slide", async (tool) => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={multiSlideFetch()} caseId="case-1" stain="HE" />);
+    fireEvent.click(await screen.findByRole("button", { name: tool }));
+    if (tool === "Text") {
+      fireEvent.change(screen.getByLabelText("Annotation text"), { target: { value: "unsaved note" } });
+    } else {
+      fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    }
+    const nextSlide = screen.getByRole("button", { name: /HE-2/ });
+    fireEvent.click(nextSlide);
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(screen.getByLabelText("HE-1 WSI 뷰어")).toBeInTheDocument();
+    expect(osd.viewers[0].destroy).not.toHaveBeenCalled();
+    if (tool === "Point") expect(screen.getByRole("button", { name: "주석 저장" })).toBeEnabled();
+    if (tool === "Polygon") expect(screen.getByRole("button", { name: "완료" })).toBeInTheDocument();
+    if (tool === "Text") expect(screen.getByLabelText("Annotation text")).toHaveValue("unsaved note");
+
+    confirm.mockReturnValue(true);
+    fireEvent.click(nextSlide);
+    await screen.findByLabelText("HE-2 WSI 뷰어");
+    await waitFor(() => expect(osd.viewers[0].destroy).toHaveBeenCalledOnce());
+    expect(confirm).toHaveBeenCalledTimes(2);
+    confirm.mockRestore();
+  });
+
+  it("blocks slide switching during save and allows it without confirmation after success", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const fetchSlides = multiSlideFetch();
+    let resolveSave!: (value: Response) => void;
+    let savedBody: unknown;
+    const authorizedFetch = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      if (init?.method === "POST") {
+        savedBody = { id: "saved-1", ...JSON.parse(String(init.body)) };
+        return new Promise<Response>((resolve) => { resolveSave = resolve; });
+      }
+      return fetchSlides(input, init);
+    });
+    render(<CaseWsiEvidence apiBaseUrl="http://api.test" authorizedFetch={authorizedFetch} caseId="case-1" stain="HE" />);
+    fireEvent.click(await screen.findByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
+    const nextSlide = screen.getByRole("button", { name: /HE-2/ });
+    expect(nextSlide).toBeDisabled();
+    fireEvent.click(nextSlide);
+    expect(screen.getByLabelText("HE-1 WSI 뷰어")).toBeInTheDocument();
+    await act(async () => resolveSave(response(savedBody)));
+    expect(nextSlide).toBeEnabled();
+    fireEvent.click(nextSlide);
+    await screen.findByLabelText("HE-2 WSI 뷰어");
+    expect(confirm).not.toHaveBeenCalled();
+    confirm.mockRestore();
+  });
+
   it.each([
     ["HE" as const, "slide-he", "asset-he", [[2048, 1024], [1024, 512]]],
     ["PDL1" as const, "slide-pdl1", "asset-pdl1", [[4608, 2304], [1024, 512], [384, 192]]],

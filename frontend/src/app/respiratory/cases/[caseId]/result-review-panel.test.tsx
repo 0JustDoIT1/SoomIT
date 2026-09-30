@@ -195,7 +195,7 @@ describe("ResultReviewPanel", () => {
 
     expect(screen.getByText("1개")).toBeTruthy();
     const nodule = within(screen.getByTestId("ct-nodule-1"));
-    expect(nodule.getByText("결절 #1")).toBeTruthy();
+    expect(nodule.getByText("결절")).toBeTruthy();
     expect(nodule.getAllByText("-")).toHaveLength(6);
     expect(screen.queryByText("NaN")).toBeNull();
     expect(screen.queryByText("null")).toBeNull();

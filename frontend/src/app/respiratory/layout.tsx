@@ -215,7 +215,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
       <div className="flex min-w-0 flex-1 flex-col">
-      <header className="relative z-30 flex h-[60px] shrink-0 items-center justify-between gap-3 border-b border-blue-100 bg-white px-3 shadow-sm xl:px-5">
+      <header className="relative z-30 flex h-[60px] shrink-0 items-center justify-between gap-3 border-b border-slate-200 bg-white px-3 shadow-sm xl:px-5">
         <div className="flex min-w-0 items-center gap-3">
           <div className="hidden lg:block">
             <p className="whitespace-nowrap text-[13px] font-bold text-slate-900">
@@ -231,7 +231,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
         <div className="relative min-w-0 flex-1 px-2 xl:max-w-[430px]">
           <form onSubmit={submitSearch} role="search">
             <label htmlFor="respiratory-case-search" className="sr-only">담당 Case 검색</label>
-            <div className="flex h-9 items-center gap-2 rounded-lg border border-blue-100 bg-[#f3f7fd] px-3 text-slate-500 focus-within:border-blue-400 focus-within:bg-white">
+            <div className="flex h-9 items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 text-slate-600 focus-within:border-blue-400 focus-within:bg-white">
               <span aria-hidden="true">⌕</span>
               <input id="respiratory-case-search" type="search" value={search} onChange={(event) => updateSearch(event.target.value)} onFocus={() => setSearchOpen(true)} placeholder="환자명, 환자번호, Case 번호 검색" className="min-w-0 flex-1 bg-transparent text-xs text-slate-800 outline-none placeholder:text-slate-500" />
             </div>
@@ -280,7 +280,7 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
           <button
             type="button"
             onClick={logout}
-            className="rounded-lg border border-blue-100 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-blue-50 hover:text-blue-700"
+            className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-blue-700"
           >
             로그아웃
           </button>

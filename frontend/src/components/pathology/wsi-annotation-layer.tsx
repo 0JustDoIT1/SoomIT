@@ -63,6 +63,7 @@ export function WsiAnnotationLayer({
   createViewerPoint,
   authorizedFetch,
   writable,
+  onEditStateChange,
 }: {
   viewer: OpenSeadragonType.Viewer | null;
   toolbarElement: HTMLElement | null;
@@ -75,6 +76,7 @@ export function WsiAnnotationLayer({
   createViewerPoint: CreateViewerPoint;
   authorizedFetch: AuthorizedFetch;
   writable: boolean;
+  onEditStateChange?: (dirty: boolean, saving: boolean) => void;
 }) {
   const [loaded, setLoaded] = useState<{ identity: string; annotations: WsiAnnotation[] }>({ identity: "", annotations: [] });
   const [activeTool, setActiveTool] = useState<WsiAnnotationType | "PAN">("PAN");
@@ -94,6 +96,22 @@ export function WsiAnnotationLayer({
   const nextTemporaryId = useRef(0);
   const projectionFrame = useRef<number | null>(null);
   const identity = `${slideId}:${imageAssetId}`;
+  const localChanges = useRef(new Map<string, Map<string, WsiAnnotation | null>>());
+  const recordChange = useCallback((id: string, value: WsiAnnotation | null) => {
+    const changes = localChanges.current.get(identity) ?? new Map<string, WsiAnnotation | null>();
+    changes.set(id, value);
+    localChanges.current.set(identity, changes);
+  }, [identity]);
+  const dirty = (loaded.identity === identity && loaded.annotations.some(isTemporaryAnnotation)) || draftPoints.length > 0 || text.trim().length > 0;
+  useEffect(() => {
+    onEditStateChange?.(dirty, pendingSaveCount > 0);
+  }, [dirty, onEditStateChange, pendingSaveCount]);
+  useEffect(() => {
+    if (!dirty && pendingSaveCount === 0) return;
+    const preventUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", preventUnload);
+    return () => window.removeEventListener("beforeunload", preventUnload);
+  }, [dirty, pendingSaveCount]);
 
   useEffect(() => {
     activeIdentity.current = identity;
@@ -102,10 +120,15 @@ export function WsiAnnotationLayer({
       .then(async (response) => {
         const body: unknown = await response.json().catch(() => null);
         if (!response.ok) throw new Error("Annotation을 불러오지 못했습니다.");
-        setServerWritable(response.headers.get("X-Annotation-Writable") !== "false");
         if (!Array.isArray(body)) throw new Error("Annotation 응답 형식이 올바르지 않습니다.");
         if (!controller.signal.aborted && activeIdentity.current === identity) {
-          const serverAnnotations = body as WsiAnnotation[];
+          setServerWritable(response.headers.get("X-Annotation-Writable") !== "false");
+          const merged = new Map((body as WsiAnnotation[]).map((annotation) => [annotation.id, annotation]));
+          localChanges.current.get(identity)?.forEach((annotation, id) => {
+            if (annotation) merged.set(id, annotation);
+            else merged.delete(id);
+          });
+          const serverAnnotations = [...merged.values()];
           setLoaded((current) => ({
             identity,
             annotations: [
@@ -231,6 +254,7 @@ export function WsiAnnotationLayer({
         return [annotation.id, body as WsiAnnotation] as const;
       }));
       const saved = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
+      saved.forEach(([, annotation]) => recordChange(annotation.id, annotation));
       if (activeIdentity.current === identity) {
         const savedByTemporaryId = new Map(saved);
         setLoaded((current) => current.identity !== identity ? current : {
@@ -249,7 +273,7 @@ export function WsiAnnotationLayer({
       mutationLocked.current = false;
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
-  }, [authorizedFetch, endpoint, identity, imageAssetId, loaded]);
+  }, [authorizedFetch, endpoint, identity, imageAssetId, loaded, recordChange]);
 
   const deleteSelected = useCallback(async () => {
     if (mutationLocked.current) return;
@@ -265,6 +289,7 @@ export function WsiAnnotationLayer({
     try {
       const response = await authorizedFetch(annotationDetailUrl(endpoint, selectedId), { method: "DELETE" });
       if (!response.ok && response.status !== 404) throw new Error("Annotation을 삭제하지 못했습니다.");
+      recordChange(selectedId, null);
       if (activeIdentity.current === identity) {
         setLoaded((current) => ({ identity, annotations: current.identity === identity ? current.annotations.filter((annotation) => annotation.id !== selectedId) : [] }));
         setSelectedId("");
@@ -275,24 +300,52 @@ export function WsiAnnotationLayer({
       mutationLocked.current = false;
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
-  }, [authorizedFetch, endpoint, identity, loaded.identity, selectedId]);
+  }, [authorizedFetch, endpoint, identity, loaded.identity, selectedId, recordChange]);
 
   const deleteAll = useCallback(() => {
-    if (loaded.identity !== identity || loaded.annotations.length === 0) return;
+    if (loaded.identity !== identity && draftPoints.length === 0) return;
+    if (loaded.annotations.length === 0 && draftPoints.length === 0) return;
     setConfirmDeleteAll(identity);
-  }, [identity, loaded.annotations.length, loaded.identity]);
+  }, [identity, loaded.annotations.length, loaded.identity, draftPoints.length]);
 
   const executeDeleteAll = useCallback(async () => {
     if (mutationLocked.current) return;
-    if (loaded.identity !== identity || loaded.annotations.length === 0) return;
-    const deletedIds = new Set(loaded.annotations.map((annotation) => annotation.id));
+    if (loaded.identity !== identity && draftPoints.length === 0) return;
+    const targets = loaded.identity === identity ? loaded.annotations : [];
+    drawing.current = false;
+    setDraftPoints([]);
+    const temporaryIds = new Set(targets.filter(isTemporaryAnnotation).map((annotation) => annotation.id));
+    const persisted = targets.filter((annotation) => !isTemporaryAnnotation(annotation));
     setConfirmDeleteAll(null);
     mutationLocked.current = true;
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
-      const response = await authorizedFetch(endpoint, { method: "DELETE" });
-      if (!response.ok) throw new Error("Annotation을 모두 삭제하지 못했습니다.");
+      const deletedIds = new Set(temporaryIds);
+      if (persisted.length > 0) {
+        const response = await authorizedFetch(endpoint, { method: "DELETE" });
+        if (response.ok) {
+          persisted.forEach((annotation) => { deletedIds.add(annotation.id); recordChange(annotation.id, null); });
+        } else if (response.status === 405) {
+          // Older API deployments expose only the detail DELETE route.
+          const results = await Promise.allSettled(persisted.map(async (annotation) => {
+            const detailResponse = await authorizedFetch(annotationDetailUrl(endpoint, annotation.id), { method: "DELETE" });
+            if (!detailResponse.ok && detailResponse.status !== 404) throw new Error("Annotation을 삭제하지 못했습니다.");
+            recordChange(annotation.id, null);
+            return annotation.id;
+          }));
+          results.forEach((result) => { if (result.status === "fulfilled") deletedIds.add(result.value); });
+          if (results.some((result) => result.status === "rejected")) {
+            if (activeIdentity.current === identity) {
+              setLoaded((current) => current.identity !== identity ? current : { identity, annotations: current.annotations.filter((annotation) => !deletedIds.has(annotation.id)) });
+              setSelectedId((current) => deletedIds.has(current) ? "" : current);
+            }
+            throw new Error("일부 Annotation을 삭제하지 못했습니다.");
+          }
+        } else {
+          throw new Error("Annotation을 모두 삭제하지 못했습니다.");
+        }
+      }
       if (activeIdentity.current === identity) {
         setLoaded((current) => current.identity !== identity ? current : { identity, annotations: current.annotations.filter((annotation) => !deletedIds.has(annotation.id)) });
         setSelectedId((current) => deletedIds.has(current) ? "" : current);
@@ -303,7 +356,7 @@ export function WsiAnnotationLayer({
       mutationLocked.current = false;
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
-  }, [authorizedFetch, endpoint, identity, loaded]);
+  }, [authorizedFetch, endpoint, identity, loaded, draftPoints.length, recordChange]);
 
   const finishPolygon = () => {
     if (draftPoints.length >= 3) stage("POLYGON", draftPoints);
@@ -323,7 +376,7 @@ export function WsiAnnotationLayer({
       {activeTool === "POLYGON" && draftPoints.length > 0 ? <button type="button" onClick={finishPolygon} disabled={draftPoints.length < 3 || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md bg-blue-600 px-2.5 text-xs font-semibold leading-none text-white disabled:opacity-40">완료</button> : null}
       <button type="button" onClick={() => void persistStaged()} disabled={!canWrite || !annotations.some(isTemporaryAnnotation) || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-blue-600 bg-blue-600 px-2.5 text-xs font-semibold leading-none text-white disabled:opacity-40">주석 저장</button>
       <button type="button" onClick={() => void deleteSelected()} disabled={!canWrite || loaded.identity !== identity || !selectedId || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-rose-300 bg-white px-2.5 text-xs font-semibold leading-none text-rose-700 disabled:opacity-40">선택 삭제</button>
-      <button type="button" onClick={() => void deleteAll()} disabled={!canWrite || loaded.identity !== identity || annotations.length === 0 || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-rose-500 bg-rose-50 px-2.5 text-xs font-semibold leading-none text-rose-700 disabled:opacity-40">전체 삭제</button>
+      <button type="button" onClick={() => void deleteAll()} disabled={!canWrite || (annotations.length === 0 && draftPoints.length === 0) || saving} className="inline-flex h-8 shrink-0 items-center justify-center whitespace-nowrap rounded-md border border-rose-500 bg-rose-50 px-2.5 text-xs font-semibold leading-none text-rose-700 disabled:opacity-40">전체 삭제</button>
       <span className="inline-flex h-8 shrink-0 items-center whitespace-nowrap px-1.5 text-xs font-medium tabular-nums text-slate-500">{annotations.length}개</span>
     </div>,
     toolbarElement,
@@ -363,7 +416,7 @@ export function WsiAnnotationLayer({
       {draftPoints.length > 0 ? <polyline points={draftPoints.map(screenPoint).map((point) => point.join(",")).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="4 3" /> : null}
     </svg>
     {error.identity === identity && error.message ? <div role="alert" className="pointer-events-auto absolute bottom-3 right-3 z-30 flex items-center gap-2 rounded border border-amber-400/50 bg-slate-950/90 px-3 py-2 text-xs text-amber-200"><span>{error.message} WSI는 계속 사용할 수 있습니다.</span>{annotationLoadFailed ? <button type="button" onClick={() => { setAnnotationLoadFailed(false); setAnnotationReloadNonce((value) => value + 1); }} className="min-h-8 rounded border border-amber-300/60 px-2 py-1 font-semibold">다시 시도</button> : null}</div> : null}
-    {confirmDeleteAll === identity && <ConfirmActionDialog title="WSI 주석 전체 삭제" description={`현재 슬라이드의 의료진 주석 ${annotations.length}개를 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.`} confirmLabel="전체 삭제" onCancel={() => setConfirmDeleteAll(null)} onConfirm={() => void executeDeleteAll()} />}
+    {confirmDeleteAll === identity && <ConfirmActionDialog title="WSI 주석 전체 삭제" description={`현재 슬라이드의 의료진 주석 ${annotations.length}개와 작성 중인 도형을 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.`} confirmLabel="전체 삭제" onCancel={() => setConfirmDeleteAll(null)} onConfirm={() => void executeDeleteAll()} />}
   </>;
 }
 

@@ -111,7 +111,7 @@ export function CasePatientSidebar({
       <header className="shrink-0 border-b border-slate-100 px-3 py-3">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-blue-600">
+            <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-slate-500">
               My Cases
             </p>
             <h2 className="mt-0.5 text-[16px] font-bold tracking-[-0.02em] text-slate-900">
@@ -131,7 +131,7 @@ export function CasePatientSidebar({
             aria-hidden="true"
             viewBox="0 0 24 24"
             fill="none"
-            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400"
+            className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-500"
           >
             <path
               d="m21 21-4.35-4.35m2.35-5.15a7.5 7.5 0 1 1-15 0 7.5 7.5 0 0 1 15 0Z"
@@ -148,7 +148,7 @@ export function CasePatientSidebar({
               onSearchChange(event.target.value)
             }
             placeholder="환자명, 환자번호, Case 검색"
-            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-2.5 text-[10px] text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
+            className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-2.5 text-[10px] text-slate-700 outline-none transition placeholder:text-slate-500 focus:border-blue-400 focus:bg-white focus:ring-2 focus:ring-blue-100"
           />
         </label>
 
@@ -226,7 +226,7 @@ export function CasePatientSidebar({
                     <span className="truncate text-[10px] font-semibold text-slate-600">
                       {item.patient_code}
                     </span>
-                    <time className="whitespace-nowrap text-[9px] text-slate-400">
+                    <time className="whitespace-nowrap text-[9px] text-slate-500">
                       {formatDate(item.updated_at)}
                     </time>
                   </div>
@@ -245,7 +245,7 @@ export function CasePatientSidebar({
                     </span>
                   </div>
 
-                  <p className="mt-1 truncate text-[9px] font-medium text-blue-600/80">
+                  <p className="mt-1 truncate text-[9px] font-medium text-slate-600">
                     {item.case_code}
                   </p>
                 </button>
@@ -258,7 +258,7 @@ export function CasePatientSidebar({
               <p className="text-[11px] font-semibold text-slate-500">
                 표시할 Case가 없습니다.
               </p>
-              <p className="mt-1 text-[9px] leading-4 text-slate-400">
+              <p className="mt-1 text-[9px] leading-4 text-slate-500">
                 검색어 또는 상태 필터를 확인하세요.
               </p>
             </div>
@@ -268,7 +268,7 @@ export function CasePatientSidebar({
 
       {/* Selected case footer */}
       <footer className="shrink-0 border-t border-slate-200 bg-slate-50/80 px-3 py-2.5">
-        <p className="text-[8px] font-semibold text-slate-400">
+        <p className="text-[8px] font-semibold text-slate-500">
           현재 선택된 Case
         </p>
 
@@ -290,13 +290,13 @@ export function CasePatientSidebar({
 
             <span
               aria-hidden="true"
-              className="shrink-0 text-xs text-slate-400"
+              className="shrink-0 text-xs text-slate-500"
             >
               ›
             </span>
           </button>
         ) : (
-          <p className="mt-1 text-[9px] text-slate-400">
+          <p className="mt-1 text-[9px] text-slate-500">
             선택된 Case 없음
           </p>
         )}
