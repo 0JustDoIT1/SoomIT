@@ -7,10 +7,18 @@ const prescription: Prescription = { id: "rx-1", cycle_number: 1, phase: "INDUCT
 const fetcher = () => vi.fn().mockResolvedValue(new Response(JSON.stringify({}), { status: 200 }));
 
 describe("PreviewSafetyPanel", () => {
+  it("shows an empty MFDS result without changing the safety input", async () => {
+    const request = vi.fn(async () => new Response(JSON.stringify({ products: [] }), { status: 200 }));
+    render(<PreviewSafetyPanel caseId="case-1" base="http://api.test" fetcher={request} prescription={prescription} doseInputs={{ height: "170", weight: "65", egfr: "88" }} onRefresh={vi.fn()} />);
+    fireEvent.change(screen.getByLabelText("약품 검색"), { target: { value: "없는약" } });
+    expect(await screen.findByText("검색 결과 없음")).toBeInTheDocument();
+    expect(screen.getByLabelText("약품명")).toHaveValue("");
+    expect(request).toHaveBeenCalledTimes(1);
+  });
   it("connects renal, hepatic, allergy and medication fields to the safety payload", async () => {
     const request = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (init?.signal?.aborted) throw new DOMException("Aborted", "AbortError");
-      return new Response(JSON.stringify(String(url).includes("/drug-options/") ? [{ id: "drug-1", drug_name: "약 A", ingredient_name: "성분 A", mfds_item_seq: "456" }] : {}), { status: 200 });
+      return new Response(JSON.stringify(String(url).includes("/mfds-products/") ? { products: [{ item_seq: "456", item_name: "약 A", item_ingr_name: "성분 A" }] } : {}), { status: 200 });
     });
     render(<PreviewSafetyPanel caseId="case-1" base="http://api.test" fetcher={request} prescription={prescription} doseInputs={{ height: "170", weight: "65", egfr: "88" }} onRefresh={vi.fn()} />);
     fireEvent.change(screen.getByLabelText("AST"), { target: { value: "20" } });
@@ -18,9 +26,9 @@ describe("PreviewSafetyPanel", () => {
     fireEvent.change(screen.getByLabelText("Total Bilirubin"), { target: { value: "0.8" } });
     fireEvent.click(screen.getByLabelText("알레르기 없음"));
     fireEvent.change(screen.getByLabelText("약품 검색"), { target: { value: "약 A" } });
-    expect(await screen.findByRole("option", { name: "약 A · 성분 A" })).toBeInTheDocument();
-    expect(request).toHaveBeenCalledWith("http://api.test/api/clinical/drug-options/?q=%EC%95%BD%20A", expect.objectContaining({ signal: expect.any(AbortSignal) }));
-    fireEvent.change(screen.getByLabelText("약품명"), { target: { value: "drug-1" } });
+    expect(await screen.findByRole("option", { name: "약 A · 성분 A · ITEM_SEQ 456" })).toBeInTheDocument();
+    expect(request).toHaveBeenCalledWith("http://api.test/api/doctor/cases/mfds-products/?q=%EC%95%BD%20A", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    fireEvent.change(screen.getByLabelText("약품명"), { target: { value: "456" } });
     expect(screen.getByText("약 A · 성분 A · ITEM_SEQ 456")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "처방 안전성 검사" }));
     await waitFor(() => expect(request).toHaveBeenCalledWith(expect.stringContaining("/preview-safety/"), expect.objectContaining({ method: "POST" })));

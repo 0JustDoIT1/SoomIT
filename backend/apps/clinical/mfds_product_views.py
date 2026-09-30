@@ -11,6 +11,17 @@ class DoctorMfdsProductSearchAPIView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
+        query = str(request.query_params.get("q", "")).strip()
+        if query:
+            if len(query) < 2:
+                return Response({"detail": "q must contain at least two characters."}, status=400)
+            try:
+                products = search_products(query, search_by="product")
+                if not products:
+                    products = search_products(query)
+                return Response({"q": query, "products": products})
+            except MfdsProductError as exc:
+                return Response({"detail": str(exc)}, status=502)
         ingredient_name = str(request.query_params.get("ingredient_name", "")).strip()
         if not ingredient_name:
             return Response({"detail": "ingredient_name is required."}, status=400)

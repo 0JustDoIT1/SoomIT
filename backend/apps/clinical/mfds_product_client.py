@@ -17,13 +17,16 @@ class MfdsProductError(Exception):
     pass
 
 
-def search_products(ingredient_name: str, limit: int = 50):
+def search_products(ingredient_name: str, limit: int = 50, *, search_by: str = "ingredient"):
     key = os.getenv("MFDS_SERVICE_KEY", "").strip()
     if not key:
         raise MfdsProductError("MFDS product search is not configured.")
+    if search_by not in {"ingredient", "product"}:
+        raise ValueError("Unsupported MFDS search field.")
     params = urlencode({
         "serviceKey": unquote(key), "type": "json", "pageNo": 1,
-        "numOfRows": min(max(limit, 1), 100), "item_ingr_name": ingredient_name,
+        "numOfRows": min(max(limit, 1), 100),
+        "item_name" if search_by == "product" else "item_ingr_name": ingredient_name,
     })
     try:
         with urlopen(BASE_URL + "getDrugPrdtPrmsnInq07?" + params, timeout=20) as response:

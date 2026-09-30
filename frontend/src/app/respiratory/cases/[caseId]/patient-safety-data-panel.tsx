@@ -2,6 +2,7 @@
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
 import { PrescriptionDateField } from "./prescription-date-field";
+import { mfdsIngredient, useMfdsMedicationSearch } from "./use-mfds-medication-search";
 
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 type Medication = {
@@ -27,7 +28,6 @@ type LabResult = {
   tested_at: string;
   note?: string | null;
 };
-type DrugOption = { id: string; drug_name: string; ingredient_name: string; mfds_item_seq?: string | null };
 
 const EMPTY_MEDICATION = { medication_name: "", ingredient_name: "", mfds_item_seq: "", dose: "", dose_unit: "", frequency: "", route: "" };
 const EMPTY_LAB = { creatinine: "", egfr: "", ast: "", alt: "", total_bilirubin: "", tested_at: "", note: "" };
@@ -67,8 +67,8 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   const [saving, setSaving] = useState<"PROFILE" | "MEDICATION" | "LAB" | null>(null);
   const [medicationForm, setMedicationForm] = useState(EMPTY_MEDICATION);
   const [noMedications, setNoMedications] = useState(() => typeof window !== "undefined" && window.localStorage.getItem(`patient-safety-no-medications:${caseId}`) === "true");
-  const [drugSearch, setDrugSearch] = useState("");
-  const [drugOptions, setDrugOptions] = useState<DrugOption[]>([]);
+  const { search: drugSearch, changeSearch: setDrugSearch, products: drugOptions, error: drugSearchError, loading: drugSearchLoading, query: drugQuery, settledQuery: drugSettledQuery } = useMfdsMedicationSearch(apiBaseUrl, authorizedFetch, !noMedications);
+  const [selectedDrugSeq, setSelectedDrugSeq] = useState("");
   const [labForm, setLabForm] = useState(EMPTY_LAB);
   const latestLab = labs[0] ?? null;
   const labLocked = Boolean(latestLab);
@@ -86,23 +86,16 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
 
   const endpoint = useCallback((resource: "allergy-profile" | "current-medications" | "lab-results") => `${apiBaseUrl}/api/doctor/cases/${caseId}/${resource}/`, [apiBaseUrl, caseId]);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const query = drugSearch.trim();
-    if (!query) {
-      return () => controller.abort();
-    }
-    void authorizedFetch(`${apiBaseUrl}/api/clinical/drug-options/?q=${encodeURIComponent(query)}`, { signal: controller.signal })
-      .then(async response => response.ok ? setDrugOptions(await response.json() as DrugOption[]) : undefined)
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [apiBaseUrl, authorizedFetch, drugSearch]);
-
-  const selectDrug = (drugId: string) => {
-    const drug = drugOptions.find(option => option.id === drugId);
+  const selectDrug = (itemSeq: string) => {
+    const drug = drugOptions.find(option => option.item_seq === itemSeq);
     if (!drug) return;
-    setMedicationForm(current => ({ ...current, medication_name: drug.drug_name, ingredient_name: drug.ingredient_name, mfds_item_seq: drug.mfds_item_seq ?? "" }));
-    setDrugSearch(drug.drug_name);
+    setSelectedDrugSeq(drug.item_seq);
+    setMedicationForm(current => ({ ...current, medication_name: drug.item_name ?? "", ingredient_name: mfdsIngredient(drug), mfds_item_seq: drug.item_seq }));
+  };
+  const changeDrugSearch = (value: string) => {
+    setDrugSearch(value);
+    setSelectedDrugSeq("");
+    setMedicationForm(current => ({ ...current, medication_name: "", ingredient_name: "", mfds_item_seq: "" }));
   };
 
   useEffect(() => {
@@ -144,13 +137,15 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   const saveMedication = async (event: FormEvent) => {
     event.preventDefault();
     if (noMedications) return;
-    if (!medicationForm.medication_name.trim()) return;
+    if (!selectedDrugSeq || selectedDrugSeq !== medicationForm.mfds_item_seq || !medicationForm.medication_name.trim()) return;
     setSaving("MEDICATION");
     setMedicationError("");
     try {
       const response = await authorizedFetch(endpoint("current-medications"), jsonPost(compactPayload({ ...medicationForm, medication_name: medicationForm.medication_name.trim(), is_active: true })));
       await requireOk(response, "현재 복용약을 등록하지 못했습니다.");
       setMedicationForm(EMPTY_MEDICATION);
+      setSelectedDrugSeq("");
+      setDrugSearch("");
       await reloadOne(endpoint("current-medications"), authorizedFetch, setMedicationsAndStatus, setMedicationError, "현재 복용약");
       onDataChanged?.();
     } catch (reason) { setMedicationError(errorMessage(reason, "현재 복용약을 등록하지 못했습니다.")); }
@@ -160,7 +155,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   const toggleNoMedications = (checked: boolean) => {
     setNoMedications(checked);
     window.localStorage.setItem(`patient-safety-no-medications:${caseId}`, String(checked));
-    if (checked) setMedicationForm(EMPTY_MEDICATION);
+    if (checked) { setMedicationForm(EMPTY_MEDICATION); setSelectedDrugSeq(""); setDrugSearch(""); }
   };
 
   const saveLab = async (event: FormEvent) => {
@@ -204,12 +199,14 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
         <label className="col-span-3 flex items-center gap-2 text-xs font-medium text-slate-700"><input type="checkbox" checked={noMedications} disabled={medications.length > 0} onChange={(event) => toggleNoMedications(event.target.checked)} />복용약 없음</label>
         <fieldset disabled={noMedications} className="col-span-3 grid grid-cols-3 gap-2">
         <p className="col-span-3 text-xs font-bold text-slate-700">현재 복용약 · DUR</p>
-        <label className="col-span-3 text-[10px] font-medium text-slate-600">약품 검색<input disabled={noMedications} value={drugSearch} onChange={(event) => setDrugSearch(event.target.value)} placeholder="약품명·성분명·MFDS ITEM_SEQ" className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>
-        <label className="col-span-3 text-[10px] font-medium text-slate-600">약품명<select required disabled={noMedications} value={drugOptions.some(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name) ? drugOptions.find(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name)?.id : ""} onChange={(event) => selectDrug(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.id} value={option.id}>{option.drug_name} · {option.ingredient_name}</option>)}</select></label>
-        <Input label="성분명" value={medicationForm.ingredient_name} onChange={value => setMedicationForm(current => ({ ...current, ingredient_name: value }))} />
-        <Input label="MFDS ITEM_SEQ" value={medicationForm.mfds_item_seq} onChange={value => setMedicationForm(current => ({ ...current, mfds_item_seq: value }))} />
+        <label className="col-span-3 text-[10px] font-medium text-slate-600">약품 검색<input disabled={noMedications} value={drugSearch} onChange={(event) => changeDrugSearch(event.target.value)} placeholder="약품명·성분명" className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>
+        <label className="col-span-3 text-[10px] font-medium text-slate-600">약품명<select required disabled={noMedications} value={selectedDrugSeq} onChange={(event) => selectDrug(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.item_seq} value={option.item_seq}>{option.item_name} · {mfdsIngredient(option)} · ITEM_SEQ {option.item_seq}</option>)}</select></label>
+        {!noMedications && drugSearchError && <p role="status" className="col-span-3 text-xs text-rose-600">{drugSearchError}</p>}
+        {!noMedications && drugSettledQuery === drugQuery && drugQuery.length >= 2 && !drugSearchLoading && !drugSearchError && drugOptions.length === 0 && <p role="status" className="col-span-3 text-xs text-slate-500">검색 결과 없음</p>}
+        <Input label="성분명" value={medicationForm.ingredient_name} onChange={() => undefined} disabled />
+        <Input label="MFDS ITEM_SEQ" value={medicationForm.mfds_item_seq} onChange={() => undefined} disabled />
         <details className="col-span-3 text-[11px] text-slate-500"><summary className="cursor-pointer">용량·복용 주기·투여 경로 추가 입력</summary><div className="mt-2 grid grid-cols-3 gap-2"><Input label="용량" type="number" value={medicationForm.dose} onChange={value => setMedicationForm(current => ({ ...current, dose: value }))} /><Input label="복용 주기" value={medicationForm.frequency} onChange={value => setMedicationForm(current => ({ ...current, frequency: value }))} /><Input label="투여 경로" value={medicationForm.route} onChange={value => setMedicationForm(current => ({ ...current, route: value }))} /></div></details>
-        <button disabled={saving !== null || !medicationForm.medication_name.trim()} className="col-span-3 rounded-md border border-blue-200 bg-white py-1.5 text-xs font-semibold text-blue-700 disabled:text-slate-400">{saving === "MEDICATION" ? "등록 중" : "복용약 등록"}</button>
+        <button disabled={saving !== null || !selectedDrugSeq || !medicationForm.medication_name.trim()} className="col-span-3 rounded-md border border-blue-200 bg-white py-1.5 text-xs font-semibold text-blue-700 disabled:text-slate-400">{saving === "MEDICATION" ? "등록 중" : "복용약 등록"}</button>
         </fieldset>
         {medications.length > 0 && <div className="col-span-3 flex flex-wrap gap-1">{medications.map(item => <span key={item.id} className={`rounded-full px-2 py-1 text-[10px] ${item.mfds_item_seq ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>{item.medication_name}{item.mfds_item_seq ? ` · ${item.mfds_item_seq}` : " · ITEM_SEQ 필요"}</span>)}</div>}
       </form>
@@ -235,15 +232,17 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
         <form onSubmit={saveMedication} className="grid grid-cols-2 gap-2 border-b border-slate-100 p-3">
           <label className="col-span-2 flex items-center gap-2 text-xs font-medium text-slate-700"><input type="checkbox" checked={noMedications} disabled={medications.length > 0} onChange={(event) => toggleNoMedications(event.target.checked)} />복용약 없음</label>
           <fieldset disabled={noMedications} className="col-span-2 grid grid-cols-2 gap-2">
-          <label className="col-span-2 text-[10px] font-medium text-slate-600">약품 검색<input disabled={noMedications} value={drugSearch} onChange={(event) => setDrugSearch(event.target.value)} placeholder="약품명·성분명·MFDS ITEM_SEQ" className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>
-          <label className="col-span-2 text-[10px] font-medium text-slate-600">약품명<select required disabled={noMedications} value={drugOptions.some(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name) ? drugOptions.find(option => option.drug_name === medicationForm.medication_name && option.ingredient_name === medicationForm.ingredient_name)?.id : ""} onChange={(event) => selectDrug(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.id} value={option.id}>{option.drug_name} · {option.ingredient_name}</option>)}</select></label>
-          <Input label="성분명" value={medicationForm.ingredient_name} onChange={(value) => setMedicationForm((current) => ({ ...current, ingredient_name: value }))} />
-          <Input label="MFDS ITEM_SEQ" value={medicationForm.mfds_item_seq} onChange={(value) => setMedicationForm((current) => ({ ...current, mfds_item_seq: value }))} />
+          <label className="col-span-2 text-[10px] font-medium text-slate-600">약품 검색<input disabled={noMedications} value={drugSearch} onChange={(event) => changeDrugSearch(event.target.value)} placeholder="약품명·성분명" className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs" /></label>
+          <label className="col-span-2 text-[10px] font-medium text-slate-600">약품명<select required disabled={noMedications} value={selectedDrugSeq} onChange={(event) => selectDrug(event.target.value)} className="mt-1 h-8 w-full rounded-md border border-slate-200 px-2 text-xs"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.item_seq} value={option.item_seq}>{option.item_name} · {mfdsIngredient(option)} · ITEM_SEQ {option.item_seq}</option>)}</select></label>
+          {!noMedications && drugSearchError && <p role="status" className="col-span-2 text-xs text-rose-600">{drugSearchError}</p>}
+          {!noMedications && drugSettledQuery === drugQuery && drugQuery.length >= 2 && !drugSearchLoading && !drugSearchError && drugOptions.length === 0 && <p role="status" className="col-span-2 text-xs text-slate-500">검색 결과 없음</p>}
+          <Input label="성분명" value={medicationForm.ingredient_name} onChange={() => undefined} disabled />
+          <Input label="MFDS ITEM_SEQ" value={medicationForm.mfds_item_seq} onChange={() => undefined} disabled />
           <Input label="용량" type="number" value={medicationForm.dose} onChange={(value) => setMedicationForm((current) => ({ ...current, dose: value }))} />
           <Input label="단위" value={medicationForm.dose_unit} onChange={(value) => setMedicationForm((current) => ({ ...current, dose_unit: value }))} />
           <Input label="복용 주기" value={medicationForm.frequency} onChange={(value) => setMedicationForm((current) => ({ ...current, frequency: value }))} />
           <Input label="투여 경로" value={medicationForm.route} onChange={(value) => setMedicationForm((current) => ({ ...current, route: value }))} />
-          <button disabled={saving !== null || !medicationForm.medication_name.trim()} className="col-span-2 rounded-md bg-blue-600 py-2 text-xs font-semibold text-white disabled:bg-slate-200">{saving === "MEDICATION" ? "등록 중" : "복용약 등록"}</button>
+          <button disabled={saving !== null || !selectedDrugSeq || !medicationForm.medication_name.trim()} className="col-span-2 rounded-md bg-blue-600 py-2 text-xs font-semibold text-white disabled:bg-slate-200">{saving === "MEDICATION" ? "등록 중" : "복용약 등록"}</button>
           </fieldset>
         </form>
         <div className="max-h-72 overflow-y-auto p-3">{loading ? <Empty text="불러오는 중입니다." /> : medications.length ? medications.map((item) => <MedicationRow key={item.id} item={item} />) : <Empty text="등록된 현재 복용약이 없습니다." />}</div>

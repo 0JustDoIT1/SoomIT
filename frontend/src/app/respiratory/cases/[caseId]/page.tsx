@@ -1781,7 +1781,16 @@ export default function RespiratoryCaseDetailPage() {
 
   if (loading) {
     return (
-      <LoadingIndicator label="담당 환자 정보를 불러오는 중입니다." className="m-4 min-h-32 rounded-2xl shadow-sm" />
+      <div className="mx-3 mt-3 min-w-0 sm:mx-4">
+        <div role="status" aria-live="polite" className="flex h-20 items-center justify-center gap-2 rounded-2xl border border-blue-100 bg-white px-4 text-sm text-slate-600 shadow-sm">
+          <span aria-hidden="true" className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-200 border-t-blue-600" />
+          <span>담당 환자 정보를 불러오는 중입니다.</span>
+        </div>
+        <div aria-hidden="true" className="mt-2 grid gap-2 sm:grid-cols-2">
+          <div data-testid="patient-loading-skeleton" className="flex h-7 items-center rounded-lg border border-blue-100 bg-white px-3"><span className="h-2 w-2/3 animate-pulse rounded bg-slate-100" /></div>
+          <div data-testid="patient-loading-skeleton" className="flex h-7 items-center rounded-lg border border-blue-100 bg-white px-3"><span className="h-2 w-1/2 animate-pulse rounded bg-slate-100" /></div>
+        </div>
+      </div>
     );
   }
 

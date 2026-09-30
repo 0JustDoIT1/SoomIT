@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import { mfdsIngredient, useMfdsMedicationSearch } from "../../cases/[caseId]/use-mfds-medication-search";
 import { apiJson } from "./preview-api";
 import type { AuthorizedFetch } from "../../cases/[caseId]/treatment-prescription-types";
 import type { PreviewDoseInputs } from "./preview-prescription";
@@ -8,40 +9,23 @@ import type { Prescription, Safety } from "./preview-types";
 
 const BLOCKED_CODES = new Set(["DUR_API_ERROR", "DUR_MAPPING_UNRESOLVED", "ALLERGY_UNCONFIRMED", "LAB_MISSING"]);
 type Labs = { creatinine: string; egfr: string; ast: string; alt: string; total_bilirubin: string };
-type DrugOption = { id: string; drug_name: string; ingredient_name: string; mfds_item_seq?: string | null };
 type CurrentMedication = { medication_name: string; ingredient_name: string; mfds_item_seq: string };
 
 export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseInputs, onRefresh }: { caseId: string; base: string; fetcher: AuthorizedFetch; prescription?: Prescription; doseInputs: PreviewDoseInputs; onRefresh: () => void }) {
   const [status, setStatus] = useState("UNCONFIRMED");
   const [allergies, setAllergies] = useState("");
   const [medications, setMedications] = useState<CurrentMedication[]>([]);
-  const [drugSearch, setDrugSearch] = useState("");
-  const [drugOptions, setDrugOptions] = useState<DrugOption[]>([]);
+  const { search: drugSearch, changeSearch: setDrugSearch, products: drugOptions, error: drugSearchError, loading: drugSearchLoading, query: drugQuery, settledQuery: drugSettledQuery } = useMfdsMedicationSearch(base, fetcher);
   const [labs, setLabs] = useState<Labs>({ creatinine: "", egfr: "", ast: "", alt: "", total_bilirubin: "" });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [lastCheckedSignature, setLastCheckedSignature] = useState<string | null>(null);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    const query = drugSearch.trim();
-    if (!query) return () => controller.abort();
-    void fetcher(`${base}/api/clinical/drug-options/?q=${encodeURIComponent(query)}`, { signal: controller.signal })
-      .then(async response => {
-        if (!response.ok) return;
-        const options = await response.json() as DrugOption[];
-        if (!controller.signal.aborted) setDrugOptions(options);
-      })
-      .catch(() => undefined);
-    return () => controller.abort();
-  }, [base, drugSearch, fetcher]);
-
-  const selectDrug = (drugId: string) => {
-    const drug = drugOptions.find(option => option.id === drugId);
+  const selectDrug = (itemSeq: string) => {
+    const drug = drugOptions.find(option => option.item_seq === itemSeq);
     if (!drug) return;
-    setMedications(current => [...current, { medication_name: drug.drug_name, ingredient_name: drug.ingredient_name, mfds_item_seq: drug.mfds_item_seq ?? "" }]);
+    setMedications(current => [...current, { medication_name: drug.item_name ?? "", ingredient_name: mfdsIngredient(drug), mfds_item_seq: drug.item_seq }]);
     setDrugSearch("");
-    setDrugOptions([]);
   };
 
   const safetyInput = useMemo(() => ({
@@ -105,8 +89,10 @@ export function PreviewSafetyPanel({ caseId, base, fetcher, prescription, doseIn
     <fieldset className="rounded-lg border border-slate-200 p-3"><legend className="px-1 text-xs font-bold">DUR / 안전성 확인</legend><div className="grid gap-3 lg:grid-cols-2">
       <div id="preview-safety-allergy"><p className="text-xs font-semibold">알레르기</p><div className="mt-1 flex flex-wrap gap-3 text-sm">{[["NONE", "알레르기 없음"], ["PRESENT", "알레르기 있음"], ["UNCONFIRMED", "미확인"]].map(([value, label]) => <label key={value}><input type="radio" checked={status === value} onChange={() => setStatus(value)} /> {label}</label>)}</div>{status === "PRESENT" && <input value={allergies} onChange={event => setAllergies(event.target.value)} placeholder="알레르기 약품/성분 (쉼표 구분)" className="mt-2 w-full rounded border p-2 text-sm" />}</div>
       <div id="preview-safety-medication" className="text-xs font-semibold">현재 복용약
-        <label className="mt-1 block font-normal">약품 검색<input value={drugSearch} onChange={event => { setDrugSearch(event.target.value); setDrugOptions([]); }} placeholder="약품명·성분명·MFDS ITEM_SEQ" className="mt-1 w-full rounded border p-2 text-sm" /></label>
-        <label className="mt-2 block font-normal">약품명<select value="" onChange={event => selectDrug(event.target.value)} className="mt-1 w-full rounded border p-2 text-sm"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.id} value={option.id}>{option.drug_name} · {option.ingredient_name}</option>)}</select></label>
+        <label className="mt-1 block font-normal">약품 검색<input value={drugSearch} onChange={event => setDrugSearch(event.target.value)} placeholder="약품명·성분명" className="mt-1 w-full rounded border p-2 text-sm" /></label>
+        <label className="mt-2 block font-normal">약품명<select value="" onChange={event => selectDrug(event.target.value)} className="mt-1 w-full rounded border p-2 text-sm"><option value="">약품을 선택하세요</option>{drugOptions.map(option => <option key={option.item_seq} value={option.item_seq}>{option.item_name} · {mfdsIngredient(option)} · ITEM_SEQ {option.item_seq}</option>)}</select></label>
+        {drugSearchError && <p role="status" className="mt-1 font-normal text-rose-600">{drugSearchError}</p>}
+        {drugSettledQuery === drugQuery && drugQuery.length >= 2 && !drugSearchLoading && !drugSearchError && drugOptions.length === 0 && <p role="status" className="mt-1 font-normal text-slate-500">검색 결과 없음</p>}
         {medications.map((item, index) => <div key={`${item.medication_name}-${item.mfds_item_seq}-${index}`} className="mt-2 flex items-center justify-between gap-2 rounded border p-2 font-normal"><span>{item.medication_name} · {item.ingredient_name} · ITEM_SEQ {item.mfds_item_seq || "없음"}</span><button type="button" onClick={() => setMedications(current => current.filter((_, itemIndex) => itemIndex !== index))} className="shrink-0 text-blue-700">제거</button></div>)}
       </div>
     </div></fieldset>
