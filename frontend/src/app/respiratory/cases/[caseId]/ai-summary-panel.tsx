@@ -165,7 +165,7 @@ function resultTimestamp(result: AiSummaryResult) {
 
 function ComparisonBadge({ comparison }: { comparison: Comparison }) {
   const styles = comparison.state === "MATCH" ? "bg-emerald-50 text-emerald-700" : comparison.state === "DIFFERENT" ? "bg-amber-50 text-amber-700" : "bg-slate-50 text-slate-500";
-  return <div className="border-t border-slate-200 px-3 py-2" aria-label="AI와 의료진 결과 비교"><div className="flex items-center justify-between gap-2"><span className="text-[9px] text-slate-400">결과 비교</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${styles}`}>{comparison.label}</span></div>{comparison.differences.length > 0 && <ul className="mt-2 space-y-1 border-t border-amber-100 pt-2" aria-label="결과 차이 항목">{comparison.differences.map((difference) => <li key={difference.label} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 text-[9px]"><span className="font-semibold text-slate-600">{difference.label}</span><span className="min-w-0 break-words text-right text-amber-700">AI {formatComparable(difference.ai)} / 의료진 {formatComparable(difference.clinical)}</span></li>)}</ul>}</div>;
+  return <div className="border-t border-slate-200 px-3 py-2" aria-label="AI와 의료진 결과 비교"><div className="flex items-center justify-between gap-2"><span className="text-[9px] text-slate-400">결과 비교</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${styles}`}>{comparison.label}</span></div>{comparison.differences.length > 0 && <ul className="mt-2 space-y-1 border-t border-amber-100 pt-2" aria-label="결과 차이 항목">{comparison.differences.map((difference) => <li key={difference.label} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 text-[9px]"><span className="font-semibold text-slate-600">{difference.label}</span><span className="min-w-0 break-words text-right"><span className="font-medium text-blue-700">AI {formatComparable(difference.ai)}</span><span className="text-slate-400"> / </span><span className="font-medium text-emerald-700">의료진 {formatComparable(difference.clinical)}</span></span></li>)}</ul>}</div>;
 }
 
 function getCompletedClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[], treatmentDecision?: TreatmentSummaryDecision | null, prescriptions: PrescriptionSummary[] = []) {
@@ -357,7 +357,7 @@ function getComparablePairs(type: string, aiDetail: unknown, clinicalDetail: unk
 
 function presentPairs(pairs: ComparablePair[]) { return pairs.filter(({ ai, clinical }) => ai !== null && ai !== undefined && ai !== "" && clinical !== null && clinical !== undefined && clinical !== ""); }
 function normalizeComparable(value: unknown) { return String(value).replace(/^PREDICTED_/, "").replace(/[^A-Za-z0-9]/g, "").toUpperCase(); }
-function formatComparable(value: unknown) { return String(value).replace(/^PREDICTED_/, "").replaceAll("_", " "); }
+function formatComparable(value: unknown) { return String(value).replace(/^(?:PREDICTED_|LIKELY_)/, "").replaceAll("_", " "); }
 function joinDisplayValues(values: unknown[]) { const present = values.filter((value) => value !== null && value !== undefined && value !== "").map(String); return present.length ? present.join(" · ") : "결과 없음"; }
 function formatRatio(value: unknown, label: string) { return formatPercent(value, label, true); }
 function formatPercent(value: unknown, label: string, ratio: boolean) { const number = toNumber(value); return number === null ? "" : `${label} ${(ratio && number <= 1 ? number * 100 : number).toFixed(1)}%`; }

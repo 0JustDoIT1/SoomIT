@@ -1,6 +1,7 @@
 import json
 import logging
 import re
+import time
 
 from django.db import transaction
 from django.db.models import Q
@@ -857,7 +858,8 @@ class DoctorTreatmentOpinionAPIView(APIView):
         "Write every value in Korean. Return valid JSON only, without Markdown fences or commentary. "
         "Use exactly these keys: xray_summary, ct_summary, staging_summary, "
         "pathology_biomarker_summary, treatment_summary, safety_follow_up. "
-        "Keep each value concise and suitable for a compact clinician review panel."
+        "Write one short Korean sentence per key, retaining critical findings, uncertainty and safety warnings. "
+        "Do not repeat the same findings in multiple sections."
     )
     KOREAN_REPAIR_PROMPT = (
         "아래 진료 종합 소견의 모든 자연어 내용을 간결한 한국어로 변환하세요. "
@@ -904,9 +906,40 @@ class DoctorTreatmentOpinionAPIView(APIView):
         }
         results = results_manager.filter(
             result_status=ClinicalResult.ResultStatus.CONFIRMED,
+        ).select_related(
+            "xray_detail", "ct_detail", "pathology_detail", "tnm_detail",
+            "gene_detail", "pdl1_detail", "reviewed_ai_result",
+        ).prefetch_related(
+            "gene_detail__gene_findings", "reviewed_ai_result__gene_ai_results",
         ).order_by("confirmed_at", "created_at")
         serialized = list(DoctorClinicalResultSerializer(results, many=True).data)
         return sorted(serialized, key=lambda item: stage_order.get(item.get("workflow_stage"), 99))
+
+    @staticmethod
+    def _opinion_prompt_context(journey, evidence, draft_context, prescription, safety):
+        # Keep all clinical details, dates and source passages. UI labels/IDs and
+        # excerpts duplicating the full retrieved context are not model input.
+        clinical_journey = [
+            {key: item[key] for key in ("workflow_stage", "result_date", "result_detail") if key in item}
+            for item in journey
+        ]
+        retrieved = evidence["evidence"]
+        prompt_evidence = {
+            key: value for key, value in retrieved.items()
+            if key != "sources" and value is not None
+        }
+        prompt_evidence["sources"] = [
+            {key: value for key, value in source.items()
+             if key != "distance" and (key != "excerpt" or not retrieved.get("context"))}
+            for source in retrieved.get("sources", [])
+        ]
+        return {"confirmed_clinical_journey": clinical_journey,
+            "clinical_context": evidence["clinical_context"], "regimen": evidence["regimen"],
+            "treatment_rule": evidence["treatment_rule"], "evidence": prompt_evidence,
+            "draft_treatment": {
+                "treatment_type": draft_context.get("treatment_type", ""),
+                "treatment_plan": draft_context.get("treatment_plan", ""),
+            }, "prescription": prescription, "safety": safety}
 
     @staticmethod
     def _confirmed_data_fallback(journey, evidence, draft_context, safety_data):
@@ -1153,12 +1186,14 @@ class DoctorTreatmentOpinionAPIView(APIView):
         request_serializer = TreatmentOpinionRequestSerializer(data=request.data or {})
         request_serializer.is_valid(raise_exception=True)
         draft_context = request_serializer.validated_data
+        started = time.perf_counter()
         evidence_response = DoctorTreatmentEvidenceAPIView().build_response(
             request,
             case_id,
             selected_regimen_id=draft_context.get("selected_regimen"),
             generate_summary=False,
         )
+        logger.info("treatment_opinion stage=evidence elapsed_seconds=%.3f", time.perf_counter() - started)
         if evidence_response.status_code != status.HTTP_200_OK:
             return evidence_response
         evidence = evidence_response.data
@@ -1198,17 +1233,16 @@ class DoctorTreatmentOpinionAPIView(APIView):
                 else "unresolved_warning" if any(r.result == "WARNING" and r.acknowledged_at is None for r in results)
                 else "safety_completed") if results else "safety_not_run"
         clinical_journey = self._confirmed_clinical_journey(case)
-        prompt_context = {"confirmed_clinical_journey": clinical_journey,
-            "clinical_context": evidence["clinical_context"], "regimen": evidence["regimen"],
-            "treatment_rule": evidence["treatment_rule"], "evidence": evidence["evidence"],
-            "draft_treatment": {
-                "treatment_type": draft_context.get("treatment_type", ""),
-                "treatment_plan": draft_context.get("treatment_plan", ""),
-            },
-            "prescription": prescription_data, "safety": safety_data}
+        prompt_context = self._opinion_prompt_context(
+            clinical_journey, evidence, draft_context, prescription_data, safety_data,
+        )
+        prompt_json = json.dumps(prompt_context, ensure_ascii=False, default=str, separators=(',', ':'))
+        generation_started = time.perf_counter()
+        logger.info("treatment_opinion stage=preparation elapsed_seconds=%.3f prompt_chars=%d",
+                    generation_started - started, len(prompt_json))
         try:
             opinion = request_chat_completion([{"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str, separators=(',', ':'))}], max_tokens=900, temperature=0)
+                {"role": "user", "content": prompt_json}], max_tokens=900, temperature=0)
             if not self._is_current_opinion(opinion):
                 opinion = request_chat_completion([
                     {"role": "system", "content": self.KOREAN_REPAIR_PROMPT},
@@ -1220,6 +1254,8 @@ class DoctorTreatmentOpinionAPIView(APIView):
             opinion_status = "CONFIRMED_DATA_FALLBACK_V3"
         else:
             opinion_status = "AVAILABLE"
+        logger.info("treatment_opinion stage=generation elapsed_seconds=%.3f",
+                    time.perf_counter() - generation_started)
         if not self._is_current_opinion(opinion):
             return Response({"status": "MEDGEMMA_FORMAT_ERROR", "review_required": True}, status=502)
         saved_opinion, _ = TreatmentAIOpinion.objects.update_or_create(
