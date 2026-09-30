@@ -36,7 +36,9 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   const socket = useRef<WebSocket | null>(null);
   const timeline = useRef<HTMLDivElement | null>(null);
   const reconnect = useRef<number | null>(null);
-  const disposed = useRef(false);
+  const participantRevision = useRef(0);
+  const participantRequest = useRef(0);
+  const receivedIds = useRef(new Set<string>());
   const openRef = useRef(open);
   const selectedIdRef = useRef(selectedId);
   const dragState = useRef<{ pointerX: number; pointerY: number; x: number; y: number; moved: boolean } | null>(null);
@@ -54,9 +56,12 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   }, []);
 
   const loadParticipants = useCallback(async () => {
+    const revision = participantRevision.current;
+    const request = ++participantRequest.current;
     const response = await authorizedFetch(`${API}/api/chat/global/participants/`);
     const payload = await response.json().catch(() => []);
     if (!response.ok) throw new Error(payload.detail || "대화 상대를 불러오지 못했습니다.");
+    if (revision !== participantRevision.current || request !== participantRequest.current) return;
     const nextParticipants = Array.isArray(payload) ? payload as Participant[] : [];
     setParticipants(nextParticipants);
     setSelectedId((current) => current && nextParticipants.some((item) => item.id === current)
@@ -81,10 +86,11 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || "메시지를 불러오지 못했습니다.");
     const incoming = Array.isArray(payload.results) ? payload.results as Message[] : [];
+    if (!openRef.current || selectedIdRef.current !== participantId) return;
     if (replace) setMessages([]);
     merge(incoming);
     setNext(typeof payload.next_cursor === "string" ? payload.next_cursor : null);
-    await markRead(incoming, participantId);
+    if (document.visibilityState === "visible") await markRead(incoming, participantId);
     await loadParticipants();
   }, [authorizedFetch, loadParticipants, markRead, merge]);
 
@@ -101,7 +107,13 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
     const refreshVisible = () => {
       if (document.visibilityState === "visible") void loadParticipants().catch(() => undefined);
     };
-    const timer = window.setInterval(refreshVisible, 30000);
+    let lastRefresh = Date.now();
+    const timer = window.setInterval(() => {
+      const interval = socket.current?.readyState === WebSocket.OPEN ? 30000 : 5000;
+      if (Date.now() - lastRefresh < interval) return;
+      lastRefresh = Date.now();
+      refreshVisible();
+    }, 5000);
     document.addEventListener("visibilitychange", refreshVisible);
     return () => {
       window.clearInterval(timer);
@@ -120,40 +132,50 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   }, [loadMessages, open, selectedId]);
 
   useEffect(() => {
-    disposed.current = false;
+    let disposed = false;
     const connect = () => {
       const token = window.sessionStorage.getItem("accessToken");
-      if (!token || disposed.current) return;
+      if (!token || disposed) return;
       setStatus("connecting");
       const connection = new WebSocket(`${WS}/ws/chat/global`, ["soomit-chat", token]);
       socket.current = connection;
-      connection.onopen = () => { setStatus("connected"); setError(""); };
+      connection.onopen = () => {
+        if (disposed || socket.current !== connection) return;
+        setStatus("connected"); setError("");
+        void loadParticipants().catch(() => undefined);
+      };
       connection.onmessage = (event) => {
+        if (disposed || socket.current !== connection) return;
         try {
           const payload = JSON.parse(event.data) as { type?: string; message?: Message; detail?: string };
           if (payload.type === "chat.message.created" && payload.message) {
             const message = payload.message;
+            if (receivedIds.current.has(message.id)) return;
+            receivedIds.current.add(message.id);
+            if (receivedIds.current.size > 2000) receivedIds.current.delete(receivedIds.current.values().next().value!);
+            participantRevision.current += 1;
             const activeParticipant = selectedIdRef.current;
-            const belongsToOpenConversation = openRef.current && (message.sender.id === activeParticipant || message.recipient_id === activeParticipant);
+            const belongsToOpenConversation = document.visibilityState === "visible" && openRef.current && (message.sender.id === activeParticipant || message.recipient_id === activeParticipant);
             if (belongsToOpenConversation) {
               merge([message]);
               if (message.sender.id === activeParticipant) {
                 connection.send(JSON.stringify({ type: "chat.message.read", message_id: message.id }));
               }
             } else if (message.sender.id) {
-              setParticipants((current) => current.map((participant) => participant.id === message.sender.id
-                ? { ...participant, unread_count: participant.unread_count + 1 }
-                : participant));
+              setParticipants((current) => current.some((participant) => participant.id === message.sender.id)
+                ? current.map((participant) => participant.id === message.sender.id ? { ...participant, unread_count: participant.unread_count + 1 } : participant)
+                : message.recipient_id === activeParticipant ? current : [...current, { ...message.sender, unread_count: 1 }]);
             }
-            void loadParticipants().catch(() => undefined);
+            if (belongsToOpenConversation) void loadParticipants().catch(() => undefined);
           }
           if (payload.type === "chat.error") setError(payload.detail || "메시지를 처리하지 못했습니다.");
         } catch {
           setError("채팅 이벤트를 해석하지 못했습니다.");
         }
       };
+      connection.onerror = () => { if (!disposed) setStatus("offline"); };
       connection.onclose = () => {
-        if (!disposed.current) {
+        if (!disposed && socket.current === connection) {
           setStatus("offline");
           reconnect.current = window.setTimeout(connect, 1500);
         }
@@ -161,7 +183,7 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
     };
     connect();
     return () => {
-      disposed.current = true;
+      disposed = true;
       if (reconnect.current) window.clearTimeout(reconnect.current);
       socket.current?.close();
       socket.current = null;

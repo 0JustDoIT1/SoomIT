@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -30,6 +30,20 @@ afterEach(() => {
 });
 
 describe("SoomChatPanel", () => {
+  it("keeps a live badge when an older participant response arrives and deduplicates events", async () => {
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    window.sessionStorage.setItem("accessToken", "staff-token");
+    const participant = { id: "user-2", name: "검사자", department: "RADIOLOGY", role: "TECHNOLOGIST", unread_count: 0 };
+    const pending: Array<(response: Response) => void> = [];
+    const authorizedFetch = vi.fn(() => new Promise<Response>((resolve) => pending.push(resolve)));
+    render(<SoomChatPanel authorizedFetch={authorizedFetch} />);
+    await waitFor(() => expect(pending.length).toBeGreaterThan(0));
+    const event = { data: JSON.stringify({ type: "chat.message.created", message: { id: "live-1", body: "hello", sender: participant, recipient_id: "me", created_at: "2026-09-30T01:00:00Z" } }) } as MessageEvent;
+    act(() => { MockWebSocket.instances[0].onmessage?.(event); MockWebSocket.instances[0].onmessage?.(event); });
+    expect(screen.getByLabelText("읽지 않은 채팅 1개")).toBeInTheDocument();
+    await act(async () => { pending.forEach((resolve) => resolve(new Response(JSON.stringify([participant]), { status: 200 }))); });
+    expect(screen.getByLabelText("읽지 않은 채팅 1개")).toBeInTheDocument();
+  });
   it("shows an unread badge when a message arrives while the launcher is closed", async () => {
     vi.stubGlobal("WebSocket", MockWebSocket);
     const participant = { id: "user-2", name: "김태윤", department: "RADIOLOGY", role: "TECHNOLOGIST", unread_count: 0 };

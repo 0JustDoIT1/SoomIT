@@ -4,6 +4,8 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 
 import { ensureCornerstoneInitialized } from "../../../radiology/_lib/cornerstone-init";
 import { preventMedicalImageContextMenu } from "@/components/medical-imaging/medical-image-context-menu";
+import { useAnnotationMutation } from "@/components/medical-imaging/use-annotation-mutation";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { showToast } from "@/components/ui/toast/toast";
 import {
   imageAnnotationRequestKey,
@@ -35,6 +37,8 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const [annotationLoadError, setAnnotationLoadError] = useState("");
   const [annotationMutationError, setAnnotationMutationError] = useState("");
   const [annotationReloadNonce, setAnnotationReloadNonce] = useState(0);
+  const { isLocked: isMutationLocked, busy: mutationBusy, begin: beginMutation, end: endMutation } = useAnnotationMutation();
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<ToolMode>("WL");
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [annotationText, setAnnotationText] = useState("");
@@ -42,6 +46,12 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const annotationSaveRef = useRef<(annotation: Omit<Annotation, "id">) => void>(() => undefined);
   const annotationUpdateRef = useRef<(annotationId: string, annotation: Omit<Annotation, "id">) => void>(() => undefined);
   const annotationTextRef = useRef("");
+  const annotationsRef = useRef(annotations);
+  const activeToolRef = useRef(activeTool);
+  const syncViewerRef = useRef<(() => void) | null>(null);
+  const setViewerToolRef = useRef<(() => void) | null>(null);
+  useEffect(() => { annotationsRef.current = annotations; syncViewerRef.current?.(); }, [annotations]);
+  useEffect(() => { activeToolRef.current = activeTool; setViewerToolRef.current?.(); }, [activeTool]);
   const nextTemporaryAnnotationIdRef = useRef(0);
   const assetCaseIdRef = useRef("");
   const annotationRequestRef = useRef("");
@@ -89,104 +99,138 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 
   const saveAnnotation = useCallback(async (annotation: Omit<Annotation, "id">) => {
-    if (!asset) return;
+    if (!asset || isMutationLocked()) return;
     const id = `temp-${Date.now()}-${++nextTemporaryAnnotationIdRef.current}`;
     setDirtyAnnotationIds((current) => new Set(current).add(id));
     setAnnotations((current) => [...current, { id, ...annotation }]);
-  }, [asset]);
+  }, [asset, isMutationLocked]);
 
   const deleteSelectedAnnotation = useCallback(async () => {
-    const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
-    if (!selected) return;
-    if (selected.id.startsWith("temp-")) {
-      setDirtyAnnotationIds((current) => { const next = new Set(current); next.delete(selected.id); return next; });
-      setAnnotations((current) => current.filter((annotation) => annotation.id !== selected.id));
-      setSelectedAnnotationId(null);
-      return;
-    }
-    try {
-      setAnnotationMutationError("");
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${selected.id}/`, { method: "DELETE" });
-      const body: unknown = response.ok ? null : await response.json().catch(() => null);
-      if (!response.ok) throw new Error(message(body, "선택한 주석을 삭제하지 못했습니다."));
-      setAnnotations((current) => current.filter((annotation) => annotation.id !== selected.id));
-      setSelectedAnnotationId(null);
-      if (asset?.series_instance_uid) {
-        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-      }
-    } catch (error) {
-      const failure = error instanceof Error ? error.message : "선택한 주석을 삭제하지 못했습니다.";
-      setAnnotationMutationError(failure);
-      showToast.error(failure);
-    }
-  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, selectedAnnotationId]);
 
-  const deleteAllAnnotations = useCallback(async () => {
-    if (!asset?.series_instance_uid || annotations.length === 0) return;
-    if (!window.confirm("현재 영상의 의료진 주석을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
-    const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
+    if (!beginMutation()) return false;
+    const requestIdentity = annotationRequestRef.current;
     try {
-      setAnnotationMutationError("");
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`, { method: "DELETE" });
-      const body: unknown = response.ok ? null : await response.json().catch(() => null);
-      if (!response.ok) throw new Error(message(body, "주석 전체를 삭제하지 못했습니다."));
-      setAnnotations([]);
-      setDirtyAnnotationIds(new Set());
-      setSelectedAnnotationId(null);
-      invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-    } catch (error) {
-      const failure = error instanceof Error ? error.message : "주석 전체를 삭제하지 못했습니다.";
-      setAnnotationMutationError(failure);
-      showToast.error(failure);
+      const selected = annotations.find((annotation) => annotation.id === selectedAnnotationId);
+      if (!selected) return;
+      if (selected.id.startsWith("temp-")) {
+        if (annotationRequestRef.current !== requestIdentity) return false;
+        setAnnotations((current) => current.filter((annotation) => annotation.id !== selected.id));
+        setDirtyAnnotationIds((current) => { const next = new Set(current); next.delete(selected.id); return next; });
+        setSelectedAnnotationId(null);
+        return;
+      }
+      try {
+        setAnnotationMutationError("");
+        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${selected.id}/`, { method: "DELETE" });
+        const body: unknown = response.ok ? null : await response.json().catch(() => null);
+        if (!response.ok && response.status !== 404) throw new Error(message(body, "선택한 주석을 삭제하지 못했습니다."));
+        if (annotationRequestRef.current !== requestIdentity) return false;
+        setAnnotations((current) => current.filter((annotation) => annotation.id !== selected.id));
+        setDirtyAnnotationIds((current) => { const next = new Set(current); next.delete(selected.id); return next; });
+        setSelectedAnnotationId(null);
+        if (asset?.series_instance_uid) {
+          invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+        }
+      } catch (error) {
+        const failure = error instanceof Error ? error.message : "선택한 주석을 삭제하지 못했습니다.";
+        setAnnotationMutationError(failure);
+        showToast.error(failure);
+      }
+    } finally {
+      endMutation();
     }
-  }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId]);
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, selectedAnnotationId, beginMutation, endMutation]);
+
+  const deleteAllAnnotations = useCallback(() => {
+    if (!asset?.series_instance_uid || annotations.length === 0) return;
+    setConfirmDeleteAll(`${caseId}:${asset.id}`);
+  }, [annotations.length, asset, caseId]);
+
+  const executeDeleteAllAnnotations = useCallback(async () => {
+
+    if (!beginMutation()) return false;
+    const requestIdentity = annotationRequestRef.current;
+    try {
+      if (!asset?.series_instance_uid || annotations.length === 0) return;
+      setConfirmDeleteAll(null);
+      const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
+      try {
+        setAnnotationMutationError("");
+        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`, { method: "DELETE" });
+        const body: unknown = response.ok ? null : await response.json().catch(() => null);
+        if (!response.ok) throw new Error(message(body, "주석 전체를 삭제하지 못했습니다."));
+        if (annotationRequestRef.current !== requestIdentity) return false;
+        setAnnotations([]);
+        setDirtyAnnotationIds(new Set());
+        setSelectedAnnotationId(null);
+        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+      } catch (error) {
+        const failure = error instanceof Error ? error.message : "주석 전체를 삭제하지 못했습니다.";
+        setAnnotationMutationError(failure);
+        showToast.error(failure);
+      }
+    } finally {
+      endMutation();
+    }
+  }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId, beginMutation, endMutation]);
 
   const updateAnnotation = useCallback(async (annotationId: string, annotation: Omit<Annotation, "id">) => {
+    if (isMutationLocked()) return;
     setDirtyAnnotationIds((current) => new Set(current).add(annotationId));
     setAnnotations((current) => current.map((item) => item.id === annotationId ? { id: annotationId, ...annotation } : item));
-  }, []);
+  }, [isMutationLocked]);
 
   const persistAnnotations = useCallback(async () => {
-    if (!asset) return;
-    const pending = annotations.filter((annotation) => dirtyAnnotationIds.has(annotation.id));
-    if (pending.length === 0) return;
-    setAnnotationMutationError("");
-    const results = await Promise.allSettled(pending.map(async (annotation) => {
-        const temporary = annotation.id.startsWith("temp-");
-        const response = await authorizedFetch(
-          temporary
-            ? `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`
-            : `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotation.id}/`,
-          {
-            method: temporary ? "POST" : "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...(temporary ? { image_asset: asset.id } : {}), annotation_type: annotation.annotation_type, annotation_data: annotation.annotation_data }),
-          },
-        );
-        const body: unknown = await response.json().catch(() => null);
-        if (!response.ok || !body || typeof body !== "object") throw new Error(message(body, "주석을 저장하지 못했습니다."));
-        return [annotation.id, body as Annotation] as const;
-      }));
-    const saved = results.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
-    if (saved.length) {
-      const savedById = new Map(saved);
-      setAnnotations((current) => current.map((annotation) => savedById.get(annotation.id) ?? annotation));
-      setDirtyAnnotationIds((current) => {
-        const next = new Set(current);
-        saved.forEach(([id]) => next.delete(id));
-        return next;
-      });
-      if (asset?.series_instance_uid) {
-        invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+
+    if (!beginMutation()) return false;
+    const requestIdentity = annotationRequestRef.current;
+    try {
+      if (!asset) return;
+      const pending = annotations.filter((annotation) => dirtyAnnotationIds.has(annotation.id));
+      if (pending.length === 0) return;
+      setAnnotationMutationError("");
+      const results = await Promise.allSettled(pending.map(async (annotation) => {
+          const temporary = annotation.id.startsWith("temp-");
+          const response = await authorizedFetch(
+            temporary
+              ? `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/`
+              : `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotation.id}/`,
+            {
+              method: temporary ? "POST" : "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ ...(temporary ? { image_asset: asset.id } : {}), annotation_type: annotation.annotation_type, annotation_data: annotation.annotation_data }),
+            },
+          );
+          const body: unknown = await response.json().catch(() => null);
+          if (!response.ok || !body || typeof body !== "object") throw new Error(message(body, "주석을 저장하지 못했습니다."));
+          return [annotation.id, body as Annotation] as const;
+        }));
+      if (annotationRequestRef.current !== requestIdentity) return false;
+      const saved = results.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
+      if (saved.length) {
+        const savedById = new Map(saved);
+        setSelectedAnnotationId((current) => current ? savedById.get(current)?.id ?? current : null);
+        if (annotationRequestRef.current !== requestIdentity) return false;
+        setAnnotations((current) => current.map((annotation) => savedById.get(annotation.id) ?? annotation));
+        setDirtyAnnotationIds((current) => {
+          const next = new Set(current);
+          saved.forEach(([id]) => next.delete(id));
+          return next;
+        });
+        if (asset?.series_instance_uid) {
+          invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+        }
       }
+      const failed = results.find(result => result.status === "rejected");
+      if (failed?.status === "rejected") {
+        const failure = failed.reason instanceof Error ? failed.reason.message : "일부 주석을 저장하지 못했습니다.";
+        setAnnotationMutationError(failure);
+        showToast.error(failure);
+      } else if (saved.length) showToast.success("주석이 저장되었습니다.");
+    } finally {
+      endMutation();
     }
-    const failed = results.find(result => result.status === "rejected");
-    if (failed?.status === "rejected") {
-      const failure = failed.reason instanceof Error ? failed.reason.message : "일부 주석을 저장하지 못했습니다.";
-      setAnnotationMutationError(failure);
-      showToast.error(failure);
-    } else if (saved.length) showToast.success("주석이 저장되었습니다.");
-  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, dirtyAnnotationIds]);
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, dirtyAnnotationIds, beginMutation, endMutation]);
 
   const retryAnnotationLoad = useCallback(() => {
     if (!asset?.series_instance_uid) return;
@@ -259,11 +303,12 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   useEffect(() => {
     if (!asset || !uids[index] || !elementRef.current) return;
     let cancelled = false;
+    const controller = new AbortController();
     let engine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let cleanupTools: (() => void) | null = null;
     void (async () => {
       try {
-        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${asset.id}/dicom-web/instances/${uids[index]}/`, { headers: { Accept: "application/dicom" } });
+        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${asset.id}/dicom-web/instances/${uids[index]}/`, { signal: controller.signal, headers: { Accept: "application/dicom" } });
         if (!response.ok) throw new Error("원본 DICOM을 불러오지 못했습니다.");
         const blob = await response.blob();
         const { core, tools, dicomImageLoader } = await ensureCornerstoneInitialized();
@@ -285,27 +330,37 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           },
         });
         toolGroup?.addViewport(viewportId, engine.id);
-        const activeName = activeTool === "WL" ? tools.WindowLevelTool.toolName : activeTool === "ZOOM" ? tools.ZoomTool.toolName : activeTool === "PAN" ? tools.PanTool.toolName : activeTool === "LENGTH" ? tools.LengthTool.toolName : activeTool === "ROI" ? tools.RectangleROITool.toolName : tools.ArrowAnnotateTool.toolName;
+        setViewerToolRef.current = () => {
+        const activeName = activeToolRef.current === "WL" ? tools.WindowLevelTool.toolName : activeToolRef.current === "ZOOM" ? tools.ZoomTool.toolName : activeToolRef.current === "PAN" ? tools.PanTool.toolName : activeToolRef.current === "LENGTH" ? tools.LengthTool.toolName : activeToolRef.current === "ROI" ? tools.RectangleROITool.toolName : tools.ArrowAnnotateTool.toolName;
         [tools.WindowLevelTool.toolName, tools.PanTool.toolName, tools.ZoomTool.toolName, tools.LengthTool.toolName, tools.RectangleROITool.toolName, tools.ArrowAnnotateTool.toolName].forEach((name) => toolGroup?.setToolPassive(name, { removeAllBindings: true }));
         toolGroup?.setToolActive(activeName, { bindings: [{ mouseButton: tools.Enums.MouseBindings.Primary }] });
-        const runtimeTools = tools as unknown as { eventTarget?: EventTarget; Enums?: { Events?: Record<string, string> } };
+        };
+        setViewerToolRef.current();
+        const runtimeTools = { eventTarget: core.eventTarget, Enums: tools.Enums };
         const eventName = runtimeTools.Enums?.Events?.ANNOTATION_COMPLETED;
         const modifiedEventName = runtimeTools.Enums?.Events?.ANNOTATION_MODIFIED;
         const syncAnnotation = (event: Event, completed: boolean) => {
           const annotation = (event as CustomEvent<{ annotation?: Record<string, unknown> }>).detail?.annotation;
           const metadata = annotation?.metadata as Record<string, unknown> | undefined;
           const data = annotation?.data as Record<string, unknown> | undefined;
+          if (metadata?.referencedImageId !== imageId) return;
           const toolName = metadata?.toolName;
           const annotation_type: Annotation["annotation_type"] | null = toolName === tools.LengthTool.toolName ? "LENGTH" : toolName === tools.RectangleROITool.toolName ? "BOUNDING_BOX" : toolName === tools.ArrowAnnotateTool.toolName ? "TEXT" : null;
           const points = (data?.handles as { points?: unknown } | undefined)?.points;
           if (!annotation_type || !Array.isArray(points) || !asset.series_instance_uid || !uids[index]) return;
           if (typeof annotation?.annotationUID === "string") ownedAnnotationUids.add(annotation.annotationUID);
           const annotationId = typeof annotation?.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-") ? annotation.annotationUID.slice("clinician-".length) : null;
-          const text = annotation_type === "TEXT" ? annotationTextRef.current.trim() : undefined;
+          const text = annotation_type === "TEXT" ? String(data?.text ?? data?.label ?? annotationTextRef.current).trim() : undefined;
           if (annotation_type === "TEXT" && !text) return;
           const payload = { annotation_type, annotation_data: { series_instance_uid: asset.series_instance_uid, sop_instance_uid: uids[index], tool_name: String(toolName), viewport: "axial", frame_of_reference_uid: metadata?.FrameOfReferenceUID, world_points: points, cached_stats: data?.cachedStats, text } };
           if (annotationId) annotationUpdateRef.current(annotationId, payload);
-          else if (completed) annotationSaveRef.current(payload);
+          else if (completed) {
+            annotationSaveRef.current(payload);
+            if (typeof annotation?.annotationUID === "string") {
+              tools.annotation.state.removeAnnotation(annotation.annotationUID);
+              ownedAnnotationUids.delete(annotation.annotationUID);
+            }
+          }
         };
         if (runtimeTools.eventTarget && eventName) {
           const onCompleted = (event: Event) => syncAnnotation(event, true);
@@ -321,11 +376,15 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         }
         const viewport = engine.getViewport(viewportId) as InstanceType<typeof core.StackViewport>;
         await viewport.setStack([imageId]);
+        if (cancelled) return;
         const annotationState = (tools as unknown as { annotation?: { state?: { addAnnotation?: (annotation: Record<string, unknown>, element: HTMLDivElement) => void } } }).annotation?.state;
         const addAnnotation = annotationState?.addAnnotation;
         const annotationElement = elementRef.current;
+        syncViewerRef.current = () => {
+        ownedAnnotationUids.forEach((uid) => tools.annotation.state.removeAnnotation(uid));
+        ownedAnnotationUids.clear();
         if (addAnnotation && annotationElement) {
-          annotations
+          annotationsRef.current
             .filter((saved) => saved.annotation_data.sop_instance_uid === uids[index])
             .forEach((saved) => {
               const points = saved.annotation_data.world_points;
@@ -333,25 +392,28 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
               const toolName = saved.annotation_type === "LENGTH" ? tools.LengthTool.toolName : saved.annotation_type === "BOUNDING_BOX" ? tools.RectangleROITool.toolName : tools.ArrowAnnotateTool.toolName;
               const annotationUID = `clinician-${saved.id}`;
               ownedAnnotationUids.add(annotationUID);
-              addAnnotation({ annotationUID, highlighted: false, invalidated: false, isLocked: false, isVisible: true, metadata: { toolName, referencedImageId: imageId, FrameOfReferenceUID: saved.annotation_data.frame_of_reference_uid }, data: { handles: { points }, cachedStats: saved.annotation_data.cached_stats ?? {}, label: saved.annotation_data.text } }, annotationElement);
+              addAnnotation({ annotationUID, highlighted: false, invalidated: false, isLocked: false, isVisible: true, metadata: { toolName, referencedImageId: imageId, FrameOfReferenceUID: saved.annotation_data.frame_of_reference_uid }, data: { handles: { points }, cachedStats: saved.annotation_data.cached_stats ?? {}, text: saved.annotation_data.text, label: saved.annotation_data.text } }, annotationElement);
             });
         }
         viewport.render();
+        };
+        syncViewerRef.current();
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "원본 DICOM을 표시하지 못했습니다.");
       }
     })();
-    return () => { cancelled = true; cleanupTools?.(); engine?.destroy(); };
-  }, [activeTool, annotations, apiBaseUrl, asset, authorizedFetch, caseId, index, reactId, uids]);
+    return () => { cancelled = true; controller.abort(); syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); };
+  }, [apiBaseUrl, asset, authorizedFetch, caseId, index, reactId, uids]);
 
   const resetSlice = () => setIndex(Math.floor(uids.length / 2));
   const openFullscreen = async () => { if (viewerFrameRef.current?.requestFullscreen) await viewerFrameRef.current.requestFullscreen(); };
 
   return (
-    <section ref={viewerFrameRef} className="relative grid h-full min-h-0 min-w-0 grid-rows-[48px_38px_minmax(0,1fr)_40px] overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
+    <>
+    <section inert={mutationBusy} aria-busy={mutationBusy} ref={viewerFrameRef} className="relative grid h-full min-h-0 min-w-0 grid-rows-[52px_42px_minmax(0,1fr)_44px] overflow-hidden rounded-md border border-slate-800 bg-[#050914] shadow-inner">
       <header className="flex min-w-0 items-center justify-between gap-3 border-b border-slate-800 bg-[#0b1220] px-3">
-        <div className="min-w-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-cyan-300">DICOM evidence</p><div className="flex items-center gap-2"><h2 className="truncate text-xs font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2>{annotationLoading && <span className="text-[8px] font-semibold text-slate-400">주석 로딩</span>}{annotationLoadError && <button type="button" onClick={retryAnnotationLoad} className="text-[8px] font-semibold text-amber-300 underline" title={annotationLoadError}>주석 조회 재시도</button>}{annotationMutationError && <span role="alert" className="text-[8px] font-semibold text-rose-300" title={annotationMutationError}>주석 처리 실패</span>}</div></div>
-        <div className="flex shrink-0 items-center gap-1 text-[9px]">
+        <div className="min-w-0"><p className="text-[11px] font-semibold tracking-wide text-cyan-300">원본 DICOM 영상</p><div className="flex items-center gap-2"><h2 className="truncate text-sm font-semibold text-slate-100">{isTnm ? "PET-CT / TNM 검토 영상" : "흉부 CT 원본 영상"}</h2>{annotationLoading && <span className="text-xs font-semibold text-slate-400">주석 로딩</span>}{annotationLoadError && <button type="button" onClick={retryAnnotationLoad} className="text-xs font-semibold text-amber-300 underline" title={annotationLoadError}>주석 조회 재시도</button>}{annotationMutationError && <span role="alert" className="text-xs font-semibold text-rose-300" title={annotationMutationError}>주석 처리 실패</span>}</div></div>
+        <div className="flex shrink-0 items-center gap-1 text-xs">
           <ToolButton active label="1×1" title="현재 단일 Stack Viewport" />
           <ToolButton disabled label="2×2" title="현재 MPR·다중 Viewport는 지원하지 않습니다." />
           <ToolButton active={activeTool === "WL"} onClick={() => setActiveTool("WL")} label="WL/WW" title="Window/Level" />
@@ -370,7 +432,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       </header>
 
       <div className="flex min-w-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-[#101827] px-2 py-1.5" aria-label="DICOM series">
-        {assets.map((item) => <button key={item.id} type="button" onClick={() => setSelectedAssetId(item.id)} className={`shrink-0 rounded px-2 py-1 text-[9px] font-semibold transition ${item.id === selectedAssetId ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{item.image_type === "PET" ? "PET" : "CT"} Series</button>)}
+        {assets.map((item) => <button key={item.id} type="button" onClick={() => setSelectedAssetId(item.id)} className={`min-h-8 shrink-0 rounded px-3 py-1 text-xs font-semibold transition ${item.id === selectedAssetId ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{item.image_type === "PET" ? "PET" : "CT"} Series</button>)}
         {isTnm && <span className="ml-1 shrink-0 rounded border border-slate-700 px-2 py-1 text-[8px] text-slate-500" title="현재 CT-PET Fusion Viewport는 지원하지 않습니다.">Fusion 미지원</span>}
       </div>
 
@@ -410,13 +472,16 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         <button type="button" disabled={!uids.length || index >= uids.length - 1} onClick={() => setIndex((value) => value + 1)} className="rounded border border-slate-700 px-2 py-1 text-[9px] font-medium text-slate-200 disabled:opacity-35">다음</button>
       </footer>
     </section>
+    {mutationBusy && <span role="status" className="fixed bottom-4 left-4 z-[100] rounded bg-slate-900 px-4 py-2 text-sm text-white">주석 처리 중…</span>}
+    {confirmDeleteAll === `${caseId}:${asset?.id}` && <ConfirmActionDialog title="영상 주석 전체 삭제" description={`현재 영상의 의료진 주석 ${annotations.length}개를 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.`} confirmLabel="전체 삭제" onCancel={() => setConfirmDeleteAll(null)} onConfirm={() => void executeDeleteAllAnnotations()} />}
+    </>
   );
 }
 
 function ToolButton({ label, title, onClick, disabled = false, active = false }: { label: string; title: string; onClick?: () => void; disabled?: boolean; active?: boolean }) {
-  return <button type="button" title={title} aria-label={label} disabled={disabled} onClick={onClick} className={`rounded border px-1.5 py-1 font-semibold transition disabled:cursor-not-allowed disabled:opacity-35 ${active ? "border-blue-400/70 bg-blue-500/20 text-blue-200" : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{label}</button>;
+  return <button type="button" title={title} aria-label={label} disabled={disabled} onClick={onClick} className={`min-h-8 rounded border px-2 py-1 text-xs font-semibold transition disabled:cursor-not-allowed disabled:opacity-35 ${active ? "border-blue-400/70 bg-blue-500/20 text-blue-200" : "border-slate-700 bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{label}</button>;
 }
 
 function HudChip({ children }: { children: React.ReactNode }) {
-  return <span className="rounded border border-white/10 bg-black/55 px-1.5 py-0.5 text-[8px] font-medium text-slate-200 backdrop-blur-sm">{children}</span>;
+  return <span className="rounded border border-white/10 bg-black/55 px-2 py-1 text-xs font-medium text-slate-200 backdrop-blur-sm">{children}</span>;
 }

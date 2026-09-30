@@ -78,7 +78,7 @@ export function EvidenceViewerPanel({
   };
 
   return (
-    <section className="grid h-full min-h-0 grid-rows-[40px_minmax(0,1fr)] overflow-hidden rounded-md border border-slate-800 bg-[#050812] shadow-inner">
+    <section className="grid h-full min-h-0 grid-rows-[48px_minmax(0,1fr)] overflow-hidden rounded-md border border-slate-800 bg-[#050812] shadow-inner">
       <span className="sr-only">
         {activeAsset?.image_type || "-"} · {activeAsset?.file_format || "-"}
       </span>
@@ -88,17 +88,17 @@ export function EvidenceViewerPanel({
 
       <header className="flex min-w-0 items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-2.5 text-slate-100">
         <div className="flex min-w-0 items-center gap-2">
-          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-[9px] font-bold text-blue-300">
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-xs font-bold text-blue-300">
             XR
           </div>
 
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <h3 className="truncate text-[10px] font-bold text-slate-100">
-                X-ray Viewer
+              <h3 className="truncate text-xs font-bold text-slate-100">
+                X-ray 원본 영상
               </h3>
               {analysisStatus && (
-                <span className="hidden rounded-full border border-blue-500/30 bg-blue-500/10 px-1.5 py-0.5 text-[8px] font-semibold text-blue-300 sm:inline">
+                <span className="rounded-full border border-blue-500/30 bg-blue-500/10 px-2 py-1 text-[10px] font-semibold text-blue-300">
                   AI {analysisStatus}
                 </span>
               )}
@@ -110,7 +110,7 @@ export function EvidenceViewerPanel({
         </div>
 
         <div className="flex shrink-0 items-center gap-1">
-          <span className="hidden min-w-10 text-center text-[8px] tabular-nums text-slate-400 sm:inline">
+          <span className="hidden min-w-10 text-center text-xs tabular-nums text-slate-400 sm:inline">
             {Math.round(zoom * 100)}%
           </span>
 
@@ -143,7 +143,7 @@ export function EvidenceViewerPanel({
               type="button"
               onClick={() => setShowAllDetections((current) => !current)}
               aria-pressed={showAllDetections}
-              className={`h-7 whitespace-nowrap rounded-md border px-2 text-[8px] font-semibold transition ${
+              className={`min-h-8 whitespace-nowrap rounded-md border px-2.5 text-xs font-semibold transition ${
                 showAllDetections
                   ? "border-rose-400/70 bg-rose-500/15 text-rose-200"
                   : "border-slate-700 bg-slate-800 text-slate-300 hover:border-slate-600 hover:bg-slate-700"
@@ -322,8 +322,8 @@ function ViewerToolButton({
       onClick={onClick}
       title={label}
       aria-label={label}
-      className={`flex h-7 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-[9px] font-bold text-slate-200 transition hover:border-slate-600 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35 ${
-        wide ? "px-2.5" : "w-7"
+      className={`flex min-h-8 items-center justify-center rounded-md border border-slate-700 bg-slate-800 text-xs font-bold text-slate-200 transition hover:border-slate-600 hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-35 ${
+        wide ? "px-3" : "w-8"
       }`}
     >
       {children}

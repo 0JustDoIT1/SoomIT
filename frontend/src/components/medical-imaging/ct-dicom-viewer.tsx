@@ -526,7 +526,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         const annotationId = typeof annotation.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-")
           ? annotation.annotationUID.slice("clinician-".length)
           : null;
-        const text = annotationType === "TEXT" ? annotationTextRef.current.trim() : undefined;
+        const text = annotationType === "TEXT" ? String(data?.text ?? data?.label ?? annotationTextRef.current).trim() : undefined;
         if (annotationType === "TEXT" && !text) return;
         const payload: PendingImageAnnotation = {
           annotation_type: annotationType,
@@ -623,13 +623,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
       removeProgressListener = () => core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_MODIFIED, handleVolumeProgress);
 
-      // Explicitly decode the source frames before creating the MPR volume.
-      // In this case-scoped WADO-RS route, metadata-only lazy loading can stop
-      // after the successful HEAD probe: the viewports and SEG overlay appear,
-      // but no pixel data reaches the volume. Preloading with bounded
-      // concurrency gives the volume decoded pixels and a reliable first draw.
+      // Seed the volume with decoded pixels, without waiting for the whole CT.
+      // The streaming volume loads the remaining frames after the first render.
       let loadedImageCount = 0;
-      await runWithConcurrency(imageIds, 8, async (imageId) => {
+      const initialImageIds = [...new Set([imageIds[0], imageIds[Math.floor(imageIds.length / 2)], imageIds[imageIds.length - 1]])];
+      await runWithConcurrency(initialImageIds, 3, async (imageId) => {
         await core.imageLoader.loadAndCacheImage(imageId);
         loadedImageCount += 1;
         if (!disposed) setSeriesProgress({ loaded: loadedImageCount, total: imageIds.length });
@@ -696,6 +694,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
             data: {
               handles: { points },
               cachedStats: data.cached_stats ?? {},
+              text: typeof data.text === "string" ? data.text : undefined,
               label: typeof data.text === "string" ? data.text : undefined,
             },
           }, target);
@@ -744,14 +743,25 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         }
       }
       renderingEngine.render();
+      if (!disposed) setBuilding(false);
       if ("load" in volume && typeof volume.load === "function") {
         volume.load((event) => {
           if (disposed) return;
-          const progress = event as { framesProcessed?: number; totalNumFrames?: number };
+          const progress = event as { framesProcessed?: number; totalNumFrames?: number; success?: boolean; error?: unknown };
+          if (progress.success === false) setViewerError("일부 CT 슬라이스를 불러오지 못했습니다. 영상을 다시 열어 주세요.");
           setSeriesProgress({ loaded: progress.framesProcessed ?? imageIds.length, total: progress.totalNumFrames ?? imageIds.length });
           renderingEngine?.render();
         });
       }
+      // Keep the explicit DICOMweb decode path as a background fallback for
+      // loaders that stall with metadata alone. Cached/in-flight images are shared.
+      void runWithConcurrency(imageIds, 8, async (imageId) => {
+        if (disposed) return;
+        await core.imageLoader.loadAndCacheImage(imageId);
+        if (!disposed) renderingEngine?.render();
+      }).catch((reason: unknown) => {
+        if (!disposed) setViewerError(reason instanceof Error ? reason.message : "CT 슬라이스를 불러오지 못했습니다.");
+      });
 
       if (analysisId) {
         try {
@@ -901,7 +911,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       aria-label="CT 뷰어. F 전체화면, R 초기화, 마우스 휠로 슬라이스 이동"
     >
       {/* PACS toolbar */}
-      <div className="flex min-h-[42px] min-w-0 flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-2.5 py-1">
+      <div className="flex min-h-[48px] min-w-0 flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-[#101827] px-3 py-1.5">
         <div
           role="toolbar"
           aria-label="CT Viewer 도구"
@@ -912,7 +922,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               type="button"
               aria-pressed={!focusedView}
               onClick={() => setFocusedView(null)}
-              className={`h-7 rounded px-2 text-[9px] font-semibold transition ${
+              className={`h-8 rounded px-2.5 text-xs font-semibold transition ${
                 !focusedView
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
@@ -925,7 +935,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               type="button"
               aria-pressed={Boolean(focusedView)}
               onClick={toggleFocusedView}
-              className={`h-7 rounded px-2 text-[9px] font-semibold transition ${
+              className={`h-8 rounded px-2.5 text-xs font-semibold transition ${
                 focusedView
                   ? "bg-blue-600 text-white shadow-sm"
                   : "text-slate-400 hover:bg-slate-800 hover:text-slate-200"
@@ -944,7 +954,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               aria-pressed={activeTool === mode}
               onClick={() => setMprToolMode(mode)}
               title={title}
-              className={`h-7 shrink-0 rounded-md border px-2 text-[9px] font-semibold transition ${
+              className={`h-8 shrink-0 rounded-md border px-2.5 text-xs font-semibold transition ${
                 activeTool === mode
                   ? "border-blue-500 bg-blue-600 text-white shadow-sm"
                   : "border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-600 hover:bg-slate-800"
@@ -960,7 +970,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               value={annotationText}
               onChange={(event) => setAnnotationText(event.target.value)}
               placeholder="주석 입력 후 영상 클릭"
-              className="h-7 w-36 shrink-0 rounded-md border border-slate-700 bg-slate-950 px-2 text-[9px] text-slate-100 placeholder:text-slate-500"
+              className="h-8 w-40 shrink-0 rounded-md border border-slate-700 bg-slate-950 px-2 text-xs text-slate-100 placeholder:text-slate-500"
             />
           )}
 
@@ -970,7 +980,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
             type="button"
             onClick={resetViewports}
             title="모든 Viewport 초기화 (R)"
-            className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800"
+            className="h-8 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800"
           >
             초기화
           </button>
@@ -979,7 +989,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
             type="button"
             onClick={requestFullscreen}
             title="전체화면 (F)"
-            className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800"
+            className="h-8 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800"
           >
             전체화면
           </button>
@@ -1010,7 +1020,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               });
             }}
             title="선택한 의료진 주석 삭제"
-            className="h-7 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2 text-[9px] font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-35"
+            className="h-8 shrink-0 rounded-md border border-slate-700 bg-slate-900 px-2.5 text-xs font-semibold text-slate-300 transition hover:border-slate-600 hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-35"
           >
             선택 삭제
           </button>
@@ -1031,7 +1041,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
               });
             }}
             title="현재 CT 영상의 의료진 주석 전체 삭제"
-            className="h-7 shrink-0 rounded-md border border-rose-700 bg-rose-950/40 px-2 text-[9px] font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-35"
+            className="h-8 shrink-0 rounded-md border border-rose-700 bg-rose-950/40 px-2.5 text-xs font-semibold text-rose-200 transition hover:bg-rose-900/60 disabled:cursor-not-allowed disabled:opacity-35"
           >
             전체 삭제
           </button>
@@ -1041,7 +1051,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
             disabled={!hasUnsavedAnnotations || !onAnnotationsSaved}
             onClick={() => { void onAnnotationsSaved?.(); }}
             title="작성하거나 수정한 의료진 주석 저장"
-            className="h-7 shrink-0 rounded-md border border-blue-500 bg-blue-600 px-2 text-[9px] font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-35"
+            className="h-8 shrink-0 rounded-md border border-blue-500 bg-blue-600 px-2.5 text-xs font-semibold text-white transition hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-35"
           >
             주석 저장
           </button>

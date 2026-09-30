@@ -4,6 +4,8 @@ import type OpenSeadragonType from "openseadragon";
 import { memo, type PointerEvent as ReactPointerEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
+
 type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>;
 export type WsiAnnotationType = "POINT" | "BOUNDING_BOX" | "POLYGON" | "FREEHAND" | "TEXT";
 type ImagePoint = [number, number];
@@ -82,11 +84,13 @@ export function WsiAnnotationLayer({
   const [error, setError] = useState<{ identity: string; message: string }>({ identity: "", message: "" });
   const [annotationLoadFailed, setAnnotationLoadFailed] = useState(false);
   const [annotationReloadNonce, setAnnotationReloadNonce] = useState(0);
+  const [confirmDeleteAll, setConfirmDeleteAll] = useState<string | null>(null);
   const [pendingSaveCount, setPendingSaveCount] = useState(0);
   const [serverWritable, setServerWritable] = useState(true);
   const [viewRevision, setViewRevision] = useState(0);
   const activeIdentity = useRef("");
   const drawing = useRef(false);
+  const mutationLocked = useRef(false);
   const nextTemporaryId = useRef(0);
   const projectionFrame = useRef<number | null>(null);
   const identity = `${slideId}:${imageAssetId}`;
@@ -205,8 +209,10 @@ export function WsiAnnotationLayer({
   }, [identity, imageAssetId, imageHeight, imageWidth, slideId]);
 
   const persistStaged = useCallback(async () => {
+    if (mutationLocked.current) return;
     const staged = loaded.identity === identity ? loaded.annotations.filter(isTemporaryAnnotation) : [];
     if (staged.length === 0) return;
+    mutationLocked.current = true;
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
@@ -240,22 +246,25 @@ export function WsiAnnotationLayer({
     } catch (cause) {
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 저장하지 못했습니다." });
     } finally {
+      mutationLocked.current = false;
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [authorizedFetch, endpoint, identity, imageAssetId, loaded]);
 
   const deleteSelected = useCallback(async () => {
+    if (mutationLocked.current) return;
     if (!selectedId || loaded.identity !== identity) return;
     if (selectedId.startsWith("temp-")) {
       setLoaded((current) => ({ identity, annotations: current.identity === identity ? current.annotations.filter((annotation) => annotation.id !== selectedId) : [] }));
       setSelectedId("");
       return;
     }
+    mutationLocked.current = true;
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
       const response = await authorizedFetch(annotationDetailUrl(endpoint, selectedId), { method: "DELETE" });
-      if (!response.ok) throw new Error("Annotation을 삭제하지 못했습니다.");
+      if (!response.ok && response.status !== 404) throw new Error("Annotation을 삭제하지 못했습니다.");
       if (activeIdentity.current === identity) {
         setLoaded((current) => ({ identity, annotations: current.identity === identity ? current.annotations.filter((annotation) => annotation.id !== selectedId) : [] }));
         setSelectedId("");
@@ -263,26 +272,35 @@ export function WsiAnnotationLayer({
     } catch (cause) {
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 삭제하지 못했습니다." });
     } finally {
+      mutationLocked.current = false;
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [authorizedFetch, endpoint, identity, loaded.identity, selectedId]);
 
-  const deleteAll = useCallback(async () => {
+  const deleteAll = useCallback(() => {
     if (loaded.identity !== identity || loaded.annotations.length === 0) return;
-    if (!window.confirm("현재 슬라이드의 의료진 주석을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
+    setConfirmDeleteAll(identity);
+  }, [identity, loaded.annotations.length, loaded.identity]);
+
+  const executeDeleteAll = useCallback(async () => {
+    if (mutationLocked.current) return;
+    if (loaded.identity !== identity || loaded.annotations.length === 0) return;
+    const deletedIds = new Set(loaded.annotations.map((annotation) => annotation.id));
+    setConfirmDeleteAll(null);
+    mutationLocked.current = true;
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
       const response = await authorizedFetch(endpoint, { method: "DELETE" });
       if (!response.ok) throw new Error("Annotation을 모두 삭제하지 못했습니다.");
       if (activeIdentity.current === identity) {
-        setLoaded({ identity, annotations: [] });
-        setSelectedId("");
-        setDraftPoints([]);
+        setLoaded((current) => current.identity !== identity ? current : { identity, annotations: current.annotations.filter((annotation) => !deletedIds.has(annotation.id)) });
+        setSelectedId((current) => deletedIds.has(current) ? "" : current);
       }
     } catch (cause) {
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 모두 삭제하지 못했습니다." });
     } finally {
+      mutationLocked.current = false;
       setPendingSaveCount((count) => Math.max(0, count - 1));
     }
   }, [authorizedFetch, endpoint, identity, loaded]);
@@ -344,7 +362,8 @@ export function WsiAnnotationLayer({
       {rendered.map((annotation) => <AnnotationShape key={annotation.id} annotation={annotation} selected={selectedId === annotation.id} onSelect={() => setSelectedId(annotation.id)} />)}
       {draftPoints.length > 0 ? <polyline points={draftPoints.map(screenPoint).map((point) => point.join(",")).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="4 3" /> : null}
     </svg>
-    {error.identity === identity && error.message ? <div role="alert" className="pointer-events-auto absolute bottom-3 right-3 z-30 flex items-center gap-2 rounded border border-amber-400/50 bg-slate-950/90 px-3 py-2 text-[10px] text-amber-200"><span>{error.message} WSI는 계속 사용할 수 있습니다.</span>{annotationLoadFailed ? <button type="button" onClick={() => { setAnnotationLoadFailed(false); setAnnotationReloadNonce((value) => value + 1); }} className="rounded border border-amber-300/60 px-2 py-1 font-semibold">다시 시도</button> : null}</div> : null}
+    {error.identity === identity && error.message ? <div role="alert" className="pointer-events-auto absolute bottom-3 right-3 z-30 flex items-center gap-2 rounded border border-amber-400/50 bg-slate-950/90 px-3 py-2 text-xs text-amber-200"><span>{error.message} WSI는 계속 사용할 수 있습니다.</span>{annotationLoadFailed ? <button type="button" onClick={() => { setAnnotationLoadFailed(false); setAnnotationReloadNonce((value) => value + 1); }} className="min-h-8 rounded border border-amber-300/60 px-2 py-1 font-semibold">다시 시도</button> : null}</div> : null}
+    {confirmDeleteAll === identity && <ConfirmActionDialog title="WSI 주석 전체 삭제" description={`현재 슬라이드의 의료진 주석 ${annotations.length}개를 모두 삭제합니다. 이 작업은 되돌릴 수 없습니다.`} confirmLabel="전체 삭제" onCancel={() => setConfirmDeleteAll(null)} onConfirm={() => void executeDeleteAll()} />}
   </>;
 }
 

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type OpenSeadragonType from "openseadragon";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -73,6 +73,21 @@ afterEach(() => {
 });
 
 describe("WsiAnnotationLayer", () => {
+  it("preserves a new draft drawn while deleting the previous annotations", async () => {
+    let finishDelete!: (response: Response) => void;
+    const authorizedFetch = vi.fn().mockResolvedValueOnce(response([baseAnnotation]))
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishDelete = resolve; }));
+    setup(authorizedFetch);
+    await screen.findByText("1개");
+    fireEvent.click(screen.getByRole("button", { name: "전체 삭제" }));
+    fireEvent.click(screen.getByRole("alertdialog").querySelectorAll("button")[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 300, clientY: 400, pointerId: 1 });
+    expect(screen.getByText("2개")).toBeInTheDocument();
+    await act(async () => finishDelete(new Response(null, { status: 204 })));
+    expect(screen.getByText("1개")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "주석 저장" })).toBeEnabled();
+  });
   it("keeps annotation tools on one aligned toolbar row", async () => {
     setup(vi.fn().mockResolvedValue(response(Array.from(
       { length: 16 },
@@ -326,18 +341,18 @@ describe("WsiAnnotationLayer", () => {
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response([baseAnnotation, second]))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     setup(authorizedFetch);
     await waitFor(() => expect(screen.getByText("2개")).toBeInTheDocument());
 
     fireEvent.click(screen.getByRole("button", { name: "전체 삭제" }));
+    expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("alertdialog").querySelectorAll("button")[1]);
 
     await waitFor(() => expect(screen.getByText("0개")).toBeInTheDocument());
     expect(authorizedFetch).toHaveBeenLastCalledWith(
       "/api/pathology/wsis/slide-1/annotations/",
       { method: "DELETE" },
     );
-    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it("keeps pan available in read-only mode and retries an annotation load failure", async () => {

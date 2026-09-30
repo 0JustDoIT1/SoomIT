@@ -5,7 +5,7 @@ export interface CornerstoneModules {
 }
 
 let modulesPromise: Promise<CornerstoneModules> | null = null;
-let initialized = false;
+let initializationPromise: Promise<void> | null = null;
 
 async function loadModules(): Promise<CornerstoneModules> {
   const [core, dicomImageLoaderModule, tools] = await Promise.all([
@@ -24,8 +24,8 @@ async function loadModules(): Promise<CornerstoneModules> {
 export async function ensureCornerstoneInitialized(): Promise<CornerstoneModules> {
   if (!modulesPromise) modulesPromise = loadModules();
   const modules = await modulesPromise;
-  if (!initialized) {
-    initialized = true;
+  if (!initializationPromise) {
+    initializationPromise = (async () => {
     // Cornerstone's default ContextPool allocates seven WebGL contexts for
     // every RenderingEngine. The CT workstation, history previews, and other
     // image views can then exceed the browser context limit and blank every
@@ -54,6 +54,11 @@ export async function ensureCornerstoneInitialized(): Promise<CornerstoneModules
       modules.core.Enums.RequestType.Prefetch,
       8,
     );
+    })().catch((error: unknown) => {
+      initializationPromise = null;
+      throw error;
+    });
   }
+  await initializationPromise;
   return modules;
 }

@@ -241,7 +241,6 @@ it("removes a deleted CT annotation and sends only one delete request for repeat
 });
 
 it("deletes all CT annotations only after confirmation", async () => {
-  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
     if (url.endsWith("/image-assets/")) return json([{ id: "asset-delete-all", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-delete-all" }]);
@@ -253,9 +252,10 @@ it("deletes all CT annotations only after confirmation", async () => {
   render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-delete-all" />);
   await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("annotation-delete-all"));
   fireEvent.click(screen.getByRole("button", { name: "delete-all-annotations" }));
+  expect(await screen.findByRole("alertdialog")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("alertdialog").querySelectorAll("button")[1]);
 
   await waitFor(() => expect(screen.getByTestId("annotation-ids")).toBeEmptyDOMElement());
-  expect(confirm).toHaveBeenCalledOnce();
   expect(authorizedFetch.mock.calls.some(([url, init]) => String(url).includes("series_instance_uid=series-delete-all") && init?.method === "DELETE")).toBe(true);
 });
 
