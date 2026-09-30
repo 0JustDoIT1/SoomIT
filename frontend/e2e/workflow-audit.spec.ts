@@ -58,7 +58,7 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   await page.getByRole("button", { name: "처방 작성으로 이동 →", exact: true }).click();
   await page.getByRole("combobox", { name: "Cycle 시작일", exact: true }).click();
   await page.getByRole("dialog", { name: "Cycle 시작일 선택", exact: true }).getByRole("button", { name: "오늘", exact: true }).click();
-  await page.getByRole("button", { name: "임시 처방 생성", exact: true }).click();
+  await page.getByRole("button", { name: "처방 생성", exact: true }).click();
   await expect(page.getByRole("button", { name: "처방 최종 확정", exact: true })).toHaveCount(0);
   await page.getByLabel("QA medication 최종 용량").fill("75");
   await page.getByRole("button", { name: "수정 저장", exact: true }).click();
@@ -84,7 +84,7 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   expect(state.candidateCalls).toBeGreaterThan(0);
   expect(errors).toEqual([]);
   await page.screenshot({ path: "../reports/workflow-prescription-final.png" });
-  await page.getByRole("dialog", { name: "최종 진료 요약" }).getByRole("button", { name: "확인하고 닫기", exact: true }).click();
+  await page.getByRole("dialog", { name: "최종 진단 요약" }).getByRole("button", { name: "확인하고 닫기", exact: true }).click();
   await page.getByRole("button", { name: "로그아웃", exact: true }).click();
   await expect(page).toHaveURL(/login$/);
   expect(await page.evaluate(() => sessionStorage.getItem("accessToken"))).toBeNull();

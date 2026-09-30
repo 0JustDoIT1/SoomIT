@@ -87,6 +87,7 @@ const SAGITTAL_VIEWPORT_ID = "ct-dicom-viewer-sagittal";
 const VOLUME3D_VIEWPORT_ID = "ct-dicom-viewer-volume3d";
 const MPR_VIEWPORT_IDS = [AXIAL_VIEWPORT_ID, CORONAL_VIEWPORT_ID, SAGITTAL_VIEWPORT_ID];
 const VOLUME3D_PRESET = "CT-Lung";
+const INCOMPLETE_CT_VOLUME_MESSAGE = "일부 CT 슬라이스를 불러오지 못했습니다. 영상을 다시 열어 주세요.";
 
 // Cornerstone's defaults were designed for a full-size viewport: 14px yellow
 // statistics with no background become hard to read and spill across a 2x2
@@ -184,6 +185,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
 
   const [loading, setLoading] = useState(true);
   const [building, setBuilding] = useState(false);
+  const [renderedViews, setRenderedViews] = useState<Partial<Record<ViewKey, boolean>>>({});
   const [error, setError] = useState("");
   const [viewerError, setViewerError] = useState("");
   const [segmentationState, setSegmentationState] = useState<"IDLE" | "LOADING" | "READY" | "ERROR">(analysisId ? "LOADING" : "IDLE");
@@ -364,6 +366,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     let disposed = false;
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
+    setRenderedViews({});
     setError("");
     setSeriesProgress({ loaded: 0, total: 0 });
     Promise.all([
@@ -407,6 +410,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     let renderingEngine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let resizeObserver: ResizeObserver | null = null;
     let removeProgressListener: (() => void) | null = null;
+    const firstRenderCleanups: Array<() => void> = [];
     let cleanupCornerstoneState: (() => void) | null = null;
     let removeDevListeners: (() => void) | null = null;
     const overlayCleanups: Array<() => void> = [];
@@ -418,6 +422,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
     void (async () => {
       const { core, tools } = await ensureCornerstoneInitialized();
       if (disposed) return;
+      setRenderedViews({});
       releaseVolume = () => {
         if (core.cache.getVolume(volumeId)) core.cache.removeVolumeLoadObject(volumeId);
       };
@@ -667,6 +672,60 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       await core.setVolumesForViewports(renderingEngine, [{ volumeId }], allViewportIds);
       if (disposed) return;
 
+      // A first render can contain missing voxels while the volume streams.
+      // Axial needs its current image; Coronal/Sagittal need every image.
+      let completeVolumeReady = false;
+      let volumeFramesComplete = false;
+      const checkVolumeCompletion = () => {
+        if (disposed || volume.loadStatus?.loaded !== true) return;
+        if (!volumeFramesComplete) {
+          setViewerError(INCOMPLETE_CT_VOLUME_MESSAGE);
+          return;
+        }
+        completeVolumeReady = true;
+        setViewerError((current) => current === INCOMPLETE_CT_VOLUME_MESSAGE ? "" : current);
+        renderingEngine?.render();
+      };
+      const onVolumeLoadingCompleted = (event: Event) => {
+        if ((event as CustomEvent<{ volumeId?: string }>).detail?.volumeId === volumeId) checkVolumeCompletion();
+      };
+      core.eventTarget.addEventListener(core.Enums.Events.IMAGE_VOLUME_LOADING_COMPLETED, onVolumeLoadingCompleted);
+      firstRenderCleanups.push(() => core.eventTarget.removeEventListener(core.Enums.Events.IMAGE_VOLUME_LOADING_COMPLETED, onVolumeLoadingCompleted));
+
+      const firstFrameTargets: Array<[ViewKey, HTMLDivElement | null]> = [
+        ["axial", axialRef.current],
+        ["coronal", coronalRef.current],
+        ["sagittal", sagittalRef.current],
+        ["volume3d", volume3dRef.current],
+      ];
+      for (const [key, element] of firstFrameTargets) {
+        if (!element) continue;
+        const onImageRendered = () => {
+          if (disposed) return;
+          if (key === "axial") {
+            const currentImageId = (renderingEngine?.getViewport(AXIAL_VIEWPORT_ID) as InstanceType<typeof core.VolumeViewport> | undefined)?.getCurrentImageId();
+            const ready = Boolean(currentImageId && core.cache.isLoaded(currentImageId));
+            setRenderedViews((current) => current.axial === ready ? current : { ...current, axial: ready });
+            return;
+          }
+          if (key !== "volume3d" && !completeVolumeReady) return;
+          setRenderedViews((current) => current[key] ? current : { ...current, [key]: true });
+          element.removeEventListener(core.Enums.Events.IMAGE_RENDERED, onImageRendered);
+        };
+        element.addEventListener(core.Enums.Events.IMAGE_RENDERED, onImageRendered);
+        firstRenderCleanups.push(() => element.removeEventListener(core.Enums.Events.IMAGE_RENDERED, onImageRendered));
+        if (key === "axial") {
+          const onCameraModified = () => {
+            const currentImageId = (renderingEngine?.getViewport(AXIAL_VIEWPORT_ID) as InstanceType<typeof core.VolumeViewport> | undefined)?.getCurrentImageId();
+            if (!currentImageId || !core.cache.isLoaded(currentImageId)) {
+              setRenderedViews((current) => current.axial ? { ...current, axial: false } : current);
+            }
+          };
+          element.addEventListener(core.Enums.Events.CAMERA_MODIFIED, onCameraModified);
+          firstRenderCleanups.push(() => element.removeEventListener(core.Enums.Events.CAMERA_MODIFIED, onCameraModified));
+        }
+      }
+
       // Clinician annotations are kept separate from the AI labelmap.  The
       // persisted world coordinates let Cornerstone place the same annotation
       // in an MPR viewport after the Case is reopened.
@@ -791,9 +850,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       if ("load" in volume && typeof volume.load === "function") {
         volume.load((event) => {
           if (disposed) return;
-          const progress = event as { framesProcessed?: number; totalNumFrames?: number; success?: boolean; error?: unknown };
-          if (progress.success === false) setViewerError("일부 CT 슬라이스를 불러오지 못했습니다. 영상을 다시 열어 주세요.");
+          const progress = event as { framesLoaded?: number; framesProcessed?: number; totalNumFrames?: number; success?: boolean; error?: unknown };
+          if (progress.success === false) setViewerError(INCOMPLETE_CT_VOLUME_MESSAGE);
+          volumeFramesComplete = progress.framesLoaded === imageIds.length && progress.success !== false;
           setSeriesProgress({ loaded: progress.framesProcessed ?? imageIds.length, total: progress.totalNumFrames ?? imageIds.length });
+          checkVolumeCompletion();
           renderingEngine?.render();
         });
       }
@@ -808,7 +869,11 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
           renderingEngine?.render();
         }
       }).then(() => {
-        if (!disposed) renderingEngine?.render();
+        if (!disposed) {
+          if (!completeVolumeReady && volume.loadStatus?.loaded !== true) setViewerError(INCOMPLETE_CT_VOLUME_MESSAGE);
+          checkVolumeCompletion();
+          renderingEngine?.render();
+        }
       }).catch((reason: unknown) => {
         if (!disposed) setViewerError(reason instanceof Error ? reason.message : "CT 슬라이스를 불러오지 못했습니다.");
       });
@@ -885,6 +950,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
       }
       resizeObserver?.disconnect();
       removeProgressListener?.();
+      firstRenderCleanups.forEach((cleanup) => cleanup());
       removeDevListeners?.();
       overlayCleanups.forEach((cleanup) => cleanup());
       cleanupCornerstoneState?.();
@@ -1216,14 +1282,14 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
                 <div
                   ref={ref}
                   onContextMenu={preventMedicalImageContextMenu}
-                  className="absolute inset-0"
+                  className={`absolute inset-0 ${renderedViews[key] ? "" : "[&_.cornerstone-canvas]:invisible"}`}
                   aria-label={`CT ${VIEW_LABELS[key]} viewer`}
                 />
 
                 {overlayRefs[key] && (
                   <canvas
                     ref={overlayRefs[key]}
-                    className={`pointer-events-none absolute inset-0 z-10 ${segmentationVisible ? "" : "hidden"}`}
+                    className={`pointer-events-none absolute inset-0 z-10 ${segmentationVisible && renderedViews[key] ? "" : "hidden"}`}
                   />
                 )}
 

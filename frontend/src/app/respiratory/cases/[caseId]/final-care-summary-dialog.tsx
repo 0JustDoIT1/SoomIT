@@ -149,7 +149,7 @@ export function FinalCareSummaryDialog({
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-blue-50 px-6 py-5">
           <div>
             <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">FINAL</span>
-            <h2 id="final-care-summary-title" className="mt-2 text-xl font-bold text-slate-900">최종 진료 요약</h2>
+            <h2 id="final-care-summary-title" className="mt-2 text-xl font-bold text-slate-900">최종 진단 요약</h2>
             <p className="mt-1 text-xs text-slate-500">확정된 진단 근거와 치료·처방 내용을 마지막으로 확인합니다.</p>
           </div>
           <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-white hover:text-slate-700 print:hidden" aria-label="최종 진료 요약 닫기">×</button>

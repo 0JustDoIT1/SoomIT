@@ -8,6 +8,7 @@ import { PrescriptionDateField } from "./prescription-date-field";
 import { formatPrescriptionDose } from "./prescription-dose-format";
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 import { FinalCareSummaryDialog } from "./final-care-summary-dialog";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 
 import { showToast } from "@/components/ui/toast/toast";
 import { LoadingIndicator } from "@/components/common/loading-indicator";
@@ -52,6 +53,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
   const [cycleNumber, setCycleNumber] = useState("1"); const [phase, setPhase] = useState("INDUCTION"); const [cycleStartDate, setCycleStartDate] = useState("");
   const [summaryPrescription, setSummaryPrescription] = useState<Prescription | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [pendingFinalization, setPendingFinalization] = useState<{ id: string; schedules: FinalizeMedicationSchedule[] } | null>(null);
   const supportedPhases = Array.from(new Set(availablePrescriptionPhases)).filter((value) => value in PHASE_LABELS);
   const selectedPhase = supportedPhases.includes(phase) ? phase : (supportedPhases[0] ?? "");
 
@@ -86,7 +88,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
     try { await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/safety-check/`, { method: "POST" }, "안전성 검사가 완료되었습니다.", undefined, false); }
     finally { setCheckingSafety(false); }
   };
-  const finalize = async (id: string, schedules: FinalizeMedicationSchedule[]) => { if (!window.confirm("처방을 최종 확정하면 이후 수정할 수 없습니다.\n계속하시겠습니까?")) return; const toastId = `case-prescription-finalize-${caseId}-${id}`; showToast.info("처방을 확정하고 있습니다.", { id: toastId }); const completedFinalization = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/finalize/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medication_schedules: schedules }) }, "처방이 최종 확정되었습니다.", toastId); const finalized = prescriptionsRef.current.find((prescription) => prescription.id === id && prescription.prescription_status === "FINAL"); if (completedFinalization && finalized) { setSummaryPrescription(finalized); setSummaryOpen(true); } };
+  const finalize = async (id: string, schedules: FinalizeMedicationSchedule[]) => { const toastId = `case-prescription-finalize-${caseId}-${id}`; showToast.info("처방을 확정하고 있습니다.", { id: toastId }); const completedFinalization = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/finalize/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medication_schedules: schedules }) }, "처방이 최종 확정되었습니다.", toastId); const finalized = prescriptionsRef.current.find((prescription) => prescription.id === id && prescription.prescription_status === "FINAL"); if (completedFinalization && finalized) { setSummaryPrescription(finalized); setSummaryOpen(true); } };
   const closeSummary = useCallback(() => setSummaryOpen(false), []);
 
   if (loading) return <LoadingIndicator label="처방 정보를 불러오는 중입니다." />;
@@ -115,7 +117,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
       {hasSelectedRegimen && supportedPhases.length === 0 && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-800">선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.</p>}
       <div className="mt-4 flex flex-col-reverse items-stretch justify-between gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
         <p className="text-xs text-slate-400">처방은 자동 생성되지 않으며, 시작일을 선택한 뒤 직접 생성합니다.</p>
-        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "임시 처방 생성"}</button>
+        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "처방 생성"}</button>
       </div>
     </section>
   ) : (
@@ -188,7 +190,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
           </div>
           <p role="status" className="shrink-0 text-xs leading-5 text-slate-600">{finalGuidance}</p>
           {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working} onClick={() => void safety(active.id)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 ${hasUnacknowledgedWarning && !hasBlock && !hasUnresolvedWarning && !safetyRecheckRequired ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{checkingSafety ? "Safety Check 검사 중..." : working ? "처리 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
-          {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => finalize(active.id, schedules)} /></div>}
+          {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => { setPendingFinalization({ id: active.id, schedules }); }} /></div>}
           {active.prescription_status === "FINAL" && <div className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-2"><p className="text-xs font-semibold text-emerald-700">최종 확정 완료 · 수정 불가</p><button type="button" onClick={() => { setSummaryPrescription(active); setSummaryOpen(true); }} className="mt-2 w-full rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white hover:bg-emerald-800">최종 진료 요약 보기</button></div>}
         </aside>
       </div> : <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
@@ -199,6 +201,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
             </div>
           : <div className="flex justify-center">{creationForm}</div>}
       </div>}
+    {pendingFinalization && <ConfirmActionDialog title="처방 최종 확정" description="처방을 확정하시겠습니까? 확정 후에는 처방 내용을 수정할 수 없습니다." supportingText="선택한 치료요법과 용량을 다시 확인해 주세요." confirmLabel="처방 확정" tone="blue" onCancel={() => setPendingFinalization(null)} onConfirm={() => { const { id, schedules } = pendingFinalization; setPendingFinalization(null); void finalize(id, schedules); }} />}
     <FinalCareSummaryDialog open={summaryOpen} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} prescription={summaryPrescription} onClose={closeSummary} />
   </section>;
 }
