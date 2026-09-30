@@ -334,10 +334,13 @@ export function CaseCtSegmentationEvidence({
     }
 
     const requestKey = imageAnnotationRequestKey({ caseId, imageAssetId, seriesInstanceUid });
+    const sameSeries = annotationRequestRef.current === requestKey;
     annotationRequestRef.current = requestKey;
     let active = true;
-    setAnnotations([]);
-    setDirtyAnnotationIds(new Set());
+    if (!sameSeries) {
+      setAnnotations([]);
+      setDirtyAnnotationIds(new Set());
+    }
     setAnnotationLoading(true);
     setAnnotationLoadError("");
 
@@ -477,7 +480,7 @@ export function CaseCtSegmentationEvidence({
     if (isMutationLocked()) return false;
     if (deletedAnnotationIdsRef.current.has(annotationId)) return true;
     setDirtyAnnotationIds((current) => new Set(current).add(annotationId));
-    setAnnotations((current) => current.map((annotation) => annotation.id === annotationId ? { id: annotationId, ...pending } : annotation));
+    setAnnotations((current) => current.map((annotation) => annotation.id === annotationId ? { ...annotation, ...pending } : annotation));
     return true;
   }, [isMutationLocked]);
 

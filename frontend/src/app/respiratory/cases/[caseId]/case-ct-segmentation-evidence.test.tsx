@@ -22,12 +22,13 @@ vi.mock("@/app/radiology/_lib/cornerstone-init", () => ({
 }));
 
 vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
-  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAllAnnotationsDeleted, onAnnotationUpdated, onAnnotationCreated }: {
+  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAllAnnotationsDeleted, onAnnotationUpdated, onAnnotationCreated, onAnnotationsSaved }: {
     orderId: string;
     assetId: string;
     loadSeries: (orderId: string, assetId: string) => Promise<unknown>;
     loadSegmentation: (analysisId: string) => Promise<unknown>;
-    annotations?: Array<{ id: string }>;
+    annotations?: Array<{ id: string; clientId?: string }>;
+    onAnnotationsSaved?: () => unknown;
     onAnnotationCreated?: (annotation: { annotation_type: "LENGTH"; annotation_data: Record<string, unknown> }) => unknown;
     focusedNoduleId?: string | null;
     onFocusedNoduleChange?: (noduleId: string) => void;
@@ -39,6 +40,8 @@ vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
     <button type="button" onClick={() => void loadSeries(orderId, assetId).then(seriesLoaded)}>load-series</button>
     <button type="button" onClick={() => void loadSegmentation("analysis-cache")}>load-segmentation</button>
     <span data-testid="annotation-ids">{annotations.map(({ id }) => id).join(",")}</span>
+    <span data-testid="annotation-client-ids">{annotations.map(({ clientId }) => clientId).join(",")}</span>
+    <button type="button" onClick={() => void onAnnotationsSaved?.()}>save-annotations</button>
     <button type="button" onClick={() => void onAnnotationDeleted?.(annotations[0]?.id ?? "")}>delete-annotation</button>
     <button type="button" onClick={() => void onAllAnnotationsDeleted?.()}>delete-all-annotations</button>
     <button type="button" onClick={() => void onAnnotationUpdated?.(annotations[0]?.id ?? "", { annotation_type: "LENGTH", annotation_data: {} })}>update-annotation</button>
@@ -52,6 +55,24 @@ vi.mock("./case-ct-visualization", () => ({ CaseCtVisualization: () => <div>3D v
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }
+
+it("keeps the selection identity when editing an annotation after its first save", async () => {
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/image-assets/")) return json([{ id: "asset-selection", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-selection" }]);
+    if (init?.method === "POST" || init?.method === "PATCH") return json({ id: "saved-selection", annotation_type: "LENGTH", annotation_data: {} });
+    return json([]);
+  });
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-selection-edit" />);
+  fireEvent.click(await screen.findByRole("button", { name: "create-annotation" }));
+  const draftId = screen.getByTestId("annotation-ids").textContent!;
+  fireEvent.click(screen.getByRole("button", { name: "save-annotations" }));
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("saved-selection"));
+  fireEvent.click(screen.getByRole("button", { name: "update-annotation" }));
+  expect(screen.getByTestId("annotation-client-ids")).toHaveTextContent(draftId);
+  fireEvent.click(screen.getByRole("button", { name: "save-annotations" }));
+  await waitFor(() => expect(authorizedFetch.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(true));
+  expect(screen.getByTestId("annotation-client-ids")).toHaveTextContent(draftId);
+});
 
 it("retains a newly drawn annotation when the initial GET finishes later", async () => {
   let finishLoad!: (response: Response) => void;
@@ -68,6 +89,22 @@ it("retains a newly drawn annotation when the initial GET finishes later", async
   await act(async () => finishLoad(json([{ id: "existing", annotation_type: "LENGTH", annotation_data: {} }])));
   expect(screen.getByTestId("annotation-ids")).toHaveTextContent(draftId!);
   expect(screen.getByTestId("annotation-ids")).toHaveTextContent("existing");
+});
+
+it("preserves unsaved CT annotations when retrying a failed annotation lookup", async () => {
+  let attempts = 0;
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/image-assets/")) return json([{ id: "asset-retry-draft", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-retry-draft" }]);
+    if (String(input).includes("/image-annotations/")) return ++attempts === 1 ? json({}, 503) : json([{ id: "existing", annotation_type: "LENGTH", annotation_data: {} }]);
+    return json([]);
+  });
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-retry-draft" />);
+  const retry = await screen.findByRole("button", { name: "주석 조회 재시도" });
+  fireEvent.click(screen.getByRole("button", { name: "create-annotation" }));
+  const draftId = screen.getByTestId("annotation-ids").textContent!;
+  fireEvent.click(retry);
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("existing"));
+  expect(screen.getByTestId("annotation-ids")).toHaveTextContent(draftId);
 });
 
 function dicomSeries(uids: string[]) {

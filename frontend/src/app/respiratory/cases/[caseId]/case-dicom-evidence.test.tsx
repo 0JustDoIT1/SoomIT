@@ -28,6 +28,93 @@ beforeEach(() => {
   vi.mocked(ensureCornerstoneInitialized).mockReset();
 });
 
+it("reuses the PET viewport and cached slices, preserves drafts on retry, and guards series changes", async () => {
+  const eventTarget = new EventTarget();
+  const viewport = {
+    setStack: vi.fn().mockResolvedValue(undefined), render: vi.fn(),
+    getPan: () => [12, 24], getZoom: () => 2,
+    getProperties: () => ({ voiRange: { lower: 10, upper: 90 } }),
+    setPan: vi.fn(), setZoom: vi.fn(), setProperties: vi.fn(),
+  };
+  const engineCreated = vi.fn();
+  const destroyed = vi.fn();
+  class RenderingEngine {
+    id = "engine";
+    constructor() { engineCreated(); }
+    enableElement() {}
+    getViewport() { return viewport; }
+    destroy() { destroyed(); }
+  }
+  const group = { addTool: vi.fn(), addViewport: vi.fn(), setToolPassive: vi.fn(), setToolActive: vi.fn() };
+  let fileCount = 0;
+  const tools = {
+    ...Object.fromEntries(["WindowLevel", "Pan", "Zoom", "Length", "RectangleROI", "ArrowAnnotate"].map((name) => [`${name}Tool`, { toolName: name, createAnnotation: (data: unknown) => data }])),
+    addTool: vi.fn(),
+    ToolGroupManager: { getToolGroup: vi.fn(), createToolGroup: () => group, destroyToolGroup: vi.fn() },
+    Enums: { MouseBindings: { Primary: 1 }, Events: { ANNOTATION_COMPLETED: "completed" } },
+    annotation: { state: { addAnnotation: vi.fn(), removeAnnotation: vi.fn() } },
+  };
+  vi.mocked(ensureCornerstoneInitialized).mockResolvedValue({
+    core: { eventTarget, RenderingEngine, Enums: { ViewportType: { STACK: "stack" } } }, tools,
+    dicomImageLoader: { wadouri: { fileManager: { add: () => `dicomfile:${++fileCount}`, remove: vi.fn() } } },
+  } as unknown as Awaited<ReturnType<typeof ensureCornerstoneInitialized>>);
+  let annotationAttempts = 0;
+  let finishSlowSlice: ((value: Response) => void) | undefined;
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/image-assets/")) return json(["PET", "CT"].map((image_type) => ({ id: `asset-${image_type}`, workflow_stage: "PET_CT_TNM", image_type, status: "READY", series_instance_uid: `series-${image_type}` })));
+    if (url.endsWith("/dicom-web/instances/")) return json([0, 1, 2].map((i) => ({ "00080018": { Value: [`sop-${i}`] } })));
+    if (url.endsWith("/instances/sop-0/")) return new Promise<Response>((resolve) => { finishSlowSlice = resolve; });
+    if (url.includes("/dicom-web/instances/sop-")) return new Response(new Blob(["dicom"]));
+    if (url.includes("/image-annotations/")) return ++annotationAttempts === 1 ? json({}, 503) : json([]);
+    throw new Error(url);
+  });
+  render(<CaseDicomEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-series-guard" stage="PET_CT_TNM" />);
+  await waitFor(() => expect(viewport.setStack).toHaveBeenCalledTimes(1));
+  const retry = await screen.findByRole("button", { name: "주석 조회 재시도" });
+  act(() => eventTarget.dispatchEvent(new CustomEvent("completed", { detail: { annotation: {
+    annotationUID: "drawn-1", metadata: { toolName: "Length", referencedImageId: "dicomfile:1" },
+    data: { handles: { points: [[0, 0, 0], [1, 1, 1]] } },
+  } } })));
+  expect(screen.getByRole("button", { name: "길이 1" })).toBeInTheDocument();
+  fireEvent.click(retry);
+  await waitFor(() => expect(screen.queryByRole("button", { name: "주석 조회 재시도" })).not.toBeInTheDocument());
+  expect(screen.getByRole("button", { name: "길이 1" })).toBeInTheDocument();
+  expect(screen.getByText(/저장하지 않은 주석이 있습니다/)).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button", { name: "다음" }));
+  await waitFor(() => expect(viewport.setStack).toHaveBeenCalledTimes(2));
+  expect(viewport.setPan).toHaveBeenLastCalledWith([12, 24]);
+  expect(viewport.setZoom).toHaveBeenLastCalledWith(2);
+  expect(viewport.setProperties).toHaveBeenLastCalledWith({ voiRange: { lower: 10, upper: 90 } });
+  expect(screen.queryByRole("button", { name: "길이 1" })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "이전" }));
+  await waitFor(() => expect(viewport.setStack).toHaveBeenCalledTimes(3));
+  expect(screen.getByRole("button", { name: "길이 1" })).toBeInTheDocument();
+  expect(engineCreated).toHaveBeenCalledTimes(1);
+  expect(authorizedFetch.mock.calls.filter(([url]) => String(url).endsWith("/instances/sop-1/"))).toHaveLength(1);
+
+  fireEvent.change(screen.getByRole("slider", { name: "DICOM 슬라이스" }), { target: { value: "0" } });
+  await waitFor(() => expect(finishSlowSlice).toBeTypeOf("function"));
+  fireEvent.change(screen.getByRole("slider", { name: "DICOM 슬라이스" }), { target: { value: "2" } });
+  await act(async () => finishSlowSlice!(json({}, 503)));
+  await waitFor(() => expect(viewport.setStack).toHaveBeenCalledTimes(4));
+  expect(viewport.setStack).toHaveBeenLastCalledWith(["dicomfile:2"]);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "이전" }));
+  await waitFor(() => expect(viewport.setStack).toHaveBeenCalledTimes(5));
+
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  fireEvent.click(screen.getByRole("button", { name: "CT Series" }));
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(destroyed).not.toHaveBeenCalled();
+  expect(screen.getByRole("button", { name: "길이 1" })).toBeInTheDocument();
+  confirm.mockReturnValue(true);
+  fireEvent.click(screen.getByRole("button", { name: "CT Series" }));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "길이 1" })).not.toBeInTheDocument());
+  confirm.mockRestore();
+});
+
 it("captures real core annotation events without reloading the image and serializes saves", async () => {
   const eventTarget = new EventTarget();
   const viewport = { setStack: vi.fn().mockResolvedValue(undefined), render: vi.fn() };

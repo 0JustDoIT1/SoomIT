@@ -31,6 +31,9 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [uids, setUids] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
+  const sliceIndexRef = useRef(0);
+  const changeSliceRef = useRef<((index: number) => void) | null>(null);
+  const [sliceLoading, setSliceLoading] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -61,6 +64,15 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   const selectedAnnotationVisible = Boolean(selectedAnnotationId && annotations.some(
     (annotation) => annotation.id === selectedAnnotationId && annotation.annotation_data.sop_instance_uid === uids[index],
   ));
+  const selectSeries = (id: string) => {
+    if (id === selectedAssetId || isMutationLocked()) return;
+    if (dirtyAnnotationIds.size > 0 && !window.confirm("저장하지 않은 주석이 있습니다. 변경 사항을 버리고 다른 Series로 이동할까요?")) return;
+    setSelectedAssetId(id);
+  };
+  useEffect(() => {
+    sliceIndexRef.current = index;
+    changeSliceRef.current?.(index);
+  }, [index]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -261,11 +273,14 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     }
 
     const requestKey = imageAnnotationRequestKey({ caseId, imageAssetId, seriesInstanceUid });
+    const sameSeries = annotationRequestRef.current === requestKey;
     annotationRequestRef.current = requestKey;
     let active = true;
-    setAnnotations([]);
-    setDirtyAnnotationIds(new Set());
-    setSelectedAnnotationId(null);
+    if (!sameSeries) {
+      setAnnotations([]);
+      setDirtyAnnotationIds(new Set());
+      setSelectedAnnotationId(null);
+    }
     setAnnotationLoading(true);
     setAnnotationLoadError("");
 
@@ -305,25 +320,21 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
   }, [annotationReloadNonce, apiBaseUrl, asset?.id, asset?.series_instance_uid, authorizedFetch, caseId]);
 
   useEffect(() => {
-    if (!asset || !uids[index] || !elementRef.current) return;
+    if (!asset || !uids.length || !elementRef.current) return;
     let cancelled = false;
     const controller = new AbortController();
     let engine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let cleanupTools: (() => void) | null = null;
-    let releaseFile: (() => void) | null = null;
+    const releaseFiles: Array<() => void> = [];
     let resizeObserver: ResizeObserver | null = null;
     void (async () => {
       try {
-        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${asset.id}/dicom-web/instances/${uids[index]}/`, { signal: controller.signal, headers: { Accept: "application/dicom" } });
-        if (!response.ok) throw new Error("원본 DICOM을 불러오지 못했습니다.");
-        const blob = await response.blob();
         const { core, tools, dicomImageLoader } = await ensureCornerstoneInitialized();
         if (cancelled || !elementRef.current) return;
-        const imageId = dicomImageLoader.wadouri.fileManager.add(new File([blob], `${uids[index]}.dcm`, { type: "application/dicom" }));
-        releaseFile = () => {
-          const fileIndex = Number(imageId.split(":")[1]);
-          if (Number.isInteger(fileIndex)) dicomImageLoader.wadouri.fileManager.remove(fileIndex);
-        };
+        let imageId = "";
+        let displayedUid = "";
+        let switching = false;
+        const images = new Map<string, string>();
         engine = new core.RenderingEngine(`respiratory-dicom-engine-${reactId}`);
         const viewportId = `respiratory-dicom-viewport-${reactId}`;
         engine.enableElement({ viewportId, type: core.Enums.ViewportType.STACK, element: elementRef.current });
@@ -356,16 +367,16 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           const annotation = (event as CustomEvent<{ annotation?: Record<string, unknown> }>).detail?.annotation;
           const metadata = annotation?.metadata as Record<string, unknown> | undefined;
           const data = annotation?.data as Record<string, unknown> | undefined;
-          if (metadata?.referencedImageId !== imageId) return;
+          if (switching || metadata?.referencedImageId !== imageId) return;
           const toolName = metadata?.toolName;
           const annotation_type: Annotation["annotation_type"] | null = toolName === tools.LengthTool.toolName ? "LENGTH" : toolName === tools.RectangleROITool.toolName ? "BOUNDING_BOX" : toolName === tools.ArrowAnnotateTool.toolName ? "TEXT" : null;
           const points = (data?.handles as { points?: unknown } | undefined)?.points;
-          if (!annotation_type || !Array.isArray(points) || !asset.series_instance_uid || !uids[index]) return;
+          if (!annotation_type || !Array.isArray(points) || !asset.series_instance_uid || !displayedUid) return;
           if (typeof annotation?.annotationUID === "string") ownedAnnotationUids.add(annotation.annotationUID);
           const annotationId = typeof annotation?.annotationUID === "string" && annotation.annotationUID.startsWith("clinician-") ? annotation.annotationUID.slice("clinician-".length) : null;
           const text = annotation_type === "TEXT" ? String(data?.text ?? data?.label ?? annotationTextRef.current).trim() : undefined;
           if (annotation_type === "TEXT" && !text) return;
-          const payload = { annotation_type, annotation_data: { series_instance_uid: asset.series_instance_uid, sop_instance_uid: uids[index], tool_name: String(toolName), viewport: "axial", frame_of_reference_uid: metadata?.FrameOfReferenceUID, world_points: points, cached_stats: data?.cachedStats, text } };
+          const payload = { annotation_type, annotation_data: { series_instance_uid: asset.series_instance_uid, sop_instance_uid: displayedUid, tool_name: String(toolName), viewport: "axial", frame_of_reference_uid: metadata?.FrameOfReferenceUID, world_points: points, cached_stats: data?.cachedStats, text } };
           if (annotationId) annotationUpdateRef.current(annotationId, payload);
           else if (completed) {
             annotationSaveRef.current(payload);
@@ -402,8 +413,6 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           };
         }
         const viewport = engine.getViewport(viewportId) as InstanceType<typeof core.StackViewport>;
-        await viewport.setStack([imageId]);
-        if (cancelled) return;
         if (typeof ResizeObserver !== "undefined" && elementRef.current) {
           resizeObserver = new ResizeObserver(() => {
             if (!cancelled) engine?.resize(true, true);
@@ -414,7 +423,8 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         const addAnnotation = annotationState?.addAnnotation;
         const annotationElement = elementRef.current;
         syncViewerRef.current = () => {
-        const visibleAnnotations = annotationsRef.current.filter((saved) => saved.annotation_data.sop_instance_uid === uids[index]);
+        if (switching || !displayedUid) return;
+        const visibleAnnotations = annotationsRef.current.filter((saved) => saved.annotation_data.sop_instance_uid === displayedUid);
         const visibleUids = new Set(visibleAnnotations.map((saved) => `clinician-${saved.id}`));
         ownedAnnotationUids.forEach((uid) => {
           if (!visibleUids.has(uid)) {
@@ -448,13 +458,65 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         }
         viewport.render();
         };
-        syncViewerRef.current();
+        // Serialize stack changes and skip superseded requests. Keep the engine,
+        // user display settings, and previously downloaded slices for this series.
+        let requestedIndex = sliceIndexRef.current;
+        const showSlice = async () => {
+          if (switching || cancelled) return;
+          switching = true;
+          setSliceLoading(true);
+          const pan = displayedUid ? viewport.getPan?.() : undefined;
+          const zoom = displayedUid ? viewport.getZoom?.() : undefined;
+          const properties = displayedUid ? viewport.getProperties?.() : undefined;
+          let attemptedIndex = requestedIndex;
+          try {
+            while (!cancelled) {
+              const targetIndex = requestedIndex;
+              attemptedIndex = targetIndex;
+              const uid = uids[targetIndex];
+              if (!uid) break;
+              let nextImageId = images.get(uid);
+              if (!nextImageId) {
+                const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${asset.id}/dicom-web/instances/${uid}/`, { signal: controller.signal, headers: { Accept: "application/dicom" } });
+                if (!response.ok) throw new Error("원본 DICOM을 불러오지 못했습니다.");
+                const blob = await response.blob();
+                if (cancelled) return;
+                nextImageId = dicomImageLoader.wadouri.fileManager.add(new File([blob], `${uid}.dcm`, { type: "application/dicom" }));
+                images.set(uid, nextImageId);
+                const fileIndex = Number(nextImageId.split(":")[1]);
+                releaseFiles.push(() => { if (Number.isInteger(fileIndex)) dicomImageLoader.wadouri.fileManager.remove(fileIndex); });
+              }
+              if (targetIndex !== requestedIndex) continue;
+              await viewport.setStack([nextImageId]);
+              if (cancelled) return;
+              imageId = nextImageId;
+              displayedUid = uid;
+              if (properties) viewport.setProperties(properties);
+              if (zoom !== undefined) viewport.setZoom(zoom);
+              if (pan) viewport.setPan(pan);
+              if (targetIndex === requestedIndex) break;
+            }
+            if (!cancelled) setError("");
+          } catch (cause) {
+            if (!cancelled && attemptedIndex === requestedIndex) setError(cause instanceof Error ? cause.message : "원본 DICOM을 표시하지 못했습니다.");
+          } finally {
+            switching = false;
+            if (!cancelled && attemptedIndex !== requestedIndex) {
+              void showSlice();
+            } else if (!cancelled) {
+              setSliceLoading(false);
+              syncViewerRef.current?.();
+            }
+          }
+        };
+        changeSliceRef.current = (nextIndex) => { requestedIndex = nextIndex; void showSlice(); };
+        void showSlice();
       } catch (cause) {
         if (!cancelled) setError(cause instanceof Error ? cause.message : "원본 DICOM을 표시하지 못했습니다.");
       }
     })();
-    return () => { cancelled = true; controller.abort(); resizeObserver?.disconnect(); syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); releaseFile?.(); };
-  }, [apiBaseUrl, asset, authorizedFetch, caseId, index, reactId, uids]);
+    return () => { cancelled = true; controller.abort(); resizeObserver?.disconnect(); changeSliceRef.current = null; syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); releaseFiles.forEach((release) => release()); };
+  }, [apiBaseUrl, asset, authorizedFetch, caseId, reactId, uids]);
 
   const resetSlice = () => setIndex(Math.floor(uids.length / 2));
   const openFullscreen = async () => { if (viewerFrameRef.current?.requestFullscreen) await viewerFrameRef.current.requestFullscreen(); };
@@ -482,7 +544,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       </header>
 
       <div className="flex h-[42px] min-h-0 min-w-0 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-800 bg-[#101827] px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="DICOM series">
-        {assets.map((item) => <button key={item.id} type="button" onClick={() => setSelectedAssetId(item.id)} className={`min-h-8 shrink-0 rounded px-3 py-1 text-xs font-semibold transition ${item.id === selectedAssetId ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{item.image_type === "PET" ? "PET" : "CT"} Series</button>)}
+        {assets.map((item) => <button key={item.id} type="button" disabled={mutationBusy} onClick={() => selectSeries(item.id)} className={`min-h-8 shrink-0 rounded px-3 py-1 text-xs font-semibold transition ${item.id === selectedAssetId ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{item.image_type === "PET" ? "PET" : "CT"} Series</button>)}
       {annotations.length > 0 && (
         <div className="ml-2 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden border-l border-slate-700 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="의료진 주석 목록">
           <span className="shrink-0 px-1 text-[8px] text-slate-500">의료진 주석</span>
@@ -506,6 +568,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
+        {(sliceLoading || error) && <div className="absolute inset-0 z-10 grid place-items-center bg-black/80 text-xs text-slate-300" role="status">{sliceLoading ? "슬라이스를 불러오는 중입니다." : error}</div>}
         <div ref={elementRef} tabIndex={0} onContextMenu={preventMedicalImageContextMenu} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setIndex((value) => Math.max(0, value - 1)); } if (event.key === "ArrowRight") { event.preventDefault(); setIndex((value) => Math.min(uids.length - 1, value + 1)); } }} className="absolute inset-0 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="DICOM 원본 영상 뷰어. 좌우 화살표로 슬라이스 이동" />
         {asset && <div className="pointer-events-none absolute left-2 top-2 flex flex-wrap gap-1"><HudChip>{asset.image_type || "DICOM"} Series</HudChip><HudChip>Axial stack</HudChip><HudChip>Slice {uids.length ? `${index + 1} / ${uids.length}` : "-"}</HudChip></div>}
         {loading && <p role="status" className="grid h-full place-items-center text-xs text-slate-300">DICOM Series를 불러오는 중입니다.</p>}
