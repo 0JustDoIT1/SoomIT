@@ -210,6 +210,31 @@ describe("WsiAnnotationLayer", () => {
     expect(document.querySelectorAll("circle")).toHaveLength(2);
   });
 
+  it("retries only the annotation that failed during a partial save", async () => {
+    const firstSaved = { ...baseAnnotation, id: "server-first", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[10, 20]] as [number, number][] } };
+    const secondSaved = { ...baseAnnotation, id: "server-second", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[30, 40]] as [number, number][] } };
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([]))
+      .mockResolvedValueOnce(response(firstSaved))
+      .mockResolvedValueOnce(response({ detail: "save failed" }, 500))
+      .mockResolvedValueOnce(response(secondSaved));
+    setup(authorizedFetch);
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    const layer = screen.getByLabelText("WSI Annotation layer");
+    fireEvent.pointerDown(layer, { clientX: 10, clientY: 20, pointerId: 1 });
+    fireEvent.pointerDown(layer, { clientX: 30, clientY: 40, pointerId: 2 });
+    fireEvent.click(screen.getByRole("button", { name: /주석 저장/ }));
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(3));
+    expect(await screen.findByRole("alert")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /주석 저장/ }));
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(4));
+    const postedPoints = authorizedFetch.mock.calls.slice(1).map((call) => JSON.parse(String(call[1]?.body)).annotation_data.image_points);
+    expect(postedPoints).toEqual([[[10, 20]], [[30, 40]], [[30, 40]]]);
+  });
+
   it("uses real OpenSeadragon points from viewer-element pixels for every drawing tool", async () => {
     const mockViewer = viewer() as unknown as {
       element: HTMLElement;
@@ -296,12 +321,12 @@ describe("WsiAnnotationLayer", () => {
     expect(String(authorizedFetch.mock.calls[1][0])).toBe("/api/pathology/wsis/slide-1/annotations/annotation-1/");
   });
 
-  it("deletes every annotation for the active slide without confirmation", async () => {
+  it("deletes every annotation for the active slide after confirmation", async () => {
     const second = { ...baseAnnotation, id: "annotation-2", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[300, 400]] as [number, number][] } };
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response([baseAnnotation, second]))
       .mockResolvedValueOnce(new Response(null, { status: 204 }));
-    const confirm = vi.spyOn(window, "confirm");
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
     setup(authorizedFetch);
     await waitFor(() => expect(screen.getByText("2개")).toBeInTheDocument());
 
@@ -312,15 +337,21 @@ describe("WsiAnnotationLayer", () => {
       "/api/pathology/wsis/slide-1/annotations/",
       { method: "DELETE" },
     );
-    expect(confirm).not.toHaveBeenCalled();
+    expect(confirm).toHaveBeenCalledOnce();
   });
 
-  it("keeps pan available in read-only mode and reports annotation failure without replacing the viewer", async () => {
-    setup(vi.fn().mockResolvedValue(response({ detail: "failed" }, 503)), false);
+  it("keeps pan available in read-only mode and retries an annotation load failure", async () => {
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response({ detail: "failed" }, 503))
+      .mockResolvedValueOnce(response([]));
+    setup(authorizedFetch, false);
     expect(screen.getByRole("button", { name: "이동" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Point" })).toBeDisabled();
     expect(await screen.findByRole("alert")).toHaveTextContent("WSI는 계속 사용할 수 있습니다.");
     expect(screen.getByLabelText("WSI Annotation layer")).toHaveClass("absolute", "inset-0");
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
   });
 
   it("uses the server permission flag and remains readable in dark mode", async () => {

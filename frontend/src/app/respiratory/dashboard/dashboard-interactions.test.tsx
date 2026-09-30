@@ -19,6 +19,31 @@ function setup(empty = false) {
 describe("Dashboard full-page interactions", () => {
   beforeEach(() => localStorage.clear());
 
+  it("pages priority work and keeps case links and shrinking queues usable", () => {
+    const view = setup();
+    const consultations = Array.from({ length: 11 }, (_, index) => ({ id: `q-${index}`, case_id: `case-${index}`, case_code: `C-${index}`, patient_name: `대기환자 ${index}`, status: "REQUESTED", priority: "NORMAL", question: "검토" }));
+    view.rerender(<DashboardWorkQueues {...view.props} consultations={consultations} />);
+    const queue = within(screen.getByRole("heading", { name: "업무 우선순위" }).closest("article")!);
+    expect(queue.getAllByRole("button", { name: "Case 열기" })).toHaveLength(6);
+    expect(queue.getByText("전체 11건 중 1–6건")).toBeVisible();
+    expect(queue.getByRole("button", { name: "업무 우선순위 이전 페이지" })).toBeDisabled();
+    fireEvent.click(queue.getByRole("button", { name: "업무 우선순위 다음 페이지" }));
+    expect(queue.getAllByRole("button", { name: "Case 열기" })).toHaveLength(5);
+    expect(queue.getByText("전체 11건 중 7–11건")).toBeVisible();
+    expect(queue.getByRole("button", { name: "업무 우선순위 2페이지" })).toHaveAttribute("aria-current", "page");
+    expect(queue.getByRole("button", { name: "업무 우선순위 다음 페이지" })).toBeDisabled();
+    fireEvent.click(queue.getAllByRole("button", { name: "Case 열기" })[0]);
+    expect(view.callbacks.onOpenCase).toHaveBeenCalledWith("case-6");
+    view.rerender(<DashboardWorkQueues {...view.props} consultations={[...consultations].reverse()} />);
+    expect(queue.getByText("전체 11건 중 1–6건")).toBeVisible();
+    expect(queue.getByRole("button", { name: "업무 우선순위 1페이지" })).toHaveAttribute("aria-current", "page");
+    view.rerender(<DashboardWorkQueues {...view.props} consultations={consultations.slice(0, 2)} />);
+    expect(queue.getByText("전체 2건 중 1–2건")).toBeVisible();
+    view.rerender(<DashboardWorkQueues {...view.props} consultations={[]} snapshots={Object.fromEntries(cases.map(item => [item.id, { clinicalResults: [], aiResults: [], orders: [] }]))} />);
+    expect(queue.getByText("현재 우선 처리할 업무가 없습니다.")).toBeVisible();
+    expect(queue.queryByRole("navigation")).not.toBeInTheDocument();
+  });
+
   it("keeps every lower section, Case selection, navigation and notification actions", () => {
     const { callbacks } = setup();
     for (const name of ["환자 진료 맵", "진료 타임라인", "오늘 업무 요약", "오늘 예약 일정", "지금 해야 할 일", "내 할 일", "업무 우선순위", "협진 / 알림 요약", "협진 현황", "최근 알림"]) {
@@ -33,6 +58,21 @@ describe("Dashboard full-page interactions", () => {
     const collaboration = screen.getByRole("heading", { name: "협진 현황" }).closest("section")!;
     fireEvent.click(within(collaboration).getByRole("button", { name: /전체 보기/ }));
     expect(callbacks.onOpenConsultations).toHaveBeenCalledOnce();
+  });
+
+  it("shows loading rather than an empty work queue before snapshots arrive", () => {
+    setup();
+    expect(screen.getAllByText("업무 목록을 불러오는 중입니다.")).toHaveLength(2);
+    expect(screen.queryByText("현재 우선 처리할 업무가 없습니다.")).not.toBeInTheDocument();
+  });
+
+  it("shows a retry action when work snapshots fail", () => {
+    const retry = vi.fn();
+    const view = setup();
+    view.rerender(<DashboardWorkQueues {...view.props} snapshotLoadError onRetrySnapshots={retry} />);
+    expect(screen.getAllByText(/일부 Case의 업무|일부 업무를 불러오지/).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getAllByRole("button", { name: "다시 시도" })[0]);
+    expect(retry).toHaveBeenCalledOnce();
   });
 
   it("keeps memo add, complete, persistence and delete usable", () => {

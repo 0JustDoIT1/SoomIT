@@ -69,8 +69,8 @@ export function CaseWorkflowDecision({ caseId, currentStage, confirmedResultId, 
         caseStatus: typeof body.case_status === "string" ? body.case_status : undefined,
       });
     } catch (cause) {
-      console.error(cause);
-      const message = requestedAction === "CASE_CLOSED" ? "Case 종료에 실패했습니다." : requestedAction === "REFERRED_OUT" ? "의뢰·전원 처리에 실패했습니다." : requestedAction === "RETRY" ? "후속 처리 재시도에 실패했습니다." : "다음 단계 전환에 실패했습니다.";
+      const fallback = requestedAction === "CASE_CLOSED" ? "Case 종료에 실패했습니다." : requestedAction === "REFERRED_OUT" ? "의뢰·전원 처리에 실패했습니다." : requestedAction === "RETRY" ? "후속 처리 재시도에 실패했습니다." : "다음 단계 전환에 실패했습니다.";
+      const message = cause instanceof Error && cause.message.trim() ? cause.message : fallback;
       setError(message);
       showToast.error(message, { id: toastId });
     } finally {

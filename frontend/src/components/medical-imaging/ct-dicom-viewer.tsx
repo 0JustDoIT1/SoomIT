@@ -440,7 +440,7 @@ export function CtDicomViewer({ orderId, assetId, analysisId, cacheKey, nodules 
         // subsequent render event then fired N accumulated listeners,
         // compounding console/CPU overhead over a long dev session.
         const handleCornerstoneErrorEvent = (event: Event) => {
-          console.error("[ct-dicom-viewer] Cornerstone ERROR_EVENT", (event as CustomEvent).detail);
+          console.warn("[ct-dicom-viewer] Cornerstone ERROR_EVENT", (event as CustomEvent).detail);
         };
         core.eventTarget.addEventListener(core.Enums.Events.ERROR_EVENT, handleCornerstoneErrorEvent);
         removeDevListeners = () => {

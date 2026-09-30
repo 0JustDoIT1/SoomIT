@@ -9,7 +9,6 @@ import { ensureCornerstoneInitialized } from "@/app/radiology/_lib/cornerstone-i
 
 import { CaseCtVisualization } from "./case-ct-visualization";
 import {
-  ImageAnnotationLoadError,
   imageAnnotationRequestKey,
   invalidateImageAnnotationRequest,
   loadImageAnnotations,
@@ -146,6 +145,8 @@ export function CaseCtSegmentationEvidence({
   const [annotations, setAnnotations] = useState<ClinicianImageAnnotation[]>([]);
   const [annotationLoading, setAnnotationLoading] = useState(false);
   const [annotationLoadError, setAnnotationLoadError] = useState("");
+  const [annotationMutationError, setAnnotationMutationError] = useState("");
+  const [annotationReloadNonce, setAnnotationReloadNonce] = useState(0);
   const [dirtyAnnotationIds, setDirtyAnnotationIds] = useState<Set<string>>(() => new Set());
   const mountedRef = useRef(true);
   const assetCaseIdRef = useRef("");
@@ -411,13 +412,6 @@ export function CaseCtSegmentationEvidence({
         if (!active || annotationRequestRef.current !== requestKey) return;
         const errorMessage = cause instanceof Error ? cause.message : "Annotation request failed.";
         setAnnotationLoadError(errorMessage);
-        console.error("CT annotation request failed", {
-          caseId,
-          imageAssetId,
-          seriesInstanceUid,
-          status: cause instanceof ImageAnnotationLoadError ? cause.status : null,
-          cause,
-        });
         if (shouldNotifyImageAnnotationLoadFailure(requestKey)) {
           showToast.error("영상 주석을 불러오지 못했습니다.", {
             id: `ct-annotations-load-${requestKey}`,
@@ -433,7 +427,13 @@ export function CaseCtSegmentationEvidence({
     return () => {
       active = false;
     };
-  }, [apiBaseUrl, asset?.id, asset?.series_instance_uid, authorizedFetch, caseId]);
+  }, [annotationReloadNonce, apiBaseUrl, asset?.id, asset?.series_instance_uid, authorizedFetch, caseId]);
+
+  const retryAnnotationLoad = useCallback(() => {
+    if (!asset?.series_instance_uid) return;
+    invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+    setAnnotationReloadNonce(current => current + 1);
+  }, [asset, caseId]);
 
   const saveAnnotation = useCallback(async (pending: PendingImageAnnotation) => {
     if (!asset) return;
@@ -452,6 +452,7 @@ export function CaseCtSegmentationEvidence({
     if (deletedAnnotationIdsRef.current.has(annotationId)) return true;
     deletedAnnotationIdsRef.current.add(annotationId);
     try {
+      setAnnotationMutationError("");
       const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/${annotationId}/`, { method: "DELETE" });
       // A selected annotation can already have been removed in another tab or
       // after Fast Refresh. Reconcile a 404 as an idempotent delete instead of
@@ -470,15 +471,19 @@ export function CaseCtSegmentationEvidence({
       return true;
     } catch (error) {
       deletedAnnotationIdsRef.current.delete(annotationId);
-      console.error(error);
+      const failure = error instanceof Error ? error.message : "선택한 주석을 삭제하지 못했습니다.";
+      setAnnotationMutationError(failure);
+      showToast.error(failure);
       return false;
     }
   }, [apiBaseUrl, asset, authorizedFetch, caseId]);
 
   const deleteAllAnnotations = useCallback(async (): Promise<boolean> => {
     if (!asset?.series_instance_uid || annotations.length === 0) return false;
+    if (!window.confirm("현재 CT 영상의 의료진 주석을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return false;
     const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
     try {
+      setAnnotationMutationError("");
       const response = await authorizedFetch(
         `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`,
         { method: "DELETE" },
@@ -490,7 +495,9 @@ export function CaseCtSegmentationEvidence({
       invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
       return true;
     } catch (error) {
-      console.error(error);
+      const failure = error instanceof Error ? error.message : "주석 전체를 삭제하지 못했습니다.";
+      setAnnotationMutationError(failure);
+      showToast.error(failure);
       return false;
     }
   }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId]);
@@ -506,8 +513,8 @@ export function CaseCtSegmentationEvidence({
     if (!asset) return false;
     const pending = annotations.filter((annotation) => dirtyAnnotationIds.has(annotation.id));
     if (pending.length === 0) return true;
-    try {
-      const saved = await Promise.all(pending.map(async (annotation) => {
+    setAnnotationMutationError("");
+    const results = await Promise.allSettled(pending.map(async (annotation) => {
         const temporary = annotation.id.startsWith("temp-");
         const response = await authorizedFetch(
           temporary
@@ -520,9 +527,11 @@ export function CaseCtSegmentationEvidence({
           },
         );
         const body: unknown = await response.json().catch(() => null);
-        if (!response.ok || !body || typeof body !== "object") throw new Error("annotation save failed");
+        if (!response.ok || !body || typeof body !== "object") throw new Error(detail(body, "주석을 저장하지 못했습니다."));
         return [annotation.id, body as ClinicianImageAnnotation] as const;
       }));
+    const saved = results.flatMap(result => result.status === "fulfilled" ? [result.value] : []);
+    if (saved.length) {
       const savedById = new Map(saved);
       setAnnotations((current) => current.map((annotation) => savedById.get(annotation.id) ?? annotation));
       setDirtyAnnotationIds((current) => {
@@ -531,11 +540,16 @@ export function CaseCtSegmentationEvidence({
         return next;
       });
       if (asset.series_instance_uid) invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
-      return true;
-    } catch (error) {
-      console.error(error);
+    }
+    const failed = results.find(result => result.status === "rejected");
+    if (failed?.status === "rejected") {
+      const failure = failed.reason instanceof Error ? failed.reason.message : "일부 주석을 저장하지 못했습니다.";
+      setAnnotationMutationError(failure);
+      showToast.error(failure);
       return false;
     }
+    if (saved.length) showToast.success("주석이 저장되었습니다.");
+    return true;
   }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, dirtyAnnotationIds]);
 
   const loadSegmentation = useCallback(
@@ -713,10 +727,9 @@ export function CaseCtSegmentationEvidence({
                 </span>
               )}
               {annotationLoadError && (
-                <span className="hidden rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-semibold text-amber-300 sm:inline" title={annotationLoadError}>
-                  주석 조회 불가
-                </span>
+                <button type="button" onClick={retryAnnotationLoad} className="hidden rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[8px] font-semibold text-amber-300 sm:inline" title={annotationLoadError}>주석 조회 재시도</button>
               )}
+              {annotationMutationError && <span role="alert" className="hidden rounded-full border border-rose-500/30 bg-rose-500/10 px-1.5 py-0.5 text-[8px] font-semibold text-rose-300 sm:inline" title={annotationMutationError}>주석 처리 실패</span>}
             </div>
 
             <p

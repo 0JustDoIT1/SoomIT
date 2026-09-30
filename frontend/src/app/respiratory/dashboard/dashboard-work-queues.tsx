@@ -888,6 +888,8 @@ export function DashboardWorkQueues({
   onOpenConsultations,
   onOpenNotification,
   onOpenNotifications,
+  snapshotLoadError = false,
+  onRetrySnapshots,
 }: {
   cases: DashboardCase[];
   snapshots: Record<string, DashboardCaseSnapshot>;
@@ -910,6 +912,8 @@ export function DashboardWorkQueues({
     notification: DashboardNotification,
   ) => void;
   onOpenNotifications: () => void;
+  snapshotLoadError?: boolean;
+  onRetrySnapshots?: () => void;
 }) {
   const stageSummaries = buildDashboardStageSummaries(
     cases,
@@ -927,12 +931,21 @@ export function DashboardWorkQueues({
     snapshots,
     consultations,
   );
+  const queueIdentity = queue.map(item => item.id).join("|");
+  const [queuePagination, setQueuePagination] = useState({ identity: queueIdentity, page: 1 });
+  const queuePage = queuePagination.identity === queueIdentity ? queuePagination.page : 1;
+  const queuePageSize = 6;
+  const queuePageCount = Math.max(1, Math.ceil(queue.length / queuePageSize));
+  const currentQueuePage = Math.min(queuePage, queuePageCount);
+  const queueStart = (currentQueuePage - 1) * queuePageSize;
+  const firstPageButton = Math.max(1, Math.min(currentQueuePage - 2, queuePageCount - 4));
 
   const activeCases = cases.filter(
     (item) => item.case_status === "ACTIVE",
   );
 
   const activeCaseCount = activeCases.length;
+  const pendingWork = !snapshotLoadError && activeCases.some(item => !snapshots[item.id]);
 
   /*
    * page.tsx에서 전달한 Case를 최우선으로 사용.
@@ -1101,6 +1114,7 @@ export function DashboardWorkQueues({
               </span>
             )}
           </header>
+          {snapshotLoadError && <div role="alert" className="flex items-center justify-between gap-3 border-b border-amber-100 bg-amber-50 px-5 py-2.5 text-xs text-amber-800"><span>일부 Case의 업무를 불러오지 못했습니다.</span><button type="button" onClick={onRetrySnapshots} className="rounded-md border border-amber-300 bg-white px-2.5 py-1 font-semibold">다시 시도</button></div>}
 
           <div className={styles.journeyBody}>
             {/* 폐/인체 시각화 */}
@@ -1331,7 +1345,7 @@ export function DashboardWorkQueues({
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {queue.slice(0, 6).map((item) => (
+                {queue.slice(queueStart, queueStart + queuePageSize).map((item) => (
                   <tr
                     key={item.id}
                     onClick={() => onOpenCase(item.caseId)}
@@ -1374,13 +1388,21 @@ export function DashboardWorkQueues({
                       colSpan={5}
                       className="px-4 py-12 text-center text-slate-500"
                     >
-                      현재 우선 처리할 업무가 없습니다.
+                      {snapshotLoadError ? "불러오지 못한 업무가 있습니다. 다시 시도해 주세요." : pendingWork ? "업무 목록을 불러오는 중입니다." : "현재 우선 처리할 업무가 없습니다."}
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+          {queue.length > 0 && <nav aria-label="업무 우선순위 페이지 이동" className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-5 py-3 text-xs">
+            <span role="status" className="text-slate-500">전체 {queue.length}건 중 {queueStart + 1}–{Math.min(queueStart + queuePageSize, queue.length)}건</span>
+            <div className="flex items-center gap-1">
+              <button type="button" aria-label="업무 우선순위 이전 페이지" disabled={currentQueuePage === 1} onClick={() => setQueuePagination({ identity: queueIdentity, page: currentQueuePage - 1 })} className="rounded-lg border border-slate-200 px-3 py-2 text-slate-600 disabled:opacity-40">이전</button>
+              {Array.from({ length: Math.min(5, queuePageCount) }, (_, index) => firstPageButton + index).map(page => <button key={page} type="button" aria-label={`업무 우선순위 ${page}페이지`} aria-current={page === currentQueuePage ? "page" : undefined} onClick={() => setQueuePagination({ identity: queueIdentity, page })} className={`min-w-8 rounded-lg border px-2 py-2 ${page === currentQueuePage ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 text-slate-600 hover:bg-blue-50"}`}>{page}</button>)}
+              <button type="button" aria-label="업무 우선순위 다음 페이지" disabled={currentQueuePage === queuePageCount} onClick={() => setQueuePagination({ identity: queueIdentity, page: currentQueuePage + 1 })} className="rounded-lg border border-slate-200 px-3 py-2 text-slate-600 disabled:opacity-40">다음</button>
+            </div>
+          </nav>}
         </article>
       </div>
       <div className={styles.rightColumn}>
@@ -1693,7 +1715,7 @@ export function DashboardWorkQueues({
                 </div>
               ) : (
                 <p className="mt-2 rounded-lg bg-slate-50 px-3 py-3 text-center text-xs text-slate-500">
-                  현재 우선 처리할 업무가 없습니다.
+                  {snapshotLoadError ? <span className="inline-flex items-center gap-2">일부 업무를 불러오지 못했습니다.<button type="button" onClick={onRetrySnapshots} className="rounded border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-700">다시 시도</button></span> : pendingWork ? "업무 목록을 불러오는 중입니다." : "현재 우선 처리할 업무가 없습니다."}
                 </p>
               )}
             </section>

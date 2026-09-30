@@ -169,7 +169,6 @@ export function CtWorkflowDecision({ caseId, aiResultId, aiNodules, clinicalResu
       showToast.success(message, { id: toastId });
       onCompleted({ closed: action !== "PROCEED_NEXT_STAGE", message, currentStage: serverState.current_stage, caseStatus: serverState.case_status });
     } catch (cause) {
-      console.error(cause);
       // Confirmation may have committed even when advancement or its response failed.
       // Reconcile via reads; never guess that it is safe to overwrite the draft.
       if (uncertainConfirmation.current) {

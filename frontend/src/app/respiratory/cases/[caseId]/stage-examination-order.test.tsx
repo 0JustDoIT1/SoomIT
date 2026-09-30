@@ -50,8 +50,8 @@ describe("StageExaminationOrder", () => {
     await user.click(screen.getByRole("button", { name: "입력 내용 검토" }));
     await user.click(screen.getByRole("button", { name: "오더 확정" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("검사 오더 생성에 실패했습니다.");
-    expect(toastMocks.error).toHaveBeenCalledWith("검사 오더 생성에 실패했습니다.", { id: "case-order-case-1-PET_CT_TNM" });
+    expect(await screen.findByRole("alert")).toHaveTextContent("선행 검사의 전문과 확정 결과가 필요합니다.");
+    expect(toastMocks.error).toHaveBeenCalledWith("선행 검사의 전문과 확정 결과가 필요합니다.", { id: "case-order-case-1-PET_CT_TNM" });
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
 

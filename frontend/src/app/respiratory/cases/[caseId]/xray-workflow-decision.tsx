@@ -41,9 +41,9 @@ export function XrayWorkflowDecision({ caseId, authorizedFetch, onCompleted }: P
       showToast.success(messages.join(" "), { id: toastId });
       onCompleted({ closed: result.case_status !== "ACTIVE", messages });
     } catch (cause) {
-      console.error(cause);
-      setError("X-ray 결과 처리에 실패했습니다.");
-      showToast.error("검사 결과 처리에 실패했습니다.", { id: toastId });
+      const message = cause instanceof Error && cause.message.trim() ? cause.message : "X-ray 결과 처리에 실패했습니다.";
+      setError(message);
+      showToast.error(message, { id: toastId });
     }
     finally { submittingRef.current = false; setBusy(false); }
   };

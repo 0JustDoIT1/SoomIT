@@ -109,6 +109,13 @@ export default function RespiratoryCasesPage() {
     useRef(0);
   const pendingNotificationReadsRef = useRef(new Set<string>());
   const [snapshotRetryNonce, setSnapshotRetryNonce] = useState(0);
+  const [snapshotFailedCaseIds, setSnapshotFailedCaseIds] = useState<string[]>([]);
+
+  const retryCaseSnapshots = useCallback(() => {
+    snapshotRetryAttemptRef.current = 0;
+    setSnapshotFailedCaseIds([]);
+    setSnapshotRetryNonce((current) => current + 1);
+  }, []);
 
   /* ---------------------------------------------------------------------- */
   /* Case navigation                                                        */
@@ -628,7 +635,8 @@ export default function RespiratoryCasesPage() {
                       return null;
                     }
 
-                    return {
+                    if (controller.signal.aborted) return null;
+                    const result = {
                       caseItem,
 
                       snapshot: {
@@ -637,6 +645,10 @@ export default function RespiratoryCasesPage() {
                         orders,
                       } as DashboardCaseSnapshot,
                     };
+                    snapshotVersionsRef.current[caseItem.id] = caseItem.updated_at;
+                    setCaseSnapshots(current => ({ ...current, [caseItem.id]: result.snapshot }));
+                    setSnapshotFailedCaseIds(current => current.filter(id => id !== caseItem.id));
+                    return result;
                   } catch {
                     return null;
                   }
@@ -650,39 +662,15 @@ export default function RespiratoryCasesPage() {
             return;
           }
 
-          setCaseSnapshots(
-            (current) => {
-              const next = {
-                ...current,
-              };
-
-              results.forEach(
-                (result) => {
-                  if (!result) {
-                    return;
-                  }
-
-                  next[
-                    result.caseItem.id
-                  ] =
-                    result.snapshot;
-
-                  snapshotVersionsRef.current[
-                    result.caseItem.id
-                  ] =
-                    result.caseItem.updated_at;
-                },
-              );
-
-              return next;
-            },
-          );
-
           const hasIncompleteSnapshot = results.some(
             (result) => result === null,
           );
 
           if (hasIncompleteSnapshot) {
+            setSnapshotFailedCaseIds(current => Array.from(new Set([
+              ...current,
+              ...targets.filter((_, index) => results[index] === null).map(item => item.id),
+            ])));
             const delay = Math.min(
               1_000 * 2 ** snapshotRetryAttemptRef.current,
               8_000,
@@ -936,6 +924,8 @@ export default function RespiratoryCasesPage() {
               snapshots={
                 caseSnapshots
               }
+              snapshotLoadError={cases.some(item => item.case_status === "ACTIVE" && !caseSnapshots[item.id] && snapshotFailedCaseIds.includes(item.id))}
+              onRetrySnapshots={retryCaseSnapshots}
               patientAppointments={patientAppointments}
               consultations={
                 consultations

@@ -80,6 +80,8 @@ export function WsiAnnotationLayer({
   const [draftPoints, setDraftPoints] = useState<ImagePoint[]>([]);
   const [text, setText] = useState("");
   const [error, setError] = useState<{ identity: string; message: string }>({ identity: "", message: "" });
+  const [annotationLoadFailed, setAnnotationLoadFailed] = useState(false);
+  const [annotationReloadNonce, setAnnotationReloadNonce] = useState(0);
   const [pendingSaveCount, setPendingSaveCount] = useState(0);
   const [serverWritable, setServerWritable] = useState(true);
   const [viewRevision, setViewRevision] = useState(0);
@@ -110,15 +112,17 @@ export function WsiAnnotationLayer({
             ],
           }));
           setError({ identity, message: "" });
+          setAnnotationLoadFailed(false);
         }
       })
       .catch((cause: unknown) => {
         if (!controller.signal.aborted && activeIdentity.current === identity) {
           setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 불러오지 못했습니다." });
+          setAnnotationLoadFailed(true);
         }
       });
     return () => controller.abort();
-  }, [authorizedFetch, endpoint, identity]);
+  }, [annotationReloadNonce, authorizedFetch, endpoint, identity]);
 
   const canWrite = writable && serverWritable;
 
@@ -206,7 +210,7 @@ export function WsiAnnotationLayer({
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
-      const saved = await Promise.all(staged.map(async (annotation) => {
+      const results = await Promise.allSettled(staged.map(async (annotation) => {
         const response = await authorizedFetch(endpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -220,6 +224,7 @@ export function WsiAnnotationLayer({
         if (!response.ok) throw new Error("Annotation을 저장하지 못했습니다.");
         return [annotation.id, body as WsiAnnotation] as const;
       }));
+      const saved = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
       if (activeIdentity.current === identity) {
         const savedByTemporaryId = new Map(saved);
         setLoaded((current) => current.identity !== identity ? current : {
@@ -227,6 +232,10 @@ export function WsiAnnotationLayer({
           annotations: current.annotations.map((annotation) => savedByTemporaryId.get(annotation.id) ?? annotation),
         });
         setSelectedId((current) => savedByTemporaryId.get(current)?.id ?? current);
+      }
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected" && activeIdentity.current === identity) {
+        setError({ identity, message: failed.reason instanceof Error ? failed.reason.message : "Annotation을 저장하지 못했습니다." });
       }
     } catch (cause) {
       if (activeIdentity.current === identity) setError({ identity, message: cause instanceof Error ? cause.message : "Annotation을 저장하지 못했습니다." });
@@ -260,6 +269,7 @@ export function WsiAnnotationLayer({
 
   const deleteAll = useCallback(async () => {
     if (loaded.identity !== identity || loaded.annotations.length === 0) return;
+    if (!window.confirm("현재 슬라이드의 의료진 주석을 모두 삭제할까요? 이 작업은 되돌릴 수 없습니다.")) return;
     setPendingSaveCount((count) => count + 1);
     setError({ identity, message: "" });
     try {
@@ -334,7 +344,7 @@ export function WsiAnnotationLayer({
       {rendered.map((annotation) => <AnnotationShape key={annotation.id} annotation={annotation} selected={selectedId === annotation.id} onSelect={() => setSelectedId(annotation.id)} />)}
       {draftPoints.length > 0 ? <polyline points={draftPoints.map(screenPoint).map((point) => point.join(",")).join(" ")} fill="none" stroke="#38bdf8" strokeWidth="2" strokeDasharray="4 3" /> : null}
     </svg>
-    {error.identity === identity && error.message ? <div role="alert" className="pointer-events-none absolute bottom-3 right-3 z-30 rounded border border-amber-400/50 bg-slate-950/90 px-3 py-2 text-[10px] text-amber-200">{error.message} WSI는 계속 사용할 수 있습니다.</div> : null}
+    {error.identity === identity && error.message ? <div role="alert" className="pointer-events-auto absolute bottom-3 right-3 z-30 flex items-center gap-2 rounded border border-amber-400/50 bg-slate-950/90 px-3 py-2 text-[10px] text-amber-200"><span>{error.message} WSI는 계속 사용할 수 있습니다.</span>{annotationLoadFailed ? <button type="button" onClick={() => { setAnnotationLoadFailed(false); setAnnotationReloadNonce((value) => value + 1); }} className="rounded border border-amber-300/60 px-2 py-1 font-semibold">다시 시도</button> : null}</div> : null}
   </>;
 }
 

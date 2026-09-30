@@ -90,9 +90,9 @@ export function StageExaminationOrder({ caseId, orderType, onCreated, followUpPa
       showToast.success(`${label} 검사 오더가 생성되었습니다.`, { id: toastId });
       onCreated?.(orderType);
     } catch (reason) {
-      console.error(reason);
-      setError("검사 오더 생성에 실패했습니다.");
-      showToast.error("검사 오더 생성에 실패했습니다.", { id: toastId });
+      const message = reason instanceof Error && reason.message.trim() ? reason.message : "검사 오더 생성에 실패했습니다.";
+      setError(message);
+      showToast.error(message, { id: toastId });
       setReviewing(false);
     } finally {
       creatingRef.current = false;

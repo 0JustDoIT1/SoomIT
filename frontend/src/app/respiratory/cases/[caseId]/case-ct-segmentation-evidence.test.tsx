@@ -21,7 +21,7 @@ vi.mock("@/app/radiology/_lib/cornerstone-init", () => ({
 }));
 
 vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
-  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAnnotationUpdated }: {
+  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAllAnnotationsDeleted, onAnnotationUpdated }: {
     orderId: string;
     assetId: string;
     loadSeries: (orderId: string, assetId: string) => Promise<unknown>;
@@ -30,12 +30,14 @@ vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
     focusedNoduleId?: string | null;
     onFocusedNoduleChange?: (noduleId: string) => void;
     onAnnotationDeleted?: (annotationId: string) => Promise<boolean> | boolean;
+    onAllAnnotationsDeleted?: () => Promise<boolean> | boolean;
     onAnnotationUpdated?: (annotationId: string, annotation: { annotation_type: "LENGTH"; annotation_data: Record<string, unknown> }) => Promise<boolean> | boolean | void;
   }) => <div data-testid="ct-viewer">
     <button type="button" onClick={() => void loadSeries(orderId, assetId)}>load-series</button>
     <button type="button" onClick={() => void loadSegmentation("analysis-cache")}>load-segmentation</button>
     <span data-testid="annotation-ids">{annotations.map(({ id }) => id).join(",")}</span>
     <button type="button" onClick={() => void onAnnotationDeleted?.(annotations[0]?.id ?? "")}>delete-annotation</button>
+    <button type="button" onClick={() => void onAllAnnotationsDeleted?.()}>delete-all-annotations</button>
     <button type="button" onClick={() => void onAnnotationUpdated?.(annotations[0]?.id ?? "", { annotation_type: "LENGTH", annotation_data: {} })}>update-annotation</button>
     <span data-testid="focused-nodule">{focusedNoduleId}</span>
     <button type="button" onClick={() => onFocusedNoduleChange?.("2")}>focus-nodule-2</button>
@@ -238,6 +240,25 @@ it("removes a deleted CT annotation and sends only one delete request for repeat
   expect(toastError).not.toHaveBeenCalled();
 });
 
+it("deletes all CT annotations only after confirmation", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/image-assets/")) return json([{ id: "asset-delete-all", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-delete-all" }]);
+    if (url.includes("/image-annotations/") && init?.method === "DELETE") return new Response(null, { status: 204 });
+    if (url.includes("/image-annotations/")) return json([{ id: "annotation-delete-all", annotation_type: "LENGTH", annotation_data: {} }]);
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-delete-all" />);
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toHaveTextContent("annotation-delete-all"));
+  fireEvent.click(screen.getByRole("button", { name: "delete-all-annotations" }));
+
+  await waitFor(() => expect(screen.getByTestId("annotation-ids")).toBeEmptyDOMElement());
+  expect(confirm).toHaveBeenCalledOnce();
+  expect(authorizedFetch.mock.calls.some(([url, init]) => String(url).includes("series_instance_uid=series-delete-all") && init?.method === "DELETE")).toBe(true);
+});
+
 it("keeps an edited annotation local until the explicit save action", async () => {
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -260,21 +281,28 @@ it("keeps an edited annotation local until the explicit save action", async () =
 
 it("keeps the CT viewer usable and reports one toast for a repeated failed request", async () => {
   vi.spyOn(console, "error").mockImplementation(() => undefined);
+  let annotationRequestCount = 0;
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
     if (url.endsWith("/image-assets/")) return json([{ id: "asset-failure", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-failure" }]);
-    if (url.includes("/image-annotations/")) return json({ detail: "Annotation endpoint unavailable." }, 503);
+    if (url.includes("/image-annotations/")) {
+      annotationRequestCount += 1;
+      return annotationRequestCount === 1 ? json({ detail: "Annotation endpoint unavailable." }, 503) : json([]);
+    }
     throw new Error(`Unexpected URL: ${url}`);
   });
   const props = { apiBaseUrl: "http://test", authorizedFetch, caseId: "case-failure", analysisId: "analysis-failure" };
 
   const first = render(<CaseCtSegmentationEvidence {...props} />);
-  expect(await screen.findByText("주석 조회 불가")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "주석 조회 재시도" })).toBeInTheDocument();
   expect(screen.getByTestId("ct-viewer")).toBeInTheDocument();
   first.unmount();
   render(<CaseCtSegmentationEvidence {...props} />);
 
-  expect(await screen.findByText("주석 조회 불가")).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "주석 조회 재시도" })).toBeInTheDocument();
   expect(authorizedFetch.mock.calls.filter(([url]) => String(url).includes("/image-annotations/"))).toHaveLength(1);
   expect(toastError).toHaveBeenCalledOnce();
+  fireEvent.click(screen.getByRole("button", { name: "주석 조회 재시도" }));
+  await waitFor(() => expect(authorizedFetch.mock.calls.filter(([url]) => String(url).includes("/image-annotations/"))).toHaveLength(2));
+  await waitFor(() => expect(screen.queryByRole("button", { name: "주석 조회 재시도" })).not.toBeInTheDocument());
 });

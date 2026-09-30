@@ -108,7 +108,6 @@ export function TnmReviewWorkspace({ actionable = true, aiTnm, clinicalTnm, clin
       await completeTnm();
       showToast.success("TNM 병기가 확정되었습니다. 다음 처리 방식을 선택하세요.", { id: toastId });
     } catch (cause) {
-      console.error(cause);
       const failureMessage = cause instanceof Error ? cause.message : "TNM 결과 처리에 실패했습니다.";
       setError(failureMessage);
       showToast.error(failureMessage, { id: toastId });

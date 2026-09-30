@@ -59,7 +59,7 @@ it("loads an empty PET annotation list with the selected asset and Series UID", 
   expect(toastError).not.toHaveBeenCalled();
 });
 
-it("deletes every PET/CT annotation for the selected series without confirmation", async () => {
+it("deletes every PET/CT annotation for the selected series after confirmation", async () => {
   const annotation = { id: "annotation-1", annotation_type: "LENGTH", annotation_data: { sop_instance_uid: "sop-1" } };
   const authorizedFetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
@@ -69,7 +69,7 @@ it("deletes every PET/CT annotation for the selected series without confirmation
     if (url.includes("/image-annotations/")) return json([annotation]);
     throw new Error(`Unexpected URL: ${url}`);
   });
-  const confirm = vi.spyOn(window, "confirm");
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
   render(<CaseDicomEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-pet" stage="PET_CT_TNM" />);
   const button = await screen.findByRole("button", { name: "전체 삭제" });
   await waitFor(() => expect(button).toBeEnabled());
@@ -77,7 +77,7 @@ it("deletes every PET/CT annotation for the selected series without confirmation
   fireEvent.click(button);
 
   await waitFor(() => expect(authorizedFetch.mock.calls.some(([url, init]) => String(url).includes("image_asset_id=pet-with-annotation") && init?.method === "DELETE")).toBe(true));
-  expect(confirm).not.toHaveBeenCalled();
+  expect(confirm).toHaveBeenCalledOnce();
   expect(button).toBeDisabled();
 });
 

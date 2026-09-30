@@ -183,22 +183,15 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
     router.push(`/respiratory/cases/${id}`);
   }
 
-  async function openCaseWorkspace() {
-    try {
-      const response = await authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`);
-      if (!response.ok) throw new Error("담당 Case를 불러오지 못했습니다.");
-      const payload: unknown = await response.json();
-      const cases = Array.isArray(payload) ? payload as SearchCase[] : payload && typeof payload === "object" && "results" in payload && Array.isArray(payload.results) ? payload.results as SearchCase[] : [];
-      const lastCaseId = window.localStorage.getItem("respiratory-last-case-id");
-      const target = cases.find((item) => item.id === lastCaseId) ?? cases[0];
-      if (target) {
-        openSearchCase(target.id);
-        return;
-      }
-      router.push("/respiratory/cases");
-    } catch {
-      router.push("/respiratory/cases");
+  function openCaseWorkspace() {
+    const currentCaseId = pathname.match(/^\/respiratory\/cases\/([^/]+)$/)?.[1];
+    const lastCaseId = window.localStorage.getItem("respiratory-last-case-id");
+    const target = caseSearchCache.find(item => item.id === lastCaseId) ?? caseSearchCache[0];
+    if (currentCaseId || target) {
+      openSearchCase(currentCaseId ?? target!.id);
+      return;
     }
+    router.push("/respiratory/cases");
   }
 
   if (!isReady || !isAuthenticated) return null;
