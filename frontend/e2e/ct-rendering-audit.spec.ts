@@ -10,8 +10,11 @@ test(`synthetic CT, annotation persistence and cleanup with segmentation ${segme
   const annotations: Record<string, unknown>[] = [];
   page.on("pageerror", e => errors.push(e.message));
   page.on("console", message => {
-    if (message.text().includes("bindTexture") || message.text().includes("WebGL context lost")) errors.push(message.text());
-    if (message.type() === "error" && !message.text().startsWith("Failed to load resource:")) errors.push(message.text());
+    const text = message.text();
+    const expectedRealtimeUnavailable = text.includes("ws://127.0.0.1:8001/ws/chat/global")
+      && text.includes("ERR_CONNECTION_REFUSED");
+    if (text.includes("bindTexture") || text.includes("WebGL context lost")) errors.push(text);
+    if (message.type() === "error" && !text.startsWith("Failed to load resource:") && !expectedRealtimeUnavailable) errors.push(text);
   });
   await page.route("**/api/**", async route => {
     const url = new URL(route.request().url());
@@ -84,7 +87,7 @@ test(`synthetic CT, annotation persistence and cleanup with segmentation ${segme
   await expect(page.getByLabel("CT Axial viewer", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "CT Workstation", exact: true })).toHaveCount(0);
   await menu.getByRole("button", { name: "흉부 X선", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "X-ray Viewer", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "X-ray 원본 영상", exact: true })).toBeVisible();
   await expect(page.getByLabel("CT Axial viewer", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "진료 요약", exact: true })).toHaveCount(0);
   await menu.getByRole("button", { name: "전체 요약", exact: true }).click();
