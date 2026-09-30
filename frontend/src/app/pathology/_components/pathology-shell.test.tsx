@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, expect, it, vi } from "vitest";
 
@@ -26,6 +26,10 @@ it("shows the stored staff identity and uses the existing session logout flow", 
     </PathologyShell>,
   );
 
+  const rail = screen.getByRole("complementary", { name: "병리과 사이드 레일" });
+  expect(within(rail).getByRole("img", { name: "SoomIT" })).toBeInTheDocument();
+  expect(within(rail).queryByRole("button")).not.toBeInTheDocument();
+  expect(rail).toHaveClass("h-dvh", "w-[60px]", "lg:w-[76px]", "bg-[#17233F]");
   expect(screen.getByText("김병리")).toBeInTheDocument();
   expect(screen.getByText("병리검사 업무")).toBeInTheDocument();
 

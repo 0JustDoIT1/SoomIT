@@ -47,6 +47,9 @@ it("reopens a restored recent case absent from the worklist without auto-selecti
   vi.mocked(fetchPathologyWorkstation).mockResolvedValue({ count: 0, results: [], next: null, previous: null });
   vi.mocked(fetchPathologyCaseWorkflow).mockResolvedValue(emptyWorkflow("old", "Recent"));
   render(<Page />);
+  const tabs = screen.getByRole("navigation");
+  expect(tabs).toHaveClass("bg-[#F2F1F8]", "border-[#E2E8F0]");
+  expect(screen.getByRole("button", { name: "Worklist" })).toHaveClass("border-[#6F63B5]", "text-[#6F63B5]");
   const button = await screen.findByRole("button", { name: /Recent/ });
   expect(fetchPathologyCaseWorkflow).not.toHaveBeenCalled();
   await userEvent.click(button);

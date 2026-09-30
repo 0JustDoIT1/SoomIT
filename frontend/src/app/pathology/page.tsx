@@ -2046,8 +2046,8 @@ export default function PathologyDashboardPage() {
 
   return (
     <div className="min-w-0 bg-[#F5F6FF] text-slate-900">
-      <nav className="overflow-x-auto border-b border-[#DDE2F7] bg-white shadow-sm">
-        <div className="mx-auto w-full max-w-[1760px] px-4 sm:px-6">
+      <nav className="overflow-x-auto border-b border-[#E2E8F0] bg-[#F2F1F8] shadow-sm">
+        <div className="mx-auto w-full max-w-[1760px] pl-0 pr-4 sm:pr-6">
           <div className="flex min-w-max gap-7">
             {(
               [
@@ -2063,8 +2063,8 @@ export default function PathologyDashboardPage() {
                 }
                 className={`border-b-2 px-2 py-3 text-sm font-semibold transition ${
                   tab === id
-                    ? "border-[#3446B8] bg-[#F1F3FF] text-[#3446B8]"
-                    : "border-transparent text-slate-500 hover:bg-[#F1F3FF] hover:text-[#3446B8]"
+                    ? "border-[#6F63B5] bg-[#EAE8F3] text-[#6F63B5]"
+                    : "border-transparent text-slate-500 hover:bg-[#F2F1F8] hover:text-[#6F63B5]"
                 }`}
               >
                 {label}
@@ -2074,7 +2074,7 @@ export default function PathologyDashboardPage() {
         </div>
       </nav>
 
-      <div className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">
+      <div className="mx-auto w-full max-w-[1760px] py-4 pl-0 pr-4 sm:py-5 sm:pr-6">
         {tab === "completed" ? <PathologyCompletedHistory /> : (
         <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(500px,42fr)_minmax(0,58fr)]">
           <section className="grid min-h-0 grid-cols-[160px_minmax(0,1fr)] overflow-hidden rounded-xl border border-[#DDE2F7] bg-white shadow-sm">

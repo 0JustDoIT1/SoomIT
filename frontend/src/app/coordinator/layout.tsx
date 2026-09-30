@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { useSyncExternalStore, type ReactNode } from "react";
 import { showToast } from "@/components/ui/toast/toast";
 import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
+import { BrandRail } from "@/components/workspace/brand-rail";
 
 const tabs = [
   {
@@ -69,7 +70,9 @@ export default function CoordinatorLayout({
   };
 
   return (
-    <div className="clinical-app clinical-app-coordinator coordinator-cursor min-h-screen bg-slate-50">
+    <div className="clinical-app clinical-app-coordinator coordinator-cursor flex min-h-dvh min-w-0 bg-slate-50">
+      <BrandRail label="원무과 사이드 레일" tone="pink" />
+      <div className="min-w-0 flex-1">
       {/* 상단 고정 영역 */}
       <header className="sticky top-0 z-50 bg-white">
         {/* 1. Header */}
@@ -92,7 +95,7 @@ export default function CoordinatorLayout({
               </g>
             </svg>
           </div>
-          <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
+          <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center py-5 pl-0 pr-4 sm:pr-6">
             {/* Logo + Department */}
             <div>
               <div>
@@ -128,8 +131,8 @@ export default function CoordinatorLayout({
         </div>
 
         {/* 2. 1차 탭 */}
-        <div className="border-b border-slate-200 bg-white">
-          <nav className="mx-auto flex h-[53px] w-full max-w-[1760px] items-end gap-8 px-4 sm:px-6">
+        <div className="border-b border-[#E2E8F0] bg-[#F8F1F4]">
+          <nav className="mx-auto flex h-[53px] w-full max-w-[1760px] items-end gap-8 pl-0 pr-4 sm:pr-6">
             {tabs.map((tab) => {
               const active = isActive(tab.href);
 
@@ -139,14 +142,14 @@ export default function CoordinatorLayout({
                   href={tab.href}
                   className={`relative flex h-full items-center px-0.5 text-sm font-semibold transition ${
                     active
-                      ? "text-[#D96B91]"
-                      : "text-[#7A8595] hover:text-[#243653]"
+                      ? "text-[#C9829B]"
+                      : "text-[#64748B] hover:text-[#243653]"
                   }`}
                 >
                   {tab.label}
 
                   {active && (
-                    <span className="absolute bottom-0 left-0 h-[2px] w-full rounded-full bg-[#D96B91]" />
+                    <span className="absolute bottom-0 left-0 h-[2px] w-full rounded-full bg-[#C9829B]" />
                   )}
                 </Link>
               );
@@ -156,9 +159,10 @@ export default function CoordinatorLayout({
       </header>
 
       {/* 3. 페이지 본문 */}
-      <main className="mx-auto w-full max-w-[1760px] px-4 py-4 sm:px-6 sm:py-5">
+      <main className="mx-auto w-full max-w-[1760px] py-4 pl-0 pr-4 sm:py-5 sm:pr-6">
         {children}
       </main>
+      </div>
     </div>
   );
 }

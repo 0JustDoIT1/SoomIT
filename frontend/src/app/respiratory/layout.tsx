@@ -7,6 +7,7 @@ import { API_BASE_URL } from "@/lib/api";
 import { requestCaseNavigation } from "./_lib/case-navigation-guard";
 import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
 import { SoomChatPanel } from "@/components/chat/SoomChatPanel";
+import { SoomItMark } from "@/components/workspace/soomit-mark";
 import {
   markNotificationRead,
   mergeNotificationSnapshot,
@@ -292,28 +293,6 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       <SoomChatPanel authorizedFetch={authorizedFetch} />
       </div>
     </div>
-  );
-}
-
-function SoomItMark() {
-  return (
-    <svg role="img" aria-label="SoomIT" viewBox="0 0 40 40" className="h-9 w-9 drop-shadow-[0_4px_8px_rgba(0,0,0,0.18)] lg:h-10 lg:w-10">
-      <defs>
-        <linearGradient id="soomit-mark-bg" x1="7" y1="5" x2="33" y2="35" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#1b7883" />
-          <stop offset="1" stopColor="#0d4d59" />
-        </linearGradient>
-        <linearGradient id="soomit-breath-line" x1="6" y1="0" x2="34" y2="0" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#73e1d5" stopOpacity=".45" />
-          <stop offset=".5" stopColor="#a7fff3" />
-          <stop offset="1" stopColor="#73e1d5" stopOpacity=".45" />
-        </linearGradient>
-      </defs>
-      <rect x="1.5" y="1.5" width="37" height="37" rx="11" fill="url(#soomit-mark-bg)" stroke="#8ee9df" strokeOpacity=".3" />
-      <circle cx="20" cy="19" r="12.5" fill="none" stroke="#b9fff7" strokeOpacity=".1" />
-      <text x="20" y="24.3" textAnchor="middle" fill="#f4fffd" fontFamily="Arial, sans-serif" fontSize="19" fontWeight="700" letterSpacing="-.8">S</text>
-      <path d="M6.5 28c3.1 0 3.3-3.3 5.7-3.3s2.8 3.3 5.3 3.3 2.8-3.3 5.3-3.3 2.8 3.3 5.3 3.3 2.7-3.3 5.4-3.3" fill="none" stroke="url(#soomit-breath-line)" strokeWidth="1.6" strokeLinecap="round" />
-    </svg>
   );
 }
 

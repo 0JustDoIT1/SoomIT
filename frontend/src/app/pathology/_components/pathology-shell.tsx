@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { showToast } from "@/components/ui/toast/toast";
 import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle";
+import { BrandRail } from "@/components/workspace/brand-rail";
 
 function subscribeToSessionStorage() {
   return () => undefined;
@@ -39,10 +40,12 @@ export function PathologyShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="clinical-app clinical-app-pathology pathology-cursor flex min-h-screen min-w-0 flex-col bg-[#F7F8FC] text-slate-950">
+    <div className="clinical-app clinical-app-pathology pathology-cursor flex min-h-dvh min-w-0 bg-[#F7F8FC] text-slate-950">
+      <BrandRail label="병리과 사이드 레일" tone="pathology" />
+      <div className="flex min-w-0 flex-1 flex-col">
       <header className="clinical-department-banner relative shrink-0 overflow-hidden border-b border-[#CDD3EE] bg-gradient-to-r from-[#F8F7FF] via-[#F1F3FF] to-white">
         <Image src="/pathology/pathology-tissue-decor.png" alt="" aria-hidden="true" fill sizes="42vw" className="pointer-events-none !left-auto right-0 top-0 !w-[42%] object-cover opacity-[0.3]" />
-        <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center px-4 py-5 sm:px-6">
+        <div className="relative z-10 mx-auto flex min-h-24 w-full max-w-[1760px] items-center py-5 pl-0 pr-4 sm:pr-6">
           <div>
             <p className="text-xs font-bold tracking-[0.16em] text-[#5364C7]">
               병리과
@@ -71,6 +74,7 @@ export function PathologyShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="min-w-0 flex-1">{children}</main>
+      </div>
     </div>
   );
 }

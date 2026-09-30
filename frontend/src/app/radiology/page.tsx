@@ -331,7 +331,7 @@ export default function RadiologyWorklistPage() {
 
   return (
     <div className="min-w-0 bg-slate-50/60">
-      <nav aria-label="영상의학과 작업" className="overflow-x-auto border-b border-slate-200 bg-white">
+      <nav aria-label="영상의학과 작업" className="overflow-x-auto border-b border-[#E2E8F0] bg-white">
         <div className="mx-auto w-full max-w-[1760px] px-4 sm:px-6">
           <div className="flex min-w-max gap-7">
             {tabs.map((tab) => (
@@ -340,7 +340,7 @@ export default function RadiologyWorklistPage() {
                 type="button"
                 onClick={() => setActiveTab(tab.id)}
                 aria-current={activeTab === tab.id ? "page" : undefined}
-                className={`border-b-2 px-2 py-3 text-sm font-semibold transition-colors ${activeTab === tab.id ? "border-violet-400 text-violet-700" : "border-transparent text-slate-500 hover:text-slate-800"}`}
+                className={`border-b-2 px-2 py-3 text-sm font-semibold transition-colors ${activeTab === tab.id ? "border-[#7567D8] text-[#6256C7]" : "border-transparent text-slate-500 hover:text-slate-800"}`}
               >
                 {tab.label}
               </button>
@@ -349,7 +349,7 @@ export default function RadiologyWorklistPage() {
         </div>
       </nav>
 
-      <div className="mx-auto w-full max-w-[1760px] px-4 py-3 sm:px-6 sm:py-4">
+      <div className="mx-auto w-full max-w-[1760px] py-3 pl-4 pr-4 sm:py-4 sm:pl-7 sm:pr-6 lg:pl-3">
         {activeTab === "worklist" ? (
           <div className="grid gap-4 xl:h-[calc(100vh-173px)] xl:min-h-[560px] xl:grid-cols-[minmax(500px,42fr)_minmax(0,58fr)]">
             <section className="grid min-h-0 grid-cols-[160px_minmax(0,1fr)] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
