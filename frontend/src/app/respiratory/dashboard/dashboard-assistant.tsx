@@ -141,7 +141,7 @@ export function DashboardAssistant({
         className="w-full min-w-0 rounded-xl border border-blue-100 bg-gradient-to-r from-white to-blue-50/60 px-4 py-3 shadow-sm"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h3 id="dashboard-assistant-title" className="text-base font-semibold text-slate-900">
+          <h3 id="dashboard-assistant-title" className={`${styles.assistantTitle} text-base text-slate-900`}>
             의사 AI Assistant
           </h3>
           <button
@@ -169,7 +169,7 @@ export function DashboardAssistant({
             <AssistantIcon />
           </span>
           <div>
-          <h3 id="dashboard-assistant-title" className="text-sm font-bold text-slate-900">
+          <h3 id="dashboard-assistant-title" className={`${styles.assistantTitle} text-sm text-slate-900`}>
             의사 AI Assistant
           </h3>
             <p className="text-[11px] text-slate-500">담당 Case 조회 및 업무 요약</p>

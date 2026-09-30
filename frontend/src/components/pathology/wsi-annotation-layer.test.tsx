@@ -73,6 +73,59 @@ afterEach(() => {
 });
 
 describe("WsiAnnotationLayer", () => {
+  it("preserves a completed save when the older initial GET arrives afterward", async () => {
+    let resolveGet!: (value: Response) => void;
+    const authorizedFetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveGet = resolve; }))
+      .mockResolvedValueOnce(response({ ...baseAnnotation, id: "newly-saved" }));
+    setup(authorizedFetch);
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "주석 저장" })).toBeDisabled());
+    await waitFor(() => expect(screen.getByRole("button", { name: "선택 삭제" })).toBeEnabled());
+
+    await act(async () => resolveGet(response([baseAnnotation])));
+    expect(screen.getByText("2개")).toBeInTheDocument();
+    expect(document.querySelectorAll("circle")).toHaveLength(2);
+  });
+
+  it("does not resurrect a deleted saved annotation from a stale initial GET", async () => {
+    let resolveGet!: (value: Response) => void;
+    const authorizedFetch = vi.fn()
+      .mockImplementationOnce(() => new Promise<Response>((resolve) => { resolveGet = resolve; }))
+      .mockResolvedValueOnce(response(baseAnnotation))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    setup(authorizedFetch);
+    fireEvent.click(screen.getByRole("button", { name: "Point" }));
+    fireEvent.pointerDown(screen.getByLabelText("WSI Annotation layer"), { clientX: 25, clientY: 30, pointerId: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "주석 저장" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "선택 삭제" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "선택 삭제" }));
+    await waitFor(() => expect(screen.getByText("0개")).toBeInTheDocument());
+    await act(async () => resolveGet(response([baseAnnotation])));
+    expect(screen.getByText("0개")).toBeInTheDocument();
+    expect(document.querySelectorAll("circle")).toHaveLength(0);
+  });
+
+  it("deletes an unfinished polygon even when there are no completed annotations", async () => {
+    const { authorizedFetch } = setup();
+    await screen.findByText("0개");
+    fireEvent.click(screen.getByRole("button", { name: "Polygon" }));
+    const layer = screen.getByLabelText("WSI Annotation layer");
+    for (const [x, y] of [[10, 10], [30, 10], [20, 40]]) {
+      fireEvent.pointerDown(layer, { clientX: x, clientY: y, pointerId: 1 });
+    }
+    expect(screen.getByRole("button", { name: "완료" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "전체 삭제" }));
+    fireEvent.click(screen.getByRole("alertdialog").querySelectorAll("button")[1]);
+    expect(screen.queryByRole("button", { name: "완료" })).not.toBeInTheDocument();
+    expect(layer.querySelector("polyline")).toBeNull();
+    expect(screen.getByText("0개")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "전체 삭제" })).toBeDisabled();
+    expect(authorizedFetch).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves a new draft drawn while deleting the previous annotations", async () => {
     let finishDelete!: (response: Response) => void;
     const authorizedFetch = vi.fn().mockResolvedValueOnce(response([baseAnnotation]))
@@ -353,6 +406,24 @@ describe("WsiAnnotationLayer", () => {
       "/api/pathology/wsis/slide-1/annotations/",
       { method: "DELETE" },
     );
+  });
+
+  it("falls back to detail deletes when the collection DELETE is unavailable", async () => {
+    const second = { ...baseAnnotation, id: "annotation-2", annotation_data: { ...baseAnnotation.annotation_data, image_points: [[300, 400]] as [number, number][] } };
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response([baseAnnotation, second]))
+      .mockResolvedValueOnce(response({ detail: "Method not allowed" }, 405))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    setup(authorizedFetch);
+    await screen.findByText("2개");
+
+    fireEvent.click(screen.getByRole("button", { name: "전체 삭제" }));
+    fireEvent.click(screen.getByRole("alertdialog").querySelectorAll("button")[1]);
+
+    await waitFor(() => expect(screen.getByText("0개")).toBeInTheDocument());
+    expect(authorizedFetch).toHaveBeenCalledWith("/api/pathology/wsis/slide-1/annotations/annotation-1/", { method: "DELETE" });
+    expect(authorizedFetch).toHaveBeenCalledWith("/api/pathology/wsis/slide-1/annotations/annotation-2/", { method: "DELETE" });
   });
 
   it("keeps pan available in read-only mode and retries an annotation load failure", async () => {

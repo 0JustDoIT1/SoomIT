@@ -101,7 +101,7 @@ export function CaseSummaryHeader({
 
   return (
     <section
-      className="grid min-h-[48px] w-full shrink-0 items-stretch gap-0 overflow-hidden rounded-lg border border-cyan-300 bg-white shadow-sm"
+      className="grid min-h-[48px] w-full shrink-0 items-stretch gap-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm"
       style={{
         gridTemplateColumns:
           "minmax(180px, 1.35fr) repeat(4, minmax(0, 1fr)) minmax(70px, 0.65fr)",
@@ -177,7 +177,7 @@ function SummaryField({
 }) {
   return (
     <div className="flex min-w-0 w-full flex-col justify-center border-r border-slate-100 px-5 py-1.5">
-      <p className="truncate text-[11px] font-medium text-slate-400">
+      <p className="truncate text-[11px] font-medium text-slate-600">
         {label}
       </p>
 

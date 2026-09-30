@@ -1816,8 +1816,8 @@ export default function RespiratoryCaseDetailPage() {
 
   return (
     <>
-      <div className={`${workspaceStyles.workspace} h-full min-h-0 overflow-hidden bg-[#f3f7fd]`} aria-label="Case Workspace">
-      <div className="relative grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_124px_minmax(0,1fr)] bg-[#f3f7fd] xl:grid-cols-[minmax(228px,244px)_132px_minmax(0,1fr)]">
+      <div className={`${workspaceStyles.workspace} h-full min-h-0 overflow-hidden bg-slate-50`} aria-label="Case Workspace">
+      <div className="relative grid h-full min-h-0 min-w-0 grid-cols-[minmax(220px,236px)_124px_minmax(0,1fr)] bg-slate-50 xl:grid-cols-[minmax(228px,244px)_132px_minmax(0,1fr)]">
       <div className="fixed bottom-3 right-16 z-40"><CaseConsultationRequest caseId={caseId} /></div>
       <div className="relative z-[60] min-h-0 overflow-hidden">
         <CasePatientSidebar cases={filteredCases} selectedId={caseId} searchText={searchText} onSearchChange={setSearchText} onSelect={handleCaseSelect} />

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { CtDicomViewer, type ClinicianImageAnnotation, type PendingImageAnnotation } from "@/components/medical-imaging/ct-dicom-viewer";
 import { useAnnotationMutation } from "@/components/medical-imaging/use-annotation-mutation";
+import { deleteImageAnnotations } from "@/components/medical-imaging/delete-image-annotations";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { showToast } from "@/components/ui/toast/toast";
 import type { CtCornerstoneSegmentation } from "@/app/radiology/_lib/cornerstone-labelmap";
@@ -450,16 +451,16 @@ export function CaseCtSegmentationEvidence({
       const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
       try {
         setAnnotationMutationError("");
-        const response = await authorizedFetch(
+        const result = await deleteImageAnnotations(authorizedFetch,
           `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`,
-          { method: "DELETE" },
+          annotations,
         );
-        if (!response.ok) throw new Error(`annotation delete all failed (${response.status})`);
         if (annotationRequestRef.current !== requestIdentity) return false;
-        setAnnotations([]);
+        setAnnotations((current) => current.filter((item) => !result.deleted.has(item.id)));
         deletedAnnotationIdsRef.current.clear();
-        setDirtyAnnotationIds(new Set());
+        setDirtyAnnotationIds((current) => new Set([...current].filter((id) => !result.deleted.has(id))));
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+        if (result.failed) throw new Error("일부 주석을 삭제하지 못했습니다. 남은 주석을 다시 삭제해 주세요.");
         return true;
       } catch (error) {
         const failure = error instanceof Error ? error.message : "주석 전체를 삭제하지 못했습니다.";
@@ -470,7 +471,7 @@ export function CaseCtSegmentationEvidence({
     } finally {
       endMutation();
     }
-  }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId, beginMutation, endMutation]);
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, beginMutation, endMutation]);
 
   const updateAnnotation = useCallback(async (annotationId: string, pending: PendingImageAnnotation): Promise<boolean> => {
     if (isMutationLocked()) return false;
@@ -510,7 +511,10 @@ export function CaseCtSegmentationEvidence({
       if (saved.length) {
         const savedById = new Map(saved);
         if (annotationRequestRef.current !== requestIdentity) return false;
-        setAnnotations((current) => current.map((annotation) => savedById.get(annotation.id) ?? annotation));
+        setAnnotations((current) => current.map((annotation) => {
+          const savedAnnotation = savedById.get(annotation.id);
+          return savedAnnotation ? { ...savedAnnotation, clientId: annotation.clientId ?? annotation.id } : annotation;
+        }));
         setDirtyAnnotationIds((current) => {
           const next = new Set(current);
           saved.forEach(([id]) => next.delete(id));

@@ -100,6 +100,20 @@ describe("CtDicomViewer toolbar", () => {
     expect(onFocusedNoduleChange).toHaveBeenCalledWith("2");
   });
 
+  it("omits the number when only one nodule is available", () => {
+    render(
+      <CtDicomViewer
+        orderId="order-single-nodule"
+        assetId="asset-single-nodule"
+        loadSeries={() => new Promise(() => undefined)}
+        nodules={[{ nodule_no: 1, finding_payload: { quantification: { centroid_world_xyz_mm: [10, 20, 30] } } }]}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "결절" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "결절 #1" })).toBeNull();
+  });
+
   it("accepts an external nodule selection from the clinical detail rail", () => {
     const props = {
       orderId: "order-controlled",
@@ -114,6 +128,17 @@ describe("CtDicomViewer toolbar", () => {
 
     rerender(<CtDicomViewer {...props} focusedNoduleId="2" />);
     expect(screen.getByRole("button", { name: "결절 #2" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("deletes the server ID after saving a selected draft", () => {
+    const onAnnotationDeleted = vi.fn().mockResolvedValue(true);
+    const props = { orderId: "order-save", assetId: "asset-save", loadSeries: () => new Promise<never>(() => undefined), onAnnotationDeleted };
+    const draft = { id: "temp-1", annotation_type: "TEXT" as const, annotation_data: { text: "메모", series_instance_uid: "series-1", sop_instance_uid: "sop-1", tool_name: "ArrowAnnotateTool" } };
+    const { rerender } = render(<CtDicomViewer {...props} annotations={[draft]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Text 1" }));
+    rerender(<CtDicomViewer {...props} annotations={[{ ...draft, id: "saved-1", clientId: "temp-1" }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "선택 삭제" }));
+    expect(onAnnotationDeleted).toHaveBeenCalledWith("saved-1");
   });
 
   it("selects a saved text annotation before updating or deleting it", () => {

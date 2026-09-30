@@ -5,6 +5,7 @@ import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { ensureCornerstoneInitialized } from "../../../radiology/_lib/cornerstone-init";
 import { preventMedicalImageContextMenu } from "@/components/medical-imaging/medical-image-context-menu";
 import { useAnnotationMutation } from "@/components/medical-imaging/use-annotation-mutation";
+import { deleteImageAnnotations } from "@/components/medical-imaging/delete-image-annotations";
 import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { showToast } from "@/components/ui/toast/toast";
 import {
@@ -157,14 +158,13 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
       const query = new URLSearchParams({ image_asset_id: asset.id, series_instance_uid: asset.series_instance_uid });
       try {
         setAnnotationMutationError("");
-        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`, { method: "DELETE" });
-        const body: unknown = response.ok ? null : await response.json().catch(() => null);
-        if (!response.ok) throw new Error(message(body, "주석 전체를 삭제하지 못했습니다."));
+        const result = await deleteImageAnnotations(authorizedFetch, `${apiBaseUrl}/api/doctor/cases/${caseId}/image-annotations/?${query.toString()}`, annotations);
         if (annotationRequestRef.current !== requestIdentity) return false;
-        setAnnotations([]);
-        setDirtyAnnotationIds(new Set());
-        setSelectedAnnotationId(null);
+        setAnnotations((current) => current.filter((item) => !result.deleted.has(item.id)));
+        setDirtyAnnotationIds((current) => new Set([...current].filter((id) => !result.deleted.has(id))));
+        setSelectedAnnotationId((id) => id && !result.deleted.has(id) ? id : null);
         invalidateImageAnnotationRequest({ caseId, imageAssetId: asset.id, seriesInstanceUid: asset.series_instance_uid });
+        if (result.failed) throw new Error("일부 주석을 삭제하지 못했습니다. 남은 주석을 다시 삭제해 주세요.");
       } catch (error) {
         const failure = error instanceof Error ? error.message : "주석 전체를 삭제하지 못했습니다.";
         setAnnotationMutationError(failure);
@@ -173,7 +173,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     } finally {
       endMutation();
     }
-  }, [annotations.length, apiBaseUrl, asset, authorizedFetch, caseId, beginMutation, endMutation]);
+  }, [annotations, apiBaseUrl, asset, authorizedFetch, caseId, beginMutation, endMutation]);
 
   const updateAnnotation = useCallback(async (annotationId: string, annotation: Omit<Annotation, "id">) => {
     if (isMutationLocked()) return;
@@ -311,6 +311,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     let engine: import("@cornerstonejs/core").RenderingEngine | null = null;
     let cleanupTools: (() => void) | null = null;
     let releaseFile: (() => void) | null = null;
+    let resizeObserver: ResizeObserver | null = null;
     void (async () => {
       try {
         const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/image-assets/${asset.id}/dicom-web/instances/${uids[index]}/`, { signal: controller.signal, headers: { Accept: "application/dicom" } });
@@ -403,6 +404,12 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         const viewport = engine.getViewport(viewportId) as InstanceType<typeof core.StackViewport>;
         await viewport.setStack([imageId]);
         if (cancelled) return;
+        if (typeof ResizeObserver !== "undefined" && elementRef.current) {
+          resizeObserver = new ResizeObserver(() => {
+            if (!cancelled) engine?.resize(true, true);
+          });
+          resizeObserver.observe(elementRef.current);
+        }
         const annotationState = (tools as unknown as { annotation?: { state?: { addAnnotation?: (annotation: Record<string, unknown>, element: HTMLDivElement) => void } } }).annotation?.state;
         const addAnnotation = annotationState?.addAnnotation;
         const annotationElement = elementRef.current;
@@ -446,7 +453,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
         if (!cancelled) setError(cause instanceof Error ? cause.message : "원본 DICOM을 표시하지 못했습니다.");
       }
     })();
-    return () => { cancelled = true; controller.abort(); syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); releaseFile?.(); };
+    return () => { cancelled = true; controller.abort(); resizeObserver?.disconnect(); syncViewerRef.current = null; setViewerToolRef.current = null; cleanupTools?.(); engine?.destroy(); releaseFile?.(); };
   }, [apiBaseUrl, asset, authorizedFetch, caseId, index, reactId, uids]);
 
   const resetSlice = () => setIndex(Math.floor(uids.length / 2));
@@ -476,10 +483,8 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
 
       <div className="flex h-[42px] min-h-0 min-w-0 shrink-0 items-center gap-1 overflow-x-auto overflow-y-hidden border-b border-slate-800 bg-[#101827] px-2 py-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="DICOM series">
         {assets.map((item) => <button key={item.id} type="button" onClick={() => setSelectedAssetId(item.id)} className={`min-h-8 shrink-0 rounded px-3 py-1 text-xs font-semibold transition ${item.id === selectedAssetId ? "bg-blue-500 text-white" : "bg-slate-800 text-slate-300 hover:bg-slate-700"}`}>{item.image_type === "PET" ? "PET" : "CT"} Series</button>)}
-      </div>
-
       {annotations.length > 0 && (
-        <div className="flex min-w-0 shrink-0 items-center gap-1 overflow-x-auto border-b border-slate-800 bg-slate-950/95 px-2 py-1" aria-label="의료진 주석 목록">
+        <div className="ml-2 flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overflow-y-hidden border-l border-slate-700 px-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden" aria-label="의료진 주석 목록">
           <span className="shrink-0 px-1 text-[8px] text-slate-500">의료진 주석</span>
           {annotations.filter((annotation) => annotation.annotation_data.sop_instance_uid === uids[index]).map((annotation, index) => (
             <button key={annotation.id} type="button" aria-pressed={selectedAnnotationId === annotation.id} onClick={() => selectAnnotation(annotation)} className={`shrink-0 rounded px-1.5 py-1 text-[8px] font-semibold ${selectedAnnotationId === annotation.id ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-300"}`}>
@@ -498,6 +503,7 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
           )}
         </div>
       )}
+      </div>
 
       <div className="relative min-h-0 flex-1 overflow-hidden bg-black">
         <div ref={elementRef} tabIndex={0} onContextMenu={preventMedicalImageContextMenu} onKeyDown={(event) => { if (event.key === "ArrowLeft") { event.preventDefault(); setIndex((value) => Math.max(0, value - 1)); } if (event.key === "ArrowRight") { event.preventDefault(); setIndex((value) => Math.min(uids.length - 1, value + 1)); } }} className="absolute inset-0 outline-none focus:ring-2 focus:ring-inset focus:ring-blue-400" aria-label="DICOM 원본 영상 뷰어. 좌우 화살표로 슬라이스 이동" />
