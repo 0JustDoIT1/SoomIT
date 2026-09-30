@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 const toast = vi.hoisted(() => ({ info: vi.fn(), success: vi.fn(), error: vi.fn() }));
 
@@ -27,6 +27,64 @@ const longitudinalOpinion = (xraySummary: string) => JSON.stringify({
 });
 
 describe("TreatmentOpinionPanel", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllEnvs();
+  });
+
+  it("uses the existing POST when demo mode is disabled", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TREATMENT_OPINION_DEMO", "false");
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response(emptyPhysicianOpinion))
+      .mockResolvedValueOnce(response(notGenerated))
+      .mockResolvedValueOnce(response({ status: "AVAILABLE", opinion: longitudinalOpinion("Production result") }));
+    render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
+    fireEvent.click(await screen.findByRole("button", { name: "종합 소견 생성" }));
+    expect(await screen.findByText("Production result")).toBeInTheDocument();
+    expect(authorizedFetch).toHaveBeenNthCalledWith(3, expect.stringContaining("/treatment-opinion/"), expect.objectContaining({ method: "POST" }));
+  });
+
+  it("waits five seconds for the fixed demo result without POST or changing the physician draft", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TREATMENT_OPINION_DEMO", "true");
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response(emptyPhysicianOpinion))
+      .mockResolvedValueOnce(response({ ...notGenerated, status: "AVAILABLE", opinion: longitudinalOpinion("Previous AI result") }));
+    render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
+    const editor = await screen.findByRole("textbox");
+    await screen.findByText("Previous AI result");
+    fireEvent.change(editor, { target: { value: "Physician draft" } });
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: "종합 소견 다시 생성" }));
+    expect(screen.getByRole("button", { name: "종합 소견 생성 중..." })).toBeDisabled();
+    expect(screen.getByText("Previous AI result")).toBeInTheDocument();
+    expect(authorizedFetch).toHaveBeenCalledTimes(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
+    expect(screen.getByText("Previous AI result")).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByText("흉부 X-ray에서 좌측 폐결절 의심부위가 확인되었다. 이에 따라 흉부 CT 추가 검사를 권고하였다.")).toBeInTheDocument();
+    expect(screen.getByText("후속 흉부 CT에서 1번 결절(최대 28.79 mm), 악성 위험도 93.11%가 확인되었다.")).toBeInTheDocument();
+    expect(screen.getByText("현재 상태는 '처방 안전성 검토 전'이다. 기록된 처방 차단 또는 미해결 경고는 없다. 치료 시작 전 의료진의 최종 안전성 확인과 치료계획에 따른 추적 관찰이 필요하다.")).toBeInTheDocument();
+    expect(screen.getByText(/CONFIRMED_DATA_FALLBACK_V3.*safety_not_run/)).toBeInTheDocument();
+    expect(editor).toHaveValue("Physician draft");
+    expect(authorizedFetch).toHaveBeenCalledTimes(2);
+  });
+
+  it("cancels a pending demo result after unmount", async () => {
+    vi.stubEnv("NEXT_PUBLIC_TREATMENT_OPINION_DEMO", "true");
+    toast.success.mockClear();
+    const authorizedFetch = vi.fn()
+      .mockResolvedValueOnce(response(emptyPhysicianOpinion))
+      .mockResolvedValueOnce(response(notGenerated));
+    const view = render(<TreatmentOpinionPanel {...props} authorizedFetch={authorizedFetch} />);
+    const button = await screen.findByRole("button", { name: "종합 소견 생성" });
+    vi.useFakeTimers();
+    fireEvent.click(button);
+    view.unmount();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(authorizedFetch).toHaveBeenCalledTimes(2);
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
   it("shows independent AI and physician columns and keeps the AI result read-only", async () => {
     const authorizedFetch = vi.fn()
       .mockResolvedValueOnce(response(emptyPhysicianOpinion))
