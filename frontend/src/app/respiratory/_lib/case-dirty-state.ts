@@ -1,5 +1,11 @@
 export type StringFields = Record<string, string>;
 
+export function reconcileSavedFields<T extends StringFields>(current: T, submitted: T, saved: T): T {
+  return Object.fromEntries(Object.entries(saved).map(([key, value]) =>
+    [key, current[key] === submitted[key] ? value : current[key]],
+  )) as T;
+}
+
 export function hasChangedFields(current: StringFields, baseline: StringFields) {
   return Object.keys(current).some((key) => current[key] !== (baseline[key] ?? ""));
 }

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 
 import { CaseCtSegmentationEvidence } from "./case-ct-segmentation-evidence";
@@ -21,18 +21,20 @@ vi.mock("@/app/radiology/_lib/cornerstone-init", () => ({
 }));
 
 vi.mock("@/components/medical-imaging/ct-dicom-viewer", () => ({
-  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAllAnnotationsDeleted, onAnnotationUpdated }: {
+  CtDicomViewer: ({ orderId, assetId, loadSeries, loadSegmentation, annotations = [], focusedNoduleId, onFocusedNoduleChange, onAnnotationDeleted, onAllAnnotationsDeleted, onAnnotationUpdated, onAnnotationCreated }: {
     orderId: string;
     assetId: string;
     loadSeries: (orderId: string, assetId: string) => Promise<unknown>;
     loadSegmentation: (analysisId: string) => Promise<unknown>;
     annotations?: Array<{ id: string }>;
+    onAnnotationCreated?: (annotation: { annotation_type: "LENGTH"; annotation_data: Record<string, unknown> }) => unknown;
     focusedNoduleId?: string | null;
     onFocusedNoduleChange?: (noduleId: string) => void;
     onAnnotationDeleted?: (annotationId: string) => Promise<boolean> | boolean;
     onAllAnnotationsDeleted?: () => Promise<boolean> | boolean;
     onAnnotationUpdated?: (annotationId: string, annotation: { annotation_type: "LENGTH"; annotation_data: Record<string, unknown> }) => Promise<boolean> | boolean | void;
   }) => <div data-testid="ct-viewer">
+    <button onClick={() => onAnnotationCreated?.({ annotation_type: "LENGTH", annotation_data: {} })}>create-annotation</button>
     <button type="button" onClick={() => void loadSeries(orderId, assetId)}>load-series</button>
     <button type="button" onClick={() => void loadSegmentation("analysis-cache")}>load-segmentation</button>
     <span data-testid="annotation-ids">{annotations.map(({ id }) => id).join(",")}</span>
@@ -49,6 +51,22 @@ vi.mock("./case-ct-visualization", () => ({ CaseCtVisualization: () => <div>3D v
 function json(value: unknown, status = 200) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json" } });
 }
+
+it("retains a newly drawn annotation when the initial GET finishes later", async () => {
+  let finishLoad!: (response: Response) => void;
+  const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/image-assets/")) return json([{ id: "asset-race", workflow_stage: "CT", image_type: "CT", status: "READY", series_instance_uid: "series-race" }]);
+    if (String(input).includes("/image-annotations/")) return new Promise<Response>((resolve) => { finishLoad = resolve; });
+    return json([]);
+  });
+  render(<CaseCtSegmentationEvidence apiBaseUrl="http://test" authorizedFetch={authorizedFetch} caseId="case-load-race" />);
+  fireEvent.click(await screen.findByRole("button", { name: "create-annotation" }));
+  const draftId = screen.getByTestId("annotation-ids").textContent;
+  expect(draftId).toContain("temp-");
+  await act(async () => finishLoad(json([{ id: "existing", annotation_type: "LENGTH", annotation_data: {} }])));
+  expect(screen.getByTestId("annotation-ids")).toHaveTextContent(draftId!);
+  expect(screen.getByTestId("annotation-ids")).toHaveTextContent("existing");
+});
 
 function dicomSeries(uids: string[]) {
   const boundary = "test-dicom-series";

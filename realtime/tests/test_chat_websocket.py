@@ -46,6 +46,27 @@ class FakeRedis:
         self.publish = AsyncMock(return_value=1)
 
 
+def test_global_storage_failures_are_reported_without_publishing():
+    for failure in [httpx.Response(403, json={}), httpx.ConnectError("offline")]:
+        websocket = FakeWebSocket(incoming=[json.dumps({
+            "type": "chat.message.create", "client_message_id": str(uuid4()),
+            "recipient_id": str(uuid4()), "body": "keep my draft",
+        })])
+        store = AsyncMock(side_effect=failure) if isinstance(failure, Exception) else AsyncMock(return_value=failure)
+        redis = FakeRedis()
+        with (
+            patch.object(main, "ALLOWED_ORIGINS", {"http://localhost:3000"}),
+            patch.object(main, "_authorize_global", AsyncMock(return_value=(0, str(uuid4()), str(uuid4())))),
+            patch.object(main, "_store_global_message", store),
+            patch.object(main, "redis_client", redis),
+            patch.object(main.manager, "connect", AsyncMock()),
+            patch.object(main.manager, "disconnect", Mock()),
+        ):
+            asyncio.run(main.global_chat_endpoint(websocket))
+        assert websocket.sent_json[0]["type"] == "chat.error"
+        redis.publish.assert_not_awaited()
+
+
 def test_django_internal_headers_mark_request_as_https():
     headers = main._django_headers("access-token")
 

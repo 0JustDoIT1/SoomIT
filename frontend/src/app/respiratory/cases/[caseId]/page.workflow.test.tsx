@@ -97,6 +97,21 @@ it("opens the current evidence workspace from Dashboard without changing the sta
   expect(mocks.authorizedFetch.mock.calls.every(([, init]) => !init?.method || init.method === "GET")).toBe(true);
 });
 
+it("opens the selected patient without waiting for the full case list", async () => {
+  installCaseResponses({ stage: "XRAY" });
+  const defaultFetch = mocks.authorizedFetch.getMockImplementation()!;
+  mocks.authorizedFetch.mockImplementation((input: string, init?: RequestInit) => {
+    if (new URL(input).pathname === "/api/doctor/cases/") return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    });
+    return defaultFetch(input, init);
+  });
+  const view = render(<Page />);
+  expect(await screen.findByRole("navigation", { name: "Case 진료 정보 메뉴" })).toBeInTheDocument();
+  expect(screen.queryByText("담당 환자 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
+  view.unmount();
+});
+
 it("keeps the rendered Case visible while a same-Case workflow refresh is pending", async () => {
   let stage = "TREATMENT";
   let holdCaseRefresh = false;
@@ -250,6 +265,24 @@ it("keeps a completed TNM workspace read-only after the Case advances to patholo
   expect(await screen.findByText("Stage Group 확정 완료")).toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "다음 처리 선택" })).not.toBeInTheDocument();
   expect(screen.queryByRole("button", { name: "TNM 확정 및 다음 단계 진행" })).not.toBeInTheDocument();
+});
+
+it("renders confirmed results without waiting for slow regimen candidates", async () => {
+  installCaseResponses({ stage: "PATHOLOGY_GENE", clinicalResults: [{
+    id: "tnm-fast", workflow_stage: "PET_CT_TNM", result_status: "CONFIRMED",
+    result_detail: { tnm: { t_category: "T1", n_category: "N0", m_category: "M0", stage_group: "IIA", evidence: { stage: { stage_group_candidate: "IIA", stage_group_status: "candidate_ready" } } } },
+  }] });
+  const defaultFetch = mocks.authorizedFetch.getMockImplementation()!;
+  mocks.authorizedFetch.mockImplementation((input: string, init?: RequestInit) => {
+    if (input.includes("/regimen-candidates/")) return new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+    });
+    return defaultFetch(input, init);
+  });
+  const view = render(<Page />);
+  await openCaseWorkspace("PET-CT / TNM 병기");
+  expect(await screen.findByText("Stage Group 확정 완료")).toBeInTheDocument();
+  view.unmount();
 });
 
 it("keeps TNM next-stage progression in the TNM workspace only", async () => {

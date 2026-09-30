@@ -35,7 +35,7 @@ import { getPrescriptionStatusLabel } from "./clinical-display-labels";
 import { MedicationSchedulePanel } from "./medication-schedule-panel";
 import { PrescriptionFinalizeScheduleForm, type FinalizeMedicationSchedule } from "./prescription-finalize-schedule-form";
 import { formatPrescriptionDose } from "./prescription-dose-format";
-import { hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
+import { reconcileSavedFields, hasChangedFields, hasPrescriptionDraftChanges, hasUnsavedCaseChanges as combineUnsavedCaseChanges } from "../../_lib/case-dirty-state";
 import { applyCaseResponse, canApplyCaseResponse } from "../../_lib/case-request-guard";
 import { CASE_NAVIGATION_REQUEST_EVENT, getRequestedCaseId } from "../../_lib/case-navigation-guard";
 
@@ -766,27 +766,32 @@ export default function RespiratoryCaseDetailPage() {
         }
 
         // Start independent clinical reads immediately, rather than adding
-        // their latency after the case header/list round trip. allSettled
-        // attaches rejection handlers even if the header request fails.
-        const clinicalRequests = Promise.allSettled([
+        // their latency after the case header round trip. Attach rejection
+        // handlers immediately, even if the header request fails.
+        const clinicalRequests = [
           authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/ai-results/`, { signal: controller.signal }),
           authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/clinical-results/`, { signal: controller.signal }),
           authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/regimen-candidates/`, { signal: controller.signal }),
           authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/treatment-decision/`, { signal: controller.signal }),
           authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/prescriptions/`, { signal: controller.signal }),
           authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/orders/`, { signal: controller.signal }),
-        ]);
-        const [caseListResponse, caseDetailResponse] =
-          await Promise.all([
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`, { signal: controller.signal }),
-            authorizedFetch(`${API_BASE_URL}/api/doctor/cases/${caseId}/`, { signal: controller.signal }),
-          ]);
-
-        if (!caseListResponse.ok) {
-          throw new Error(
-            "담당 Case 목록을 불러오지 못했습니다."
-          );
-        }
+        ].map((request) => request.then(
+          (value): PromiseSettledResult<Response> => ({ status: "fulfilled", value }),
+          (reason): PromiseSettledResult<Response> => ({ status: "rejected", reason }),
+        ));
+        // The selected patient's header must not wait for the full case list.
+        void authorizedFetch(`${API_BASE_URL}/api/doctor/cases/`, { signal: controller.signal })
+          .then(async (response) => {
+            if (!response.ok) throw new Error("담당 Case 목록을 불러오지 못했습니다.");
+            const data: CaseItem[] = await response.json();
+            applyCurrentResponse(() => setCases(data));
+          })
+          .catch(() => {
+            if (!controller.signal.aborted) applyCurrentResponse(() => showToast.error("담당 Case 목록을 불러오지 못했습니다."));
+          });
+        const caseDetailResponse = await authorizedFetch(
+          `${API_BASE_URL}/api/doctor/cases/${caseId}/`, { signal: controller.signal },
+        );
 
         if (!caseDetailResponse.ok) {
           throw new Error(
@@ -794,145 +799,152 @@ export default function RespiratoryCaseDetailPage() {
           );
         }
 
-        const caseListData: CaseItem[] =
-          await caseListResponse.json();
-
         const caseDetailData: CaseItem =
           await caseDetailResponse.json();
 
         if (canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)) {
           loadedPageCaseIdRef.current = caseId;
-          setCases(caseListData);
+          setCases((current) => current.some((item) => item.id === caseDetailData.id) ? current : [...current, caseDetailData]);
           setSelectedCase(caseDetailData);
           setLoading(false);
           setCaseSwitching(false);
           setPdl1Results([]);
         }
 
-        const [tnmAnalysisRequest, tnmClinicalRequest, regimenCandidateRequest, treatmentDecisionRequest, prescriptionRequest, ordersRequest] =
-          await clinicalRequests;
+        // Apply each panel as soon as its own request completes.
+        await Promise.all(clinicalRequests.map(async (request, index) => {
+          const result = await request;
+          if (controller.signal.aborted) return;
+          if (index === 0) {
+            const tnmAnalysisRequest = result;
+            if (tnmAnalysisRequest.status === "fulfilled" && tnmAnalysisRequest.value.ok) {
+              const tnmAnalysisResponse = tnmAnalysisRequest.value;
+              const aiAnalysisPayload: unknown = await tnmAnalysisResponse.json();
+              const tnmAnalysisData = Array.isArray(aiAnalysisPayload)
+                ? aiAnalysisPayload as TnmAnalysisResult[]
+                : [];
 
-        // Effect cleanup intentionally aborts every in-flight request. Do not
-        // turn that lifecycle cancellation into panel errors, toasts, or noisy
-        // AbortError console reports.
-        if (controller.signal.aborted) return;
-
-        if (tnmAnalysisRequest.status === "fulfilled" && tnmAnalysisRequest.value.ok) {
-          const tnmAnalysisResponse = tnmAnalysisRequest.value;
-          const aiAnalysisPayload: unknown = await tnmAnalysisResponse.json();
-          const tnmAnalysisData = Array.isArray(aiAnalysisPayload)
-            ? aiAnalysisPayload as TnmAnalysisResult[]
-            : [];
-
-          applyCurrentResponse(() => {
-            setTnmAnalysisResults(tnmAnalysisData);
-            setPdl1Results(selectPdl1Results(aiAnalysisPayload));
-          });
-        } else {
-          const failure = tnmAnalysisRequest.status === "rejected" ? tnmAnalysisRequest.reason : new Error(`AI results HTTP ${tnmAnalysisRequest.value.status}`);
-          console.error(failure);
-          applyCurrentResponse(() => showToast.error("AI 분석 결과를 불러오지 못했습니다.", { id: `case-load-ai-${caseId}` }));
-          applyCurrentResponse(() => setAiResultError(
-            tnmAnalysisRequest.status === "fulfilled"
-              ? getAiResultHttpError(tnmAnalysisRequest.value.status)
-              : getAiResultNetworkError(),
-          ));
-        }
-
-        if (tnmClinicalRequest.status === "fulfilled" && tnmClinicalRequest.value.ok) {
-          const tnmClinicalResponse = tnmClinicalRequest.value;
-          const tnmClinicalData: TnmClinicalResult[] =
-            await tnmClinicalResponse.json();
-
-          applyCurrentResponse(() => setTnmClinicalResults(tnmClinicalData));
-        } else {
-          const failure = tnmClinicalRequest.status === "rejected" ? tnmClinicalRequest.reason : new Error(`Clinical results HTTP ${tnmClinicalRequest.value.status}`);
-          console.error(failure);
-          applyCurrentResponse(() => showToast.error("확정 결과를 불러오지 못했습니다.", { id: `case-load-clinical-${caseId}` }));
-          applyCurrentResponse(() => setClinicalResultError(
-            tnmClinicalRequest.status === "fulfilled"
-              ? getClinicalResultHttpError(tnmClinicalRequest.value.status)
-              : getClinicalResultNetworkError(),
-          ));
-        }
-
-        if (regimenCandidateRequest.status === "fulfilled" && regimenCandidateRequest.value.ok) {
-          const regimenCandidateResponse = regimenCandidateRequest.value;
-          const regimenCandidateData: CaseRegimenCandidate[] =
-            await regimenCandidateResponse.json();
-
-          if (isLatestRegimenRequest()) {
-            setRegimenCandidates(regimenCandidateData);
-            setRegimenCandidatesLoading(false);
+              applyCurrentResponse(() => {
+                setTnmAnalysisResults(tnmAnalysisData);
+                setPdl1Results(selectPdl1Results(aiAnalysisPayload));
+              });
+            } else {
+              const failure = tnmAnalysisRequest.status === "rejected" ? tnmAnalysisRequest.reason : new Error(`AI results HTTP ${tnmAnalysisRequest.value.status}`);
+              console.error(failure);
+              applyCurrentResponse(() => showToast.error("AI 분석 결과를 불러오지 못했습니다.", { id: `case-load-ai-${caseId}` }));
+              applyCurrentResponse(() => setAiResultError(
+                tnmAnalysisRequest.status === "fulfilled"
+                  ? getAiResultHttpError(tnmAnalysisRequest.value.status)
+                  : getAiResultNetworkError(),
+              ));
+            }
           }
-        } else {
-          if (isLatestRegimenRequest()) {
-            setRegimenCandidatesLoading(false);
-            setRegimenLoadError(
-              regimenCandidateRequest.status === "fulfilled"
-                ? getPanelFetchError(regimenCandidateRequest.value.status, "치료요법 후보")
-                : "치료요법 후보 조회 중 네트워크 오류가 발생했습니다.",
-            );
+          if (index === 1) {
+            const tnmClinicalRequest = result;
+            if (tnmClinicalRequest.status === "fulfilled" && tnmClinicalRequest.value.ok) {
+              const tnmClinicalResponse = tnmClinicalRequest.value;
+              const tnmClinicalData: TnmClinicalResult[] =
+                await tnmClinicalResponse.json();
+
+              applyCurrentResponse(() => setTnmClinicalResults(tnmClinicalData));
+            } else {
+              const failure = tnmClinicalRequest.status === "rejected" ? tnmClinicalRequest.reason : new Error(`Clinical results HTTP ${tnmClinicalRequest.value.status}`);
+              console.error(failure);
+              applyCurrentResponse(() => showToast.error("확정 결과를 불러오지 못했습니다.", { id: `case-load-clinical-${caseId}` }));
+              applyCurrentResponse(() => setClinicalResultError(
+                tnmClinicalRequest.status === "fulfilled"
+                  ? getClinicalResultHttpError(tnmClinicalRequest.value.status)
+                  : getClinicalResultNetworkError(),
+              ));
+            }
           }
-        }
+          if (index === 2) {
+            const regimenCandidateRequest = result;
+            if (regimenCandidateRequest.status === "fulfilled" && regimenCandidateRequest.value.ok) {
+              const regimenCandidateResponse = regimenCandidateRequest.value;
+              const regimenCandidateData: CaseRegimenCandidate[] =
+                await regimenCandidateResponse.json();
 
-        if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.ok) {
-          const treatmentDecisionResponse = treatmentDecisionRequest.value;
-          const treatmentDecisionData: CaseTreatmentDecision =
-            await treatmentDecisionResponse.json();
+              if (isLatestRegimenRequest()) {
+                setRegimenCandidates(regimenCandidateData);
+                setRegimenCandidatesLoading(false);
+              }
+            } else {
+              if (isLatestRegimenRequest()) {
+                setRegimenCandidatesLoading(false);
+                setRegimenLoadError(
+                  regimenCandidateRequest.status === "fulfilled"
+                    ? getPanelFetchError(regimenCandidateRequest.value.status, "치료요법 후보")
+                    : "치료요법 후보 조회 중 네트워크 오류가 발생했습니다.",
+                );
+              }
+            }
+          }
+          if (index === 3) {
+            const treatmentDecisionRequest = result;
+            if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.ok) {
+              const treatmentDecisionResponse = treatmentDecisionRequest.value;
+              const treatmentDecisionData: CaseTreatmentDecision =
+                await treatmentDecisionResponse.json();
 
-          if (!canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)) return;
-          setCaseTreatmentDecision(treatmentDecisionData);
-          setCaseTreatmentForm({
-            treatment_type: treatmentDecisionData.treatment_type ?? "",
-            selected_regimen:
-              treatmentDecisionData.selected_regimen ?? "",
-            treatment_plan: treatmentDecisionData.treatment_plan ?? "",
-            targeted_therapy_plan:
-              treatmentDecisionData.targeted_therapy_plan ?? "",
-            rationale: treatmentDecisionData.rationale ?? "",
-          });
-        } else if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.status === 404) {
-          applyCurrentResponse(() => {
-            setCaseTreatmentDecision(null);
-            setCaseTreatmentForm({ treatment_type: "", selected_regimen: "", treatment_plan: "", targeted_therapy_plan: "", rationale: "" });
-          });
-        } else {
-          applyCurrentResponse(() => setTreatmentLoadError(
-            treatmentDecisionRequest.status === "fulfilled"
-              ? getPanelFetchError(treatmentDecisionRequest.value.status, "치료 결정")
-              : "치료 결정 조회 중 네트워크 오류가 발생했습니다.",
-          ));
-        }
+              if (!canApplyCaseResponse(caseId, activeCaseIdRef.current, controller.signal.aborted)) return;
+              setCaseTreatmentDecision(treatmentDecisionData);
+              setCaseTreatmentForm({
+                treatment_type: treatmentDecisionData.treatment_type ?? "",
+                selected_regimen:
+                  treatmentDecisionData.selected_regimen ?? "",
+                treatment_plan: treatmentDecisionData.treatment_plan ?? "",
+                targeted_therapy_plan:
+                  treatmentDecisionData.targeted_therapy_plan ?? "",
+                rationale: treatmentDecisionData.rationale ?? "",
+              });
+            } else if (treatmentDecisionRequest.status === "fulfilled" && treatmentDecisionRequest.value.status === 404) {
+              applyCurrentResponse(() => {
+                setCaseTreatmentDecision(null);
+                setCaseTreatmentForm({ treatment_type: "", selected_regimen: "", treatment_plan: "", targeted_therapy_plan: "", rationale: "" });
+              });
+            } else {
+              applyCurrentResponse(() => setTreatmentLoadError(
+                treatmentDecisionRequest.status === "fulfilled"
+                  ? getPanelFetchError(treatmentDecisionRequest.value.status, "치료 결정")
+                  : "치료 결정 조회 중 네트워크 오류가 발생했습니다.",
+              ));
+            }
+          }
+          if (index === 4) {
+            const prescriptionRequest = result;
+            if (prescriptionRequest.status === "fulfilled" && prescriptionRequest.value.ok) {
+              const prescriptionResponse = prescriptionRequest.value;
+              const prescriptionData: CasePrescription[] =
+                await prescriptionResponse.json();
 
-        if (prescriptionRequest.status === "fulfilled" && prescriptionRequest.value.ok) {
-          const prescriptionResponse = prescriptionRequest.value;
-          const prescriptionData: CasePrescription[] =
-            await prescriptionResponse.json();
-
-          applyCurrentResponse(() => setCasePrescriptions(prescriptionData));
-        } else {
-          const failure = prescriptionRequest.status === "rejected" ? prescriptionRequest.reason : new Error(`Prescriptions HTTP ${prescriptionRequest.value.status}`);
-          console.error(failure);
-          applyCurrentResponse(() => showToast.error("처방 목록을 불러오지 못했습니다.", { id: `case-load-prescriptions-${caseId}` }));
-          applyCurrentResponse(() => setPrescriptionLoadError(
-            prescriptionRequest.status === "fulfilled"
-              ? getPanelFetchError(prescriptionRequest.value.status, "처방 목록")
-              : "처방 목록 조회 중 네트워크 오류가 발생했습니다.",
-          ));
-        }
-
-        if (ordersRequest.status === "fulfilled" && ordersRequest.value.ok) {
-          const ordersPayload: unknown = await ordersRequest.value.json();
-          applyCurrentResponse(() => {
-            setCaseOrders(Array.isArray(ordersPayload) ? ordersPayload as ExaminationOrder[] : []);
-            setOrdersLoaded(true);
-          });
-        } else {
-          const failure = ordersRequest.status === "rejected" ? ordersRequest.reason : new Error(`Orders HTTP ${ordersRequest.value.status}`);
-          console.error(failure);
-          applyCurrentResponse(() => showToast.error("검사 오더를 불러오지 못했습니다.", { id: `case-load-orders-${caseId}` }));
-        }
+              applyCurrentResponse(() => setCasePrescriptions(prescriptionData));
+            } else {
+              const failure = prescriptionRequest.status === "rejected" ? prescriptionRequest.reason : new Error(`Prescriptions HTTP ${prescriptionRequest.value.status}`);
+              console.error(failure);
+              applyCurrentResponse(() => showToast.error("처방 목록을 불러오지 못했습니다.", { id: `case-load-prescriptions-${caseId}` }));
+              applyCurrentResponse(() => setPrescriptionLoadError(
+                prescriptionRequest.status === "fulfilled"
+                  ? getPanelFetchError(prescriptionRequest.value.status, "처방 목록")
+                  : "처방 목록 조회 중 네트워크 오류가 발생했습니다.",
+              ));
+            }
+          }
+          if (index === 5) {
+            const ordersRequest = result;
+            if (ordersRequest.status === "fulfilled" && ordersRequest.value.ok) {
+              const ordersPayload: unknown = await ordersRequest.value.json();
+              applyCurrentResponse(() => {
+                setCaseOrders(Array.isArray(ordersPayload) ? ordersPayload as ExaminationOrder[] : []);
+                setOrdersLoaded(true);
+              });
+            } else {
+              const failure = ordersRequest.status === "rejected" ? ordersRequest.reason : new Error(`Orders HTTP ${ordersRequest.value.status}`);
+              console.error(failure);
+              applyCurrentResponse(() => showToast.error("검사 오더를 불러오지 못했습니다.", { id: `case-load-orders-${caseId}` }));
+            }
+          }
+        }));
       } catch (err) {
         if (controller.signal.aborted) return;
         console.error(err);
@@ -1411,7 +1423,8 @@ export default function RespiratoryCaseDetailPage() {
   ) as TnmAnalysisResult | undefined;
 
   const handleCaseTreatmentDraftSave = async () => {
-    if (!caseId) return;
+    if (!caseId || caseTreatmentSaving) return;
+    const submittedForm = { ...caseTreatmentForm };
 
     try {
       setCaseTreatmentSaving(true);
@@ -1446,16 +1459,19 @@ export default function RespiratoryCaseDetailPage() {
         );
       }
 
+      if (activeCaseIdRef.current !== caseId) return;
       setCaseTreatmentDecision(data);
-      setCaseTreatmentForm({
+      const savedForm = {
         treatment_type: data.treatment_type ?? "",
         selected_regimen: data.selected_regimen ?? "",
         treatment_plan: data.treatment_plan ?? "",
         targeted_therapy_plan: data.targeted_therapy_plan ?? "",
         rationale: data.rationale ?? "",
-      });
+      };
+      setCaseTreatmentForm((current) => reconcileSavedFields(current, submittedForm, savedForm));
       setCaseTreatmentMessage("치료 결정 DRAFT가 저장되었습니다.");
     } catch (err) {
+      if (activeCaseIdRef.current !== caseId) return;
       setCaseTreatmentError(
         err instanceof Error
           ? err.message

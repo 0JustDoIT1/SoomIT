@@ -7,6 +7,7 @@ type AuthorizedFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise
 type Participant = { id: string; name: string; department: string; role: string; unread_count: number };
 type Message = {
   id: string;
+  client_message_id?: string;
   body: string;
   sender: { id: string; name: string; department: string; role: string };
   recipient_id: string;
@@ -30,6 +31,11 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   const [selectedId, setSelectedId] = useState("");
   const [messages, setMessages] = useState<Message[]>([]);
   const [body, setBody] = useState("");
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const pendingSend = useRef<{ client_message_id: string; recipient_id: string; body: string; draft: string } | null>(null);
+  const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const conversationGeneration = useRef(0);
   const [next, setNext] = useState<string | null>(null);
   const [status, setStatus] = useState<"offline" | "connecting" | "connected">("offline");
   const [error, setError] = useState("");
@@ -79,15 +85,15 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
     });
   }, [authorizedFetch]);
 
-  const loadMessages = useCallback(async (participantId: string, cursor?: string | null, replace = false) => {
+  const loadMessages = useCallback(async (participantId: string, cursor?: string | null) => {
+    const generation = conversationGeneration.current;
     const query = new URLSearchParams({ participant_id: participantId });
     if (cursor) query.set("cursor", cursor);
     const response = await authorizedFetch(`${API}/api/chat/global/messages/?${query}`);
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.detail || "메시지를 불러오지 못했습니다.");
     const incoming = Array.isArray(payload.results) ? payload.results as Message[] : [];
-    if (!openRef.current || selectedIdRef.current !== participantId) return;
-    if (replace) setMessages([]);
+    if (generation !== conversationGeneration.current || !openRef.current || selectedIdRef.current !== participantId) return;
     merge(incoming);
     setNext(typeof payload.next_cursor === "string" ? payload.next_cursor : null);
     if (document.visibilityState === "visible") await markRead(incoming, participantId);
@@ -123,13 +129,25 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
 
   useEffect(() => {
     if (!open || !selectedId) return;
+    conversationGeneration.current += 1;
+    let cancelled = false;
     void Promise.resolve().then(() => {
+      if (cancelled) return;
       setMessages([]);
       setNext(null);
       setError("");
-      return loadMessages(selectedId, null, true);
-    }).catch((reason) => setError(reason instanceof Error ? reason.message : "메시지를 불러오지 못했습니다."));
+      return loadMessages(selectedId);
+    }).catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "메시지를 불러오지 못했습니다."); });
+    return () => { cancelled = true; conversationGeneration.current += 1; };
   }, [loadMessages, open, selectedId]);
+
+  const finishSending = useCallback(() => {
+    if (sendTimer.current) clearTimeout(sendTimer.current);
+    sendingRef.current = false;
+    setSending(false);
+  }, []);
+
+  useEffect(() => () => { if (sendTimer.current) clearTimeout(sendTimer.current); }, []);
 
   useEffect(() => {
     let disposed = false;
@@ -143,6 +161,11 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
         if (disposed || socket.current !== connection) return;
         setStatus("connected"); setError("");
         void loadParticipants().catch(() => undefined);
+        if (openRef.current && selectedIdRef.current) {
+          void loadMessages(selectedIdRef.current).catch((reason) => {
+            if (!disposed) setError(reason instanceof Error ? reason.message : "메시지를 복구하지 못했습니다.");
+          });
+        }
       };
       connection.onmessage = (event) => {
         if (disposed || socket.current !== connection) return;
@@ -150,6 +173,12 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
           const payload = JSON.parse(event.data) as { type?: string; message?: Message; detail?: string };
           if (payload.type === "chat.message.created" && payload.message) {
             const message = payload.message;
+            if (message.client_message_id && message.client_message_id === pendingSend.current?.client_message_id) {
+              const pending = pendingSend.current;
+              if (selectedIdRef.current === pending.recipient_id) setBody((current) => current === pending.draft ? "" : current);
+              pendingSend.current = null;
+              finishSending();
+            }
             if (receivedIds.current.has(message.id)) return;
             receivedIds.current.add(message.id);
             if (receivedIds.current.size > 2000) receivedIds.current.delete(receivedIds.current.values().next().value!);
@@ -168,7 +197,10 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
             }
             if (belongsToOpenConversation) void loadParticipants().catch(() => undefined);
           }
-          if (payload.type === "chat.error") setError(payload.detail || "메시지를 처리하지 못했습니다.");
+          if (payload.type === "chat.error") {
+            finishSending();
+            setError(payload.detail || "메시지를 처리하지 못했습니다.");
+          }
         } catch {
           setError("채팅 이벤트를 해석하지 못했습니다.");
         }
@@ -177,6 +209,10 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
       connection.onclose = () => {
         if (!disposed && socket.current === connection) {
           setStatus("offline");
+          if (sendingRef.current) {
+            finishSending();
+            setError("연결이 끊겨 전송을 확인하지 못했습니다. 작성한 내용을 다시 전송할 수 있습니다.");
+          }
           reconnect.current = window.setTimeout(connect, 1500);
         }
       };
@@ -189,7 +225,7 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
       socket.current = null;
       setStatus("offline");
     };
-  }, [loadParticipants, merge]);
+  }, [finishSending, loadMessages, loadParticipants, merge]);
 
   useEffect(() => {
     if (open && timeline.current) timeline.current.scrollTop = timeline.current.scrollHeight;
@@ -198,14 +234,26 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
   function send(event: FormEvent) {
     event.preventDefault();
     const value = body.trim();
-    if (!value || !selectedId || !socket.current || socket.current.readyState !== WebSocket.OPEN) return;
-    socket.current.send(JSON.stringify({
-      type: "chat.message.create",
-      client_message_id: crypto.randomUUID(),
-      recipient_id: selectedId,
-      body: value,
-    }));
-    setBody("");
+    if (!value || !selectedId || sendingRef.current || !socket.current || socket.current.readyState !== WebSocket.OPEN) return;
+    const previous = pendingSend.current;
+    const pending = {
+      client_message_id: previous?.body === value && previous.recipient_id === selectedId ? previous.client_message_id : crypto.randomUUID(),
+      recipient_id: selectedId, body: value, draft: body,
+    };
+    pendingSend.current = pending;
+    sendingRef.current = true;
+    setSending(true);
+    setError("");
+    try {
+      socket.current.send(JSON.stringify({ type: "chat.message.create", client_message_id: pending.client_message_id, recipient_id: selectedId, body: value }));
+      sendTimer.current = setTimeout(() => {
+        finishSending();
+        setError("전송 확인이 지연되고 있습니다. 같은 내용을 다시 전송해도 중복 저장되지 않습니다.");
+      }, 15000);
+    } catch {
+      finishSending();
+      setError("메시지를 전송하지 못했습니다. 다시 시도해 주세요.");
+    }
   }
 
   function startLauncherDrag(event: ReactPointerEvent<HTMLButtonElement>) {
@@ -284,7 +332,7 @@ export function SoomChatPanel({ authorizedFetch }: { authorizedFetch: Authorized
                   </div>
                   <form onSubmit={send} className="shrink-0 border-t border-slate-200 bg-white p-3">
                     {error && <p role="alert" className="mb-2 text-xs text-rose-600">{error}</p>}
-                    <div className="flex gap-2"><textarea value={body} onChange={(event) => setBody(event.target.value)} className="min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-slate-200 p-2.5 text-xs focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder={`${selected.name}님에게 메시지 보내기`} maxLength={2000} /><button type="submit" disabled={!body.trim() || status !== "connected"} className="self-end rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:bg-slate-300">전송</button></div>
+                    <div className="flex gap-2"><textarea value={body} onChange={(event) => setBody(event.target.value)} className="min-h-10 min-w-0 flex-1 resize-none rounded-xl border border-slate-200 p-2.5 text-xs focus:border-blue-400 focus:outline-none focus:ring-2 focus:ring-blue-100" placeholder={`${selected.name}님에게 메시지 보내기`} maxLength={2000} /><button type="submit" disabled={sending || !body.trim() || status !== "connected"} className="self-end rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-semibold text-white disabled:bg-slate-300">{sending ? "전송 중…" : "전송"}</button></div>
                   </form>
                 </>
               ) : <div className="flex flex-1 items-center justify-center"><p className="text-sm text-slate-400">왼쪽에서 대화 상대를 선택하세요.</p></div>}

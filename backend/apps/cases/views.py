@@ -1182,7 +1182,7 @@ class DoctorTreatmentOpinionAPIView(APIView):
             and self._is_current_opinion(existing_opinion.opinion)
         ):
             return Response(TreatmentAIOpinionSerializer(existing_opinion).data)
-        prescription = Prescription.objects.filter(case=case).prefetch_related("items", "safety_check_results").order_by("-created_at").first()
+        prescription = Prescription.objects.filter(case=case).prefetch_related("items__drug", "safety_check_results").order_by("-created_at").first()
         prescription_data = {"prescription_available": prescription is not None}
         safety_data = {"safety_status": "safety_not_run", "results": []}
         if prescription:
@@ -1208,7 +1208,7 @@ class DoctorTreatmentOpinionAPIView(APIView):
             "prescription": prescription_data, "safety": safety_data}
         try:
             opinion = request_chat_completion([{"role": "system", "content": self.SYSTEM_PROMPT},
-                {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str)}], max_tokens=900, temperature=0)
+                {"role": "user", "content": json.dumps(prompt_context, ensure_ascii=False, default=str, separators=(',', ':'))}], max_tokens=900, temperature=0)
             if not self._is_current_opinion(opinion):
                 opinion = request_chat_completion([
                     {"role": "system", "content": self.KOREAN_REPAIR_PROMPT},

@@ -279,7 +279,11 @@ async def global_chat_endpoint(websocket: WebSocket):
             if not isinstance(body, str) or not body.strip() or len(body.strip()) > 2000:
                 continue
             payload["body"] = body.strip()
-            response = await _store_global_message(token, payload)
+            try:
+                response = await _store_global_message(token, payload)
+            except httpx.HTTPError:
+                await _send_error(websocket, "STORE_UNAVAILABLE", "메시지 저장 서버에 연결하지 못했습니다. 다시 시도해 주세요.")
+                continue
             if response.status_code in (200, 201):
                 stored = response.json()
                 event = {"type": "chat.message.created", "message": stored["message"]}
@@ -287,6 +291,8 @@ async def global_chat_endpoint(websocket: WebSocket):
                     await redis_client.publish(f"chat:{room}", json.dumps(event, ensure_ascii=False))
                 else:
                     await websocket.send_json(event)
+            else:
+                await _send_error(websocket, "STORE_FAILED", "메시지를 저장하지 못했습니다. 다시 시도해 주세요.")
     except (WebSocketDisconnect, json.JSONDecodeError):
         pass
     finally:

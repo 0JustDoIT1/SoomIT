@@ -77,7 +77,7 @@ def generate_medical_opinion(case, instruction="임상 결과를 종합한 간�
                 "content": (
                     f"작성 요청:\n{instruction}\n\n"
                     "비식별 임상 데이터:\n"
-                    f"{json.dumps(payload, ensure_ascii=False, default=str)}"
+                    f"{json.dumps(payload, ensure_ascii=False, default=str, separators=(',', ':'))}"
                 ),
             },
         ],

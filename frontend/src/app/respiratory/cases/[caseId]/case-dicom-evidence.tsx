@@ -277,7 +277,10 @@ export function CaseDicomEvidence({ apiBaseUrl, authorizedFetch, caseId, stage }
     })
       .then((nextAnnotations) => {
         if (!active || annotationRequestRef.current !== requestKey) return;
-        setAnnotations(nextAnnotations);
+        // A delayed initial GET must not discard drafts or completed saves.
+        setAnnotations((current) => Array.from(new Map(
+          [...nextAnnotations, ...current].map((annotation) => [annotation.id, annotation]),
+        ).values()));
       })
       .catch((cause: unknown) => {
         if (!active || annotationRequestRef.current !== requestKey) return;
