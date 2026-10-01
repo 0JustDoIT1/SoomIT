@@ -81,17 +81,17 @@ export function AiSummaryPanel({ currentStage, aiResults, clinicalResults, treat
 
   return (
     <section className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <header className="flex items-start justify-between gap-4 border-b border-slate-200 px-4 py-2.5">
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 px-4 py-2.5">
         <div>
-          <p className="text-[10px] font-semibold text-blue-600">조회 전용 진료 지원</p>
+          <p className="text-[13px] font-semibold text-blue-600">조회 전용 진료 지원</p>
           <h1 className="mt-0.5 text-base font-bold text-slate-900">AI 종합 분석</h1>
-          <p className="mt-1 text-xs text-slate-600">검사별 AI 분석 후보와 의료진 확정 결과를 한 화면에서 비교합니다.</p>
+          <p className="mt-1 text-sm text-slate-600">검사별 AI 분석 후보와 의료진 확정 결과를 한 화면에서 비교합니다.</p>
         </div>
-        <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[10px] font-semibold text-amber-700">AI 결과는 확정 진단이 아닙니다</span>
+        <span className="shrink-0 rounded-full border border-amber-200 bg-amber-50 px-3 py-1.5 text-[13px] font-semibold text-amber-700">AI 결과는 확정 진단이 아닙니다</span>
       </header>
 
       {error && (
-        <div className="m-3 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-xs text-rose-700" role="alert">
+        <div className="m-3 flex items-center justify-between gap-3 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700" role="alert">
           <span>{error}</span>
           {onRetry && <button type="button" onClick={onRetry} disabled={retrying} className="shrink-0 rounded-md border border-rose-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-50">{retrying ? "재시도 중" : "다시 시도"}</button>}
         </div>
@@ -99,36 +99,36 @@ export function AiSummaryPanel({ currentStage, aiResults, clinicalResults, treat
 
       {selected ? <div className="grid min-h-0 flex-1 grid-cols-1 border-t border-slate-200 lg:grid-cols-[minmax(220px,35fr)_minmax(0,65fr)]">
         <AnalysisMasterList rows={analysisRows} selectedType={selected.type} onSelect={setSelectedType} />
-        <article className="min-h-0 overflow-y-auto p-3 [scrollbar-gutter:stable]" role="tabpanel" aria-label={`${selected.label} 분석 결과`}>
+        <article className="min-h-0 min-w-0 overflow-y-auto p-4 [scrollbar-gutter:stable]" role="tabpanel" aria-label={`${selected.label} 분석 결과`}>
           <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-            <div><p className="text-[10px] font-semibold text-blue-600">선택한 분석 항목</p><h2 className="mt-0.5 text-sm font-bold text-slate-900">{selected.label}</h2></div>
+            <div><p className="text-[13px] font-semibold text-blue-600">선택한 분석 항목</p><h2 className="mt-0.5 text-sm font-bold text-slate-900">{selected.label}</h2></div>
             <StatusBadge status={selected.ai?.status} label={selected.ai?.status_label} />
           </div>
           <div className="mt-3 grid min-h-0 grid-cols-1 overflow-hidden rounded-lg border border-slate-200 md:grid-cols-2 md:divide-x md:divide-slate-200"><SummaryColumn source="AI 소견" tone="blue" primary={getAiDisplaySummary(selected.type, selected.ai)} secondary={getModelLabel(selected.ai)} /><SummaryColumn source="전문과 의료진 확정 소견" tone="emerald" primary={getClinicalSummary(selected.type, selected.clinical)} secondary={formatDate(selected.clinical?.result_date)} /></div>
           {selected.type === "PATHOLOGY_GENE_ANALYSIS" && <GeneResultDetails aiDetail={selected.ai?.status === "SUCCEEDED" ? selected.ai.result_detail : null} clinicalDetail={selected.clinical?.result_detail} />}
           <ComparisonBadge comparison={compareResults(selected.type, selected.ai, selected.clinical)} />
-          {selected.ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[10px] text-rose-700">{selected.ai.error_message}</p>}
+          {selected.ai?.error_message && <p className="border-t border-rose-100 bg-rose-50 px-3 py-2 text-[13px] text-rose-700">{selected.ai.error_message}</p>}
         </article>
-      </div> : <div className="flex min-h-0 flex-1 items-center justify-center border-t border-slate-200 px-6 text-center text-xs text-slate-500" role="status">현재 workflow에서 확정 완료된 분석 결과가 없습니다.</div>}
-      <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[10px] leading-4 text-slate-500">이 화면에서는 AI 분석을 실행하거나 결과를 확정하지 않습니다. 최종 진단과 치료 결정은 의료진 확정 결과를 기준으로 합니다.</p>
+      </div> : <div className="flex min-h-0 flex-1 items-center justify-center border-t border-slate-200 px-6 text-center text-sm text-slate-500" role="status">현재 workflow에서 확정 완료된 분석 결과가 없습니다.</div>}
+      <p className="border-t border-slate-200 bg-slate-50 px-4 py-2 text-[13px] leading-5 text-slate-500">이 화면에서는 AI 분석을 실행하거나 결과를 확정하지 않습니다. 최종 진단과 치료 결정은 의료진 확정 결과를 기준으로 합니다.</p>
     </section>
   );
 }
 
 function SummaryColumn({ source, tone, primary, secondary }: { source: string; tone: "blue" | "emerald"; primary: string; secondary: string }) {
-  return <div className="min-w-0 p-3"><p className={`text-[9px] font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{source}</p><p className="mt-1.5 break-words text-xs font-bold text-slate-800">{primary}</p><p className="mt-1.5 truncate text-[9px] text-slate-400">{secondary}</p></div>;
+  return <div className="min-w-0 p-4"><p className={`text-xs font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{source}</p><p className="mt-2 break-words text-base leading-6 font-bold text-slate-800">{primary}</p><p className="mt-2 break-words text-xs leading-5 text-slate-500">{secondary}</p></div>;
 }
 
 function AnalysisMasterList({ rows, selectedType, onSelect }: { rows: { type: string; label: string; ai?: AiSummaryResult; clinical?: ClinicalSummaryResult }[]; selectedType: string; onSelect: (analysisType: string) => void }) {
   return <aside className="min-h-0 overflow-y-auto border-b border-slate-200 bg-slate-50/70 p-2 [scrollbar-gutter:stable] lg:border-b-0 lg:border-r" aria-label="검사별 AI 분석 목록">
-    <p className="px-1 pb-2 text-[10px] font-bold text-slate-500">검사별 결과</p>
-    <div className="space-y-1.5">
+    <p className="px-1 pb-2 text-[13px] font-bold text-slate-500">검사별 결과</p>
+    <div className="space-y-2">
       {rows.map((row) => {
         const selected = row.type === selectedType;
-        return <button key={row.type} type="button" aria-pressed={selected} onClick={() => onSelect(row.type)} className={`block w-full rounded-lg border p-2.5 text-left transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${selected ? "border-blue-400 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:border-blue-300"}`}>
-          <div className="flex items-center justify-between gap-2"><span className="truncate text-[11px] font-bold text-slate-800">{row.label}</span><StatusBadge status={row.ai?.status} label={row.ai?.status_label} /></div>
-          <p className="mt-1 truncate text-[10px] text-slate-700"><span className="mr-1 font-semibold text-blue-600">AI</span>{getAiDisplaySummary(row.type, row.ai)}</p>
-          <p className="mt-1 truncate text-[10px] text-slate-500"><span className="mr-1 font-semibold text-emerald-600">확정</span>{getClinicalSummary(row.type, row.clinical)}</p>
+        return <button key={row.type} type="button" aria-pressed={selected} onClick={() => onSelect(row.type)} className={`block w-full rounded-lg border p-3 text-left transition focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 ${selected ? "border-blue-400 bg-blue-50 shadow-sm" : "border-slate-200 bg-white hover:border-blue-300"}`}>
+          <div className="flex items-center justify-between gap-2"><span className="min-w-0 break-keep text-sm font-bold text-slate-800">{row.label}</span><StatusBadge status={row.ai?.status} label={row.ai?.status_label} /></div>
+          <p className="mt-1.5 break-words text-[13px] leading-5 text-slate-700"><span className="mr-1 font-semibold text-blue-600">AI</span>{getAiDisplaySummary(row.type, row.ai)}</p>
+          <p className="mt-1.5 break-words text-[13px] leading-5 text-slate-500"><span className="mr-1 font-semibold text-emerald-600">확정</span>{getClinicalSummary(row.type, row.clinical)}</p>
         </button>;
       })}
     </div>
@@ -137,7 +137,7 @@ function AnalysisMasterList({ rows, selectedType, onSelect }: { rows: { type: st
 
 function StatusBadge({ status, label }: { status?: string; label?: string }) {
   const color = status === "SUCCEEDED" ? "bg-blue-50 text-blue-700" : status === "FAILED" ? "bg-rose-50 text-rose-700" : status ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500";
-  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-semibold ${color}`} title={label && label !== getAnalysisStatusLabel(status) ? label : undefined}>{getAnalysisStatusLabel(status)}</span>;
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${color}`} title={label && label !== getAnalysisStatusLabel(status) ? label : undefined}>{getAnalysisStatusLabel(status)}</span>;
 }
 
 export function selectPreferredAiResult(results: AiSummaryResult[], analysisType: string) {
@@ -165,7 +165,7 @@ function resultTimestamp(result: AiSummaryResult) {
 
 function ComparisonBadge({ comparison }: { comparison: Comparison }) {
   const styles = comparison.state === "MATCH" ? "bg-emerald-50 text-emerald-700" : comparison.state === "DIFFERENT" ? "bg-amber-50 text-amber-700" : "bg-slate-50 text-slate-500";
-  return <div className="border-t border-slate-200 px-3 py-2" aria-label="AI와 의료진 결과 비교"><div className="flex items-center justify-between gap-2"><span className="text-[9px] text-slate-400">결과 비교</span><span className={`rounded-full px-2 py-0.5 text-[9px] font-semibold ${styles}`}>{comparison.label}</span></div>{comparison.differences.length > 0 && <ul className="mt-2 space-y-1 border-t border-amber-100 pt-2" aria-label="결과 차이 항목">{comparison.differences.map((difference) => <li key={difference.label} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 text-[9px]"><span className="font-semibold text-slate-600">{difference.label}</span><span className="min-w-0 break-words text-right"><span className="font-medium text-blue-700">AI {formatComparable(difference.ai)}</span><span className="text-slate-400"> / </span><span className="font-medium text-emerald-700">의료진 {formatComparable(difference.clinical)}</span></span></li>)}</ul>}</div>;
+  return <div className="border-t border-slate-200 px-3 py-2" aria-label="AI와 의료진 결과 비교"><div className="flex items-center justify-between gap-2"><span className="text-xs text-slate-500">결과 비교</span><span className={`rounded-full px-2 py-0.5 text-xs font-semibold ${styles}`}>{comparison.label}</span></div>{comparison.differences.length > 0 && <ul className="mt-2 space-y-1 border-t border-amber-100 pt-2" aria-label="결과 차이 항목">{comparison.differences.map((difference) => <li key={difference.label} className="grid grid-cols-[auto_minmax(0,1fr)] gap-2 text-xs"><span className="font-semibold text-slate-600">{difference.label}</span><span className="min-w-0 break-words text-right"><span className="font-medium text-blue-700">AI {formatComparable(difference.ai)}</span><span className="text-slate-500"> / </span><span className="font-medium text-emerald-700">의료진 {formatComparable(difference.clinical)}</span></span></li>)}</ul>}</div>;
 }
 
 function getCompletedClinicalResult(type: string, examTypes: readonly string[], results: ClinicalSummaryResult[], treatmentDecision?: TreatmentSummaryDecision | null, prescriptions: PrescriptionSummary[] = []) {
@@ -292,8 +292,8 @@ function GeneResultDetails({ aiDetail, clinicalDetail }: { aiDetail: unknown; cl
 
   return (
     <details className="border-t border-slate-200 bg-slate-50/50 px-3 py-2">
-      <summary className="cursor-pointer select-none text-[10px] font-semibold text-blue-700">유전자 전체 보기</summary>
-      <div className="mt-2 grid grid-cols-2 gap-3" aria-label="전체 유전자 결과">
+      <summary className="cursor-pointer select-none text-[13px] font-semibold text-blue-700">유전자 전체 보기</summary>
+      <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2" aria-label="전체 유전자 결과">
         <GeneResultList title="AI 분석 후보" items={aiGenes} statusKey="predicted_status_label" tone="blue" />
         <GeneResultList title="의료진 확정 결과" items={clinicalGenes} statusKey="assessment_label" tone="emerald" />
       </div>
@@ -302,7 +302,7 @@ function GeneResultDetails({ aiDetail, clinicalDetail }: { aiDetail: unknown; cl
 }
 
 function GeneResultList({ title, items, statusKey, tone }: { title: string; items: unknown[]; statusKey: string; tone: "blue" | "emerald" }) {
-  return <section className="min-w-0"><h3 className={`text-[9px] font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{title}</h3>{items.length ? <ul className="mt-1.5 space-y-1">{items.map((item, index) => { const gene = asRecord(item); return <li key={`${String(gene?.gene_symbol ?? "gene")}-${index}`} className="flex items-start justify-between gap-2 rounded bg-white px-2 py-1.5 text-[9px]"><span className="font-semibold text-slate-700">{String(gene?.gene_symbol ?? "-")}</span><span className="min-w-0 break-words text-right text-slate-500">{String(gene?.[statusKey] ?? "-")}</span></li>; })}</ul> : <p className="mt-2 text-[9px] text-slate-400">결과 없음</p>}</section>;
+  return <section className="min-w-0"><h3 className={`text-xs font-semibold ${tone === "blue" ? "text-blue-600" : "text-emerald-600"}`}>{title}</h3>{items.length ? <ul className="mt-1.5 space-y-1">{items.map((item, index) => { const gene = asRecord(item); return <li key={`${String(gene?.gene_symbol ?? "gene")}-${index}`} className="flex items-start justify-between gap-2 rounded bg-white px-2 py-1.5 text-xs"><span className="font-semibold text-slate-700">{String(gene?.gene_symbol ?? "-")}</span><span className="min-w-0 break-words text-right text-slate-500">{String(gene?.[statusKey] ?? "-")}</span></li>; })}</ul> : <p className="mt-2 text-xs text-slate-500">결과 없음</p>}</section>;
 }
 
 function summarizeGeneItems(items: unknown[], statusKey: string) {

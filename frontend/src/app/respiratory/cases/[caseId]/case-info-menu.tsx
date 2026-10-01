@@ -16,7 +16,7 @@ const ITEMS: { key: CaseInfoKey; label: string; displayLabel: string }[] = [
   { key: "PATHOLOGY_GENE", label: "조직/유전자", displayLabel: "조직 / 유전자" },
   { key: "PDL1", label: "PD-L1", displayLabel: "PD-L1" },
   { key: "AI_SUMMARY", label: "AI 종합 분석", displayLabel: "AI 종합 분석" },
-  { key: "TREATMENT", label: "치료계획·처방", displayLabel: "치료계획·처방" },
+  { key: "TREATMENT", label: "치료계획·처방", displayLabel: "치료·처방" },
 ];
 
 const NAVIGATION_GROUPS: { label: string; keys: CaseInfoKey[] }[] = [
@@ -209,7 +209,8 @@ export function CaseInfoMenu({
                   const locked = access.state === "LOCKED";
                   const selectedItem = selected === item.key;
                   const isCurrent = item.key === currentStage;
-                  const showStatus = item.key !== "AI_SUMMARY";
+                  const isAiSummary = item.key === "AI_SUMMARY";
+                  const showStatus = !isAiSummary;
 
                   return (
                     <button
@@ -224,6 +225,10 @@ export function CaseInfoMenu({
                       className={`group relative flex w-full items-center gap-1.5 rounded-lg px-2 py-2 text-left transition focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-300 ${
                         locked
                           ? "cursor-not-allowed text-slate-300"
+                          : isAiSummary
+                            ? selectedItem
+                              ? "bg-violet-100 text-violet-800 ring-1 ring-violet-300 shadow-sm"
+                              : "bg-violet-50 text-violet-700 ring-1 ring-violet-100 hover:bg-violet-100 hover:ring-violet-300"
                           : selectedItem
                             ? "bg-blue-50 text-blue-800 ring-1 ring-blue-100"
                             : "text-slate-700 hover:bg-white hover:text-blue-700"
@@ -232,7 +237,7 @@ export function CaseInfoMenu({
                       {selectedItem && (
                         <span
                           aria-hidden="true"
-                          className="absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full bg-blue-600"
+                          className={`absolute left-0 top-1.5 bottom-1.5 w-0.5 rounded-r-full ${isAiSummary ? "bg-violet-600" : "bg-blue-600"}`}
                         />
                       )}
 
@@ -240,8 +245,10 @@ export function CaseInfoMenu({
                         className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-md transition ${
                           locked
                             ? "bg-slate-100 text-slate-300"
-                            : selectedItem
-                              ? "bg-blue-600 text-white"
+                            : isAiSummary
+                              ? "bg-violet-600 text-white shadow-sm"
+                              : selectedItem
+                                ? "bg-blue-600 text-white"
                               : access.state === "COMPLETED"
                                 ? "bg-emerald-50 text-emerald-700"
                                 : access.state === "WAITING"
@@ -278,12 +285,12 @@ export function CaseInfoMenu({
                             <span
                               aria-hidden="true"
                               className={`h-1.5 w-1.5 shrink-0 rounded-full ${
-                                selectedItem ? "bg-blue-500" : "bg-slate-300"
+                                selectedItem ? "bg-violet-600" : "bg-violet-500"
                               }`}
                             />
                             <span
                               className={`whitespace-nowrap text-[11px] font-semibold leading-3.5 ${
-                                selectedItem ? "text-blue-700" : "text-slate-400"
+                                selectedItem ? "text-violet-800" : "text-violet-700"
                               }`}
                             >
                               {selectedItem ? "확인 중" : "조회"}
