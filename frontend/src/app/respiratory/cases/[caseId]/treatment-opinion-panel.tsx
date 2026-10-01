@@ -14,6 +14,21 @@ type Props = {
   treatmentPlan?: string;
 };
 
+const DEMO_TREATMENT_OPINION: TreatmentOpinionResponse = {
+  status: "CONFIRMED_DATA_FALLBACK_V3",
+  opinion: JSON.stringify({
+    xray_summary: "흉부 X-ray에서 좌측 폐결절 의심부위가 확인되었다. 이에 따라 흉부 CT 추가 검사를 권고하였다.",
+    ct_summary: "후속 흉부 CT에서 1번 결절(최대 28.79 mm), 악성 위험도 93.11%가 확인되었다.",
+    staging_summary: "병기 평가를 위해 시행한 PET-CT/TNM 검토 결과 T1c N0 M0, Stage IA3로 확정되었다.",
+    pathology_biomarker_summary: "조직검사에서 악성 폐선암이 확인되었다. 유전자 검사에서 EGFR exon 19 결실 및 TP53 변이 소견이 확인되었다. 그 외 검사된 주요 유전자 6개에서는 양성 변이가 확인되지 않았다. PD-L1 TPS는 0.00%로 확정되었다.",
+    treatment_summary: "이상의 Stage IA3, 폐선암, EGFR exon 19 결실, TP53 변이 결과를 근거로 오시머티닙(R1) 표적치료를 선택하였다. EGFR 변이를 근거로 Osimertinib 기반 표적치료를 계획하였다.",
+    safety_follow_up: "현재 상태는 '처방 안전성 검토 전'이다. 기록된 처방 차단 또는 미해결 경고는 없다. 치료 시작 전 의료진의 최종 안전성 확인과 치료계획에 따른 추적 관찰이 필요하다.",
+  }),
+  sources: [],
+  safety_status: "safety_not_run",
+  review_required: true,
+};
+
 export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, readOnly = false, selectedRegimenId, treatmentType = "", treatmentPlan = "" }: Props) {
   const [aiOpinion, setAiOpinion] = useState<TreatmentOpinionResponse | null>(null);
   const [loadedAiCaseId, setLoadedAiCaseId] = useState<string | null>(null);
@@ -25,11 +40,27 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
   const [physicianError, setPhysicianError] = useState("");
   const generatingRef = useRef(false);
   const savingRef = useRef(false);
+  const demoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancelDemoRef = useRef<(() => void) | null>(null);
+  const demoGenerationEpochRef = useRef(0);
+  const mountedRef = useRef(true);
   const loadingPhysicianOpinion = loadedPhysicianCaseId !== caseId;
   const loadingAiOpinion = loadedAiCaseId !== caseId;
   const currentAiOpinion = loadingAiOpinion ? null : aiOpinion;
   const currentPhysicianOpinion = loadingPhysicianOpinion ? "" : physicianOpinion;
   const canGenerate = Boolean(selectedRegimenId);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      demoGenerationEpochRef.current += 1;
+      if (demoTimerRef.current !== null) clearTimeout(demoTimerRef.current);
+      demoTimerRef.current = null;
+      cancelDemoRef.current?.();
+      cancelDemoRef.current = null;
+    };
+  }, [caseId]);
 
   useEffect(() => {
     let active = true;
@@ -71,23 +102,36 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
 
   const generate = async () => {
     if (!selectedRegimenId || generatingRef.current || loadingAiOpinion) return;
+    const demoGenerationEpoch = demoGenerationEpochRef.current;
     const toastId = `case-treatment-ai-${caseId}`;
     generatingRef.current = true;
     setGenerating(true);
     setAiError("");
     showToast.info("진료 종합 소견 생성을 시작했습니다.", { id: toastId });
     try {
-      const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-opinion/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          selected_regimen: selectedRegimenId,
-          treatment_type: treatmentType,
-          treatment_plan: treatmentPlan,
-        }),
-      });
-      const body = await response.json().catch(() => ({})) as TreatmentOpinionResponse & { detail?: string };
-      if (!response.ok) throw new Error(body.detail || body.status || "Treatment opinion request failed.");
+      let body: TreatmentOpinionResponse & { detail?: string };
+      if (process.env.NEXT_PUBLIC_TREATMENT_OPINION_DEMO === "true") {
+        const demoResult = await new Promise<TreatmentOpinionResponse | null>((resolve) => {
+          cancelDemoRef.current = () => resolve(null);
+          demoTimerRef.current = setTimeout(() => resolve(DEMO_TREATMENT_OPINION), 5_000);
+        });
+        demoTimerRef.current = null;
+        cancelDemoRef.current = null;
+        if (!demoResult || !mountedRef.current || demoGenerationEpoch !== demoGenerationEpochRef.current) return;
+        body = demoResult;
+      } else {
+        const response = await authorizedFetch(`${apiBaseUrl}/api/doctor/cases/${caseId}/treatment-opinion/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            selected_regimen: selectedRegimenId,
+            treatment_type: treatmentType,
+            treatment_plan: treatmentPlan,
+          }),
+        });
+        body = await response.json().catch(() => ({})) as TreatmentOpinionResponse & { detail?: string };
+        if (!response.ok) throw new Error(body.detail || body.status || "Treatment opinion request failed.");
+      }
       if (!isLongitudinalOpinion(body.opinion)) throw new Error("단계별 종합 소견 형식이 아닙니다. 백엔드 적용 상태를 확인해주세요.");
       setAiOpinion(body);
       setLoadedAiCaseId(caseId);
@@ -99,7 +143,7 @@ export function TreatmentOpinionPanel({ caseId, apiBaseUrl, authorizedFetch, rea
       showToast.error(detail, { id: toastId });
     } finally {
       generatingRef.current = false;
-      setGenerating(false);
+      if (mountedRef.current && demoGenerationEpoch === demoGenerationEpochRef.current) setGenerating(false);
     }
   };
 

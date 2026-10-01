@@ -21,6 +21,7 @@ import { getClinicalResultHttpError, getClinicalResultNetworkError } from "./cli
 import { TreatmentPrescriptionOverview } from "./treatment-prescription-overview";
 import { TreatmentDecisionPanel } from "./treatment-decision-panel";
 import { PrescriptionPanel } from "./prescription-panel";
+import { ConfirmActionDialog } from "@/components/ui/confirm-action-dialog";
 import { AiSummaryPanel, selectPreferredAiResult } from "./ai-summary-panel";
 import { KnowledgeRagPanel } from "./knowledge-rag-panel";
 import { CaseChangeDialog } from "./case-change-dialog";
@@ -569,6 +570,7 @@ export default function RespiratoryCaseDetailPage() {
   useState("");
   const [casePrescriptionWorking, setCasePrescriptionWorking] =
   useState(false);
+  const [pendingPrescriptionFinalization, setPendingPrescriptionFinalization] = useState<{ id: string; schedules: FinalizeMedicationSchedule[] } | null>(null);
   const [casePrescriptionError, setCasePrescriptionError] =
   useState("");
   const [casePrescriptionMessage, setCasePrescriptionMessage] =
@@ -1745,13 +1747,11 @@ export default function RespiratoryCaseDetailPage() {
     medicationSchedules: FinalizeMedicationSchedule[] = []
   ) => {
     if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
+    setPendingPrescriptionFinalization({ id: prescriptionId, schedules: medicationSchedules });
+  };
 
-    const confirmed = window.confirm(
-      "처방을 최종 확정하면 이후 수정할 수 없습니다.\n계속하시겠습니까?"
-    );
-
-    if (!confirmed) return;
-
+  const executeCasePrescriptionFinalize = async (prescriptionId: string, medicationSchedules: FinalizeMedicationSchedule[]) => {
+    if (!caseId || selectedCase?.case_status !== "ACTIVE" || selectedCase.current_stage !== "PRESCRIPTION" || casePrescriptionWorking) return;
     const toastId = `case-prescription-finalize-${caseId}-${prescriptionId}`;
     try {
       setCasePrescriptionWorking(true);
@@ -2555,7 +2555,7 @@ export default function RespiratoryCaseDetailPage() {
               >
                 {casePrescriptionWorking
                   ? "생성 중..."
-                  : "임시 처방 생성"}
+                  : "처방 생성"}
               </button>
 
               <p className="mt-3 text-[11px] leading-5 text-slate-400">
@@ -3239,6 +3239,7 @@ export default function RespiratoryCaseDetailPage() {
       <div aria-label="Case 지원 도구 공간" className="h-10 shrink-0" />
         </div>
         {pendingCaseId && <CaseChangeDialog onCancel={() => setPendingCaseId(null)} onDiscard={discardDraftAndMove} returnFocusRef={caseTriggerRef} />}
+        {pendingPrescriptionFinalization && <ConfirmActionDialog title="처방 최종 확정" description="처방을 확정하시겠습니까? 확정 후에는 처방 내용을 수정할 수 없습니다." supportingText="선택한 치료요법과 용량을 다시 확인해 주세요." confirmLabel="처방 확정" tone="blue" onCancel={() => setPendingPrescriptionFinalization(null)} onConfirm={() => { const { id, schedules } = pendingPrescriptionFinalization; setPendingPrescriptionFinalization(null); void executeCasePrescriptionFinalize(id, schedules); }} />}
       </div>
       </div>
     </>

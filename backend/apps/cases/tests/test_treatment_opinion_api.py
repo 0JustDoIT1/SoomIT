@@ -112,7 +112,7 @@ class DoctorTreatmentOpinionAPITests(SimpleTestCase):
     @patch("apps.cases.views.DoctorClinicalResultSerializer")
     def test_confirmed_clinical_journey_is_sorted_in_workflow_order(self, serializer):
         manager = MagicMock()
-        queryset = manager.filter.return_value.order_by.return_value
+        queryset = manager.filter.return_value.select_related.return_value.prefetch_related.return_value.order_by.return_value
         serializer.return_value.data = [
             {"workflow_stage": "PDL1", "result_detail": {"pdl1": {"tps_percent": 10}}},
             {"workflow_stage": "XRAY", "result_detail": {"xray": {"assessment": "SUSPICIOUS"}}},
@@ -126,6 +126,28 @@ class DoctorTreatmentOpinionAPITests(SimpleTestCase):
         manager.filter.assert_called_once_with(result_status="CONFIRMED")
         serializer.assert_called_once_with(queryset, many=True)
         self.assertEqual([item["workflow_stage"] for item in journey], ["XRAY", "CT", "PDL1"])
+
+    def test_prompt_removes_duplicate_excerpts_but_preserves_clinical_and_safety_data(self):
+        evidence = self.available_evidence()
+        excerpt = "NCI treatment evidence " * 100
+        evidence["evidence"] = {"context": excerpt, "sources": [
+            {"document": "NCI", "source_uri": "https://example.test/nci", "excerpt": excerpt, "distance": 0.1},
+        ]}
+        journey = [{"id": "result-id", "result_status": "CONFIRMED", "exam_name": "CT",
+                    "workflow_stage": "CT", "result_date": "2026-09-30",
+                    "result_detail": {"ct": {"finding_summary": "확정 소견", "overall_malignancy_risk": 0}}}]
+        safety = {"safety_status": "block_present", "results": [{"message": "차단 사유"}]}
+        result = DoctorTreatmentOpinionAPIView._opinion_prompt_context(journey, evidence, {}, {}, safety)
+        self.assertEqual(result["confirmed_clinical_journey"][0]["result_detail"], journey[0]["result_detail"])
+        self.assertEqual(result["confirmed_clinical_journey"][0]["result_date"], "2026-09-30")
+        self.assertEqual(result["safety"], safety)
+        self.assertEqual(result["evidence"]["context"], excerpt)
+        self.assertNotIn("excerpt", result["evidence"]["sources"][0])
+        self.assertIn("excerpt", evidence["evidence"]["sources"][0])
+        self.assertLess(len(json.dumps(result["evidence"])), len(json.dumps(evidence["evidence"])) * 0.6)
+        del evidence["evidence"]["context"]
+        result = DoctorTreatmentOpinionAPIView._opinion_prompt_context(journey, evidence, {}, {}, safety)
+        self.assertEqual(result["evidence"]["sources"][0]["excerpt"], excerpt)
 
     def test_confirmed_data_fallback_keeps_each_diagnostic_stage(self):
         journey = [

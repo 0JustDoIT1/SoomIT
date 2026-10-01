@@ -5,13 +5,17 @@ import { useEffect, useId, useRef } from "react";
 export function ConfirmActionDialog({
   title,
   description,
+  supportingText,
   confirmLabel,
+  tone = "danger",
   onCancel,
   onConfirm,
 }: {
   title: string;
   description: string;
+  supportingText?: string;
   confirmLabel: string;
+  tone?: "danger" | "blue";
   onCancel: () => void;
   onConfirm: () => void;
 }) {
@@ -39,12 +43,18 @@ export function ConfirmActionDialog({
 
   return (
     <dialog ref={dialogRef} onCancel={(event) => { event.preventDefault(); onCancel(); }} className="fixed inset-0 m-auto w-full max-w-md border-0 bg-transparent p-0 backdrop:bg-slate-950/50">
-      <section role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className="w-full max-w-md rounded-xl bg-white p-5 shadow-2xl">
-        <h2 id={titleId} className="text-base font-bold text-slate-900">{title}</h2>
-        <p id={descriptionId} className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+      <section role="alertdialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} className={`w-full max-w-md rounded-xl bg-white p-5 shadow-2xl ${tone === "blue" ? "border border-violet-100" : ""}`}>
+        <div className="flex items-start gap-3">
+          {tone === "blue" && <span aria-hidden="true" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-lg font-bold text-orange-500">!</span>}
+          <div>
+            <h2 id={titleId} className="text-base font-bold text-slate-900">{title}</h2>
+            <p id={descriptionId} className="mt-2 text-sm leading-6 text-slate-600">{description}</p>
+            {supportingText && <p className="mt-2 text-xs leading-5 text-slate-500">{supportingText}</p>}
+          </div>
+        </div>
         <div className="mt-5 flex justify-end gap-2">
           <button ref={cancelRef} type="button" onClick={onCancel} className="min-h-10 rounded-lg border border-slate-300 px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">취소</button>
-          <button type="button" onClick={onConfirm} className="min-h-10 rounded-lg bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700">{confirmLabel}</button>
+          <button type="button" onClick={onConfirm} className={`min-h-10 rounded-lg px-4 text-sm font-semibold text-white ${tone === "blue" ? "bg-blue-600 hover:bg-blue-700" : "bg-rose-600 hover:bg-rose-700"}`}>{confirmLabel}</button>
         </div>
       </section>
     </dialog>

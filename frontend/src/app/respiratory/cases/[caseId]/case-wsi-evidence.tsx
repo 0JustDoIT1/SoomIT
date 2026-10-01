@@ -112,6 +112,10 @@ export function CaseWsiEvidence({ apiBaseUrl, authorizedFetch, caseId, stain, fi
     overlay.draggable = false;
     overlay.style.width = "100%";
     overlay.style.height = "100%";
+    // OSD sets image-sized pixel dimensions inside a flex wrapper. Responsive
+    // image limits would squeeze the heatmap horizontally as the slide zooms.
+    overlay.style.maxWidth = "none";
+    overlay.style.flexShrink = "0";
     overlay.style.pointerEvents = "none";
     overlay.style.userSelect = "none";
     overlay.style.zIndex = "20";
