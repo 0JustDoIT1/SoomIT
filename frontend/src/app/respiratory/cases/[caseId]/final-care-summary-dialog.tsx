@@ -148,18 +148,18 @@ export function FinalCareSummaryDialog({
       <section className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl print:max-h-none print:max-w-none print:rounded-none print:shadow-none">
         <header className="flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 bg-gradient-to-r from-emerald-50 via-white to-blue-50 px-6 py-5">
           <div>
-            <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-bold text-emerald-700">FINAL</span>
+            <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-bold text-emerald-700">FINAL</span>
             <h2 id="final-care-summary-title" className="mt-2 text-xl font-bold text-slate-900">최종 진단 요약</h2>
-            <p className="mt-1 text-xs text-slate-500">확정된 진단 근거와 치료·처방 내용을 마지막으로 확인합니다.</p>
+            <p className="mt-1 text-sm text-slate-500">확정된 진단 근거와 치료·처방 내용을 마지막으로 확인합니다.</p>
           </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-slate-400 hover:bg-white hover:text-slate-700 print:hidden" aria-label="최종 진료 요약 닫기">×</button>
+          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-lg text-xl text-slate-500 hover:bg-white hover:text-slate-700 print:hidden" aria-label="최종 진료 요약 닫기">×</button>
         </header>
 
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-          {loading && <p role="status" className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700">진료 요약 정보를 불러오는 중입니다.</p>}
-          {!loading && summary.partial && <p role="status" className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">일부 진료 정보를 불러오지 못했습니다. 확정된 처방 내용은 정상적으로 표시됩니다.</p>}
+          {loading && <p role="status" className="mb-4 rounded-lg bg-blue-50 px-3 py-2 text-sm text-blue-700">진료 요약 정보를 불러오는 중입니다.</p>}
+          {!loading && summary.partial && <p role="status" className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">일부 진료 정보를 불러오지 못했습니다. 확정된 처방 내용은 정상적으로 표시됩니다.</p>}
 
-          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 text-xs sm:grid-cols-4">
+          <dl className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 text-sm sm:grid-cols-4">
             <SummaryCell label="환자" value={patientName} />
             <SummaryCell label="환자번호" value={patientCode} />
             <SummaryCell label="Case" value={caseCode} />
@@ -186,18 +186,18 @@ export function FinalCareSummaryDialog({
           <SummarySection title={`최종 처방 · Cycle ${prescription.cycle_number}`}>
             <div className="overflow-hidden rounded-xl border border-slate-200">
               {prescription.items.map((item) => (
-                <div key={item.id} className="grid gap-1 border-b border-slate-100 px-3 py-2.5 text-xs last:border-b-0 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_auto]">
-                  <p className="font-semibold text-slate-800">{item.drug_name}<span className="ml-1 font-normal text-slate-400">{item.ingredient_name}</span></p>
+                <div key={item.id} className="grid items-baseline gap-x-4 gap-y-2 break-words border-b border-slate-100 px-3 py-3 text-sm leading-6 last:border-b-0 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)_minmax(0,1fr)]">
+                  <p className="font-semibold text-slate-800">{item.drug_name}<span className="ml-1 font-normal text-slate-500">{item.ingredient_name}</span></p>
                   <p className="text-slate-600">{display(item.final_dose)}{item.unit ?? ""} · {item.route}</p>
-                  <p className="text-slate-500">{item.instructions || "-"}</p>
-                  {item.mfds_item_seq && <p className="text-[10px] text-slate-400 sm:col-span-3">MFDS ITEM_SEQ {item.mfds_item_seq}</p>}
+                  <p className="sm:text-right text-slate-600">{item.instructions || "-"}</p>
+                  {item.mfds_item_seq && <p className="text-xs text-slate-500 sm:col-span-3">MFDS ITEM_SEQ {item.mfds_item_seq}</p>}
                 </div>
               ))}
             </div>
           </SummarySection>
 
           <SummarySection title="Safety Check">
-            <div className={`rounded-xl border px-4 py-3 text-xs ${safetyPassed ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
+            <div className={`rounded-xl border px-4 py-3 text-sm ${safetyPassed ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-800"}`}>
               <p className="font-bold">{safetyPassed ? "최종 안전성 검토 완료" : "안전성 검토 기록 확인 필요"}</p>
               <p className="mt-1">PASS {prescription.safety_check_results.filter((result) => result.result === "PASS").length}건 · WARNING {prescription.safety_check_results.filter((result) => result.result === "WARNING").length}건 · BLOCK {prescription.safety_check_results.filter((result) => result.result === "BLOCK").length}건</p>
               {prescription.safety_check_results.filter((result) => result.result === "WARNING").map((result) => <p key={result.id} className="mt-1">{result.check_type_label}: {result.acknowledgment_note || result.message}</p>)}
@@ -206,8 +206,8 @@ export function FinalCareSummaryDialog({
         </div>
 
         <footer className="flex shrink-0 justify-end gap-2 border-t border-slate-200 bg-slate-50 px-6 py-4 print:hidden">
-          <button type="button" onClick={() => window.print()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">인쇄</button>
-          <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-700">확인하고 닫기</button>
+          <button type="button" onClick={() => window.print()} className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100">인쇄</button>
+          <button type="button" onClick={onClose} className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700">확인하고 닫기</button>
         </footer>
       </section>
     </div>
@@ -215,13 +215,13 @@ export function FinalCareSummaryDialog({
 }
 
 function SummaryCell({ label, value }: { label: string; value: string }) {
-  return <div className="bg-white px-3 py-2.5"><dt className="text-[10px] font-semibold text-slate-400">{label}</dt><dd className="mt-1 truncate font-semibold text-slate-700">{value}</dd></div>;
+  return <div className="min-w-0 bg-white px-3 py-3"><dt className="text-xs font-semibold text-slate-500">{label}</dt><dd className="mt-1 break-words text-[15px] font-semibold text-slate-700">{value}</dd></div>;
 }
 
 function SummarySection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="mt-5"><h3 className="mb-2 text-sm font-bold text-slate-900">{title}</h3>{children}</section>;
+  return <section className="mt-6"><h3 className="mb-3 text-sm font-bold text-slate-900">{title}</h3>{children}</section>;
 }
 
 function SummaryValue({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-xl bg-slate-50 px-3 py-2.5"><p className="text-[10px] font-semibold text-slate-400">{label}</p><p className="mt-1 text-xs font-semibold text-slate-700">{value}</p></div>;
+  return <div className="h-full min-w-0 rounded-xl bg-slate-50 px-3 py-3"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 break-words text-[15px] leading-6 font-semibold text-slate-700">{value}</p></div>;
 }
