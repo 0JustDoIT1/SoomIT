@@ -53,9 +53,22 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
   const [cycleNumber, setCycleNumber] = useState("1"); const [phase, setPhase] = useState("INDUCTION"); const [cycleStartDate, setCycleStartDate] = useState("");
   const [summaryPrescription, setSummaryPrescription] = useState<Prescription | null>(null);
   const [summaryOpen, setSummaryOpen] = useState(false);
+  const [safetyReadiness, setSafetyReadiness] = useState({ caseId, ready: false });
+  const [startDialogCaseId, setStartDialogCaseId] = useState<string | null>(null);
+  const safetyReady = safetyReadiness.caseId === caseId && safetyReadiness.ready;
+  const startDialogOpen = startDialogCaseId === caseId;
+  const setStartDialogOpen = useCallback((open: boolean) => setStartDialogCaseId(open ? caseId : null), [caseId]);
+  const setSafetyReady = useCallback((ready: boolean) => setSafetyReadiness({ caseId, ready }), [caseId]);
+  const startButtonRef = useRef<HTMLButtonElement>(null);
   const [pendingFinalization, setPendingFinalization] = useState<{ id: string; schedules: FinalizeMedicationSchedule[] } | null>(null);
   const supportedPhases = Array.from(new Set(availablePrescriptionPhases)).filter((value) => value in PHASE_LABELS);
   const selectedPhase = supportedPhases.includes(phase) ? phase : (supportedPhases[0] ?? "");
+  useEffect(() => {
+    if (!startDialogOpen) return;
+    const onKeyDown = (event: KeyboardEvent) => { if (event.key === "Escape" && !workingRef.current) { setStartDialogOpen(false); startButtonRef.current?.focus(); } };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [startDialogOpen, setStartDialogOpen]);
 
   const load = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (showLoading) setLoading(true); setError("");
@@ -80,7 +93,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
     catch (e) { const text = e instanceof Error && e.message ? e.message : REQUEST_FAILED; setError(text); if (toastId) showToast.error(text, { id: toastId }); return false; }
     finally { workingRef.current = false; setWorking(false); }
   };
-  const create = async () => { if (!actionable || workingRef.current || !requiresPrescription || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate) return; const id = `case-prescription-create-${caseId}`; showToast.info("처방을 저장하고 있습니다.", { id }); const ok = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cycle_number: Number(cycleNumber), phase: selectedPhase, cycle_start_date: cycleStartDate }) }, "처방 DRAFT가 생성되었습니다.", id); if (ok) { setCycleNumber("1"); setPhase(supportedPhases[0] ?? ""); setCycleStartDate(""); } };
+  const create = async () => { if (!actionable || workingRef.current || !requiresPrescription || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate) return; const id = `case-prescription-create-${caseId}`; showToast.info("처방을 저장하고 있습니다.", { id }); const ok = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cycle_number: Number(cycleNumber), phase: selectedPhase, cycle_start_date: cycleStartDate }) }, "처방 DRAFT가 생성되었습니다.", id); if (ok) { setCycleNumber("1"); setPhase(supportedPhases[0] ?? ""); setCycleStartDate(""); setStartDialogOpen(false); } };
   const updateItem = (prescriptionId: string, itemId: string, body: object) => request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, "처방 약물 정보가 수정되었습니다.", `case-prescription-item-${caseId}-${itemId}`, false);
   const safety = async (id: string) => {
     if (workingRef.current) return;
@@ -167,40 +180,54 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
     {active && <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 text-sm"><ol aria-label="처방 진행 상태" className="flex flex-wrap items-center gap-2">{["DRAFT", "Safety Check", "VALIDATED", "FINAL"].map((label, index) => <li key={label} aria-current={index === progressIndex ? "step" : undefined} className="flex items-center gap-2"><span className={`rounded-full px-2 py-1 font-semibold ${index === progressIndex ? "bg-blue-50 text-blue-700" : "text-slate-500"}`}>{label}</span>{index < 3 && <span aria-hidden="true" className="text-slate-300">→</span>}</li>)}</ol><span className={`rounded-full px-2 py-1 font-semibold ${isFinal ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-700"}`}>현재 상태: {active.prescription_status} · {workflowStateLabel}</span></div>}
     {!actionable && <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{waitingMessage ?? "현재 처방은 조회만 가능합니다."}</p>}
     {actionable && !requiresPrescription && <p role="status" className="rounded-lg border border-sky-200 bg-sky-50 p-3 text-sm text-sky-800">확정된 비약물 치료계획입니다. 약물 처방 없이 상단의 종료·의뢰 처리로 진행할 수 있습니다.</p>}
-      {error && <p role="alert" className="shrink-0 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{error}</p>}
+      {error && !startDialogOpen && <p role="alert" className="shrink-0 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{error}</p>}
       {visibleMessage && <p role="status" className="shrink-0 rounded-lg bg-emerald-50 p-2 text-sm text-emerald-700">{visibleMessage}</p>}
       {prescriptions.length > 0 && <label className="flex shrink-0 items-center gap-2 text-sm font-semibold text-slate-700">처방 선택<select aria-label="처방 선택" value={active?.id ?? ""} onChange={event => setSelectedPrescriptionId(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-200 p-2">{prescriptions.map(p => <option key={p.id} value={p.id}>{p.regimen_detail?.regimen_name ?? "Regimen"} · 주기 {p.cycle_number} · {p.prescription_status_label ?? p.prescription_status}</option>)}</select></label>}
-      {active ? <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)] gap-3" key={active.id}>
-        <section className="min-h-0 overflow-y-auto pr-1" aria-label="처방 약물 목록">
-          <p className="text-sm font-semibold text-slate-800">선택 Regimen: {active.regimen_detail?.regimen_code ?? "-"} · {active.regimen_detail?.regimen_name ?? "정보 없음"}</p>
-          <p className="mt-1 text-sm text-slate-500">{active.phase_label ?? "-"} · 투여 주기 {active.cycle_number} · {isFinal ? "약물·용량 조회 전용" : "약물 확인 후 최종 용량을 확인·조정해주세요."}</p>
-          {active.items.map(item => <ItemRow key={item.id} item={item} editable={actionable && ["DRAFT", "VALIDATED"].includes(active.prescription_status)} working={working} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} onSave={body => updateItem(active.id, item.id, body)} />)}
+      {active ? <div className="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_minmax(320px,0.9fr)] gap-3" key={active.id}>
+        <section className="min-h-0 overflow-y-auto pr-1" aria-label="환자 안전성 입력 영역">
           {!isFinal && <PatientSafetyDataPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} compact onDataChanged={() => void load({ showLoading: false })} />}
           {active.prescription_status === "FINAL" && <MedicationSchedulePanel caseId={caseId} prescriptionId={active.id} items={active.items} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} />}
           {creationForm}
         </section>
-        <aside className="flex min-h-0 flex-col gap-2 overflow-y-auto rounded-lg border border-slate-200 bg-slate-50 p-3" aria-label="안전성 검토 및 최종 확정">
-          <h3 className="shrink-0 text-base font-semibold">Safety Check · {safetyLabel}</h3>
-          {!isFinal && <div className="flex shrink-0 items-center justify-between gap-2 rounded-lg bg-white p-2 text-[13px] text-slate-600"><span><b>Safety 입력:</b> 체격 · 신장/간기능 · 알레르기 · 현재 복용약</span><button type="button" onClick={() => focusSafetyInput()} className="shrink-0 rounded border border-blue-200 px-2 py-1 font-semibold text-blue-700">입력 확인</button></div>}
-          {active.safety_check_results.some(r => r.result === "BLOCK") && <p role="alert" className="shrink-0 rounded-lg border border-rose-300 bg-rose-50 p-2 text-sm font-semibold text-rose-800">BLOCK 경고가 있습니다. 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p>}
-          {safetyRecheckRequired ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm font-semibold text-amber-800">환자 안전성 정보가 변경되어 재검사가 필요합니다.</p> : hasUnresolvedWarning ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm font-semibold text-amber-800">미해결 WARNING · 경고 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p> : hasUnacknowledgedWarning && <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-sm font-semibold text-amber-800">WARNING · 경고 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p>}
+        <div className="flex min-h-0 flex-col gap-3 overflow-y-auto pb-20 pr-1" aria-label="처방 및 안전성 단계">
+        <section className="shrink-0 rounded-lg border border-blue-100 bg-white p-4" aria-label="처방 약물 확인 및 조정">
+          <h3 className="text-base font-bold text-slate-800">처방 약물 확인 및 조정</h3>
+          <p className="mt-1 text-sm font-semibold text-slate-700">선택 Regimen: {active.regimen_detail?.regimen_code ?? "-"} · {active.regimen_detail?.regimen_name ?? "정보 없음"}</p>
+          <p className="mt-1 text-sm text-slate-500">{active.phase_label ?? "-"} · 투여 주기 {active.cycle_number} · {isFinal ? "약물·용량 조회 전용" : "약물 확인 후 최종 용량을 확인·조정해주세요."}</p>
+          {active.items.map(item => <ItemRow key={item.id} item={item} editable={actionable && ["DRAFT", "VALIDATED"].includes(active.prescription_status)} working={working} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} onSave={body => updateItem(active.id, item.id, body)} />)}
+        </section>
+        <aside className="flex min-h-0 shrink-0 flex-col gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 pb-5" aria-label="안전성 검토 및 최종 확정">
+          <h3 className="shrink-0 text-lg font-bold">Safety Check · {safetyLabel}</h3>
+          {!isFinal && <div className="flex shrink-0 items-center justify-between gap-2 rounded-lg bg-white p-2.5 text-sm leading-5 text-slate-600"><span><b>Safety 입력:</b> 체격 · 신장/간기능 · 알레르기 · 현재 복용약</span><button type="button" onClick={() => focusSafetyInput()} className="shrink-0 rounded border border-blue-200 px-3 py-1.5 text-sm font-semibold text-blue-700">입력 확인</button></div>}
+          {active.safety_check_results.some(r => r.result === "BLOCK") && <p role="alert" className="shrink-0 rounded-lg border border-rose-300 bg-rose-50 p-2 text-[15px] font-semibold leading-6 text-rose-800">BLOCK 경고가 있습니다. 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p>}
+          {safetyRecheckRequired ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[15px] font-semibold leading-6 text-amber-800">환자 안전성 정보가 변경되어 재검사가 필요합니다.</p> : hasUnresolvedWarning ? <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[15px] font-semibold leading-6 text-amber-800">미해결 WARNING · 경고 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p> : hasUnacknowledgedWarning && <p role="alert" className="shrink-0 rounded-lg border border-amber-300 bg-amber-50 p-2 text-[15px] font-semibold leading-6 text-amber-800">WARNING · 경고 내용을 확인한 뒤 처방을 계속 진행할 수 있습니다.</p>}
           <div className="min-h-0 max-h-40 shrink overflow-y-auto" aria-label="안전성 검사 상세">
-            {active.safety_check_results.length === 0 && <p className="text-sm text-slate-500">{active.prescription_status === "DRAFT" ? "안전성 검사 대기" : "저장된 안전성 검사 상세 결과가 없습니다."}</p>}
-            {active.safety_check_results.map(result => <div key={result.id} className={`border-b py-3 text-sm leading-6 ${result.result === "BLOCK" ? "border-rose-200 text-rose-800" : result.result === "WARNING" ? "border-amber-200 text-amber-800" : "border-slate-200 text-emerald-800"}`}><p className="font-semibold">{result.check_type_label} · {result.result_label ?? result.result}</p><p className="mt-1">{result.message}</p>{result.result === "WARNING" && result.acknowledged_at && <p className="mt-1">의료진 확인 완료{result.acknowledgment_note ? ` · ${result.acknowledgment_note}` : ""}</p>}{result.result === "WARNING" && ["LAB_MISSING", "ALLERGY_UNCONFIRMED", "DUR_MAPPING_UNRESOLVED"].includes(result.source_code ?? "") && <button type="button" onClick={() => focusSafetyInput(result.source_code, result.message)} className="mt-1 rounded border border-amber-300 px-2 py-1 font-semibold">부족한 입력 보완</button>}</div>)}
+            {active.safety_check_results.length === 0 && <p className="text-[15px] leading-6 text-slate-500">{active.prescription_status === "DRAFT" ? "안전성 검사 대기" : "저장된 안전성 검사 상세 결과가 없습니다."}</p>}
+            {active.safety_check_results.map(result => <div key={result.id} className={`border-b py-3 text-[15px] leading-6 ${result.result === "BLOCK" ? "border-rose-200 text-rose-800" : result.result === "WARNING" ? "border-amber-200 text-amber-800" : "border-slate-200 text-emerald-800"}`}><p className="font-semibold">{result.check_type_label} · {result.result_label ?? result.result}</p><p className="mt-1">{result.message}</p>{result.result === "WARNING" && result.acknowledged_at && <p className="mt-1">의료진 확인 완료{result.acknowledgment_note ? ` · ${result.acknowledgment_note}` : ""}</p>}{result.result === "WARNING" && ["LAB_MISSING", "ALLERGY_UNCONFIRMED", "DUR_MAPPING_UNRESOLVED"].includes(result.source_code ?? "") && <button type="button" onClick={() => focusSafetyInput(result.source_code, result.message)} className="mt-1 rounded border border-amber-300 px-2 py-1 font-semibold">부족한 입력 보완</button>}</div>)}
           </div>
-          <p role="status" className="shrink-0 text-sm leading-5 text-slate-600">{finalGuidance}</p>
-          {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working} onClick={() => void safety(active.id)} className={`shrink-0 rounded-lg px-3 py-2 text-sm font-semibold disabled:opacity-50 ${hasUnacknowledgedWarning && !hasBlock && !hasUnresolvedWarning && !safetyRecheckRequired ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{checkingSafety ? "Safety Check 검사 중..." : working ? "처리 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
+          <p role="status" className="shrink-0 text-[15px] leading-6 text-slate-600">{finalGuidance}</p>
+          {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working} onClick={() => void safety(active.id)} className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${hasUnacknowledgedWarning && !hasBlock && !hasUnresolvedWarning && !safetyRecheckRequired ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{checkingSafety ? "Safety Check 검사 중..." : working ? "처리 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
           {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => { setPendingFinalization({ id: active.id, schedules }); }} /></div>}
           {active.prescription_status === "FINAL" && <div className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-2"><p className="text-sm font-semibold text-emerald-700">최종 확정 완료 · 수정 불가</p><button type="button" onClick={() => { setSummaryPrescription(active); setSummaryOpen(true); }} className="mt-2 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800">최종 진료 요약 보기</button></div>}
         </aside>
+        </div>
       </div> : <div className="min-h-0 flex-1 overflow-y-auto rounded-xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
-        {actionable && requiresPrescription && hasSelectedRegimen && supportedPhases.length > 0
-          ? <div className="grid items-start gap-3 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              <PatientSafetyDataPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} compact />
-              {creationForm}
-            </div>
-          : <div className="flex justify-center">{creationForm}</div>}
+        {actionable && requiresPrescription && <div className="w-full">
+          <PatientSafetyDataPanel caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} compact onReadinessChange={setSafetyReady} />
+          <div className="mt-4 flex justify-end">
+            <button ref={startButtonRef} type="button" disabled={!safetyReady || !hasSelectedRegimen || supportedPhases.length === 0} onClick={() => setStartDialogOpen(true)} className="rounded-lg bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">처방 시작</button>
+          </div>
+          {!hasSelectedRegimen && <p role="alert" className="mt-2 text-right text-sm text-amber-800">선택된 Regimen이 없어 처방을 생성할 수 없습니다. 치료계획에서 Regimen을 먼저 확정해주세요.</p>}
+          {hasSelectedRegimen && supportedPhases.length === 0 && <p role="alert" className="mt-2 text-right text-sm text-rose-800">선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.</p>}
+        </div>}
       </div>}
+    {startDialogOpen && !active && creationForm && <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/45 p-3 sm:p-4" onMouseDown={event => { if (event.target === event.currentTarget && !working) { setStartDialogOpen(false); startButtonRef.current?.focus(); } }}>
+      <div role="dialog" aria-modal="true" aria-label="처방 시작" className="flex max-h-[85dvh] min-h-0 w-full max-w-2xl flex-col overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-xl">
+        <div className="flex shrink-0 justify-end border-b border-slate-100 px-4 py-2"><button type="button" aria-label="닫기" autoFocus disabled={working} onClick={() => { setStartDialogOpen(false); startButtonRef.current?.focus(); }} className="rounded-md px-2 py-1 text-lg text-slate-500 hover:bg-slate-100 disabled:opacity-50">×</button></div>
+        <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-4">{error && <p role="alert" className="mb-3 rounded-lg bg-rose-50 p-2 text-sm text-rose-700">{error}</p>}{creationForm}</div>
+        <div className="flex shrink-0 justify-end border-t border-slate-100 px-4 py-3"><button type="button" disabled={working} onClick={() => { setStartDialogOpen(false); startButtonRef.current?.focus(); }} className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 disabled:opacity-50">취소</button></div>
+      </div>
+    </div>}
     {pendingFinalization && <ConfirmActionDialog title="처방 최종 확정" description="처방을 확정하시겠습니까? 확정 후에는 처방 내용을 수정할 수 없습니다." supportingText="선택한 치료요법과 용량을 다시 확인해 주세요." confirmLabel="처방 확정" tone="blue" onCancel={() => setPendingFinalization(null)} onConfirm={() => { const { id, schedules } = pendingFinalization; setPendingFinalization(null); void finalize(id, schedules); }} />}
     <FinalCareSummaryDialog open={summaryOpen} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} doctorDisplayName={doctorDisplayName} prescription={summaryPrescription} onClose={closeSummary} />
   </section>;

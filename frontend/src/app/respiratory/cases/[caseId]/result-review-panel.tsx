@@ -34,6 +34,17 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
     ? `${clinicalDepartment} ${imaging || stage === "PET_CT_TNM" ? "최종 판단" : "판독"}`
     : `${clinicalDepartment} ${clinicalResult?.result_status === "DRAFT" ? "판독 초안" : "검토 중"}`;
   const isImageWorkspace = showEvidence && (stage === "XRAY" || stage === "CT");
+  const specialistPanel = showClinicalPanel && (
+    <SourcePanel compact={isImageWorkspace || compactRail} eyebrow={imaging ? "호흡기내과" : config.department} title={clinicalRole} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
+      {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" compact={isImageWorkspace || compactRail} dense={stage === "CT" && isImageWorkspace} /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
+      {specialistAction && !clinicalError && clinicalResult?.result_status !== "CONFIRMED" && <div className="flex justify-center px-3 pb-3">{specialistAction}</div>}
+    </SourcePanel>
+  );
+  const aiPanel = (
+    <SourcePanel compact={isImageWorkspace || compactRail} eyebrow="AI 분석" title="AI 분석 후보" meta={isImageWorkspace ? formatDateTime(aiResult?.completed_at) : [aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
+      {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} selectedNoduleId={selectedCtNoduleId} onSelectNodule={setSelectedCtNoduleId} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
+    </SourcePanel>
+  );
   return (
     <section className={`overflow-hidden rounded-lg border border-slate-200 bg-white ${isImageWorkspace ? "flex h-full min-h-0 min-w-0 flex-1 flex-col" : ""}`}>
       {showWorkspaceHeader && !isImageWorkspace && <header className={`flex shrink-0 items-start justify-between gap-4 border-b border-slate-200 px-4 ${isImageWorkspace ? "py-2" : "py-2.5"}`}>
@@ -48,57 +59,67 @@ export function ResultReviewPanel({ stage, clinicalResult, aiResult, clinicalErr
         </div>
       </header>}
 
-      <div className={isImageWorkspace ? "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_286px] gap-px overflow-hidden bg-slate-200 2xl:grid-cols-[minmax(0,3.35fr)_minmax(286px,1fr)]" : ""}>
-      {showEvidence && <div className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 p-1.5" : "border-b border-slate-200 bg-slate-50/50 px-4 py-3"}>
+      <div className={isImageWorkspace ? stage === "CT" ? "flex min-h-0 flex-1 flex-col gap-px overflow-y-auto bg-slate-200" : "grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_286px] gap-px overflow-hidden bg-slate-200 2xl:grid-cols-[minmax(0,3.35fr)_minmax(286px,1fr)]" : ""}>
+      {showEvidence && <div className={isImageWorkspace ? `flex min-h-0 min-w-0 flex-col overflow-hidden bg-slate-950 p-1.5 ${stage === "CT" ? "shrink-0" : ""}` : "border-b border-slate-200 bg-slate-50/50 px-4 py-3"}>
         {!isImageWorkspace && (
           <div className="mb-2 flex items-center justify-between gap-3">
             <div><p className="text-[10px] font-semibold text-blue-600">원본 근거</p><h2 className="mt-0.5 text-sm font-bold text-slate-800">원본 영상</h2></div>
             <p className="whitespace-nowrap text-[10px] text-slate-400">영상 조작은 뷰어 안에서 바로 수행합니다.</p>
           </div>
         )}
-        <div className={isImageWorkspace ? "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} nodules={ctNodules} selectedNoduleId={selectedCtNoduleId} onSelectedNoduleChange={setSelectedCtNoduleId} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
+        <div className={isImageWorkspace ? stage === "CT" ? "h-[min(76vh,900px)] min-h-[480px] w-full shrink-0" : "min-h-0 flex-1" : "overflow-x-auto"}>{caseId && apiBaseUrl && authorizedFetch ? (stage === "CT" ? <CaseCtSegmentationEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} analysisId={aiResult?.id} nodules={ctNodules} selectedNoduleId={selectedCtNoduleId} onSelectedNoduleChange={setSelectedCtNoduleId} onEvidenceInfoChange={onCtEvidenceInfoChange} /> : stage === "PET_CT_TNM" ? <CaseDicomEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} /> : <CaseImageEvidence key={caseId} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} stage={stage} />) : <EvidenceViewerPanel />}</div>
       </div>}
 
-      <aside data-clinical-rail className={isImageWorkspace ? "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
-        {showClinicalPanel && <SourcePanel compact={isImageWorkspace || compactRail} eyebrow={imaging ? "호흡기내과" : config.department} title={clinicalRole} meta={formatDateTime(clinicalResult?.result_date)} tone="specialist">
-          {clinicalError ? <PanelError message={clinicalError} retrying={clinicalRetrying} onRetry={onRetryClinical} /> : specialistValues.length > 0 ? <ResultValues values={specialistValues} accent="specialist" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="확정 결과 없음" text="확인 가능한 확정 결과가 없습니다. 결과가 확정되면 핵심 소견이 표시됩니다." nextAction={clinicalRole + " 결과 대기 · 결과가 확정되면 검토합니다."} />}
-          {specialistAction && !clinicalError && clinicalResult?.result_status !== "CONFIRMED" && <div className="flex justify-center px-3 pb-3">{specialistAction}</div>}
-        </SourcePanel>}
-
-        <SourcePanel compact={isImageWorkspace || compactRail} eyebrow="AI 분석" title="AI 분석 후보" meta={isImageWorkspace ? formatDateTime(aiResult?.completed_at) : [aiResult?.model_name, aiResult?.model_version_name].filter(Boolean).join(" · ") || "모델 정보 없음"} tone="ai">
-          {aiError ? <PanelError message={aiError} retrying={aiRetrying} onRetry={onRetryAi} /> : aiValues.length > 0 || hasCtAiData ? stage === "CT" ? <CtAiSummary detail={aiResult?.result_detail} selectedNoduleId={selectedCtNoduleId} onSelectNodule={setSelectedCtNoduleId} /> : <ResultValues values={aiValues} accent="ai" compact={isImageWorkspace || compactRail} /> : <EmptyResult title="AI 후보 없음" text="현재 검사에 연결된 AI 분석 후보가 없습니다." nextAction="다음 행동: 원본 영상을 확인한 뒤 AI 분석 완료 상태를 다시 확인하세요." />}
-        </SourcePanel>
-
-        {isImageWorkspace ? (
+      <aside data-clinical-rail className={isImageWorkspace ? stage === "CT" ? "grid min-w-0 grid-cols-1 gap-3 bg-[#f8fafc] p-3 lg:grid-cols-2" : "flex min-h-0 min-w-0 flex-col gap-2 overflow-y-auto bg-[#f8fafc] p-2 [scrollbar-gutter:stable]" : compactRail ? "flex min-h-0 flex-col gap-2" : "grid grid-cols-2 divide-x divide-slate-200"} aria-label="Imaging result rail">
+        {stage === "CT" && isImageWorkspace ? (
           <>
-            <ImagingWorkflowSummary
-              stage={stage}
-              aiStatus={aiResult?.status}
-              clinicalStatus={clinicalResult?.result_status}
-              clinicalRole={clinicalRole}
-              hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
-            />
-            {stage === "CT" ? (
+            <div data-ct-result-column="left" className="flex min-w-0 flex-col gap-3 [&>section]:shadow-none">
+              {specialistPanel}
+              <ImagingWorkflowSummary
+                stage={stage}
+                aiStatus={aiResult?.status}
+                clinicalStatus={clinicalResult?.result_status}
+                clinicalRole={clinicalRole}
+                hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+              />
+              {(onRefreshResults || lastSyncedAt) && <CtResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
+            </div>
+            <div data-ct-result-column="right" className="flex min-w-0 flex-col gap-3 [&>section]:shadow-none">
+              {aiPanel}
               <details data-technical-metadata className="shrink-0 border-t border-slate-200 py-2 text-[10px]"><summary className="cursor-pointer font-semibold text-slate-500">분석 · 영상 정보</summary><AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /></details>
-            ) : (
-              <AiTraceabilityCard aiResult={aiResult} collapsible />
-            )}
+            </div>
           </>
         ) : (
           <>
-            <WorkflowStatusFlow
-              stage={stage}
-              aiStatus={aiResult?.status}
-              clinicalStatus={clinicalResult?.result_status}
-              hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
-            />
-            {stage === "CT" ? <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /> : <AiTraceabilityCard aiResult={aiResult} />}
+            {specialistPanel}
+            {aiPanel}
+            {isImageWorkspace ? (
+              <>
+                <ImagingWorkflowSummary
+                  stage={stage}
+                  aiStatus={aiResult?.status}
+                  clinicalStatus={clinicalResult?.result_status}
+                  clinicalRole={clinicalRole}
+                  hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+                />
+                <AiTraceabilityCard aiResult={aiResult} collapsible />
+              </>
+            ) : (
+              <>
+                <WorkflowStatusFlow
+                  stage={stage}
+                  aiStatus={aiResult?.status}
+                  clinicalStatus={clinicalResult?.result_status}
+                  hasSourceAsset={Boolean(aiResult?.input_context?.source_asset)}
+                />
+                {stage === "CT" ? <AnalysisImageInfoCard aiResult={aiResult} evidenceInfo={ctEvidenceInfo} /> : <AiTraceabilityCard aiResult={aiResult} />}
+              </>
+            )}
+            {stage === "CT" && (onRefreshResults || lastSyncedAt) && <CtResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
+            {stage !== "CT" && !isImageWorkspace && (onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
+            {!isImageWorkspace && <AiInputTraceabilityCard aiResult={aiResult} />}
           </>
         )}
-
-        {stage === "CT" && (onRefreshResults || lastSyncedAt) && <CtResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
-        {stage !== "CT" && !isImageWorkspace && (onRefreshResults || lastSyncedAt) && <ResultSyncStatus lastSyncedAt={lastSyncedAt} syncing={syncingResults} onRefresh={onRefreshResults} notice={syncNotice} />}
-        {!isImageWorkspace && <AiInputTraceabilityCard aiResult={aiResult} />}
       </aside>
       </div>
 
@@ -430,8 +451,8 @@ function StatusBadge({ label, value, status, tone }: { label: string; value?: st
   return <span className={`whitespace-nowrap rounded-full border px-2.5 py-1 text-[10px] font-semibold ${colors}`}>{label} · {resultStatusLabel(tone === "specialist" ? status : status ?? value)}</span>;
 }
 
-function ResultValues({ values, accent, compact = false }: { values: [string, string][]; accent: "specialist" | "ai"; compact?: boolean }) {
-  return <dl className={`grid grid-cols-2 ${compact ? "gap-2 p-3" : "gap-2 p-4"}`}>{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border ${compact ? "px-2.5 py-2.5" : "px-3 py-2.5"} ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className={`break-keep ${compact ? "text-xs" : "text-xs"} text-slate-500`}>{label}</dt><dd className={`${compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"} break-words font-semibold text-slate-800`}>{value}</dd></div>)}</dl>;
+function ResultValues({ values, accent, compact = false, dense = false }: { values: [string, string][]; accent: "specialist" | "ai"; compact?: boolean; dense?: boolean }) {
+  return <dl className={`grid grid-cols-2 ${compact ? "gap-2 p-3" : "gap-2 p-4"}`}>{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border ${dense ? "px-2.5 py-2" : compact ? "px-2.5 py-2.5" : "px-3 py-2.5"} ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className={`break-keep ${compact ? "text-xs" : "text-xs"} text-slate-500`}>{label}</dt><dd className={`${compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"} break-words font-semibold text-slate-800`}>{value}</dd></div>)}</dl>;
 }
 function EmptyResult({ title, text, nextAction }: { title: string; text: string; nextAction?: string }) { return <div className="px-4 py-4 text-center"><div><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 max-w-md text-[11px] leading-4 text-slate-500">{text}</p>{nextAction && <p className="mt-2 max-w-md rounded-md bg-slate-50 px-2 py-1.5 text-[10px] leading-4 text-slate-600">{nextAction}</p>}</div></div>; }
 function PanelError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry?: () => void }) { return <div role="alert" className="flex min-h-[190px] items-center justify-center bg-rose-50/50 px-5"><div className="text-center"><p className="text-xs text-rose-700">{message}</p>{onRetry && <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-700 disabled:opacity-50">{retrying ? "재시도 중" : "이 결과 다시 시도"}</button>}</div></div>; }

@@ -1305,8 +1305,9 @@ export default function RespiratoryCaseDetailPage() {
   const hasFinalPrescription = casePrescriptions.some(
     (prescription) => prescription.prescription_status === "FINAL",
   );
-  const confirmedPathologyResult = tnmClinicalResults.find(
-    (result) => result.workflow_stage === "PATHOLOGY_GENE" && result.result_status === "CONFIRMED",
+  const pathologyResultForPdl1 = tnmClinicalResults.find(
+    (result) => result.workflow_stage === "PATHOLOGY_GENE"
+      && (result.result_status === "DRAFT" || result.result_status === "CONFIRMED"),
   );
   const confirmedPdl1Result = tnmClinicalResults.find(
     (result) => result.workflow_stage === "PDL1" && result.result_status === "CONFIRMED",
@@ -1328,9 +1329,8 @@ export default function RespiratoryCaseDetailPage() {
   const hasPdl1Result = tnmClinicalResults.some(
     (result) => result.workflow_stage === "PDL1",
   );
-  const pathologyResultForPdl1 = confirmedPathologyResult;
   const canAdvancePathologyToPdl1 = selectedCase?.current_stage === "PATHOLOGY_GENE"
-    && pathologyResultForPdl1?.result_status === "CONFIRMED"
+    && (pathologyResultForPdl1?.result_status === "DRAFT" || pathologyResultForPdl1?.result_status === "CONFIRMED")
     && !confirmedPdl1Result;
   const canReorderCancelledPdl1 = selectedCase?.current_stage === "PDL1"
     && !activePdl1Order

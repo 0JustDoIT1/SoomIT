@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { PrescriptionPanel } from "./prescription-panel";
@@ -7,7 +8,12 @@ vi.mock("@/components/ui/toast/toast", () => ({ showToast: { info: vi.fn(), succ
 
 vi.mock("./mfds-product-selector", () => ({ MfdsProductSelector: () => null }));
 vi.mock("./medication-schedule-panel", () => ({ MedicationSchedulePanel: () => <p>복약 일정</p> }));
-vi.mock("./patient-safety-data-panel", () => ({ PatientSafetyDataPanel: ({ compact }: { compact?: boolean }) => compact ? <section aria-label="환자 안전성 정보">안전성 입력 폼</section> : null }));
+const safetyMock = vi.hoisted(() => ({ ready: true }));
+vi.mock("./patient-safety-data-panel", () => ({ PatientSafetyDataPanel: ({ compact, onReadinessChange }: { compact?: boolean; onReadinessChange?: (ready: boolean) => void }) => {
+  useEffect(() => { onReadinessChange?.(safetyMock.ready); }, [onReadinessChange]);
+  return compact ? <section aria-label="환자 안전성 정보">안전성 입력 폼</section> : null;
+} }));
+const openStartDialog = async () => { const button = await screen.findByRole("button", { name: "처방 시작" }); await waitFor(() => expect(button).toBeEnabled()); fireEvent.click(button); return screen.getByRole("dialog", { name: "처방 시작" }); };
 const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen: true, availablePrescriptionPhases: ["INDUCTION"] };
 const base = { id: "rx-1", cycle_number: 1, regimen_detail: { regimen_name: "Test regimen", regimen_code: "TEST" }, items: [{ id: "item-1", drug_name: "Test drug", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "Day 1" }] };
 const mockFetch = (status: string, results: object[] = [], safetyFreshness = status === "DRAFT" ? (results.length ? "CURRENT" : "NOT_RUN") : "CURRENT") => vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ ...base, prescription_status: status, safety_freshness: safetyFreshness, safety_check_results: results }])));
@@ -19,9 +25,27 @@ it("renders patient safety inputs in the left prescription workspace", async () 
   expect(screen.getByText("안전성 입력 폼")).toBeVisible();
 });
 
+it("keeps prescription start disabled until saved safety inputs are complete", async () => {
+  safetyMock.ready = false;
+  try {
+    render(<PrescriptionPanel {...props} authorizedFetch={vi.fn().mockResolvedValue(new Response("[]"))} />);
+    expect(await screen.findByRole("button", { name: "처방 시작" })).toBeDisabled();
+    expect(screen.queryByRole("dialog", { name: "처방 시작" })).not.toBeInTheDocument();
+  } finally { safetyMock.ready = true; }
+});
+
+it("closes the start dialog on Escape without creating a prescription", async () => {
+  const authorizedFetch = vi.fn().mockResolvedValue(new Response("[]"));
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+  await openStartDialog();
+  fireEvent.keyDown(window, { key: "Escape" });
+  expect(screen.queryByRole("dialog", { name: "처방 시작" })).not.toBeInTheDocument();
+  expect(authorizedFetch.mock.calls.some(([, init]) => init?.method === "POST")).toBe(false);
+});
+
 it("offers only medication phases configured for the selected regimen", async () => {
   render(<PrescriptionPanel {...props} availablePrescriptionPhases={["MAINTENANCE"]} authorizedFetch={vi.fn().mockResolvedValue(new Response(JSON.stringify([])))} />);
-
+  await openStartDialog();
   const phase = await screen.findByLabelText("치료 단계");
   expect(phase).toHaveValue("MAINTENANCE");
   expect(within(phase).getByRole("option", { name: "MAINTENANCE · 유지요법" })).toBeInTheDocument();
@@ -32,7 +56,7 @@ it("blocks creation when the selected regimen has no medication schedule", async
   render(<PrescriptionPanel {...props} availablePrescriptionPhases={[]} authorizedFetch={vi.fn().mockResolvedValue(new Response(JSON.stringify([])))} />);
 
   expect(await screen.findByText("선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.")).toBeVisible();
-  expect(screen.getByRole("button", { name: "처방 생성" })).toBeDisabled();
+  expect(screen.getByRole("button", { name: "처방 시작" })).toBeDisabled();
 });
 
 it("renders decimal doses without storage-only trailing zeroes", async () => {
@@ -64,6 +88,7 @@ it.each(["create", "update", "safety", "finalize"])("never reports successful %s
     });
     const { unmount } = render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
     if (action === "create") {
+      await openStartDialog();
       const button = await screen.findByRole("button", { name: "처방 생성" });
       fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-27" } });
       fireEvent.click(button);
@@ -88,7 +113,10 @@ it.each(["create", "update", "safety", "finalize"])("never reports successful %s
     }
     expect(screen.queryByText(/처방 DRAFT가 생성되었습니다|처방 약물 정보가 수정되었습니다|처방이 최종 확정되었습니다/)).not.toBeInTheDocument();
     if (failure === "field400") expect(screen.getByText("용량을 확인해 주세요.")).toBeInTheDocument();
-    if (action === "create") expect(screen.getByLabelText("Cycle 시작일")).toHaveValue("2026-09-27");
+    if (action === "create") {
+      expect(screen.getByRole("dialog", { name: "처방 시작" })).toBeInTheDocument();
+      expect(screen.getByLabelText("Cycle 시작일")).toHaveValue("2026-09-27");
+    }
     if (action === "update") expect(screen.getByLabelText("Test drug 최종 용량")).toHaveValue(75);
     vi.mocked(showToast.error).mockClear();
     unmount();
@@ -206,6 +234,7 @@ it("distinguishes an accepted write from a failed refresh without announcing com
     return new Response(wrote ? "Bad Gateway" : "[]", { status: wrote ? 502 : 200 });
   });
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
+  await openStartDialog();
   const button = await screen.findByRole("button", { name: "처방 생성" });
   fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-27" } });
   fireEvent.click(button);
@@ -231,13 +260,17 @@ it("offers the next cycle only after existing prescriptions are final", async ()
   expect(screen.queryByText("새 처방 생성 · 확정 치료결정 기반")).not.toBeInTheDocument();
 });
 
-it("keeps the safety action separate from the medication scroll and preserves its request", async () => {
+it("places medication adjustment above Safety Check in the right column and preserves both actions", async () => {
   const authorizedFetch = mockFetch("DRAFT");
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
   const action = await screen.findByRole("button", { name: "안전성 검사 실행" });
-  const list = screen.getByRole("region", { name: "처방 약물 목록" });
-  expect(list).not.toContainElement(action);
-  expect(list).toHaveClass("overflow-y-auto");
+  const adjustment = screen.getByRole("region", { name: "처방 약물 확인 및 조정" });
+  const safetyCard = screen.getByRole("complementary", { name: "안전성 검토 및 최종 확정" });
+  expect(within(adjustment).getByLabelText("Test drug 최종 용량")).toBeInTheDocument();
+  expect(within(adjustment).getByLabelText("Test drug 투여 지시")).toBeInTheDocument();
+  expect(within(adjustment).getByRole("button", { name: "수정 저장" })).toBeInTheDocument();
+  expect(adjustment.compareDocumentPosition(safetyCard) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  expect(safetyCard).toContainElement(action);
   expect(screen.getByText(/Day 1/)).toBeInTheDocument();
   act(() => { action.click(); action.click(); });
   await waitFor(() => expect(authorizedFetch).toHaveBeenCalledWith("http://test/api/doctor/cases/case-1/prescriptions/rx-1/safety-check/", { method: "POST" }));
@@ -340,12 +373,12 @@ it("creates the first draft once and requires a cycle start date", async () => {
     return Promise.resolve(new Response(JSON.stringify([])));
   });
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
-  expect(await screen.findByRole("heading", { name: "첫 처방을 생성하세요" })).toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "처방 시작" })).toBeEnabled();
   expect(screen.getByRole("region", { name: "환자 안전성 정보" })).toHaveTextContent("안전성 입력 폼");
+  expect(screen.queryByRole("heading", { name: "첫 처방을 생성하세요" })).not.toBeInTheDocument();
+  await openStartDialog();
   const createCard = screen.getByRole("heading", { name: "첫 처방을 생성하세요" }).closest("section");
-  const columns = createCard?.parentElement;
-  expect(columns).toHaveClass("grid", "lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]");
-  expect(columns).toContainElement(screen.getByRole("region", { name: "환자 안전성 정보" }));
+  expect(createCard).toBeInTheDocument();
   expect(createCard).toHaveClass("w-full");
   expect(screen.getByLabelText("Cycle 번호")).toBeInTheDocument();
   expect(screen.getByLabelText("치료 단계")).toBeInTheDocument();
@@ -362,6 +395,7 @@ it("creates the first draft once and requires a cycle start date", async () => {
   expect(authorizedFetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
   await act(async () => resolveCreate(new Response(JSON.stringify({ id: "rx-1" }), { status: 201 })));
   await waitFor(() => expect(screen.getByText("처방 DRAFT가 생성되었습니다.")).toBeInTheDocument());
+  expect(screen.queryByRole("dialog", { name: "처방 시작" })).not.toBeInTheDocument();
 });
 
 it("shows a non-drug completion path without a prescription creation CTA", async () => {

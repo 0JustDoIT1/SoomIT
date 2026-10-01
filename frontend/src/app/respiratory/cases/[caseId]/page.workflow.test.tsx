@@ -69,8 +69,8 @@ it("treats effect cleanup aborts as normal cancellation without errors or toasts
   consoleError.mockRestore();
 });
 
-function installCaseResponses({ stage, clinicalResults = [], orders = [], aiResults = [] }: { stage: string; clinicalResults?: unknown[]; orders?: unknown[]; aiResults?: unknown[] }) {
-  const caseData = baseCase(stage);
+function installCaseResponses({ stage, caseStatus = "ACTIVE", clinicalResults = [], orders = [], aiResults = [] }: { stage: string; caseStatus?: string; clinicalResults?: unknown[]; orders?: unknown[]; aiResults?: unknown[] }) {
+  const caseData = { ...baseCase(stage), case_status: caseStatus };
   mocks.authorizedFetch.mockImplementation(async (input: string) => {
     const url = new URL(input).pathname;
     if (url === "/api/doctor/cases/") return response([caseData]);
@@ -334,14 +334,28 @@ it("keeps the confirmed TNM workspace selected after advancing to pathology", as
   expect(await screen.findByText("현재 Case 단계가 아니므로 결과 조회만 가능합니다.")).toBeInTheDocument();
 });
 
-it("waits for pulmonology gene confirmation before offering a PD-L1 order", async () => {
+it("offers the PD-L1 order for a draft pathology result and uses the existing workflow decision", async () => {
   installCaseResponses({ stage: "PATHOLOGY_GENE", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "DRAFT", result_detail: {} }] });
   render(<Page />);
 
   const navigation = await openCaseWorkspace("조직/유전자");
   expect(within(navigation).getByRole("button", { name: "PD-L1" })).toHaveAttribute("data-access-state", "LOCKED");
-  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+  expect(await screen.findByRole("button", { name: "PD-L1 검사 오더" })).toBeEnabled();
   expect(screen.queryByRole("button", { name: "결과 확인 및 확정" })).not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "PD-L1 검사 오더" }));
+  await waitFor(() => {
+    const decisionCall = mocks.authorizedFetch.mock.calls.find(([input, init]) =>
+      new URL(input as string).pathname.endsWith("/workflow-decision/")
+      && (init as RequestInit | undefined)?.method === "POST",
+    );
+    expect(decisionCall).toBeDefined();
+    expect(JSON.parse((decisionCall?.[1] as RequestInit).body as string)).toMatchObject({
+      action: "PROCEED_NEXT_STAGE",
+      source_clinical_result_id: "path-1",
+      target_stage: "PDL1",
+    });
+  });
 });
 
 it("does not offer a PD-L1 order before a pathology result exists", async () => {
@@ -358,6 +372,30 @@ it("offers the PD-L1 transition after pulmonology confirmed the pathology result
 
   await openCaseWorkspace("조직/유전자");
   expect(await screen.findByRole("button", { name: "PD-L1 검사 오더" })).toBeEnabled();
+});
+
+it("does not offer a PD-L1 order from another Case stage", async () => {
+  installCaseResponses({ stage: "PDL1", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} }] });
+  render(<Page />);
+
+  await openCaseWorkspace("조직/유전자");
+  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+});
+
+it("does not offer a PD-L1 order outside the pathology workspace", async () => {
+  installCaseResponses({ stage: "PATHOLOGY_GENE", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} }] });
+  render(<Page />);
+
+  await openCaseWorkspace("전체 요약");
+  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
+});
+
+it("does not offer a PD-L1 order for an inactive Case", async () => {
+  installCaseResponses({ stage: "PATHOLOGY_GENE", caseStatus: "CLOSED", clinicalResults: [{ id: "path-1", workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: {} }] });
+  render(<Page />);
+
+  await openCaseWorkspace("조직/유전자");
+  expect(screen.queryByRole("button", { name: "PD-L1 검사 오더" })).not.toBeInTheDocument();
 });
 
 it("creates the PD-L1 order and advances an already confirmed pathology result", async () => {

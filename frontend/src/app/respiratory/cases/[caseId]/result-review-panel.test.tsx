@@ -43,6 +43,43 @@ it("uses analysis and sync details instead of the duplicate CT review-status car
 });
 
 describe("ResultReviewPanel", () => {
+  it("keeps CT decision, progress and sync in an independent left column", () => {
+    const { container } = render(<ResultReviewPanel
+      stage="CT"
+      onRefreshResults={vi.fn()}
+      clinicalResult={{
+        workflow_stage: "CT",
+        result_status: "CONFIRMED",
+        result_detail: { ct: { overall_assessment_label: "결절 발견", finding_summary: "추적 관찰" } },
+      }}
+      aiResult={{ analysis_type: "CT_ANALYSIS", result_detail: { ct: { overall_malignancy_risk: 93.1 } } }}
+    />);
+    const left = container.querySelector('[data-ct-result-column="left"]');
+    const right = container.querySelector('[data-ct-result-column="right"]');
+    expect(left).toHaveClass("flex-col");
+    expect(right).toHaveClass("flex-col");
+    expect(left?.children).toHaveLength(3);
+    expect(left?.children[0]).toHaveTextContent("호흡기내과 최종 판단");
+    expect(left?.children[0]?.querySelector("dl")).toHaveClass("grid-cols-2");
+    expect(left?.children[0]?.querySelectorAll("dl > div")).toHaveLength(2);
+    expect(left?.children[0]?.querySelector("dl > div")).toHaveClass("py-2");
+    expect(left?.children[1]).toHaveTextContent("진행 상태");
+    expect(left?.children[2]).toHaveTextContent("결과 동기화");
+    expect(right?.children[0]).toHaveTextContent("AI 분석 후보");
+    expect(right?.children[1]).toHaveAttribute("data-technical-metadata");
+  });
+
+  it("stacks the CT viewer above full-width analysis and status panels only for CT", () => {
+    const { container } = render(<ResultReviewPanel stage="CT" />);
+    const workspace = container.querySelector("section > div.flex.flex-col");
+    expect(workspace).toBeTruthy();
+    expect(workspace).toHaveClass("overflow-y-auto");
+    expect(workspace?.firstElementChild).toHaveClass("shrink-0");
+    expect(workspace?.firstElementChild?.firstElementChild).toHaveClass("w-full", "shrink-0");
+    expect(workspace?.lastElementChild).toHaveClass("lg:grid-cols-2");
+    expect(container.querySelector("aside [data-testid='ct-nodule-1']")).toBeNull();
+  });
+
   describe.each(["XRAY", "CT", "PET_CT_TNM", "PDL1", "PATHOLOGY_GENE"])("%s clinical status labels", (stage) => {
     it.each(["DRAFT", "IN_REVIEW", "CONFIRMED", undefined])("uses the backend status %s while keeping AI a candidate", (status) => {
       const confirmed = status === "CONFIRMED";
@@ -67,7 +104,11 @@ describe("ResultReviewPanel", () => {
     const { container } = render(<ResultReviewPanel stage={stage} />);
     expect(container.firstElementChild).toHaveClass("flex-1", "min-h-0", "h-full");
     expect(container.firstElementChild?.className).not.toMatch(/100dvh|min-h-\[540px\]|max-h-\[780px\]/);
-    expect(container.querySelector("aside.overflow-y-auto")).toHaveClass("min-h-0", "overflow-y-auto");
+    if (stage === "CT") {
+      expect(container.querySelector("aside[data-clinical-rail]")).toHaveClass("grid-cols-1", "lg:grid-cols-2");
+    } else {
+      expect(container.querySelector("aside.overflow-y-auto")).toHaveClass("min-h-0", "overflow-y-auto");
+    }
   });
 
   it("shows the specialist-confirmed result before the AI candidate", () => {

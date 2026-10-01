@@ -52,7 +52,7 @@ function buildTreatmentEvidence(clinicalResults: ClinicalEvidence[], aiResults: 
     { label: "흉부 X선", clinicalConfirmed: Boolean(xrayClinical), specialist: summaryFrom(xrayClinical?.result_detail, "xray", ["assessment_label", "assessment"]) || getStatus(xrayClinical?.result_status_label, xrayClinical?.result_status), ai: getStatus(completedAi("XRAY_ANALYSIS")?.status_label, completedAi("XRAY_ANALYSIS")?.status) },
     { label: "흉부 CT", clinicalConfirmed: Boolean(ctClinical), specialist: summaryFrom(ctClinical?.result_detail, "ct", ["overall_assessment_label", "overall_assessment", "overall_malignancy_risk"]) || getStatus(ctClinical?.result_status_label, ctClinical?.result_status), ai: getStatus(completedAi("CT_ANALYSIS")?.status_label, completedAi("CT_ANALYSIS")?.status) },
     { label: "PET-CT / TNM", clinicalConfirmed: Boolean(tnmClinical), specialist: summaryFrom(tnmClinical?.result_detail, "tnm", ["t_category", "n_category", "m_category", "stage_group"]) || getStatus(tnmClinical?.result_status_label, tnmClinical?.result_status), ai: summaryFrom(completedAi("PET_CT_TNM_ANALYSIS")?.result_detail, "tnm", ["predicted_t", "predicted_n", "predicted_m", "predicted_stage_group"]) || getStatus(completedAi("PET_CT_TNM_ANALYSIS")?.status_label, completedAi("PET_CT_TNM_ANALYSIS")?.status), emphasis: true },
-    { label: "조직·유전자", clinicalConfirmed: Boolean(pathology), specialist: summaryFrom(pathology?.result_detail, "pathology", ["histologic_type", "subtype"]) || (gene ? "유전자 결과 확인" : "결과 대기"), ai: summaryFrom(completedAi("PATHOLOGY_GENE_ANALYSIS")?.result_detail, "pathology", ["predicted_histologic_type", "predicted_subtype"]) || getStatus(completedAi("PATHOLOGY_GENE_ANALYSIS")?.status_label, completedAi("PATHOLOGY_GENE_ANALYSIS")?.status), emphasis: true },
+    { label: "조직·유전자", clinicalConfirmed: Boolean(pathology), specialist: summaryFromUnique(pathology?.result_detail, "pathology", ["histologic_type", "subtype"]) || (gene ? "유전자 결과 확인" : "결과 대기"), ai: summaryFromUnique(completedAi("PATHOLOGY_GENE_ANALYSIS")?.result_detail, "pathology", ["predicted_histologic_type", "predicted_subtype"]) || getStatus(completedAi("PATHOLOGY_GENE_ANALYSIS")?.status_label, completedAi("PATHOLOGY_GENE_ANALYSIS")?.status), emphasis: true },
     { label: "PD-L1", clinicalConfirmed: Boolean(pdl1Clinical), specialist: tps !== undefined && tps !== null ? `TPS ${String(tps)}%` : pdl1Clinical ? "임상 결과 확정" : "결과 대기", ai: predictedRange ? String(predictedRange) : getStatus(pdl1Ai?.status_label, pdl1Ai?.status), emphasis: true },
   ];
 }
@@ -82,6 +82,22 @@ function summaryFrom(value: unknown, key: string, fields: string[]) {
   const record = getNestedRecord(value, key);
   if (!record) return "";
   const values = fields.map((field) => record[field]).filter((item) => item !== null && item !== undefined && item !== "").map(String);
+  return values.join(" · ");
+}
+
+function summaryFromUnique(value: unknown, key: string, fields: string[]) {
+  const record = getNestedRecord(value, key);
+  if (!record) return "";
+  const seen = new Set<string>();
+  const values = fields.flatMap((field) => {
+    const item = record[field];
+    if (item === null || item === undefined || item === "") return [];
+    const text = String(item).trim();
+    const normalized = text.toLocaleLowerCase();
+    if (!text || seen.has(normalized)) return [];
+    seen.add(normalized);
+    return [text];
+  });
   return values.join(" · ");
 }
 

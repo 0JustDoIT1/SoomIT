@@ -11,6 +11,37 @@ vi.mock("react-day-picker", () => ({
 function jsonResponse(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }); }
 
 describe("PatientSafetyDataPanel", () => {
+  it.each(["none", "saved-medication"])('reports readiness from saved safety data (%s)', async (medicationMode) => {
+    const caseId = `ready-${medicationMode}`;
+    if (medicationMode === "none") window.localStorage.setItem(`patient-safety-no-medications:${caseId}`, "true");
+    const onReadinessChange = vi.fn();
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("allergy-profile")) return jsonResponse({ allergy_status: "NONE", allergies: [], height_cm: "170", weight_kg: "65" });
+      if (url.includes("lab-results")) return jsonResponse([{ id: "lab", creatinine: "0.9", ast: "20", alt: "22", total_bilirubin: "0.7", tested_at: "2026-09-15T00:00:00Z" }]);
+      return jsonResponse(medicationMode === "none" ? [] : [{ id: "med", medication_name: "약품", mfds_item_seq: "123", is_active: true }]);
+    });
+    render(<PatientSafetyDataPanel compact caseId={caseId} apiBaseUrl="http://test" authorizedFetch={authorizedFetch} onReadinessChange={onReadinessChange} />);
+    await waitFor(() => expect(onReadinessChange).toHaveBeenLastCalledWith(true));
+    expect(screen.getByLabelText("Safety 입력 상태")).not.toHaveTextContent("확인 필요");
+    window.localStorage.removeItem(`patient-safety-no-medications:${caseId}`);
+  });
+
+  it("does not report unsaved profile edits as complete", async () => {
+    const onReadinessChange = vi.fn();
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("allergy-profile")) return jsonResponse({ allergy_status: "UNCONFIRMED", allergies: [], height_cm: "", weight_kg: "" });
+      if (url.includes("lab-results")) return jsonResponse([{ id: "lab", creatinine: "0.9", ast: "20", alt: "22", total_bilirubin: "0.7", tested_at: "2026-09-15T00:00:00Z" }]);
+      return jsonResponse([{ id: "med", medication_name: "약품", mfds_item_seq: "123", is_active: true }]);
+    });
+    render(<PatientSafetyDataPanel compact caseId="unsaved-profile" apiBaseUrl="http://test" authorizedFetch={authorizedFetch} onReadinessChange={onReadinessChange} />);
+    await waitFor(() => expect(screen.getByLabelText("알레르기 상태")).toHaveValue("UNCONFIRMED"));
+    fireEvent.change(screen.getByLabelText("키 (cm)"), { target: { value: "170" } });
+    fireEvent.change(screen.getByLabelText("몸무게 (kg)"), { target: { value: "65" } });
+    fireEvent.change(screen.getByLabelText("알레르기 상태"), { target: { value: "NONE" } });
+    expect(onReadinessChange).toHaveBeenLastCalledWith(false);
+  });
   it.each([true, false])("registers another lab without copying old values (compact=%s)", async (compact) => {
     const changed = vi.fn();
     const oldLab = { id: "old", creatinine: "0.9", tested_at: "2026-09-15T00:00:00Z" };
@@ -102,6 +133,34 @@ describe("PatientSafetyDataPanel", () => {
     for (const label of ["키 (cm)", "몸무게 (kg)", "Creatinine", "eGFR", "AST", "ALT", "Total Bilirubin", "알레르기 상태", "약품명", "성분명", "MFDS ITEM_SEQ"]) {
       expect(screen.getByLabelText(label)).toBeVisible();
     }
+  });
+
+  it("shows saved medication details in compact mode while leaving the new-entry fields empty", async () => {
+    const authorizedFetch = vi.fn((input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("allergy-profile")) return Promise.resolve(jsonResponse({ allergy_status: "NONE", allergies: [] }));
+      if (url.includes("current-medications")) return Promise.resolve(jsonResponse([{
+        id: "saved-med-1",
+        medication_name: "쿠파린정5밀리그램(와파린나트륨)",
+        ingredient_name: "Warfarin sodium",
+        mfds_item_seq: "2005020107",
+        dose: "5",
+        dose_unit: "mg",
+        frequency: "1일 1회",
+        route: "경구",
+        is_active: true,
+      }]));
+      return Promise.resolve(jsonResponse([]));
+    });
+    render(<PatientSafetyDataPanel compact caseId="saved-medication" apiBaseUrl="http://test" authorizedFetch={authorizedFetch} />);
+
+    const saved = await screen.findByRole("article");
+    expect(saved).toHaveTextContent("쿠파린정5밀리그램(와파린나트륨)");
+    expect(saved).toHaveTextContent("저장됨 · 복용 중");
+    expect(saved).toHaveTextContent("Warfarin sodium · ITEM_SEQ 2005020107 · 5mg · 1일 1회 · 경구");
+    expect(screen.getByLabelText("약품명")).toHaveValue("");
+    expect(screen.getByLabelText("성분명")).toHaveValue("");
+    expect(screen.getByLabelText("MFDS ITEM_SEQ")).toHaveValue("");
   });
 
   it("loads current medications and lab results independently", async () => {

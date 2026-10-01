@@ -30,6 +30,30 @@ describe("TreatmentPrescriptionOverview", () => {
     for (const label of ["흉부 X선", "흉부 CT", "PET-CT / TNM", "조직·유전자", "PD-L1"]) expect(screen.getByText(label)).toBeTruthy();
   });
 
+  it("removes repeated pathology type and subtype values in confirmed and AI summaries", () => {
+    render(<TreatmentPrescriptionOverview
+      treatment={null}
+      prescriptions={[]}
+      clinicalResults={[{ workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pathology: { histologic_type: "LUAD", subtype: "LUAD" } } }]}
+      aiResults={[{ analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED", result_detail: { pathology: { predicted_histologic_type: "LUAD", predicted_subtype: "LUAD" } } }]}
+    />);
+
+    const pathology = screen.getByText("조직·유전자").parentElement!;
+    expect(Array.from(pathology.querySelectorAll("span.truncate")).map((node) => node.textContent)).toEqual(["LUAD", "LUAD"]);
+    expect(pathology).not.toHaveTextContent("LUAD · LUAD");
+  });
+
+  it("keeps distinct pathology type and subtype values", () => {
+    render(<TreatmentPrescriptionOverview
+      treatment={null}
+      prescriptions={[]}
+      clinicalResults={[{ workflow_stage: "PATHOLOGY_GENE", result_status: "CONFIRMED", result_detail: { pathology: { histologic_type: "NSCLC", subtype: "LUAD" } } }]}
+      aiResults={[{ analysis_type: "PATHOLOGY_GENE_ANALYSIS", status: "SUCCEEDED", result_detail: { pathology: { predicted_histologic_type: "NSCLC", predicted_subtype: "LUAD" } } }]}
+    />);
+
+    expect(screen.getByText("조직·유전자").parentElement).toHaveTextContent("NSCLC · LUAD");
+  });
+
   it("shows empty values without fabricating a treatment or prescription", () => {
     render(<TreatmentPrescriptionOverview treatment={null} prescriptions={[]} />);
     expect(screen.getAllByText("결과 없음").length).toBeGreaterThanOrEqual(6);
