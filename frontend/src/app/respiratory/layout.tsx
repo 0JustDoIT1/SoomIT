@@ -9,12 +9,14 @@ import { ClinicianThemeToggle } from "@/components/theme/clinician-theme-toggle"
 import { SoomChatPanel } from "@/components/chat/SoomChatPanel";
 import { SoomItMark } from "@/components/workspace/soomit-mark";
 import {
+  markAllNotificationsRead,
   markNotificationRead,
   mergeNotificationSnapshot,
   publishNotificationRead,
   publishNotificationSnapshot,
   readNotificationPayload,
   subscribeNotificationRead,
+  subscribeNotificationReadAll,
   type NotificationState,
   type StaffNotification,
 } from "./_lib/notification-state";
@@ -91,6 +93,10 @@ function AuthenticatedLayout({ children }: { children: ReactNode }) {
       setNotifications((current) => markNotificationRead(current, id, readAt));
     });
   }, []);
+
+  useEffect(() => subscribeNotificationReadAll((readAt) => {
+    setNotifications((current) => markAllNotificationsRead(current, readAt));
+  }), []);
 
   useEffect(() => {
     if (!isReady || !isAuthenticated) return;

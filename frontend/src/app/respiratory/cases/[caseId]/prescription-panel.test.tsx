@@ -297,15 +297,17 @@ it("opens the final care summary after confirmed finalization and allows reopeni
       { workflow_stage: "PDL1", result_status: "CONFIRMED", result_detail: { pdl1: { tps_percent: null, interpretation: "AI predicted TPS range: <1%" } } },
     ]));
     if (url.endsWith("/treatment-decision/")) return new Response(JSON.stringify({ treatment_type_label: "항암화학요법", treatment_plan: "확정 치료계획" }));
-    return new Response(JSON.stringify({ patient_name: "테스트 환자", patient_code: "P-001", case_code: "CASE-001", primary_doctor_name: "김태윤" }));
+    return new Response(JSON.stringify({ patient_name: "테스트 환자", patient_code: "P-001", case_code: "CASE-001", primary_doctor_name: "doctor1" }));
   });
 
-  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} doctorDisplayName="제청하" />);
   fireEvent.click(await screen.findByRole("button", { name: "처방 최종 확정" }));
   confirmFinalization();
 
   expect(await screen.findByRole("dialog", { name: "최종 진단 요약" })).toBeInTheDocument();
   expect(await screen.findByText("테스트 환자")).toBeInTheDocument();
+  expect(screen.getByText("제청하")).toBeInTheDocument();
+  expect(screen.queryByText("doctor1")).not.toBeInTheDocument();
   expect(screen.getByText("T2 / N1 / M0 · Stage IIB")).toBeInTheDocument();
   expect(screen.getByText("확정 TPS 미입력 · AI 예측 TPS <1%")).toBeInTheDocument();
 

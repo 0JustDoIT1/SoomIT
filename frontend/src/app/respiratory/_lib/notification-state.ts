@@ -16,6 +16,7 @@ export type NotificationState = {
 };
 
 export const NOTIFICATION_READ_EVENT = "soomit-notification-read";
+export const NOTIFICATION_READ_ALL_EVENT = "soomit-notification-read-all";
 export const NOTIFICATION_SNAPSHOT_EVENT = "soomit-notification-snapshot";
 
 export function readNotificationPayload(payload: unknown): NotificationState {
@@ -33,6 +34,13 @@ export function markNotificationRead(state: NotificationState, id: string, readA
   return {
     unread_count: Math.max(0, state.unread_count - 1),
     results: state.results.map((item) => item.id === id ? { ...item, read_at: readAt } : item),
+  };
+}
+
+export function markAllNotificationsRead(state: NotificationState, readAt: string): NotificationState {
+  return {
+    unread_count: 0,
+    results: state.results.map((item) => item.read_at ? item : { ...item, read_at: readAt }),
   };
 }
 
@@ -61,6 +69,19 @@ export function subscribeNotificationRead(callback: (id: string, readAt: string)
   };
   window.addEventListener(NOTIFICATION_READ_EVENT, listener);
   return () => window.removeEventListener(NOTIFICATION_READ_EVENT, listener);
+}
+
+export function publishNotificationReadAll(readAt: string) {
+  window.dispatchEvent(new CustomEvent(NOTIFICATION_READ_ALL_EVENT, { detail: { read_at: readAt } }));
+}
+
+export function subscribeNotificationReadAll(callback: (readAt: string) => void) {
+  const listener = (event: Event) => {
+    const readAt = (event as CustomEvent<{ read_at?: unknown }>).detail?.read_at;
+    if (typeof readAt === "string") callback(readAt);
+  };
+  window.addEventListener(NOTIFICATION_READ_ALL_EVENT, listener);
+  return () => window.removeEventListener(NOTIFICATION_READ_ALL_EVENT, listener);
 }
 
 export function publishNotificationSnapshot(snapshot: NotificationState) {

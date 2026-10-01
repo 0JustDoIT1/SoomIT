@@ -17,7 +17,7 @@ import type { AuthorizedFetch } from "./treatment-prescription-types";
 type Item = { id: string; drug_name: string; ingredient_name?: string | null; mfds_item_seq?: string | null; calculated_dose: string | number | null; final_dose: string | number | null; unit: string | null; route: string; instructions?: string | null };
 type Safety = { id: string; check_type_label: string; result: "PASS" | "WARNING" | "BLOCK"; result_label?: string; message: string; source_code?: string | null; acknowledged_at?: string | null; acknowledgment_note?: string | null };
 type Prescription = { id: string; regimen_detail?: { regimen_name: string; regimen_code: string }; cycle_number: number; phase_label?: string; prescription_status: string; prescription_status_label?: string; safety_freshness?: "NOT_RUN" | "CURRENT" | "RECHECK_REQUIRED"; patient_account_linked?: boolean; items: Item[]; safety_check_results: Safety[] };
-type Props = { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; refreshKey?: number; actionable?: boolean; waitingMessage?: string; hasSelectedRegimen?: boolean; requiresPrescription?: boolean; availablePrescriptionPhases?: string[]; onPrescriptionChanged?: () => void };
+type Props = { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; doctorDisplayName?: string | null; refreshKey?: number; actionable?: boolean; waitingMessage?: string; hasSelectedRegimen?: boolean; requiresPrescription?: boolean; availablePrescriptionPhases?: string[]; onPrescriptionChanged?: () => void };
 
 const UNRESOLVED_SAFETY_SOURCE_CODES = new Set(["DUR_API_ERROR", "DUR_MAPPING_UNRESOLVED", "ALLERGY_UNCONFIRMED", "LAB_MISSING"]);
 const REQUEST_FAILED = "처방 요청에 실패했습니다. 입력값과 연결 상태를 확인해 주세요.";
@@ -41,7 +41,7 @@ function prescriptionError(data: unknown): string {
   return REQUEST_FAILED;
 }
 
-export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refreshKey = 0, actionable = true, waitingMessage, hasSelectedRegimen = false, requiresPrescription = true, availablePrescriptionPhases = [], onPrescriptionChanged }: Props) {
+export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorDisplayName, refreshKey = 0, actionable = true, waitingMessage, hasSelectedRegimen = false, requiresPrescription = true, availablePrescriptionPhases = [], onPrescriptionChanged }: Props) {
   const [prescriptions, setPrescriptions] = useState<Prescription[]>([]);
   const [selectedPrescriptionId, setSelectedPrescriptionId] = useState("");
   const [loading, setLoading] = useState(true); const [working, setWorking] = useState(false);
@@ -202,7 +202,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, refresh
           : <div className="flex justify-center">{creationForm}</div>}
       </div>}
     {pendingFinalization && <ConfirmActionDialog title="처방 최종 확정" description="처방을 확정하시겠습니까? 확정 후에는 처방 내용을 수정할 수 없습니다." supportingText="선택한 치료요법과 용량을 다시 확인해 주세요." confirmLabel="처방 확정" tone="blue" onCancel={() => setPendingFinalization(null)} onConfirm={() => { const { id, schedules } = pendingFinalization; setPendingFinalization(null); void finalize(id, schedules); }} />}
-    <FinalCareSummaryDialog open={summaryOpen} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} prescription={summaryPrescription} onClose={closeSummary} />
+    <FinalCareSummaryDialog open={summaryOpen} caseId={caseId} apiBaseUrl={apiBaseUrl} authorizedFetch={authorizedFetch} doctorDisplayName={doctorDisplayName} prescription={summaryPrescription} onClose={closeSummary} />
   </section>;
 }
 

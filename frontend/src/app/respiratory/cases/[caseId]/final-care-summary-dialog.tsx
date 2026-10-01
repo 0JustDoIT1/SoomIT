@@ -58,6 +58,7 @@ export function FinalCareSummaryDialog({
   caseId,
   apiBaseUrl,
   authorizedFetch,
+  doctorDisplayName,
   prescription,
   onClose,
 }: {
@@ -65,6 +66,7 @@ export function FinalCareSummaryDialog({
   caseId: string;
   apiBaseUrl: string;
   authorizedFetch: AuthorizedFetch;
+  doctorDisplayName?: string | null;
   prescription: SummaryPrescription | null;
   onClose: () => void;
 }) {
@@ -115,7 +117,8 @@ export function FinalCareSummaryDialog({
     const pathologyDetail = record(pathology.pathology);
     const pdl1Detail = record(pdl1.pdl1);
     const diagnosis = [pathologyDetail.histologic_type, pathologyDetail.subtype]
-      .filter((value) => typeof value === "string" && value.trim())
+      .filter((value): value is string => typeof value === "string" && Boolean(value.trim()))
+      .filter((value, index, values) => values.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index)
       .join(" · ");
     const aiRange = typeof pdl1Detail.interpretation === "string"
       ? pdl1Detail.interpretation.match(/AI predicted TPS range:\s*(.+)$/i)?.[1]
@@ -166,20 +169,20 @@ export function FinalCareSummaryDialog({
             <SummaryCell label="확정 시각" value={prescription.finalized_at ? new Date(prescription.finalized_at).toLocaleString("ko-KR") : "확정 완료"} />
           </dl>
 
-          <SummarySection title="최종 진단 및 병기">
+          <SummarySection title="최종 진단 및 병기" emphasized>
             <div className="grid gap-3 sm:grid-cols-2">
-              <SummaryValue label="병리 진단" value={clinical.diagnosis} />
-              <SummaryValue label="TNM / Stage" value={`${clinical.tnm} · Stage ${clinical.stage}`} />
+              <SummaryValue label="병리 진단" value={clinical.diagnosis} tone="diagnosis" />
+              <SummaryValue label="TNM / Stage" value={`${clinical.tnm} · Stage ${clinical.stage}`} tone="diagnosis" />
               <SummaryValue label="PD-L1" value={clinical.pdl1} />
-              <SummaryValue label="담당의" value={display(summary.caseDetail.primary_doctor_name)} />
+              <SummaryValue label="담당의" value={doctorDisplayName?.trim() || "-"} />
             </div>
           </SummarySection>
 
           <SummarySection title="확정 치료계획">
             <div className="grid gap-3 sm:grid-cols-2">
-              <SummaryValue label="치료 유형" value={display(summary.treatment.treatment_type_label ?? summary.treatment.treatment_type)} />
-              <SummaryValue label="Regimen" value={regimen ? `${regimen.regimen_code} · ${regimen.regimen_name}` : display(record(summary.treatment.selected_regimen_detail).regimen_name)} />
-              <div className="sm:col-span-2"><SummaryValue label="치료 계획" value={display(summary.treatment.treatment_plan)} /></div>
+              <SummaryValue label="치료 유형" value={display(summary.treatment.treatment_type_label ?? summary.treatment.treatment_type)} tone="treatment" />
+              <SummaryValue label="Regimen" value={regimen ? `${regimen.regimen_code} · ${regimen.regimen_name}` : display(record(summary.treatment.selected_regimen_detail).regimen_name)} tone="treatment" />
+              <div className="sm:col-span-2"><SummaryValue label="치료 계획" value={display(summary.treatment.treatment_plan)} tone="treatment-soft" /></div>
             </div>
           </SummarySection>
 
@@ -218,10 +221,14 @@ function SummaryCell({ label, value }: { label: string; value: string }) {
   return <div className="min-w-0 bg-white px-3 py-3"><dt className="text-xs font-semibold text-slate-500">{label}</dt><dd className="mt-1 break-words text-[15px] font-semibold text-slate-700">{value}</dd></div>;
 }
 
-function SummarySection({ title, children }: { title: string; children: React.ReactNode }) {
-  return <section className="mt-6"><h3 className="mb-3 text-sm font-bold text-slate-900">{title}</h3>{children}</section>;
+function SummarySection({ title, children, emphasized = false }: { title: string; children: React.ReactNode; emphasized?: boolean }) {
+  return <section className="mt-6"><h3 className={`mb-3 text-sm text-slate-900 ${emphasized ? "font-extrabold" : "font-bold"}`}>{title}</h3>{children}</section>;
 }
 
-function SummaryValue({ label, value }: { label: string; value: string }) {
-  return <div className="h-full min-w-0 rounded-xl bg-slate-50 px-3 py-3"><p className="text-xs font-semibold text-slate-500">{label}</p><p className="mt-1 break-words text-[15px] leading-6 font-semibold text-slate-700">{value}</p></div>;
+function SummaryValue({ label, value, tone = "neutral" }: { label: string; value: string; tone?: "neutral" | "diagnosis" | "treatment" | "treatment-soft" }) {
+  const cardColor = tone === "diagnosis" ? "border border-[#D9F2EA] bg-[#F0FBF8]"
+    : tone === "treatment" ? "border border-[#E1E6FC] bg-[#F3F5FF]"
+      : tone === "treatment-soft" ? "border border-[#EBEDFC] bg-[#F8F9FF]" : "bg-slate-50";
+  const valueWeight = tone === "diagnosis" || tone === "treatment" ? "font-bold" : "font-semibold";
+  return <div className={`h-full min-w-0 rounded-xl px-3 py-3 ${cardColor}`}><p className="text-xs font-semibold text-slate-500">{label}</p><p className={`mt-1 break-words text-[15px] leading-6 text-slate-700 ${valueWeight}`}>{value}</p></div>;
 }

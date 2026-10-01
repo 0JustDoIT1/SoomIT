@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import RespiratoryNotificationsPage from "./page";
-import { publishNotificationSnapshot } from "../_lib/notification-state";
+import { publishNotificationSnapshot, subscribeNotificationReadAll } from "../_lib/notification-state";
 
 const mocks = vi.hoisted(() => ({
   authorizedFetch: vi.fn(),
@@ -68,6 +68,38 @@ describe("respiratory notifications", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.requestCaseNavigation.mockReturnValue(true);
+  });
+
+  it("marks every unread notification as read and publishes an immediate header update", async () => {
+    load([
+      row(),
+      row({ id: "notification-2", title: "두 번째 알림" }),
+      row({ id: "notification-3", title: "이미 읽은 알림", read_at: "2026-09-25T01:00:00Z" }),
+    ], 2);
+    mocks.authorizedFetch.mockResolvedValueOnce(response({ updated_count: 2, unread_count: 0, read_at: "2026-09-25T02:00:00Z" }));
+    const onBulkRead = vi.fn();
+    const unsubscribe = subscribeNotificationReadAll(onBulkRead);
+    fireEvent.click(await screen.findByRole("button", { name: "읽지 않음 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "전체 읽음" }));
+
+    await waitFor(() => expect(screen.getByRole("button", { name: "전체 읽음" })).toBeDisabled());
+    expect(screen.getByText("해당 알림이 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("새 알림 2")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "읽지 않음" })).toBeInTheDocument();
+    expect(onBulkRead).toHaveBeenCalledWith("2026-09-25T02:00:00Z");
+    expect(mocks.authorizedFetch).toHaveBeenCalledWith("http://api.test/api/notifications/me/read-all/", { method: "PATCH" });
+    fireEvent.click(screen.getByRole("button", { name: "전체" }));
+    expect(screen.getByRole("button", { name: /이미 읽은 알림/ })).toHaveClass("bg-white");
+    unsubscribe();
+  });
+
+  it("keeps unread notifications when bulk read fails and disables the action when none remain", async () => {
+    load([row()], 1);
+    mocks.authorizedFetch.mockResolvedValueOnce(response({ detail: "처리 실패" }, false));
+    fireEvent.click(await screen.findByRole("button", { name: "전체 읽음" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("처리 실패");
+    expect(screen.getByRole("button", { name: "읽지 않음 1" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "전체 읽음" })).toBeEnabled();
   });
 
   it("renders unread count and visually distinguishes read rows", async () => {
@@ -177,5 +209,6 @@ describe("respiratory notifications", () => {
 
     load([], 0);
     expect(await screen.findByText("해당 알림이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "전체 읽음" })).toBeDisabled();
   });
 });

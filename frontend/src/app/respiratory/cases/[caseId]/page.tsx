@@ -2235,6 +2235,7 @@ export default function RespiratoryCaseDetailPage() {
               caseId={caseId}
               apiBaseUrl={API_BASE_URL}
               authorizedFetch={authorizedFetch}
+              doctorDisplayName={user?.name}
               refreshKey={caseRefreshVersion}
               actionable={prescriptionActionable}
               hasSelectedRegimen={Boolean(caseTreatmentDecision?.selected_regimen)}

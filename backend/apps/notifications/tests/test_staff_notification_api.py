@@ -1,12 +1,38 @@
-from django.test import TestCase
+from types import SimpleNamespace
+from unittest.mock import patch
+
+from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
-from rest_framework.test import APIClient
+from rest_framework.test import APIClient, APIRequestFactory, force_authenticate
 from rest_framework_simplejwt.tokens import RefreshToken
 
 from apps.accounts.models import User
 
 from ..models import NotificationLog
 from ..models import UserNotificationSetting
+from ..views import StaffNotificationReadAllAPIView
+
+
+class StaffNotificationReadAllViewUnitTests(SimpleTestCase):
+    def test_bulk_read_uses_the_authenticated_users_unread_queryset(self):
+        user = SimpleNamespace(is_authenticated=True)
+        request = APIRequestFactory().patch("/api/notifications/me/read-all/")
+        force_authenticate(request, user=user)
+        with patch("apps.notifications.views.NotificationLog.objects.filter") as notification_filter:
+            unread = notification_filter.return_value.select_related.return_value.order_by.return_value.filter.return_value
+            unread.update.return_value = 3
+            response = StaffNotificationReadAllAPIView.as_view()(request)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data["updated_count"], 3)
+        self.assertEqual(response.data["unread_count"], 0)
+        notification_filter.assert_called_once_with(
+            recipient_user=user,
+            channel=NotificationLog.Channel.IN_APP,
+        )
+        notification_filter.return_value.select_related.return_value.order_by.return_value.filter.assert_called_once_with(
+            read_at__isnull=True,
+        )
 
 
 class StaffNotificationAPITests(TestCase):
@@ -77,6 +103,58 @@ class StaffNotificationAPITests(TestCase):
         self.assertEqual(second.data["read_at"], first.data["read_at"])
         self.assertEqual(listed.data["unread_count"], 0)
         self.assertEqual(listed.data["results"][0]["read_at"], first.data["read_at"])
+
+    def test_mark_all_read_updates_only_own_unread_in_app_notifications(self):
+        second = NotificationLog.objects.create(
+            recipient_user=self.recipient,
+            notification_type="EXAMINATION_ORDER",
+            channel=NotificationLog.Channel.IN_APP,
+            title="Second unread",
+            message="Second unread message",
+        )
+        already_read = NotificationLog.objects.create(
+            recipient_user=self.recipient,
+            notification_type="EXAMINATION_ORDER",
+            channel=NotificationLog.Channel.IN_APP,
+            title="Already read",
+            message="Already read message",
+            read_at=self.notification.created_at,
+        )
+        push_only = NotificationLog.objects.create(
+            recipient_user=self.recipient,
+            notification_type="EXAMINATION_ORDER",
+            channel=NotificationLog.Channel.PUSH,
+            title="Push only",
+            message="Push only message",
+        )
+        other_notification = NotificationLog.objects.get(recipient_user=self.other_user)
+
+        url = reverse("staff-notification-read-all")
+        first = self.client.patch(url)
+        second_request = self.client.patch(url)
+
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(first.data["updated_count"], 2)
+        self.assertEqual(first.data["unread_count"], 0)
+        self.assertEqual(second_request.data["updated_count"], 0)
+        self.notification.refresh_from_db()
+        second.refresh_from_db()
+        already_read.refresh_from_db()
+        push_only.refresh_from_db()
+        other_notification.refresh_from_db()
+        self.assertIsNotNone(self.notification.read_at)
+        self.assertEqual(self.notification.read_at, second.read_at)
+        self.assertEqual(already_read.read_at, self.notification.created_at)
+        self.assertIsNone(push_only.read_at)
+        self.assertIsNone(other_notification.read_at)
+        self.assertEqual(self.client.get(reverse("staff-notification-list")).data["unread_count"], 0)
+
+    def test_unauthenticated_user_cannot_mark_all_read(self):
+        self.client.credentials()
+        response = self.client.patch(reverse("staff-notification-read-all"))
+        self.assertEqual(response.status_code, 401)
+        self.notification.refresh_from_db()
+        self.assertIsNone(self.notification.read_at)
 
     def test_list_excludes_non_in_app_channels(self):
         NotificationLog.objects.create(

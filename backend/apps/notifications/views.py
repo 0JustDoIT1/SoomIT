@@ -47,6 +47,13 @@ class StaffNotificationReadAPIView(StaffNotificationAPIView):
         return Response(StaffNotificationSerializer(notification).data)
 
 
+class StaffNotificationReadAllAPIView(StaffNotificationAPIView):
+    def patch(self, request):
+        read_at = timezone.now()
+        updated_count = self.get_queryset().filter(read_at__isnull=True).update(read_at=read_at)
+        return Response({"updated_count": updated_count, "unread_count": 0, "read_at": read_at})
+
+
 class MyNotificationSettingAPIView(APIView):
     authentication_classes = [JWTAuthentication]
     permission_classes = [IsAuthenticated]

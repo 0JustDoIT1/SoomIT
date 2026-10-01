@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { markNotificationRead, mergeNotificationSnapshot, publishNotificationSnapshot, readNotificationPayload, subscribeNotificationSnapshot, type NotificationState } from "./notification-state";
+import { markAllNotificationsRead, markNotificationRead, mergeNotificationSnapshot, publishNotificationSnapshot, readNotificationPayload, subscribeNotificationSnapshot, type NotificationState } from "./notification-state";
 
 function state(unreadCount: number, rows: Array<[string, string | null]>): NotificationState {
   return {
@@ -25,6 +25,12 @@ describe("notification state", () => {
     const first = markNotificationRead(state(2, [["a", null], ["b", null]]), "a", "read-a");
     const second = markNotificationRead(first, "b", "read-b");
     expect(second.unread_count).toBe(0);
+  });
+
+  it("clears the server unread count even when the list is paginated and preserves earlier read times", () => {
+    expect(markAllNotificationsRead(state(120, [["a", null], ["b", "read-b"]]), "bulk-read")).toEqual(
+      state(0, [["a", "bulk-read"], ["b", "read-b"]]),
+    );
   });
 
   it("does not let a stale polling response restore a locally read row", () => {
