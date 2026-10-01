@@ -31,6 +31,7 @@ type LabResult = {
 
 const EMPTY_MEDICATION = { medication_name: "", ingredient_name: "", mfds_item_seq: "", dose: "", dose_unit: "", frequency: "", route: "" };
 const EMPTY_LAB = { creatinine: "", egfr: "", ast: "", alt: "", total_bilirubin: "", tested_at: "", note: "" };
+const DEMO_LAB = { ...EMPTY_LAB, creatinine: "0.9", egfr: "92", ast: "24", alt: "28", total_bilirubin: "0.8" };
 const EMPTY_PROFILE: SafetyProfile = { allergy_status: "UNCONFIRMED", allergies: [], height_cm: "", weight_kg: "" };
 
 function labToForm(lab: LabResult) {
@@ -56,6 +57,7 @@ async function readProfileResponse(response: Response): Promise<SafetyProfile> {
 }
 
 export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, compact = false, onDataChanged, onReadinessChange }: { caseId: string; apiBaseUrl: string; authorizedFetch: AuthorizedFetch; compact?: boolean; onDataChanged?: () => void; onReadinessChange?: (ready: boolean) => void }) {
+  const safetyDemo = process.env.NEXT_PUBLIC_SAFETY_DEMO === "true";
   const [medications, setMedications] = useState<Medication[]>([]);
   const [labs, setLabs] = useState<LabResult[]>([]);
   const [profile, setProfile] = useState<SafetyProfile>(EMPTY_PROFILE);
@@ -70,7 +72,7 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   const [noMedications, setNoMedications] = useState(() => typeof window !== "undefined" && window.localStorage.getItem(`patient-safety-no-medications:${caseId}`) === "true");
   const { search: drugSearch, changeSearch: setDrugSearch, products: drugOptions, error: drugSearchError, loading: drugSearchLoading, query: drugQuery, settledQuery: drugSettledQuery } = useMfdsMedicationSearch(apiBaseUrl, authorizedFetch, !noMedications);
   const [selectedDrugSeq, setSelectedDrugSeq] = useState("");
-  const [labForm, setLabForm] = useState(EMPTY_LAB);
+  const [labForm, setLabForm] = useState(safetyDemo ? DEMO_LAB : EMPTY_LAB);
   const latestLab = labs[0] ?? null;
   const [addingLab, setAddingLab] = useState(false);
   const labLocked = Boolean(latestLab) && !addingLab;
@@ -85,8 +87,8 @@ export function PatientSafetyDataPanel({ caseId, apiBaseUrl, authorizedFetch, co
   useEffect(() => { onReadinessChange?.(Boolean(safetyReady)); }, [onReadinessChange, safetyReady]);
   const setLabsAndForm = useCallback((next: LabResult[]) => {
     setLabs(next);
-    if (next[0]) setLabForm(labToForm(next[0]));
-  }, []);
+    setLabForm(next[0] ? labToForm(next[0]) : (safetyDemo ? { ...DEMO_LAB } : { ...EMPTY_LAB }));
+  }, [safetyDemo]);
   const setMedicationsAndStatus = useCallback((next: Medication[]) => {
     setMedications(next);
     if (next.length > 0) {

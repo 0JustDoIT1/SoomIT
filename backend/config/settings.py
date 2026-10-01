@@ -24,6 +24,7 @@ def env_flag(name, default=False):
 
 DJANGO_ENV = os.environ.get("DJANGO_ENV", "development").strip().lower()
 IS_PRODUCTION = DJANGO_ENV in {"production", "prod"}
+SAFETY_DEMO_ENABLED = env_flag("SAFETY_DEMO_ENABLED", default=False)
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-change-me")
 if IS_PRODUCTION and (

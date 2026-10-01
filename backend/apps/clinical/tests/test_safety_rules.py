@@ -3,10 +3,12 @@ import json
 from types import SimpleNamespace as NS
 from unittest.mock import MagicMock, patch
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, override_settings
 
 from apps.clinical.views import (
     DoctorPrescriptionSafetyCheckAPIView as Safety,
+    DoctorPrescriptionDemoSafetyCheckAPIView as DemoSafety,
+    DoctorPrescriptionFinalizeAPIView as Finalize,
     DoctorPreviewPrescriptionFinalizeAPIView as PreviewFinalize,
     _allergy_names,
     _dur_pair_matches,
@@ -100,6 +102,55 @@ class SafetyRuleTests(SimpleTestCase):
         response = self.post()
         self.assertEqual(response.status_code, 400)
         self.safety_results.all.return_value.delete.assert_not_called()
+
+    @override_settings(SAFETY_DEMO_ENABLED=False)
+    def test_demo_safety_disabled_without_writes(self):
+        response = DemoSafety.post.__wrapped__(DemoSafety(), self.request, "case", "prescription")
+        self.assertEqual(response.status_code, 404)
+        self.prescriptions.select_for_update.assert_not_called()
+        self.results.create.assert_not_called()
+
+    @override_settings(SAFETY_DEMO_ENABLED=True)
+    def test_demo_safety_writes_pass_snapshot_and_validates_without_dur(self):
+        self.prescription.items.all.return_value = [self.prescription_item(final_dose=80)]
+        response = DemoSafety.post.__wrapped__(DemoSafety(), self.request, "case", "prescription")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "VALIDATED")
+        self.assertEqual(len(self.created(result="PASS")), 6)
+        self.assertEqual(len(self.created(source_code="SAFETY_INPUT_SNAPSHOT")), 1)
+        self.assertTrue(all(record["source"] == "DEMO_SAFETY" for record in self.created()))
+        self.dur_client.assert_not_called()
+
+    @override_settings(SAFETY_DEMO_ENABLED=True)
+    def test_demo_validated_status_uses_existing_finalize_path(self):
+        self.prescription.items.all.return_value = [self.prescription_item(final_dose=80)]
+        demo_response = DemoSafety.post.__wrapped__(DemoSafety(), self.request, "case", "prescription")
+        self.assertEqual(demo_response.status_code, 200)
+
+        self.prescription.treatment_decision = NS(clinical_result=NS(result_status="CONFIRMED"))
+        item_query = MagicMock()
+        item_query.exists.return_value = True
+        item_query.filter.return_value.exists.return_value = False
+        self.prescription.items.all.return_value = item_query
+        self.safety_results.all.return_value.exists.return_value = True
+        (
+            self.prescriptions.select_for_update.return_value
+            .select_related.return_value.filter.return_value.first.return_value
+        ) = self.prescription
+        with patch("apps.clinical.views.PrescriptionFinalizeSerializer") as finalize_serializer:
+            finalize_serializer.return_value.validated_data = {"medication_schedules": []}
+            response = Finalize.post.__wrapped__(Finalize(), self.request, "case", "prescription")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.prescription.prescription_status, "FINAL")
+
+    @override_settings(SAFETY_DEMO_ENABLED=True)
+    def test_demo_safety_rejects_missing_final_dose(self):
+        self.prescription.items.all.return_value = [self.prescription_item(final_dose=None)]
+        response = DemoSafety.post.__wrapped__(DemoSafety(), self.request, "case", "prescription")
+        self.assertEqual(response.status_code, 400)
+        self.results.create.assert_not_called()
 
     def test_safety_snapshot_detects_deleted_inputs(self):
         item = self.prescription_item(item_seq="100")

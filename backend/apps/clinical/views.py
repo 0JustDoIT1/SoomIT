@@ -1,6 +1,7 @@
 import json
 from types import SimpleNamespace
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import F, Q
 from django.utils import timezone
@@ -55,6 +56,14 @@ UNRESOLVED_SAFETY_SOURCE_CODES = {
     "ALLERGY_UNCONFIRMED",
     "LAB_MISSING",
 }
+
+DEMO_SAFETY_RESULT = (
+    ("DUPLICATION", "DEMO_DUPLICATION", "시연용 PASS · 복용약과 처방약의 중복 없음 (실제 검증 미실행)"),
+    ("ALLERGY", "DEMO_ALLERGY", "시연용 PASS · 알레르기 차단 요인 없음 (실제 검증 미실행)"),
+    ("DRUG_INTERACTION", "DEMO_DUR", "시연용 PASS · 복용약/DUR상 중대한 충돌 없음 (실제 검증 미실행)"),
+    ("RENAL_FUNCTION", "DEMO_RENAL", "시연용 PASS · 신장기능 적합 (실제 검증 미실행)"),
+    ("HEPATIC_FUNCTION", "DEMO_HEPATIC", "시연용 PASS · 간기능 적합 (실제 검증 미실행)"),
+)
 
 PULMONOLOGY_WRITE_PERMISSIONS = [
     IsAuthenticated,
@@ -1807,6 +1816,99 @@ class DoctorPrescriptionItemUpdateAPIView(APIView):
             DoctorPrescriptionSerializer(prescription).data,
             status=200,
         )
+
+@extend_schema(tags=["호흡기내과-처방관리"])
+class DoctorPrescriptionDemoSafetyCheckAPIView(APIView):
+    authentication_classes = [JWTAuthentication]
+    permission_classes = PULMONOLOGY_WRITE_PERMISSIONS
+
+    @extend_schema(request=None, responses={200: DoctorPrescriptionSerializer})
+    @transaction.atomic
+    def post(self, request, case_id, prescription_id):
+        if not settings.SAFETY_DEMO_ENABLED:
+            return Response({"detail": "시연용 Safety Check가 비활성화되어 있습니다."}, status=404)
+
+        prescription = (
+            Prescription.objects
+            .select_for_update(of=("self",))
+            .select_related("case", "case__patient")
+            .prefetch_related("items__drug")
+            .filter(
+                id=prescription_id,
+                case_id=case_id,
+                case__primary_doctor=request.user,
+                case__case_status="ACTIVE",
+            )
+            .first()
+        )
+        if prescription is None:
+            return Response({"detail": "처방을 찾을 수 없습니다."}, status=404)
+        if prescription.case.current_stage != WorkflowStage.PRESCRIPTION:
+            return Response({"detail": "처방 단계에서만 Safety Check를 수행할 수 있습니다."}, status=400)
+        if prescription.prescription_status not in {
+            Prescription.PrescriptionStatus.DRAFT,
+            Prescription.PrescriptionStatus.VALIDATED,
+        }:
+            return Response({"detail": "DRAFT 또는 재검사가 필요한 VALIDATED 처방만 Safety Check를 수행할 수 있습니다."}, status=400)
+
+        items = list(prescription.items.all())
+        if not items:
+            return Response({"detail": "Safety Check를 수행할 처방 약물 항목이 없습니다."}, status=400)
+        if any(item.final_dose is None for item in items):
+            return Response({"detail": "모든 처방 약물의 최종 용량을 입력한 후 Safety Check를 수행할 수 있습니다."}, status=400)
+        if prescription.prescription_status == Prescription.PrescriptionStatus.VALIDATED:
+            if evaluate_prescription_safety_freshness(prescription, items=items).status == SafetyFreshness.CURRENT:
+                return Response({"detail": "현재 Safety Check가 최신 상태이므로 중복 실행할 수 없습니다."}, status=400)
+
+        patient = prescription.case.patient
+        patient_profile = PatientHealthProfile.objects.filter(patient=patient).first()
+        active_medications = list(
+            CurrentMedication.objects.filter(patient=patient, is_active=True).select_related("drug")
+        )
+        latest_lab = LabResult.objects.filter(patient=patient).order_by("-tested_at", "-created_at", "-id").first()
+
+        prescription.safety_check_results.all().delete()
+        SafetyCheckResult.objects.create(
+            prescription=prescription,
+            prescription_item=None,
+            check_type="INPUT_SNAPSHOT",
+            result="PASS",
+            message=json.dumps(
+                _safety_input_snapshot(
+                    items=items,
+                    medications=active_medications,
+                    patient_profile=patient_profile,
+                    latest_lab=latest_lab,
+                ),
+                sort_keys=True,
+                default=str,
+            ),
+            source="DEMO_SAFETY",
+            source_code="SAFETY_INPUT_SNAPSHOT",
+            checked_at=timezone.now(),
+        )
+        for check_type, source_code, message in DEMO_SAFETY_RESULT:
+            SafetyCheckResult.objects.create(
+                prescription=prescription,
+                prescription_item=None,
+                check_type=check_type,
+                result="PASS",
+                message=message,
+                source="DEMO_SAFETY",
+                source_code=source_code,
+                checked_at=timezone.now(),
+            )
+
+        prescription.prescription_status = Prescription.PrescriptionStatus.VALIDATED
+        prescription.save(update_fields=["prescription_status", "updated_at"])
+        prescription = (
+            Prescription.objects
+            .select_related("treatment_decision", "regimen", "prescribed_by_user")
+            .prefetch_related("items__drug", "safety_check_results")
+            .get(id=prescription.id)
+        )
+        return Response(DoctorPrescriptionSerializer(prescription).data, status=200)
+
 
 @extend_schema(tags=["호흡기내과-처방관리"])
 class DoctorPrescriptionSafetyCheckAPIView(APIView):

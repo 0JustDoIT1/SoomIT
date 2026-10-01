@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { PrescriptionPanel } from "./prescription-panel";
 import { showToast } from "@/components/ui/toast/toast";
 
@@ -18,6 +18,47 @@ const props = { caseId: "case-1", apiBaseUrl: "http://test", hasSelectedRegimen:
 const base = { id: "rx-1", cycle_number: 1, regimen_detail: { regimen_name: "Test regimen", regimen_code: "TEST" }, items: [{ id: "item-1", drug_name: "Test drug", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "Day 1" }] };
 const mockFetch = (status: string, results: object[] = [], safetyFreshness = status === "DRAFT" ? (results.length ? "CURRENT" : "NOT_RUN") : "CURRENT") => vi.fn().mockImplementation(async () => new Response(JSON.stringify([{ ...base, prescription_status: status, safety_freshness: safetyFreshness, safety_check_results: results }])));
 const confirmFinalization = () => fireEvent.click(within(screen.getByRole("alertdialog", { name: "처방 최종 확정" })).getByRole("button", { name: "처방 확정" }));
+afterEach(() => { vi.useRealTimers(); vi.unstubAllEnvs(); });
+
+it("calls the existing Safety Check API when demo mode is off", async () => {
+  vi.stubEnv("NEXT_PUBLIC_SAFETY_DEMO", "false");
+  const authorizedFetch = mockFetch("DRAFT");
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+  fireEvent.click(await screen.findByRole("button", { name: "안전성 검사 실행" }));
+  await waitFor(() => expect(authorizedFetch.mock.calls.some(([url, init]) =>
+    String(url).endsWith("/safety-check/") && init?.method === "POST",
+  )).toBe(true));
+});
+
+it("waits 2.5 seconds, uses the demo transition, and renders the stored PASS result", async () => {
+  vi.stubEnv("NEXT_PUBLIC_SAFETY_DEMO", "true");
+  let validated = false;
+  const pass = [{ id: "demo-pass", check_type_label: "신장기능", result: "PASS", message: "시연용 PASS · 신장기능 적합 (실제 검증 미실행)" }];
+  const authorizedFetch = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") {
+      expect(String(url)).toContain("/demo-safety-check/");
+      validated = true;
+      return new Response(JSON.stringify({ ...base, prescription_status: "VALIDATED", safety_freshness: "CURRENT", safety_check_results: pass }));
+    }
+    return new Response(JSON.stringify([{ ...base, prescription_status: validated ? "VALIDATED" : "DRAFT", safety_freshness: validated ? "CURRENT" : "NOT_RUN", safety_check_results: validated ? pass : [] }]));
+  });
+  render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
+  const safetyButton = await screen.findByRole("button", { name: "안전성 검사 실행" });
+  vi.useFakeTimers();
+  fireEvent.click(safetyButton);
+  expect(screen.getByRole("button", { name: "Safety Check 검사 중..." })).toBeDisabled();
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(2_499); });
+  expect(authorizedFetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(0);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  vi.useRealTimers();
+
+  await waitFor(() => expect(screen.getByText(/현재 상태: VALIDATED/)).toBeInTheDocument());
+  expect(screen.getByText("시연용 PASS · 신장기능 적합 (실제 검증 미실행)")).toBeInTheDocument();
+  expect(screen.getByText("신장기능 · PASS")).toBeInTheDocument();
+  expect(authorizedFetch.mock.calls.filter(([, init]) => init?.method === "POST")).toHaveLength(1);
+  expect(authorizedFetch.mock.calls.some(([url]) => String(url).endsWith("/safety-check/"))).toBe(false);
+});
 
 it("renders patient safety inputs in the left prescription workspace", async () => {
   render(<PrescriptionPanel {...props} authorizedFetch={mockFetch("DRAFT")} />);

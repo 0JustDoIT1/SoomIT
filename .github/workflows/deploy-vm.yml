@@ -136,6 +136,8 @@ jobs:
       - name: Build and push
         if: matrix.enabled == 'true'
         shell: bash
+        env:
+          NEXT_PUBLIC_SAFETY_DEMO: ${{ vars.NEXT_PUBLIC_SAFETY_DEMO || 'false' }}
         run: |
           IMAGE="$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/${{ matrix.image }}:${{ github.sha }}"
           CACHE_IMAGE="$REGISTRY/$PROJECT_ID/$AR_REPOSITORY/${{ matrix.image }}:buildcache"
@@ -144,6 +146,7 @@ jobs:
             args+=(--build-arg NEXT_PUBLIC_API_BASE_URL=https://soomit.kro.kr)
             args+=(--build-arg NEXT_PUBLIC_REALTIME_WS_URL=wss://soomit.kro.kr)
             args+=(--build-arg NEXT_PUBLIC_TREATMENT_OPINION_DEMO=true)
+            args+=(--build-arg "NEXT_PUBLIC_SAFETY_DEMO=$NEXT_PUBLIC_SAFETY_DEMO")
           fi
           docker buildx build --push \
             --cache-from "type=registry,ref=$CACHE_IMAGE" \

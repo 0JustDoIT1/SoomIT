@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { PatientSafetyDataPanel } from "./patient-safety-data-panel";
 
@@ -11,6 +11,58 @@ vi.mock("react-day-picker", () => ({
 function jsonResponse(data: unknown, status = 200) { return new Response(JSON.stringify(data), { status, headers: { "Content-Type": "application/json" } }); }
 
 describe("PatientSafetyDataPanel", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each([true, false])("prefills unsaved lab values only in safety demo mode (compact=%s)", async (compact) => {
+    vi.stubEnv("NEXT_PUBLIC_SAFETY_DEMO", "true");
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) =>
+      jsonResponse(String(input).includes("allergy-profile")
+        ? { allergy_status: "NONE", allergies: [] }
+        : []));
+    render(<PatientSafetyDataPanel compact={compact} caseId="demo-lab" apiBaseUrl="http://test" authorizedFetch={authorizedFetch} />);
+
+    await waitFor(() => expect(screen.getByLabelText("Creatinine")).toHaveValue(0.9));
+    expect(screen.getByLabelText("eGFR")).toHaveValue(92);
+    expect(screen.getByLabelText("AST")).toHaveValue(24);
+    expect(screen.getByLabelText("ALT")).toHaveValue(28);
+    expect(screen.getByLabelText(compact ? "Total Bilirubin" : "총 빌리루빈")).toHaveValue(0.8);
+    expect(screen.getByRole("button", { name: "검사날짜 달력 열기" })).toHaveTextContent("날짜 선택");
+    fireEvent.change(screen.getByLabelText("Creatinine"), { target: { value: "1.1" } });
+    expect(screen.getByLabelText("Creatinine")).toHaveValue(1.1);
+  });
+
+  it("keeps stored lab values ahead of demo defaults", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SAFETY_DEMO", "true");
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) => jsonResponse(
+      String(input).includes("allergy-profile")
+        ? { allergy_status: "NONE", allergies: [] }
+        : String(input).includes("lab-results")
+          ? [{ id: "saved", creatinine: "1.2", egfr: "65", ast: "31", alt: "35", total_bilirubin: "1.1", tested_at: "2026-09-15T00:00:00Z" }]
+          : [],
+    ));
+    render(<PatientSafetyDataPanel compact caseId="saved-demo-lab" apiBaseUrl="http://test" authorizedFetch={authorizedFetch} />);
+
+    await waitFor(() => expect(screen.getByLabelText("Creatinine")).toHaveValue(1.2));
+    expect(screen.getByLabelText("eGFR")).toHaveValue(65);
+    expect(screen.getByLabelText("AST")).toHaveValue(31);
+    expect(screen.getByLabelText("ALT")).toHaveValue(35);
+    expect(screen.getByLabelText("Total Bilirubin")).toHaveValue(1.1);
+    expect(screen.getByLabelText("Creatinine")).toBeDisabled();
+  });
+
+  it("leaves an unsaved lab form empty when safety demo is off", async () => {
+    vi.stubEnv("NEXT_PUBLIC_SAFETY_DEMO", "false");
+    const authorizedFetch = vi.fn(async (input: RequestInfo | URL) =>
+      jsonResponse(String(input).includes("allergy-profile")
+        ? { allergy_status: "NONE", allergies: [] }
+        : []));
+    render(<PatientSafetyDataPanel compact caseId="normal-lab" apiBaseUrl="http://test" authorizedFetch={authorizedFetch} />);
+
+    await waitFor(() => expect(authorizedFetch).toHaveBeenCalledTimes(3));
+    expect(screen.getByLabelText("Creatinine")).toHaveValue(null);
+    expect(screen.getByLabelText("eGFR")).toHaveValue(null);
+  });
+
   it.each(["none", "saved-medication"])('reports readiness from saved safety data (%s)', async (medicationMode) => {
     const caseId = `ready-${medicationMode}`;
     if (medicationMode === "none") window.localStorage.setItem(`patient-safety-no-medications:${caseId}`, "true");

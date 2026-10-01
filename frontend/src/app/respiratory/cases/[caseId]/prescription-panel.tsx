@@ -47,6 +47,8 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
   const [loading, setLoading] = useState(true); const [working, setWorking] = useState(false);
   const [checkingSafety, setCheckingSafety] = useState(false);
   const workingRef = useRef(false);
+  const demoSafetyPendingRef = useRef(false);
+  const cancelDemoSafetyRef = useRef<(() => void) | null>(null);
   const prescriptionsRef = useRef<Prescription[]>([]);
   const loadedCaseIdRef = useRef<string | null>(null);
   const [error, setError] = useState(""); const [message, setMessage] = useState("");
@@ -69,6 +71,10 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [startDialogOpen, setStartDialogOpen]);
+  useEffect(() => () => {
+    cancelDemoSafetyRef.current?.();
+    cancelDemoSafetyRef.current = null;
+  }, [caseId]);
 
   const load = useCallback(async ({ showLoading = true }: { showLoading?: boolean } = {}) => {
     if (showLoading) setLoading(true); setError("");
@@ -96,10 +102,31 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
   const create = async () => { if (!actionable || workingRef.current || !requiresPrescription || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate) return; const id = `case-prescription-create-${caseId}`; showToast.info("처방을 저장하고 있습니다.", { id }); const ok = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ cycle_number: Number(cycleNumber), phase: selectedPhase, cycle_start_date: cycleStartDate }) }, "처방 DRAFT가 생성되었습니다.", id); if (ok) { setCycleNumber("1"); setPhase(supportedPhases[0] ?? ""); setCycleStartDate(""); setStartDialogOpen(false); } };
   const updateItem = (prescriptionId: string, itemId: string, body: object) => request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${prescriptionId}/items/${itemId}/`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, "처방 약물 정보가 수정되었습니다.", `case-prescription-item-${caseId}-${itemId}`, false);
   const safety = async (id: string) => {
-    if (workingRef.current) return;
+    if (workingRef.current || demoSafetyPendingRef.current) return;
     setCheckingSafety(true);
-    try { await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/safety-check/`, { method: "POST" }, "안전성 검사가 완료되었습니다.", undefined, false); }
-    finally { setCheckingSafety(false); }
+    let cancelled = false;
+    try {
+      if (process.env.NEXT_PUBLIC_SAFETY_DEMO === "true") {
+        demoSafetyPendingRef.current = true;
+        const ready = await new Promise<boolean>((resolve) => {
+          const timer = window.setTimeout(() => {
+            cancelDemoSafetyRef.current = null;
+            resolve(true);
+          }, 2_500);
+          cancelDemoSafetyRef.current = () => {
+            window.clearTimeout(timer);
+            cancelled = true;
+            resolve(false);
+          };
+        });
+        if (!ready) return;
+      }
+      const safetyPath = process.env.NEXT_PUBLIC_SAFETY_DEMO === "true" ? "demo-safety-check" : "safety-check";
+      await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/${safetyPath}/`, { method: "POST" }, "안전성 검사가 완료되었습니다.", undefined, false);
+    } finally {
+      demoSafetyPendingRef.current = false;
+      if (!cancelled) setCheckingSafety(false);
+    }
   };
   const finalize = async (id: string, schedules: FinalizeMedicationSchedule[]) => { const toastId = `case-prescription-finalize-${caseId}-${id}`; showToast.info("처방을 확정하고 있습니다.", { id: toastId }); const completedFinalization = await request(`${apiBaseUrl}/api/doctor/cases/${caseId}/prescriptions/${id}/finalize/`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ medication_schedules: schedules }) }, "처방이 최종 확정되었습니다.", toastId); const finalized = prescriptionsRef.current.find((prescription) => prescription.id === id && prescription.prescription_status === "FINAL"); if (completedFinalization && finalized) { setSummaryPrescription(finalized); setSummaryOpen(true); } };
   const closeSummary = useCallback(() => setSummaryOpen(false), []);
@@ -206,7 +233,7 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
             {active.safety_check_results.map(result => <div key={result.id} className={`border-b py-3 text-[15px] leading-6 ${result.result === "BLOCK" ? "border-rose-200 text-rose-800" : result.result === "WARNING" ? "border-amber-200 text-amber-800" : "border-slate-200 text-emerald-800"}`}><p className="font-semibold">{result.check_type_label} · {result.result_label ?? result.result}</p><p className="mt-1">{result.message}</p>{result.result === "WARNING" && result.acknowledged_at && <p className="mt-1">의료진 확인 완료{result.acknowledgment_note ? ` · ${result.acknowledgment_note}` : ""}</p>}{result.result === "WARNING" && ["LAB_MISSING", "ALLERGY_UNCONFIRMED", "DUR_MAPPING_UNRESOLVED"].includes(result.source_code ?? "") && <button type="button" onClick={() => focusSafetyInput(result.source_code, result.message)} className="mt-1 rounded border border-amber-300 px-2 py-1 font-semibold">부족한 입력 보완</button>}</div>)}
           </div>
           <p role="status" className="shrink-0 text-[15px] leading-6 text-slate-600">{finalGuidance}</p>
-          {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working} onClick={() => void safety(active.id)} className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${hasUnacknowledgedWarning && !hasBlock && !hasUnresolvedWarning && !safetyRecheckRequired ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{checkingSafety ? "Safety Check 검사 중..." : working ? "처리 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
+          {actionable && (active.prescription_status === "DRAFT" || (active.prescription_status === "VALIDATED" && safetyRecheckRequired)) && <button type="button" disabled={working || checkingSafety} onClick={() => void safety(active.id)} className={`shrink-0 rounded-lg px-4 py-2.5 text-sm font-semibold disabled:opacity-50 ${hasUnacknowledgedWarning && !hasBlock && !hasUnresolvedWarning && !safetyRecheckRequired ? "border border-slate-300 bg-white text-slate-700" : "bg-blue-600 text-white"}`}>{checkingSafety ? "Safety Check 검사 중..." : working ? "처리 중..." : safetyRecheckRequired ? "안전성 재검사" : active.safety_check_results.length ? "안전성 검사 다시 실행" : "안전성 검사 실행"}</button>}
           {actionable && active.prescription_status === "VALIDATED" && safetyIsCurrent && <div className="flex min-h-0 flex-1 flex-col"><PrescriptionFinalizeScheduleForm items={active.items} working={working} patientAccountLinked={active.patient_account_linked === true} onFinalize={async schedules => { setPendingFinalization({ id: active.id, schedules }); }} /></div>}
           {active.prescription_status === "FINAL" && <div className="shrink-0 rounded-lg border border-emerald-200 bg-emerald-50 p-2"><p className="text-sm font-semibold text-emerald-700">최종 확정 완료 · 수정 불가</p><button type="button" onClick={() => { setSummaryPrescription(active); setSummaryOpen(true); }} className="mt-2 w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-800">최종 진료 요약 보기</button></div>}
         </aside>
