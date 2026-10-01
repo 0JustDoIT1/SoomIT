@@ -82,8 +82,8 @@ describe("respiratory notifications", () => {
     fireEvent.click(await screen.findByRole("button", { name: "읽지 않음 2" }));
     fireEvent.click(screen.getByRole("button", { name: "전체 읽음" }));
 
-    await waitFor(() => expect(screen.getByRole("button", { name: "전체 읽음" })).toBeDisabled());
-    expect(screen.getByText("해당 알림이 없습니다.")).toBeInTheDocument();
+    expect(await screen.findByText("해당 알림이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "전체 읽음" })).toBeDisabled();
     expect(screen.queryByText("새 알림 2")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "읽지 않음" })).toBeInTheDocument();
     expect(onBulkRead).toHaveBeenCalledWith("2026-09-25T02:00:00Z");

@@ -60,6 +60,15 @@ export async function installWorkflowAuditApi(page: Page, stage = "PATHOLOGY_GEN
       if (method === "POST") state.decision = { id: "decision-qa", ...body, selected_regimen_detail: candidates.find(c => c.regimen_detail.id === body.selected_regimen)?.regimen_detail, requires_prescription: true, available_prescription_phases: ["INDUCTION"], decision_status: "DRAFT" };
       return state.decision ? reply(state.decision) : reply({ detail: "No treatment decision" }, 404);
     }
+    if (path.endsWith("/allergy-profile/") && method === "GET") {
+      return reply({ allergy_status: "NONE", allergies: [], height_cm: 170, weight_kg: 65 });
+    }
+    if (path.endsWith("/current-medications/") && method === "GET") {
+      return reply([{ id: "medication-qa", medication_name: "QA current medication", ingredient_name: "QA ingredient", mfds_item_seq: "QA-ITEM-001", is_active: true }]);
+    }
+    if (path.endsWith("/lab-results/") && method === "GET") {
+      return reply([{ id: "lab-qa", creatinine: 1, egfr: 90, ast: 20, alt: 20, total_bilirubin: 0.8, tested_at: "2026-09-30T00:00:00Z" }]);
+    }
     if (path.endsWith("/prescriptions/")) {
       if (method === "POST") {
         const rx = { id: "rx-qa", ...body, regimen_detail: candidates[0].regimen_detail, prescription_status: "DRAFT", safety_freshness: "NOT_RUN", safety_check_results: [], items: [{ id: "item-qa", drug_name: "QA medication", route: "INTRAVENOUS", calculated_dose: 80, final_dose: 80, unit: "mg", instructions: "QA fixture" }] };

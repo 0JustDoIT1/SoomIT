@@ -373,7 +373,7 @@ it("creates the first draft once and requires a cycle start date", async () => {
     return Promise.resolve(new Response(JSON.stringify([])));
   });
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
-  expect(await screen.findByRole("button", { name: "처방 시작" })).toBeEnabled();
+  await waitFor(() => expect(screen.getByRole("button", { name: "처방 시작" })).toBeEnabled());
   expect(screen.getByRole("region", { name: "환자 안전성 정보" })).toHaveTextContent("안전성 입력 폼");
   expect(screen.queryByRole("heading", { name: "처방 초안을 생성하세요" })).not.toBeInTheDocument();
   await openStartDialog();
