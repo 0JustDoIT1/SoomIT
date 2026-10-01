@@ -1253,7 +1253,12 @@ class DoctorTreatmentOpinionAPIView(APIView):
             opinion = self._confirmed_data_fallback(clinical_journey, evidence, draft_context, safety_data)
             opinion_status = "CONFIRMED_DATA_FALLBACK_V3"
         else:
-            opinion_status = "AVAILABLE"
+            if self._is_current_opinion(opinion):
+                opinion_status = "AVAILABLE"
+            else:
+                logger.warning("MedGemma treatment opinion remained invalid after repair; using confirmed-data fallback")
+                opinion = self._confirmed_data_fallback(clinical_journey, evidence, draft_context, safety_data)
+                opinion_status = "CONFIRMED_DATA_FALLBACK_V3"
         logger.info("treatment_opinion stage=generation elapsed_seconds=%.3f",
                     time.perf_counter() - generation_started)
         if not self._is_current_opinion(opinion):

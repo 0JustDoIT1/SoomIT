@@ -247,6 +247,37 @@ class DoctorTreatmentOpinionAPITests(SimpleTestCase):
         fallback = json.loads(defaults["opinion"])
         self.assertEqual(set(fallback), DoctorTreatmentOpinionAPIView.OPINION_SCHEMA_KEYS)
 
+    @patch("apps.cases.views.request_chat_completion", side_effect=["truncated", "still invalid"])
+    @patch("apps.cases.views.TreatmentAIOpinion.objects")
+    @patch("apps.cases.views.TreatmentDecision.objects")
+    @patch("apps.cases.views.Prescription.objects")
+    @patch("apps.cases.views.LungCancerCase.objects")
+    @patch("apps.cases.views.DoctorTreatmentEvidenceAPIView")
+    def test_invalid_repaired_output_uses_confirmed_data_fallback(
+        self, evidence_view, case_objects, prescription_objects, decision_objects, opinion_objects, chat,
+    ):
+        evidence_view.return_value.build_response.return_value = Response(self.available_evidence())
+        case_objects.filter.return_value.first.return_value = NS(id=self.case_id)
+        opinion_objects.filter.return_value.first.return_value = None
+        decision_objects.filter.return_value.exists.return_value = False
+        prescription_objects.filter.return_value.prefetch_related.return_value.order_by.return_value.first.return_value = None
+        saved = self.saved_opinion()
+        saved.status = "CONFIRMED_DATA_FALLBACK_V3"
+        opinion_objects.update_or_create.return_value = (saved, True)
+
+        response = DoctorTreatmentOpinionAPIView.as_view()(
+            self.request({"selected_regimen": str(self.regimen_id)}), case_id=self.case_id,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(chat.call_count, 2)
+        defaults = opinion_objects.update_or_create.call_args.kwargs["defaults"]
+        self.assertEqual(defaults["status"], "CONFIRMED_DATA_FALLBACK_V3")
+        self.assertEqual(
+            set(json.loads(defaults["opinion"])),
+            DoctorTreatmentOpinionAPIView.OPINION_SCHEMA_KEYS,
+        )
+
     @patch("apps.cases.views.TreatmentAIOpinion.objects")
     @patch("apps.cases.views.LungCancerCase.objects")
     def test_get_restores_the_persisted_opinion(self, case_objects, opinion_objects):
