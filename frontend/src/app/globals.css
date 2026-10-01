@@ -17,9 +17,9 @@
   --text-ui-label--line-height: 1.45;
   --text-ui-body: 0.875rem;
   --text-ui-body--line-height: 1.5;
-  --text-ui-section: 1rem;
+  --text-ui-section: 1.25rem;
   --text-ui-section--line-height: 1.45;
-  --text-ui-title: 1.25rem;
+  --text-ui-title: 1.625rem;
   --text-ui-title--line-height: 1.35;
 }
 
@@ -60,25 +60,50 @@ h3,
 h4,
 h5,
 h6 {
-  line-height: 1.35;
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+  word-break: keep-all;
 }
 
 h1 {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: clamp(24px, 1.6vw, 28px);
+  font-weight: 750;
 }
 
 h2 {
-  font-size: 18px;
-  font-weight: 600;
+  font-size: 22px;
+  font-weight: 700;
 }
 
 h3,
 h4,
 h5,
 h6 {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+/* Keep heading icons aligned when a title wraps onto a second line. */
+:is(h1, h2, h3, h4, h5, h6):is(.flex, .inline-flex) {
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+:is(h1, h2, h3, h4, h5, h6) > svg {
+  flex-shrink: 0;
+}
+
+.clinical-app th {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+  vertical-align: middle;
+}
+
+.clinical-app :is(td, dd, time, [role="spinbutton"]) {
+  font-variant-numeric: tabular-nums;
 }
 
 small,

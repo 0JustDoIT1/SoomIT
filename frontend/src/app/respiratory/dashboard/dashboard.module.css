@@ -20,8 +20,8 @@
 .dashboard :is(.panel, [class~="shadow-sm"]) { box-shadow: var(--dashboard-shadow); }
 .dashboard :is([class~="rounded-xl"], [class~="rounded-2xl"]) { border-radius: var(--dashboard-radius); }
 .dashboard [class~="border-slate-100"] { border-color: var(--color-slate-200); }
-.dashboard h2 { font-size: 17px; font-weight: 650; letter-spacing: -.025em; }
-.dashboard h3 { font-size: 14px; font-weight: 650; }
+.dashboard h2 { font-size: 22px; font-weight: 700; line-height: 1.4; letter-spacing: -.02em; }
+.dashboard h3 { font-size: 18px; font-weight: 700; line-height: 1.4; }
 .dashboard .assistantTitle {
   font-weight: 700;
   letter-spacing: 0;
@@ -33,7 +33,7 @@
 .dashboard :is(button, input, select) { transition: background-color .15s, border-color .15s; }
 .dashboard :is(button, input, select):focus-visible { outline: 2px solid var(--color-blue-500); outline-offset: 3px; }
 .dashboard table { font-size: 13px; line-height: 1.6; }
-.dashboard th { font-size: 12px; }
+.dashboard th { font-size: 13px; font-weight: 700; vertical-align: middle; }
 .dashboard td:nth-child(4) { background: var(--color-blue-50); border-left: 2px solid var(--color-blue-200); }
 
 .markdown { min-width: 0; font-size: 14px; line-height: 1.85; overflow-wrap: anywhere; }

@@ -328,7 +328,7 @@ it("does not show a final banner when the refreshed backend status remains valid
     expect.any(Object),
   ));
   expect(screen.queryByText("처방이 최종 확정되었습니다.")).not.toBeInTheDocument();
-  expect(within(rail).getByRole("button", { name: "처방 최종 확정" })).toBeEnabled();
+  await waitFor(() => expect(within(rail).getByRole("button", { name: "처방 최종 확정" })).toBeEnabled());
 });
 
 it("creates the first draft once and requires a cycle start date", async () => {

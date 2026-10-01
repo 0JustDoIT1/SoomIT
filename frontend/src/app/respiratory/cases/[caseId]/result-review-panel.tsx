@@ -249,7 +249,7 @@ function formatMalignancyPrediction(value: unknown) {
 }
 
 function SourcePanel({ eyebrow, title, meta, tone, children, compact = false }: { eyebrow: string; title: string; meta: string; tone: "specialist" | "ai"; children: React.ReactNode; compact?: boolean }) {
-  return <section className={compact ? "shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" : "min-w-0"}><header className={`flex shrink-0 items-start justify-between gap-3 border-b px-3 ${compact ? "min-h-[46px] py-2" : "min-h-[74px] py-2.5"} ${tone === "specialist" ? "border-emerald-100 bg-emerald-50/40" : "border-blue-100 bg-blue-50/40"}`}><div><p className={`text-[9px] font-semibold ${tone === "specialist" ? "text-emerald-700" : "text-blue-700"}`}>{eyebrow}</p><h2 className={`${compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"} font-bold text-slate-900`}>{title}</h2>{tone === "ai" && !compact && <p className="mt-1 text-[10px] text-slate-400">의료진 확정 결과가 아닌 참고 자료입니다.</p>}</div><p className="max-w-28 truncate text-right text-[9px] text-slate-400">{meta}</p></header><div className={compact ? "" : "min-h-[190px]"}>{children}</div></section>;
+  return <section className={compact ? "shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" : "min-w-0"}><header className={`flex shrink-0 flex-wrap items-start justify-between gap-x-3 gap-y-1 border-b px-3 ${compact ? "min-h-[46px] py-2" : "min-h-[74px] py-2.5"} ${tone === "specialist" ? "border-emerald-100 bg-emerald-50/40" : "border-blue-100 bg-blue-50/40"}`}><div><p className={`text-xs font-semibold ${tone === "specialist" ? "text-emerald-700" : "text-blue-700"}`}>{eyebrow}</p><h2 className={`${compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"} font-bold text-slate-900`}>{title}</h2>{tone === "ai" && !compact && <p className="mt-1 text-xs text-slate-500">의료진 확정 결과가 아닌 참고 자료입니다.</p>}</div><p className="w-full break-words text-xs text-slate-500">{meta}</p></header><div className={compact ? "" : "min-h-[190px]"}>{children}</div></section>;
 }
 
 function AnalysisImageInfoCard({ aiResult, evidenceInfo }: { aiResult?: AiResult; evidenceInfo: CtEvidenceInfo }) {
@@ -383,9 +383,9 @@ function ImagingWorkflowSummary({ stage, aiStatus, clinicalStatus, clinicalRole,
   });
 
   return <section className="shrink-0 rounded-lg border border-slate-200 bg-white p-3 shadow-sm">
-    <div className="flex items-center justify-between gap-3">
-      <p className="text-[10px] font-bold text-slate-700">진행 상태</p>
-      <div className="flex items-center gap-2 text-[8px] font-semibold">
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1.5">
+      <p className="text-xs font-bold text-slate-700">진행 상태</p>
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] font-semibold">
         <span className="text-emerald-700">{clinicalRole} · {resultStatusLabel(clinicalStatus)}</span>
         <span className="text-blue-700">AI · {resultStatusLabel(aiStatus)}</span>
       </div>
@@ -393,9 +393,9 @@ function ImagingWorkflowSummary({ stage, aiStatus, clinicalStatus, clinicalRole,
     <ol className="mt-2 grid grid-cols-3 gap-1.5">
       {steps.slice(0, 3).map((step, index) => (
         <li key={step.label} className="min-w-0 rounded-md bg-slate-50 px-2 py-2 text-center">
-          <span data-workflow-state={step.state} className={`mx-auto flex h-5 w-5 items-center justify-center rounded-full text-[8px] font-bold ${step.state === "completed" ? "bg-emerald-500 text-white" : step.state === "active" ? "border border-blue-300 bg-blue-50 text-blue-700" : step.state === "failed" ? "bg-rose-500 text-white" : "border border-slate-300 bg-white text-slate-400"}`}>{index + 1}</span>
-          <p className="mt-1 truncate text-[8px] font-semibold text-slate-600" title={step.label}>{step.label}</p>
-          <p className="mt-0.5 truncate text-[8px] text-slate-400" title={step.status}>{step.status}</p>
+          <span data-workflow-state={step.state} className={`mx-auto flex h-6 w-6 items-center justify-center rounded-full text-[11px] font-bold ${step.state === "completed" ? "bg-emerald-500 text-white" : step.state === "active" ? "border border-blue-300 bg-blue-50 text-blue-700" : step.state === "failed" ? "bg-rose-500 text-white" : "border border-slate-300 bg-white text-slate-500"}`}>{index + 1}</span>
+          <p className="mt-1 min-h-8 break-keep leading-4 text-[11px] font-semibold text-slate-600" title={step.label}>{step.label}</p>
+          <p className="mt-0.5 break-keep leading-4 text-[11px] text-slate-500" title={step.status}>{step.status}</p>
         </li>
       ))}
     </ol>
@@ -431,7 +431,7 @@ function StatusBadge({ label, value, status, tone }: { label: string; value?: st
 }
 
 function ResultValues({ values, accent, compact = false }: { values: [string, string][]; accent: "specialist" | "ai"; compact?: boolean }) {
-  return <dl className={`grid grid-cols-2 ${compact ? "gap-1.5 p-3" : "gap-2 p-4"}`}>{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border ${compact ? "px-2.5 py-2" : "px-3 py-2.5"} ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className={`whitespace-nowrap ${compact ? "text-[9px]" : "text-[10px]"} text-slate-500`}>{label}</dt><dd className={`${compact ? "mt-0.5 text-[11px]" : "mt-1 text-xs"} break-words font-semibold text-slate-800`}>{value}</dd></div>)}</dl>;
+  return <dl className={`grid grid-cols-2 ${compact ? "gap-2 p-3" : "gap-2 p-4"}`}>{values.map(([label, value], index) => <div key={`${label}-${value}-${index}`} className={`min-w-0 rounded-lg border ${compact ? "px-2.5 py-2.5" : "px-3 py-2.5"} ${accent === "specialist" ? "border-emerald-100 bg-emerald-50/50" : "border-blue-100 bg-blue-50/50"}`}><dt className={`break-keep ${compact ? "text-xs" : "text-xs"} text-slate-500`}>{label}</dt><dd className={`${compact ? "mt-0.5 text-[13px]" : "mt-1 text-sm"} break-words font-semibold text-slate-800`}>{value}</dd></div>)}</dl>;
 }
 function EmptyResult({ title, text, nextAction }: { title: string; text: string; nextAction?: string }) { return <div className="px-4 py-4 text-center"><div><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 max-w-md text-[11px] leading-4 text-slate-500">{text}</p>{nextAction && <p className="mt-2 max-w-md rounded-md bg-slate-50 px-2 py-1.5 text-[10px] leading-4 text-slate-600">{nextAction}</p>}</div></div>; }
 function PanelError({ message, retrying, onRetry }: { message: string; retrying: boolean; onRetry?: () => void }) { return <div role="alert" className="flex min-h-[190px] items-center justify-center bg-rose-50/50 px-5"><div className="text-center"><p className="text-xs text-rose-700">{message}</p>{onRetry && <button type="button" disabled={retrying} onClick={onRetry} className="mt-3 whitespace-nowrap rounded-md border border-rose-200 bg-white px-3 py-1.5 text-[11px] font-semibold text-rose-700 disabled:opacity-50">{retrying ? "재시도 중" : "이 결과 다시 시도"}</button>}</div></div>; }

@@ -142,28 +142,28 @@ export function MedicationSchedulePanel({
   }
 
   if (!oralItems.length) {
-    return <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-xs text-slate-500">환자용 복약 일정은 경구 처방 약물이 있을 때만 등록합니다.</div>;
+    return <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 text-sm text-slate-500">환자용 복약 일정은 경구 처방 약물이 있을 때만 등록합니다.</div>;
   }
 
   const selectedItemIds = new Set(editing?.items.map((item) => item.prescription_item_id) ?? []);
   return (
     <section className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-bold text-violet-800">환자용 복약 일정</p>
-          <p className="mt-1 text-[11px] text-slate-500">확정 처방의 경구 약물 복용 시간과 반복 규칙을 관리합니다.</p>
+          <p className="text-sm font-bold text-violet-800">환자용 복약 일정</p>
+          <p className="mt-1 text-[13px] text-slate-500">확정 처방의 경구 약물 복용 시간과 반복 규칙을 관리합니다.</p>
         </div>
-        <button type="button" onClick={() => { setOpen(!open); setEditing(null); }} className="rounded border border-violet-200 bg-white px-3 py-1.5 text-xs font-semibold text-violet-700">
+        <button type="button" onClick={() => { setOpen(!open); setEditing(null); }} className="shrink-0 rounded border border-violet-200 bg-white px-3 py-1.5 text-sm font-semibold text-violet-700">
           {open ? "닫기" : "일정 등록"}
         </button>
       </div>
-      {error && <p role="alert" className="mt-2 text-xs text-rose-600">{error}</p>}
+      {error && <p role="alert" className="mt-2 text-sm text-rose-600">{error}</p>}
       {loading ? (
-        <p className="mt-3 text-xs text-slate-400">복약 일정을 불러오는 중입니다.</p>
+        <p className="mt-3 text-sm text-slate-500">복약 일정을 불러오는 중입니다.</p>
       ) : (
         <div className="mt-3 space-y-2">
           {schedules.length ? schedules.map((schedule) => (
-            <div key={schedule.id} className="flex items-center justify-between gap-3 rounded border border-violet-100 bg-white px-3 py-2 text-xs">
+            <div key={schedule.id} className="flex flex-wrap items-center justify-between gap-3 rounded border border-violet-100 bg-white px-3 py-2 text-sm">
               <div>
                 <p className="font-semibold">{schedule.reminder_time.slice(0, 5)} · {schedule.items.map((item) => item.drug_name).join(", ")}</p>
                 <p className="mt-1 text-slate-500">
@@ -171,15 +171,15 @@ export function MedicationSchedulePanel({
                 </p>
               </div>
               <div className="flex gap-2">
-                <button type="button" onClick={() => { setEditing(schedule); setOpen(true); }} className="text-xs font-semibold text-violet-700">수정</button>
-                <button type="button" onClick={() => void disable(schedule.id)} className="text-xs font-semibold text-rose-600">비활성화</button>
+                <button type="button" onClick={() => { setEditing(schedule); setOpen(true); }} className="text-sm font-semibold text-violet-700">수정</button>
+                <button type="button" onClick={() => void disable(schedule.id)} className="text-sm font-semibold text-rose-600">비활성화</button>
               </div>
             </div>
-          )) : <p className="text-xs text-slate-400">등록된 복약 일정이 없습니다.</p>}
+          )) : <p className="text-sm text-slate-500">등록된 복약 일정이 없습니다.</p>}
         </div>
       )}
       {open && (
-        <form noValidate key={editing?.id ?? "new"} onSubmit={submit} className="mt-3 grid grid-cols-2 gap-2 rounded border border-violet-100 bg-white p-3 text-xs">
+        <form noValidate key={editing?.id ?? "new"} onSubmit={submit} className="mt-3 grid grid-cols-2 gap-2 rounded border border-violet-100 bg-white p-3 text-sm">
           <PrescriptionTimeField required name="reminder_time" label="복용 시각" defaultValue={editing?.reminder_time.slice(0, 5)} />
           <PrescriptionDateField required name="start_date" label="시작일" defaultValue={editing?.start_date} />
           <PrescriptionDateField name="end_date" label="종료일" defaultValue={editing?.end_date ?? ""} />
