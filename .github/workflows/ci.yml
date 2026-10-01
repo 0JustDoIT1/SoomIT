@@ -156,6 +156,7 @@ jobs:
         env:
           NEXT_PUBLIC_API_BASE_URL: http://127.0.0.1:3000
           NEXT_PUBLIC_REALTIME_WS_URL: ws://127.0.0.1:3000
+          NEXT_PUBLIC_TREATMENT_OPINION_DEMO: "true"
       - name: Install Playwright Chromium
         run: npx --no-install playwright install --with-deps chromium
       - name: Browser E2E smoke tests
@@ -241,6 +242,7 @@ jobs:
           touch backend/.env frontend/.env
           NEXT_PUBLIC_API_BASE_URL=https://soomit.kro.kr \
           NEXT_PUBLIC_REALTIME_WS_URL=wss://soomit.kro.kr \
+          NEXT_PUBLIC_TREATMENT_OPINION_DEMO=true \
           AI_SERVICE_TOKEN=ci-only-token \
           ORTHANC_USERNAME=ci ORTHANC_PASSWORD=ci \
           ORTHANC_PUBLIC_URL=http://127.0.0.1:8042 \
