@@ -89,7 +89,7 @@ it.each(["create", "update", "safety", "finalize"])("never reports successful %s
     const { unmount } = render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
     if (action === "create") {
       await openStartDialog();
-      const button = await screen.findByRole("button", { name: "처방 생성" });
+      const button = await screen.findByRole("button", { name: "처방 초안 생성" });
       fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-27" } });
       fireEvent.click(button);
     } else if (action === "update") {
@@ -235,7 +235,7 @@ it("distinguishes an accepted write from a failed refresh without announcing com
   });
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} onPrescriptionChanged={changed} />);
   await openStartDialog();
-  const button = await screen.findByRole("button", { name: "처방 생성" });
+  const button = await screen.findByRole("button", { name: "처방 초안 생성" });
   fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-27" } });
   fireEvent.click(button);
   expect(await screen.findByText(/요청은 처리되었지만/)).toBeInTheDocument();
@@ -375,17 +375,19 @@ it("creates the first draft once and requires a cycle start date", async () => {
   render(<PrescriptionPanel {...props} authorizedFetch={authorizedFetch} />);
   expect(await screen.findByRole("button", { name: "처방 시작" })).toBeEnabled();
   expect(screen.getByRole("region", { name: "환자 안전성 정보" })).toHaveTextContent("안전성 입력 폼");
-  expect(screen.queryByRole("heading", { name: "첫 처방을 생성하세요" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("heading", { name: "처방 초안을 생성하세요" })).not.toBeInTheDocument();
   await openStartDialog();
-  const createCard = screen.getByRole("heading", { name: "첫 처방을 생성하세요" }).closest("section");
+  const createCard = screen.getByRole("heading", { name: "처방 초안을 생성하세요" }).closest("section");
   expect(createCard).toBeInTheDocument();
   expect(createCard).toHaveClass("w-full");
   expect(screen.getByLabelText("Cycle 번호")).toBeInTheDocument();
   expect(screen.getByLabelText("치료 단계")).toBeInTheDocument();
   expect(screen.getByLabelText("Cycle 시작일")).toBeInTheDocument();
-  expect(screen.getByText(/처방은 자동 생성되지 않으며/)).toBeInTheDocument();
+  expect(screen.getByText("처방 기본정보 설정")).toBeInTheDocument();
+  expect(screen.getByText("Cycle과 치료 일정을 설정한 뒤 처방 초안을 생성합니다. 초안 생성 후 약물과 용량을 확인·조정하고 Safety Check를 진행합니다.")).toBeInTheDocument();
+  expect(screen.getByText("Cycle과 시작일을 설정한 뒤 처방 초안을 생성합니다.")).toBeInTheDocument();
   expect(screen.queryByText("등록된 처방이 없습니다.")).not.toBeInTheDocument();
-  const create = await screen.findByRole("button", { name: "처방 생성" });
+  const create = await screen.findByRole("button", { name: "처방 초안 생성" });
   expect(create).toBeDisabled();
   fireEvent.change(screen.getByLabelText("Cycle 시작일"), { target: { value: "2026-09-24" } });
   expect(create).toBeEnabled();
@@ -402,7 +404,7 @@ it("shows a non-drug completion path without a prescription creation CTA", async
   render(<PrescriptionPanel {...props} hasSelectedRegimen={false} requiresPrescription={false} authorizedFetch={mockFetch("DRAFT")} />);
   expect(await screen.findByText(/약물 처방 없이/)).toBeInTheDocument();
   expect(screen.queryByText("처방 정보를 불러오는 중입니다.")).not.toBeInTheDocument();
-  expect(screen.queryByRole("button", { name: "처방 생성" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "처방 초안 생성" })).not.toBeInTheDocument();
 });
 
 it("keeps a final prescription visible but read-only after the case is no longer actionable", async () => {
