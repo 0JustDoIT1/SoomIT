@@ -112,9 +112,9 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
       <div className="flex items-start gap-4">
         <span aria-hidden="true" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-50 text-lg font-bold text-blue-700">Rx</span>
         <div>
-          <p className="text-sm font-semibold text-blue-700">처방 시작</p>
-          <h3 id="first-prescription-title" className="mt-1 text-lg font-bold text-slate-900">첫 처방을 생성하세요</h3>
-          <p className="mt-1 text-sm leading-6 text-slate-500">확정된 치료결정을 기준으로 DRAFT를 생성합니다. 생성 후 약물과 용량을 확인하고 Safety Check를 진행할 수 있습니다.</p>
+          <p className="text-sm font-semibold text-blue-700">처방 기본정보 설정</p>
+          <h3 id="first-prescription-title" className="mt-1 text-lg font-bold text-slate-900">처방 초안을 생성하세요</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-500">Cycle과 치료 일정을 설정한 뒤 처방 초안을 생성합니다. 초안 생성 후 약물과 용량을 확인·조정하고 Safety Check를 진행합니다.</p>
         </div>
       </div>
       <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-2 xl:grid-cols-[90px_minmax(0,1fr)_minmax(0,1fr)]">
@@ -129,8 +129,8 @@ export function PrescriptionPanel({ caseId, apiBaseUrl, authorizedFetch, doctorD
       {!hasSelectedRegimen && <p role="alert" className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">선택된 Regimen이 없어 처방을 생성할 수 없습니다. 치료계획에서 Regimen을 먼저 확정해주세요.</p>}
       {hasSelectedRegimen && supportedPhases.length === 0 && <p role="alert" className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800">선택한 Regimen에 등록된 약물 치료 단계가 없습니다. Regimen 약물 스케줄을 확인해주세요.</p>}
       <div className="mt-4 flex flex-col-reverse items-stretch justify-between gap-2 border-t border-slate-100 pt-3 sm:flex-row sm:items-center">
-        <p className="text-sm text-slate-500">처방은 자동 생성되지 않으며, 시작일을 선택한 뒤 직접 생성합니다.</p>
-        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "생성 중..." : "처방 생성"}</button>
+        <p className="text-sm text-slate-500">Cycle과 시작일을 설정한 뒤 처방 초안을 생성합니다.</p>
+        <button type="button" disabled={working || !hasSelectedRegimen || !supportedPhases.includes(selectedPhase) || !cycleStartDate} onClick={() => void create()} className="shrink-0 rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-700 disabled:bg-slate-200 disabled:text-slate-500 disabled:shadow-none">{working ? "초안 생성 중..." : "처방 초안 생성"}</button>
       </div>
     </section>
   ) : (
