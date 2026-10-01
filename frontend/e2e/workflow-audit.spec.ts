@@ -7,7 +7,10 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   const errors: string[] = [];
   page.on("pageerror", error => errors.push(error.message));
   page.on("console", message => {
-    if (message.type() === "error" && !message.text().startsWith("Failed to load resource:")) errors.push(message.text());
+    const text = message.text();
+    const expectedRealtimeUnavailable = text.includes("ws://127.0.0.1:8001/ws/chat/global")
+      && text.includes("ERR_CONNECTION_REFUSED");
+    if (message.type() === "error" && !text.startsWith("Failed to load resource:") && !expectedRealtimeUnavailable) errors.push(text);
   });
   page.on("response", response => { if (response.status() >= 500) errors.push(`${response.status()} ${response.url()}`); });
   await page.goto("/login");
@@ -74,8 +77,8 @@ test("login through gene review, PD-L1, saved R1, safety and FINAL", async ({ pa
   const workspace = await page.getByRole("region", { name: "처방 작업공간", exact: true }).boundingBox();
   expect(finalAction!.y + finalAction!.height).toBeLessThanOrEqual(workspace!.y + workspace!.height);
   await page.screenshot({ path: test.info().outputPath("prescription-validated.png") });
-  page.once("dialog", d => d.accept());
   await page.getByRole("button", { name: "처방 최종 확정", exact: true }).click();
+  await page.getByRole("alertdialog", { name: "처방 최종 확정" }).getByRole("button", { name: "처방 확정", exact: true }).click();
   await expect(page.getByText("최종 확정 완료 · 수정 불가", { exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "수정 저장", exact: true })).toHaveCount(0);
   expect(state.case.current_stage).toBe("PRESCRIPTION");
