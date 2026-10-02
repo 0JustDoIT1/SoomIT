@@ -1,10 +1,7 @@
 name: Deploy AI services
 
 on:
-  push:
-    branches: [production]
-    paths:
-      - 'ai-services/**'
+  # Automatic deployment is paused while the GCP project is parked.
   workflow_dispatch:
     inputs:
       service:
