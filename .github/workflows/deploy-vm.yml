@@ -1,13 +1,7 @@
 name: Deploy VM services
 
 on:
-  push:
-    branches: [production]
-    paths:
-      - 'frontend/**'
-      - 'backend/**'
-      - 'realtime/**'
-      - 'infra/**'
+  # Automatic deployment is paused while the GCP project is parked.
   workflow_dispatch:
 
 permissions:
